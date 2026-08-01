@@ -15,39 +15,14 @@ import { ScoreModal } from "./score-modal";
 export const dynamic = "force-dynamic";
 
 // Tailwind needs literal class names, so each status carries its own palette.
-const STATUS_THEME: Record<Status, { text: string; bg: string; ring: string }> =
-  {
-    "Best Available": {
-      text: "text-emerald-600 dark:text-emerald-400",
-      bg: "bg-emerald-500/10",
-      ring: "stroke-emerald-500",
-    },
-    Reference: {
-      text: "text-emerald-600 dark:text-emerald-400",
-      bg: "bg-emerald-500/10",
-      ring: "stroke-emerald-500",
-    },
-    Excellent: {
-      text: "text-teal-600 dark:text-teal-400",
-      bg: "bg-teal-500/10",
-      ring: "stroke-teal-500",
-    },
-    Good: {
-      text: "text-amber-600 dark:text-amber-400",
-      bg: "bg-amber-500/10",
-      ring: "stroke-amber-500",
-    },
-    "Upgrade Recommended": {
-      text: "text-orange-600 dark:text-orange-400",
-      bg: "bg-orange-500/10",
-      ring: "stroke-orange-500",
-    },
-    "Must Upgrade": {
-      text: "text-red-600 dark:text-red-400",
-      bg: "bg-red-500/10",
-      ring: "stroke-red-500",
-    },
-  };
+const STATUS_THEME: Record<Status, { ring: string }> = {
+  "Best Available": { ring: "stroke-emerald-500" },
+  Reference: { ring: "stroke-emerald-500" },
+  Excellent: { ring: "stroke-emerald-500" },
+  Good: { ring: "stroke-amber-500" },
+  "Upgrade Recommended": { ring: "stroke-amber-500" },
+  "Must Upgrade": { ring: "stroke-red-500" },
+};
 
 const SEVERITY_THEME: Record<string, { text: string }> = {
   critical: { text: "text-red-600 dark:text-red-400" },
@@ -68,13 +43,32 @@ function duration(seconds?: number) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function ScoreRing({ score, ring }: { score: number; ring: string }) {
+/** One size for both rings — the two scores are peers, not headline and aside. */
+const RING_BOX = "h-28 w-28";
+
+function ScoreRing({
+  score,
+  ring,
+  caption,
+  ceiling,
+}: {
+  score: number;
+  ring: string;
+  caption: string;
+  /** The best disc, drawn as a ghost arc behind the score. */
+  ceiling?: number;
+}) {
   const radius = 52;
   const circumference = 2 * Math.PI * radius;
+  const short = ceiling !== undefined && score < ceiling;
+  const arc = (value: number) => circumference * (1 - value / 100);
 
   return (
-    <div className="relative grid h-36 w-36 shrink-0 place-items-center">
-      <svg viewBox="0 0 120 120" className="h-36 w-36 -rotate-90">
+    <div
+      className={`relative grid ${RING_BOX} shrink-0 place-items-center`}
+      title={short ? `${score} of a possible ${ceiling}` : undefined}
+    >
+      <svg viewBox="0 0 120 120" className={`${RING_BOX} -rotate-90`}>
         <circle
           cx="60"
           cy="60"
@@ -83,6 +77,21 @@ function ScoreRing({ score, ring }: { score: number; ring: string }) {
           strokeWidth="8"
           className="stroke-line"
         />
+        {/* How far the best disc reaches — the same mark the meters carry,
+            drawn here as an arc rather than a tick. */}
+        {ceiling !== undefined && ceiling < 100 && (
+          <circle
+            cx="60"
+            cy="60"
+            r={radius}
+            fill="none"
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={arc(ceiling)}
+            className="stroke-foreground/20"
+          />
+        )}
         <circle
           cx="60"
           cy="60"
@@ -91,35 +100,94 @@ function ScoreRing({ score, ring }: { score: number; ring: string }) {
           strokeWidth="8"
           strokeLinecap="round"
           strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - score / 100)}
-          className={ring}
+          strokeDashoffset={arc(score)}
+          className={
+            ceiling === undefined
+              ? ring
+              : short
+                ? "stroke-amber-500/80"
+                : "stroke-emerald-500/80"
+          }
         />
       </svg>
       <div className="absolute text-center">
-        <span className="text-4xl font-semibold tabular-nums">{score}</span>
-        <span className="block text-[10px] uppercase tracking-widest opacity-50">
-          overall
+        <span className="font-display text-3xl font-semibold tabular-nums">
+          {score}
+        </span>
+        <span className="block text-[10px] tracking-widest uppercase opacity-50">
+          {caption}
         </span>
       </div>
     </div>
   );
 }
 
-function SubScore({ label, value }: { label: string; value: number }) {
+/**
+ * A meter with the disc marked on it.
+ *
+ * The ceiling used to be a single number in a footnote, which said nothing
+ * about where the shortfall actually was. Marking each dimension shows it
+ * directly: a bar short of its mark is the thing you could buy your way out of,
+ * and a bar past its mark is where your copy beats the disc.
+ */
+/** Below this share of the disc, a picture or sound shortfall is not a nuance. */
+const SEVERE_SHORTFALL = 0.8;
+
+function SubScore({
+  label,
+  value,
+  ceiling,
+  escalates,
+}: {
+  label: string;
+  value: number;
+  ceiling?: number;
+  /** Video and audio go red when far short; release only ever goes amber. */
+  escalates?: boolean;
+}) {
+  const short = ceiling !== undefined && value < ceiling;
+  const severe =
+    escalates && ceiling !== undefined && value / ceiling < SEVERE_SHORTFALL;
+
   return (
-    <div>
-      <div className="flex items-baseline justify-between">
-        <span className="text-xs uppercase tracking-wide opacity-60">
-          {label}
-        </span>
-        <span className="text-sm font-medium tabular-nums">{value}</span>
-      </div>
-      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-strong">
-        <div
-          className="h-full rounded-full bg-foreground/70"
+    <div className="flex items-center gap-4">
+      <span className="w-16 shrink-0 text-[11px] tracking-widest uppercase opacity-45">
+        {label}
+      </span>
+
+      <span className="relative h-1.5 flex-1 rounded-full bg-surface-strong">
+        <span
+          className={`absolute inset-y-0 left-0 rounded-full ${
+            ceiling === undefined
+              ? "bg-foreground/55"
+              : severe
+                ? "bg-red-500/75"
+                : short
+                  ? "bg-amber-500/70"
+                  : "bg-emerald-500/70"
+          }`}
           style={{ width: `${value}%` }}
         />
-      </div>
+        {ceiling !== undefined && (
+          // Centred on its value rather than starting at it, which also keeps
+          // the mark on the track at 100 instead of hanging off the end.
+          <span
+            aria-hidden
+            title={`Best disc: ${ceiling}`}
+            className="absolute -top-[5px] h-4 w-0.5 -translate-x-1/2 rounded-full bg-foreground/70"
+            style={{ left: `${ceiling}%` }}
+          />
+        )}
+      </span>
+
+      <span className="w-14 shrink-0 text-right font-display text-sm font-semibold tabular-nums">
+        {value}
+        {short && (
+          <span className="font-sans text-xs font-normal opacity-40">
+            /{ceiling}
+          </span>
+        )}
+      </span>
     </div>
   );
 }
@@ -463,23 +531,61 @@ export default async function MoviePage({
         </div>
 
         {/* Scores */}
-        <section className="relative mt-10 flex flex-col items-center gap-8 rounded-card border border-line bg-surface p-6 sm:flex-row">
-          <div className="flex shrink-0 flex-col items-center gap-2">
-            <ScoreRing score={movie.scores.overall} ring={theme.ring} />
-            <span className={`text-sm font-medium ${theme.text}`}>
-              {movie.status}
-            </span>
-            {movie.priority !== "None" && (
-              <span className="text-xs opacity-50">
-                {movie.priority} priority
-              </span>
+        <section className="relative mt-10 flex flex-col items-center gap-8 rounded-card border border-line bg-surface p-6 sm:flex-row sm:items-stretch">
+          <div className="flex shrink-0 flex-col items-center justify-center gap-3">
+            <div className="flex items-center gap-5">
+              <ScoreRing
+                score={movie.scores.overall}
+                ring={theme.ring}
+                caption={breakdown.relative ? "vs disc" : "overall"}
+              />
+              {/* The rubric score, kept neutral so the verdict colour stays
+                  unique to the comparison. */}
+              {breakdown.relative && (
+                <ScoreRing
+                  score={breakdown.absolute}
+                  ring="stroke-foreground/35"
+                  caption="absolute"
+                  ceiling={breakdown.discScore}
+                />
+              )}
+            </div>
+            {/* No status pill: the ring colour says it, exactly as in the
+                library list. Kept for screen readers, which cannot see colour. */}
+            <span className="sr-only">{movie.status}</span>
+          </div>
+
+          {/* A vertical rule on wide screens keeps the ring and the breakdown
+              reading as two halves of one card rather than a loose stack. */}
+          <div className="hidden w-px shrink-0 bg-line sm:block" />
+
+          <div className="flex w-full flex-1 flex-col justify-center gap-3">
+            <SubScore
+              label="Video"
+              value={movie.scores.video}
+              ceiling={movie.disc?.discParts?.video}
+              escalates
+            />
+            <SubScore
+              label="Audio"
+              value={movie.scores.audio}
+              ceiling={movie.disc?.discParts?.audio}
+              escalates
+            />
+            <SubScore
+              label="Release"
+              value={movie.scores.release}
+              ceiling={movie.disc?.discParts?.release}
+            />
+
+            {movie.disc?.discParts && (
+              <p className="mt-1 border-t border-line pt-3 text-xs opacity-45">
+                The mark on each bar is the best disc available. Amber means
+                your copy falls short of it.
+              </p>
             )}
           </div>
-          <div className="grid w-full flex-1 gap-4 sm:grid-cols-3">
-            <SubScore label="Video" value={movie.scores.video} />
-            <SubScore label="Audio" value={movie.scores.audio} />
-            <SubScore label="Release" value={movie.scores.release} />
-          </div>
+
           <ScoreModal scores={movie.scores} breakdown={breakdown} />
         </section>
 

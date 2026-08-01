@@ -285,6 +285,8 @@ export type DiscFacts = {
   bestAvailable: boolean;
   /** What the disc itself scores on the same rubric — the ceiling. */
   discScore?: number;
+  /** Per-dimension ceilings, so each meter can show where the disc sits. */
+  discParts?: { video: number; audio: number; release: number };
 };
 
 export type Derived = {
@@ -804,6 +806,11 @@ function compareToDisc(
     // Only a claim we can stand behind when a disc was actually found.
     bestAvailable: Boolean(best) && gaps.length === 0,
     discScore: best ? scoreDisc(best).overall : undefined,
+    discParts: best
+      ? (({ video, audio, release }) => ({ video, audio, release }))(
+          scoreDisc(best),
+        )
+      : undefined,
   };
 }
 

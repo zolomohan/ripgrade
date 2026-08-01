@@ -105,7 +105,7 @@ export function ScoreModal({
         onClick={() => setOpen(true)}
         aria-label="Why this score"
         title="Why this score"
-        className="absolute top-3 right-3 grid h-6 w-6 place-items-center rounded-full border border-line text-xs font-medium opacity-40 transition-opacity hover:opacity-100"
+        className="absolute right-3 bottom-3 grid h-6 w-6 place-items-center rounded-full border border-line text-xs font-medium opacity-40 transition-opacity hover:opacity-100"
       >
         ?
       </button>

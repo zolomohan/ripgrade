@@ -316,18 +316,17 @@ export default function HowItWorks() {
         lede="Applied to the overall score, highest first."
       >
         <Table
-          head={["Score", "Status", "Upgrade priority"]}
+          head={["Score", "Status"]}
           rows={STATUS_BANDS.map((b, i) => {
             const upper = i === 0 ? 100 : STATUS_BANDS[i - 1].min - 1;
-            return [`${b.min}–${upper}`, b.status, b.priority];
+            return [`${b.min}–${upper}`, b.status];
           })}
         />
         <p className="text-sm opacity-70">
           Any <span className={SEVERITY_STYLE.critical}>critical</span> issue
           overrides the bands outright and forces{" "}
-          <span className="font-medium">Must Upgrade</span> at Critical
-          priority. A fake 4K upscale is a problem no matter how good its audio
-          is.
+          <span className="font-medium">Must Upgrade</span>. A fake 4K upscale
+          is a problem no matter how good its audio is.
         </p>
       </Section>
 
