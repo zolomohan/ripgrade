@@ -39,7 +39,7 @@ export function Toast({
   return createPortal(
     <div
       style={{ bottom: `${24 + offset * 96}px` }}
-      className="fixed right-6 z-50 flex max-w-md min-w-72 items-start gap-3 rounded-xl border border-black/10 bg-background/95 px-4 py-3 shadow-lg backdrop-blur dark:border-white/15"
+      className="fixed right-6 z-50 flex max-w-md min-w-72 items-start gap-3 rounded-card border border-line bg-background/95 px-4 py-3 shadow-lg backdrop-blur"
     >
       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT[tone]}`} />
       <div className="min-w-0 flex-1 text-sm">{children}</div>

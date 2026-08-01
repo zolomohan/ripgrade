@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { findDuplicateGroup, type LibraryItem } from "@/lib/library";
 import { artUrl, decodeId, movieId } from "@/lib/routes";
+import { RevealButton } from "./reveal-button";
 
 export const dynamic = "force-dynamic";
 
@@ -215,7 +216,7 @@ export default async function ComparePage({
         <Link href="/" className="text-sm opacity-60 hover:opacity-100">
           ← Library
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="font-display text-2xl font-semibold tracking-tight">
           {keep.title}
           {keep.year && (
             <span className="ml-2 font-normal opacity-40">{keep.year}</span>
@@ -227,7 +228,7 @@ export default async function ComparePage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3">
+      <div className="rounded-card border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3">
         <p className="text-sm">
           <span className="font-medium text-emerald-700 dark:text-emerald-300">
             Keep {keep.releaseType} · score {keep.scores.overall}
@@ -238,9 +239,9 @@ export default async function ComparePage({
         <p className="mt-1 font-mono text-xs opacity-60">{keep.fileName}</p>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-black/15 dark:border-white/15">
+      <div className="overflow-x-auto rounded-card border border-line bg-surface">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-black/10 dark:border-white/10">
+          <thead className="border-b border-line">
             <tr>
               <th className="w-44 px-4 py-3 text-[11px] font-medium tracking-widest uppercase opacity-45">
                 Attribute
@@ -253,10 +254,10 @@ export default async function ComparePage({
                       <img
                         src={artUrl(copy.poster)}
                         alt=""
-                        className="h-16 w-11 shrink-0 rounded object-cover ring-1 ring-black/10 dark:ring-white/10"
+                        className="h-16 w-11 shrink-0 rounded-chip object-cover ring-1 ring-line"
                       />
                     ) : (
-                      <span className="h-16 w-11 shrink-0 rounded bg-black/[0.06] dark:bg-white/[0.08]" />
+                      <span className="h-16 w-11 shrink-0 rounded-chip bg-surface-strong" />
                     )}
                     <span className="min-w-0">
                       <span
@@ -274,6 +275,7 @@ export default async function ComparePage({
                       >
                         {copy.fileName}
                       </Link>
+                      <RevealButton moviePath={copy.path} />
                     </span>
                   </div>
                 </th>
@@ -282,10 +284,7 @@ export default async function ComparePage({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr
-                key={r.label}
-                className="border-b border-black/5 last:border-0 dark:border-white/5"
-              >
+              <tr key={r.label} className="border-b border-line last:border-0">
                 <td
                   className={`px-4 py-2 text-xs ${r.same ? "opacity-35" : "opacity-60"}`}
                 >

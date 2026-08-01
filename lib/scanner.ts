@@ -6,13 +6,14 @@ import path from "node:path";
 import { findArtwork, type Artwork } from "./artwork";
 import { db } from "./db";
 import { runEnrich } from "./enrich";
+import { fetchDisc, hasDisc } from "./disc";
 import { deriveAll, getLibrary } from "./library";
 import { probe, VIDEO_EXTENSIONS } from "./media";
 import { hasCredentials } from "./tmdb";
 
 export type ScanState = {
   /** "matching" is the TMDb phase that runs automatically after probing. */
-  status: "idle" | "scanning" | "matching" | "done" | "error";
+  status: "idle" | "scanning" | "matching" | "discs" | "done" | "error";
   root?: string;
   discovered: number;
   probed: number;
@@ -26,6 +27,9 @@ export type ScanState = {
   needsReview: number;
   /** Files that vanished from disk since the last scan. */
   removed: number;
+  /** Blu-ray.com lookups, the final phase. */
+  discTotal: number;
+  discDone: number;
   startedAt?: number;
   finishedAt?: number;
   error?: string;
@@ -42,6 +46,8 @@ const IDLE: ScanState = {
   matched: 0,
   needsReview: 0,
   removed: 0,
+  discTotal: 0,
+  discDone: 0,
 };
 
 // Survives HMR so a save mid-scan doesn't orphan the running scan's progress.
@@ -295,6 +301,34 @@ export function startScan(root: string): ScanState {
           matched: summary.matched,
           needsReview: summary.needsReview,
         });
+
+        // Disc lookups need a TMDb match to know what to search for, so this
+        // runs last. Results are cached permanently, which is what keeps a
+        // repeat scan from hammering someone else's server.
+        const films = getLibrary().filter((m) => m.tmdb?.id);
+        const pending = films.filter((m) => !hasDisc(m.tmdb!.id));
+
+        setState({
+          ...state,
+          status: "discs",
+          discTotal: pending.length,
+          discDone: 0,
+          current: undefined,
+        });
+
+        let done = 0;
+        for (const film of pending) {
+          setState({ ...state, current: film.title });
+          try {
+            await fetchDisc(film.tmdb!.id, film.tmdb!.title, film.tmdb!.year);
+          } catch {
+            // A single failed lookup should not end the scan.
+          }
+          done += 1;
+          setState({ ...state, discDone: done });
+        }
+
+        if (pending.length > 0) deriveAll();
       }
 
       setState({

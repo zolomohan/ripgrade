@@ -41,7 +41,7 @@ export function FolderSection({
       onToggle={(e) => {
         if (e.currentTarget.open) load();
       }}
-      className="rounded-xl border border-black/10 dark:border-white/10"
+      className="rounded-card border border-line bg-surface"
     >
       <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm">
         <span className="shrink-0 opacity-70">
@@ -51,13 +51,18 @@ export function FolderSection({
           {initialPath}
         </span>
       </summary>
-      <div className="border-t border-black/10 p-4 dark:border-white/10">
+      <div className="border-t border-line p-4">
         {listing ? (
           <FolderPicker initialListing={listing} />
         ) : (
-          <p className="text-sm opacity-50">
-            Reading the drive… this can take a moment if it was asleep.
-          </p>
+          <div className="flex flex-col gap-2">
+            <p className="text-sm opacity-50">
+              Reading the drive… this can take a moment if it was asleep.
+            </p>
+            {Array.from({ length: 5 }, (_, i) => (
+              <div key={i} className="skeleton h-8 w-full" />
+            ))}
+          </div>
         )}
       </div>
     </details>

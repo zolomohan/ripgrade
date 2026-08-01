@@ -44,7 +44,11 @@ export const RELEASE_POINTS = {
 } as const;
 
 /** Overall score bands, checked high to low. */
-export const STATUS_BANDS: { min: number; status: Status; priority: Priority }[] = [
+export const STATUS_BANDS: {
+  min: number;
+  status: Status;
+  priority: Priority;
+}[] = [
   { min: 90, status: "Reference", priority: "None" },
   { min: 78, status: "Excellent", priority: "None" },
   { min: 62, status: "Good", priority: "Low" },
@@ -57,7 +61,11 @@ export const STATUS_BANDS: { min: number; status: Status; priority: Priority }[]
  * are rounded to the minute and usually describe the theatrical cut, and 25fps
  * PAL transfers legitimately run about 4% short.
  */
-export const RUNTIME_TOLERANCE = { longer: 1.07, shorter: 0.93, truncated: 0.75 };
+export const RUNTIME_TOLERANCE = {
+  longer: 1.07,
+  shorter: 0.93,
+  truncated: 0.75,
+};
 
 /**
  * Every check `detectIssues` can raise. Severity lives here rather than at each
@@ -76,12 +84,14 @@ export const ISSUE_CATALOGUE = {
   },
   "dv-no-compat": {
     severity: "warning",
-    trigger: "Dolby Vision present but HDR_Format_Compatibility lists no HDR10, Blu-ray or SDR fallback",
+    trigger:
+      "Dolby Vision present but HDR_Format_Compatibility lists no HDR10, Blu-ray or SDR fallback",
     why: "Without a compatible base layer the file depends entirely on the player supporting Dolby Vision.",
   },
   "custom-encoder": {
     severity: "warning",
-    trigger: "Encoder string matches neither a known professional nor a known hobbyist encoder",
+    trigger:
+      "Encoder string matches neither a known professional nor a known hobbyist encoder",
     why: "Official releases come off recognisable encoders. A custom string usually marks a fan-made hybrid or an AI upscale rather than a real master.",
   },
   "fake-4k": {
@@ -124,6 +134,27 @@ export const ISSUE_CATALOGUE = {
     trigger: "Subtitle tracks exist but none is English",
     why: "Informational only — it does not affect the score.",
   },
+  "disc-better-resolution": {
+    severity: "warning",
+    trigger: "A 4K disc exists and this copy is not 2160p",
+    why: "The single largest upgrade available. A native 4K transfer carries detail no 1080p master has.",
+  },
+  "disc-better-hdr": {
+    severity: "warning",
+    trigger: "The disc carries a dynamic-range format this copy lacks",
+    why: "Usually Dolby Vision on the disc against HDR10, or HDR against SDR, in your file.",
+  },
+  "disc-better-audio": {
+    severity: "warning",
+    trigger:
+      "The disc carries object audio (Atmos or DTS:X) that this copy lacks",
+    why: "Either the release you have dropped the object track, or it was encoded from a lossy source.",
+  },
+  "disc-higher-bitrate": {
+    severity: "info",
+    trigger: "The file's video bitrate is well below the disc's",
+    why: "Expected on an encode. On something claiming to be a remux it suggests the stream was re-compressed.",
+  },
   "runtime-longer": {
     severity: "info",
     trigger: `File runs more than ${Math.round((RUNTIME_TOLERANCE.longer - 1) * 100)}% longer than the runtime TMDb lists`,
@@ -139,7 +170,10 @@ export const ISSUE_CATALOGUE = {
     trigger: `File runs under ${Math.round(RUNTIME_TOLERANCE.truncated * 100)}% of the runtime TMDb lists`,
     why: "A gap this large usually means an incomplete download or a damaged file rather than an alternate cut.",
   },
-} as const satisfies Record<string, { severity: Severity; trigger: string; why: string }>;
+} as const satisfies Record<
+  string,
+  { severity: Severity; trigger: string; why: string }
+>;
 
 export type IssueCode = keyof typeof ISSUE_CATALOGUE;
 
@@ -153,7 +187,6 @@ export const BPP = { excellent: 0.18, good: 0.1, fair: 0.06 };
 /** How far the overall score may exceed the video score. See scoring note below. */
 export const VIDEO_CEILING_BONUS = 15;
 
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -162,6 +195,7 @@ export type ReleaseType = "REMUX" | "WEB-DL" | "ENCODE" | "UNKNOWN";
 export type HdrKind = "Dolby Vision" | "HDR10+" | "HDR10" | "SDR";
 export type Severity = "critical" | "warning" | "info";
 export type Status =
+  | "Best Available"
   | "Reference"
   | "Excellent"
   | "Good"
@@ -186,6 +220,12 @@ export type ScoreLine = {
 };
 
 export type Breakdown = {
+  /** True when the overall score is measured against a disc rather than the rubric. */
+  relative: boolean;
+  /** The disc's own score — the denominator when `relative`. */
+  discScore?: number;
+  /** The absolute rubric score, kept for reference either way. */
+  absolute: number;
   video: ScoreLine[];
   audio: ScoreLine[];
   release: ScoreLine[];
@@ -225,6 +265,28 @@ export type TmdbFacts = {
   confidence: "high" | "medium" | "low";
 };
 
+/**
+ * What the best commercial disc offers, and where your copy falls short.
+ * Purely comparative — it changes the verdict, never the technical score.
+ */
+export type DiscFacts = {
+  url?: string;
+  releaseTitle?: string;
+  format?: "4K" | "3D" | "BD";
+  uhdExists: boolean;
+  nativeFourK?: boolean;
+  hdr: string[];
+  hasAtmos: boolean;
+  hasDtsX: boolean;
+  videoBitrateMbps?: number;
+  /** Every way the disc beats this file. Empty means you have the best of it. */
+  gaps: string[];
+  /** Nothing better exists to buy. */
+  bestAvailable: boolean;
+  /** What the disc itself scores on the same rubric — the ceiling. */
+  discScore?: number;
+};
+
 export type Derived = {
   path: string;
   fileName: string;
@@ -260,6 +322,7 @@ export type Derived = {
   subtitleLanguages: string[];
 
   releaseType: ReleaseType;
+  disc?: DiscFacts;
   issues: Issue[];
   scores: { video: number; audio: number; release: number; overall: number };
   breakdown: Breakdown;
@@ -353,7 +416,8 @@ export function parseName(
   // Generic filenames ("movie.mkv") carry no title at all. In a per-movie folder
   // layout the folder name is then the best source available.
   const uninformative =
-    title.length < 2 || (!year && !TAG_START.test(base) && folderTitle.length > title.length);
+    title.length < 2 ||
+    (!year && !TAG_START.test(base) && folderTitle.length > title.length);
   if (uninformative && folderTitle.length >= 2) title = folderTitle;
 
   // exFAT-safe folder names substitute U+A789 for a colon.
@@ -429,7 +493,8 @@ function hdrOf(video: Track): {
       dvHasHdr10Fallback: /HDR10|Blu-ray|SDR/i.test(compat),
     };
   }
-  if (/HDR10\+/i.test(format) || /HDR10\+/i.test(compat)) return { hdr: "HDR10+" };
+  if (/HDR10\+/i.test(format) || /HDR10\+/i.test(compat))
+    return { hdr: "HDR10+" };
   if (/SMPTE ST 2086|HDR10/i.test(format)) return { hdr: "HDR10" };
   return { hdr: "SDR" };
 }
@@ -447,7 +512,9 @@ function audioOf(track: Track): AudioTrack {
     format,
     channels: num(track, "Channels") ?? 0,
     language: str(track, "Language"),
-    bitrateKbps: num(track, "BitRate") ? Math.round(num(track, "BitRate")! / 1000) : undefined,
+    bitrateKbps: num(track, "BitRate")
+      ? Math.round(num(track, "BitRate")! / 1000)
+      : undefined,
     lossless: LOSSLESS.test(label) || LOSSLESS.test(format),
     atmos: /atmos/i.test(label),
     dtsx: /DTS:?X/i.test(label) || /XLL X/i.test(extra),
@@ -459,7 +526,10 @@ function audioOf(track: Track): AudioTrack {
 // ---------------------------------------------------------------------------
 
 function detectIssues(
-  d: Omit<Derived, "issues" | "scores" | "breakdown" | "status" | "priority" | "reasons">,
+  d: Omit<
+    Derived,
+    "issues" | "scores" | "breakdown" | "status" | "priority" | "reasons"
+  >,
 ): Issue[] {
   const issues: Issue[] = [];
   const name = d.fileName.toLowerCase();
@@ -468,34 +538,68 @@ function detectIssues(
     issues.push({ code, severity: ISSUE_CATALOGUE[code].severity, message });
 
   if (d.dvProfile === 7) {
-    raise("dv-profile-7", "Dolby Vision Profile 7 (dual-layer). Many TVs, Apple TV and Plex clients ignore or refuse the enhancement layer — a Profile 8.1 version plays everywhere.");
+    raise(
+      "dv-profile-7",
+      "Dolby Vision Profile 7 (dual-layer). Many TVs, Apple TV and Plex clients ignore or refuse the enhancement layer — a Profile 8.1 version plays everywhere.",
+    );
   }
   if (d.dvProfile === 5) {
-    raise("dv-no-fallback", "Dolby Vision Profile 5 has no HDR10 base layer. On any non-DV display this renders with badly shifted colour.");
+    raise(
+      "dv-no-fallback",
+      "Dolby Vision Profile 5 has no HDR10 base layer. On any non-DV display this renders with badly shifted colour.",
+    );
   }
   if (d.hdr === "Dolby Vision" && d.dvHasHdr10Fallback === false) {
-    raise("dv-no-compat", "Dolby Vision layer reports no HDR10-compatible fallback.");
+    raise(
+      "dv-no-compat",
+      "Dolby Vision layer reports no HDR10-compatible fallback.",
+    );
   }
   if (d.releaseType === "UNKNOWN" && d.encoder) {
-    raise("custom-encoder", `Non-standard encoder string "${d.encoder}" — likely a fan-made hybrid rather than an official release.`);
+    raise(
+      "custom-encoder",
+      `Non-standard encoder string "${d.encoder}" — likely a fan-made hybrid rather than an official release.`,
+    );
   }
   if (d.resolution === "2160p" && d.videoCodec === "AVC") {
-    raise("fake-4k", "2160p frame encoded in AVC — almost certainly an upscale from a 1080p source.");
+    raise(
+      "fake-4k",
+      "2160p frame encoded in AVC — almost certainly an upscale from a 1080p source.",
+    );
   }
   if (d.resolution === "2160p" && d.bitDepth === 8) {
-    raise("8bit-4k", "2160p at 8-bit depth. Genuine UHD masters are 10-bit; this suggests an upscale.");
+    raise(
+      "8bit-4k",
+      "2160p at 8-bit depth. Genuine UHD masters are 10-bit; this suggests an upscale.",
+    );
   }
   if (d.bpp !== undefined && d.bpp < BPP.fair && d.releaseType === "ENCODE") {
-    raise("low-bitrate", `Very low bitrate for this resolution (${d.bpp.toFixed(3)} bits/pixel/frame). Expect banding and smeared detail in motion.`);
+    raise(
+      "low-bitrate",
+      `Very low bitrate for this resolution (${d.bpp.toFixed(3)} bits/pixel/frame). Expect banding and smeared detail in motion.`,
+    );
   }
   if (/atmos/.test(name) && !d.audio.some((a) => a.atmos)) {
-    raise("atmos-mislabelled", "Filename claims Atmos but no track carries an Atmos extension.");
+    raise(
+      "atmos-mislabelled",
+      "Filename claims Atmos but no track carries an Atmos extension.",
+    );
   }
   if (/dts[.\-_]?x/.test(name) && !d.audio.some((a) => a.dtsx)) {
-    raise("dtsx-mislabelled", "Filename claims DTS:X but no track carries a DTS:X extension.");
+    raise(
+      "dtsx-mislabelled",
+      "Filename claims DTS:X but no track carries a DTS:X extension.",
+    );
   }
-  if (d.audio.length > 0 && !d.audio.some((a) => a.lossless) && d.releaseType === "REMUX") {
-    raise("lossy-remux", "Remuxed from disc but carries no lossless audio track.");
+  if (
+    d.audio.length > 0 &&
+    !d.audio.some((a) => a.lossless) &&
+    d.releaseType === "REMUX"
+  ) {
+    raise(
+      "lossy-remux",
+      "Remuxed from disc but carries no lossless audio track.",
+    );
   }
   if (d.audio.length === 0) {
     raise("no-audio", "No audio track found.");
@@ -506,14 +610,18 @@ function detectIssues(
 
   // Runtime is only compared on high-confidence matches. A wrong film would
   // otherwise manufacture a convincing but meaningless discrepancy.
-  const listed = d.tmdb?.confidence === "high" ? d.tmdb.runtimeMinutes : undefined;
+  const listed =
+    d.tmdb?.confidence === "high" ? d.tmdb.runtimeMinutes : undefined;
   if (listed && listed > 0 && d.durationSec) {
     const actual = d.durationSec / 60;
     const ratio = actual / listed;
     const delta = `file runs ${actual.toFixed(0)} min against TMDb's ${listed} min`;
 
     if (ratio < RUNTIME_TOLERANCE.truncated) {
-      raise("runtime-truncated", `Only ${Math.round(ratio * 100)}% of the expected length — ${delta}.`);
+      raise(
+        "runtime-truncated",
+        `Only ${Math.round(ratio * 100)}% of the expected length — ${delta}.`,
+      );
     } else if (ratio < RUNTIME_TOLERANCE.shorter) {
       raise("runtime-shorter", `Shorter than expected — ${delta}.`);
     } else if (ratio > RUNTIME_TOLERANCE.longer) {
@@ -530,12 +638,175 @@ function detectIssues(
 }
 
 // ---------------------------------------------------------------------------
+// Disc comparison
+// ---------------------------------------------------------------------------
+
+/**
+ * Scores the disc itself on the very same rubric, so a file can be expressed as
+ * a fraction of what is actually purchasable.
+ *
+ * This is what makes a perfect copy of a modest disc score 100: the ceiling is
+ * the disc, not an abstract ideal no release for this film ever reached.
+ */
+function scoreDisc(best: NonNullable<DiscInput["best"]>): {
+  video: number;
+  audio: number;
+  release: number;
+  overall: number;
+} {
+  const resolution: Derived["resolution"] =
+    best.format === "4K"
+      ? "2160p"
+      : /720p/.test(best.resolution ?? "")
+        ? "720p"
+        : "1080p";
+
+  const hdr: HdrKind = best.hdr.includes("Dolby Vision")
+    ? "Dolby Vision"
+    : best.hdr.includes("HDR10+")
+      ? "HDR10+"
+      : best.hdr.includes("HDR10")
+        ? "HDR10"
+        : "SDR";
+
+  // Reconstruct the disc's audio as tracks so the same scorer can read it.
+  //
+  // Blu-ray.com lists "Dolby Atmos" and "Dolby TrueHD 7.1" as separate lines,
+  // but they are one track — Atmos rides on the TrueHD stream. Taken literally
+  // the best track looks like plain TrueHD, which under-scores the disc.
+  const audio: AudioTrack[] = best.audioTracks.map((label) => ({
+    label,
+    format: label,
+    channels: Number(label.match(/(\d)\.\d/)?.[1] ?? 0) + 1,
+    lossless: LOSSLESS.test(label),
+    atmos: /atmos/i.test(label) || (best.hasAtmos && LOSSLESS.test(label)),
+    dtsx: /DTS:?X/i.test(label) || (best.hasDtsX && LOSSLESS.test(label)),
+  }));
+
+  const shape = {
+    resolution,
+    hdr,
+    // UHD discs are 10-bit by specification; standard Blu-ray is 8-bit.
+    bitDepth: best.format === "4K" ? 10 : 8,
+    bpp: undefined,
+    // The disc is the source, so it scores as an untouched stream.
+    releaseType: "REMUX" as ReleaseType,
+    dvProfile: undefined,
+  };
+
+  const video = total(videoLines(shape));
+  const audioScore = total(audioLines(audio));
+  const release = total(releaseLines("REMUX"));
+
+  const weighted =
+    video * WEIGHTS.video +
+    audioScore * WEIGHTS.audio +
+    release * WEIGHTS.release;
+
+  return {
+    video,
+    audio: audioScore,
+    release,
+    overall: Math.round(Math.min(weighted, video + VIDEO_CEILING_BONUS)),
+  };
+}
+
+/** How far below the disc's bitrate a file has to sit before it is worth saying. */
+export const BITRATE_SHORTFALL = 0.6;
+
+type DiscInput = {
+  uhdExists: boolean;
+  best?: {
+    url: string;
+    title: string;
+    format: "4K" | "3D" | "BD";
+    nativeFourK?: boolean;
+    hdr: string[];
+    hasAtmos: boolean;
+    hasDtsX: boolean;
+    videoBitrateMbps?: number;
+    resolution?: string;
+    audioTracks: string[];
+  };
+};
+
+const HDR_ORDER = ["SDR", "HDR10", "HDR10+", "Dolby Vision"];
+
+/**
+ * Compares a file against the best disc that exists. Every gap is something you
+ * could actually buy your way out of — which is what makes "Best Available"
+ * meaningful rather than just a high score.
+ */
+function compareToDisc(
+  d: Pick<
+    Derived,
+    "resolution" | "hdr" | "audio" | "videoBitrateKbps" | "releaseType"
+  >,
+  disc: DiscInput,
+): DiscFacts {
+  const best = disc.best;
+  const gaps: string[] = [];
+
+  if (disc.uhdExists && d.resolution !== "2160p") {
+    gaps.push("A 4K disc exists; this copy is " + d.resolution);
+  }
+
+  if (best) {
+    const discTop = best.hdr.reduce(
+      (top, h) => (HDR_ORDER.indexOf(h) > HDR_ORDER.indexOf(top) ? h : top),
+      "SDR",
+    );
+    if (HDR_ORDER.indexOf(discTop) > HDR_ORDER.indexOf(d.hdr)) {
+      gaps.push(`Disc has ${discTop}; this copy is ${d.hdr}`);
+    }
+
+    const fileObject = d.audio.some((a) => a.atmos || a.dtsx);
+    if ((best.hasAtmos || best.hasDtsX) && !fileObject) {
+      gaps.push(
+        `Disc has ${best.hasAtmos ? "Dolby Atmos" : "DTS:X"}; this copy has neither`,
+      );
+    }
+
+    if (
+      best.videoBitrateMbps &&
+      d.videoBitrateKbps &&
+      d.videoBitrateKbps / 1000 < best.videoBitrateMbps * BITRATE_SHORTFALL
+    ) {
+      gaps.push(
+        `Disc runs at ${best.videoBitrateMbps} Mbps; this copy at ${Math.round(
+          d.videoBitrateKbps / 1000,
+        )} Mbps`,
+      );
+    }
+  }
+
+  return {
+    url: best?.url,
+    releaseTitle: best?.title,
+    format: best?.format,
+    uhdExists: disc.uhdExists,
+    nativeFourK: best?.nativeFourK,
+    hdr: best?.hdr ?? [],
+    hasAtmos: best?.hasAtmos ?? false,
+    hasDtsX: best?.hasDtsX ?? false,
+    videoBitrateMbps: best?.videoBitrateMbps,
+    gaps,
+    // Only a claim we can stand behind when a disc was actually found.
+    bestAvailable: Boolean(best) && gaps.length === 0,
+    discScore: best ? scoreDisc(best).overall : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Scoring
 // ---------------------------------------------------------------------------
 
 /** Each sub-score is the sum of its lines, so the two can never disagree. */
 const total = (lines: ScoreLine[]) =>
-  Math.max(0, Math.min(100, Math.round(lines.reduce((sum, l) => sum + l.points, 0))));
+  Math.max(
+    0,
+    Math.min(100, Math.round(lines.reduce((sum, l) => sum + l.points, 0))),
+  );
 
 const gap = (points: number, max: number, how: string) =>
   points < max ? `${how} (+${max - points})` : undefined;
@@ -545,7 +816,10 @@ const BEST_HDR = Math.max(...Object.values(VIDEO_POINTS.hdr));
 const BEST_DENSITY = Math.max(VIDEO_POINTS.remux, VIDEO_POINTS.bppExcellent);
 
 function videoLines(
-  d: Pick<Derived, "resolution" | "hdr" | "bitDepth" | "bpp" | "releaseType" | "dvProfile">,
+  d: Pick<
+    Derived,
+    "resolution" | "hdr" | "bitDepth" | "bpp" | "releaseType" | "dvProfile"
+  >,
 ): ScoreLine[] {
   const resolution = VIDEO_POINTS.resolution[d.resolution];
   const hdr = VIDEO_POINTS.hdr[d.hdr];
@@ -577,7 +851,10 @@ function videoLines(
     },
     {
       label: "Dynamic range",
-      detail: d.hdr === "Dolby Vision" ? `Dolby Vision P${d.dvProfile ?? "?"}` : d.hdr,
+      detail:
+        d.hdr === "Dolby Vision"
+          ? `Dolby Vision P${d.dvProfile ?? "?"}`
+          : d.hdr,
       points: hdr,
       max: BEST_HDR,
       note: gap(hdr, BEST_HDR, "Dolby Vision would score"),
@@ -594,7 +871,11 @@ function videoLines(
       detail: densityDetail,
       points: density,
       max: BEST_DENSITY,
-      note: gap(density, BEST_DENSITY, "A remux or a high-bitrate encode would score"),
+      note: gap(
+        density,
+        BEST_DENSITY,
+        "A remux or a high-bitrate encode would score",
+      ),
     },
   ];
 }
@@ -613,9 +894,24 @@ function audioLines(audio: AudioTrack[]): ScoreLine[] {
 
   if (!best) {
     return [
-      { label: "Codec", detail: "No audio track", points: 0, max: AUDIO_POINTS.lossless },
-      { label: "Object audio", detail: "None", points: 0, max: AUDIO_POINTS.objectAudio },
-      { label: "Channels", detail: "None", points: 0, max: AUDIO_POINTS.channels8 },
+      {
+        label: "Codec",
+        detail: "No audio track",
+        points: 0,
+        max: AUDIO_POINTS.lossless,
+      },
+      {
+        label: "Object audio",
+        detail: "None",
+        points: 0,
+        max: AUDIO_POINTS.objectAudio,
+      },
+      {
+        label: "Channels",
+        detail: "None",
+        points: 0,
+        max: AUDIO_POINTS.channels8,
+      },
     ];
   }
 
@@ -648,7 +944,11 @@ function audioLines(audio: AudioTrack[]): ScoreLine[] {
       detail: best.channels ? `${best.channels} channels` : "unknown",
       points: channels,
       max: AUDIO_POINTS.channels8,
-      note: gap(channels, AUDIO_POINTS.channels8, "8 channels or more would score"),
+      note: gap(
+        channels,
+        AUDIO_POINTS.channels8,
+        "8 channels or more would score",
+      ),
     },
   ];
 }
@@ -703,11 +1003,31 @@ function releaseLines(type: ReleaseType, bpp?: number): ScoreLine[] {
 function verdict(
   overall: number,
   issues: Issue[],
+  disc?: DiscFacts,
 ): { status: Status; priority: Priority } {
-  // A critical issue overrides the score outright: a fake 4K upscale is a
-  // problem regardless of how good its audio and container are.
+  // A critical issue overrides everything: a fake 4K upscale is a problem no
+  // matter what the disc looks like.
   if (issues.some((i) => i.severity === "critical")) {
     return { status: "Must Upgrade", priority: "Critical" };
+  }
+
+  // Nothing better exists to buy, so no score should imply otherwise. This is
+  // the whole point of the disc lookup: it stops the app nagging about films
+  // that cannot be improved.
+  if (disc?.bestAvailable) {
+    return { status: "Best Available", priority: "None" };
+  }
+
+  // A real, purchasable upgrade outranks the raw score — a 1080p file can score
+  // respectably and still be the wrong copy to own.
+  if (disc && disc.gaps.length > 0) {
+    // Missing an entire 4K release is a different order of gap from missing
+    // Atmos, so it is the one that escalates to Must Upgrade.
+    const missingUhd = disc.gaps.some((g) => g.startsWith("A 4K disc exists"));
+    return {
+      status: missingUhd ? "Must Upgrade" : "Upgrade Recommended",
+      priority: missingUhd ? "High" : "Medium",
+    };
   }
 
   const band = STATUS_BANDS.find((b) => overall >= b.min);
@@ -717,7 +1037,8 @@ function verdict(
 }
 
 /** Trailing quality tokens muxers append to the container title. */
-const TRAILING_QUALITY = /[\s.]*\b(4K|UHD|HDR10?\+?|DV|Dolby\s*Vision|Remux|BluRay)\b[\s.]*$/i;
+const TRAILING_QUALITY =
+  /[\s.]*\b(4K|UHD|HDR10?\+?|DV|Dolby\s*Vision|Remux|BluRay)\b[\s.]*$/i;
 
 function tidyContainerTitle(raw: string, year?: number): string {
   let title = raw;
@@ -748,7 +1069,10 @@ export function titleKey(title: string, year?: number): string {
   const normalised = title
     .toLowerCase()
     .replace(/\((19|20)\d{2}\)/g, " ")
-    .replace(/\b(4k|uhd|hdr10?\+?|dv|dolby vision|remux|bluray|2160p|1080p)\b/g, " ")
+    .replace(
+      /\b(4k|uhd|hdr10?\+?|dv|dolby vision|remux|bluray|2160p|1080p)\b/g,
+      " ",
+    )
     .replace(/[^a-z0-9]/g, "");
 
   return `${normalised}|${year ?? ""}`;
@@ -799,6 +1123,7 @@ export function derive(
   sizeBytes: number,
   mediainfo: unknown,
   tmdb?: TmdbFacts,
+  disc?: DiscInput,
 ): Derived {
   const all = tracks(mediainfo);
   const general = all.find((t) => t["@type"] === "General") ?? {};
@@ -826,7 +1151,11 @@ export function derive(
   const settings = str(video, "Encoded_Library_Settings") ?? "";
   const crfMatch = settings.match(/\bcrf=([\d.]+)/i);
 
-  const { type: releaseType, encoder } = classifyRelease(general, video, fileName);
+  const { type: releaseType, encoder } = classifyRelease(
+    general,
+    video,
+    fileName,
+  );
   const { hdr, dvProfile, dvHasHdr10Fallback } = hdrOf(video);
 
   const extra = general["extra"] as Record<string, string> | undefined;
@@ -838,7 +1167,9 @@ export function derive(
     !TAG_START.test(containerTitle) &&
     !/\b(x26[45]|HEVC|AVC|DDP?5|TrueHD|Atmos|DTS)\b/i.test(containerTitle) &&
     // Muxers sometimes sign the title field — "Release by …", "www.…".
-    !/\b(released?\s+by|encoded\s+by|rip\s+by|torrent|www\.|\.com)\b/i.test(containerTitle) &&
+    !/\b(released?\s+by|encoded\s+by|rip\s+by|torrent|www\.|\.com)\b/i.test(
+      containerTitle,
+    ) &&
     (containerTitle.match(/\./g) ?? []).length < 3
       ? tidyContainerTitle(containerTitle, parsed.year)
       : undefined;
@@ -855,7 +1186,8 @@ export function derive(
       tmdb?.confidence === "high"
         ? tmdb.title
         : cleanContainerTitle || parsed.title,
-    year: tmdb?.confidence === "high" ? (tmdb.year ?? parsed.year) : parsed.year,
+    year:
+      tmdb?.confidence === "high" ? (tmdb.year ?? parsed.year) : parsed.year,
     edition: parsed.edition,
     imdbId: extra?.IMDB ?? tmdb?.imdbId,
     tmdbIdHint: tmdbHint ? Number(tmdbHint) : undefined,
@@ -869,7 +1201,9 @@ export function derive(
     resolution: resolutionOf(width, height),
     videoCodec: str(video, "Format"),
     bitDepth: num(video, "BitDepth"),
-    videoBitrateKbps: videoBitrate ? Math.round(videoBitrate / 1000) : undefined,
+    videoBitrateKbps: videoBitrate
+      ? Math.round(videoBitrate / 1000)
+      : undefined,
     frameRate,
     aspectRatio: num(video, "DisplayAspectRatio"),
     bpp,
@@ -882,13 +1216,52 @@ export function derive(
 
     audio: audioTracks,
     subtitleLanguages: [
-      ...new Set(textTracks.map((t) => str(t, "Language")).filter((l): l is string => !!l)),
+      ...new Set(
+        textTracks
+          .map((t) => str(t, "Language"))
+          .filter((l): l is string => !!l),
+      ),
     ],
 
     releaseType,
   };
 
-  const issues = detectIssues(base);
+  const discFacts = disc ? compareToDisc(base, disc) : undefined;
+  const withDisc = { ...base, disc: discFacts };
+
+  const issues = detectIssues(withDisc);
+
+  // Each gap becomes an issue so it shows up in the same place as everything
+  // else that is wrong with a file.
+  if (discFacts) {
+    for (const gap of discFacts.gaps) {
+      if (gap.startsWith("A 4K disc exists")) {
+        issues.push({
+          code: "disc-better-resolution",
+          severity: ISSUE_CATALOGUE["disc-better-resolution"].severity,
+          message: gap + ".",
+        });
+      } else if (gap.startsWith("Disc has") && /Dolby Vision|HDR/.test(gap)) {
+        issues.push({
+          code: "disc-better-hdr",
+          severity: ISSUE_CATALOGUE["disc-better-hdr"].severity,
+          message: gap + ".",
+        });
+      } else if (gap.startsWith("Disc has")) {
+        issues.push({
+          code: "disc-better-audio",
+          severity: ISSUE_CATALOGUE["disc-better-audio"].severity,
+          message: gap + ".",
+        });
+      } else {
+        issues.push({
+          code: "disc-higher-bitrate",
+          severity: ISSUE_CATALOGUE["disc-higher-bitrate"].severity,
+          message: gap + ".",
+        });
+      }
+    }
+  }
 
   const lines = {
     video: videoLines(base),
@@ -911,24 +1284,59 @@ export function derive(
 
   // Perfect audio in a perfect container cannot rescue a weak picture: a 1080p
   // SDR remux with TrueHD Atmos would otherwise outscore a good 4K HDR encode.
-  scores.overall = Math.round(Math.min(weighted, ceiling));
+  const absolute = Math.round(Math.min(weighted, ceiling));
+
+  // Where a disc is known, the score becomes how close this file gets to it.
+  // A flawless copy of a modest disc is a 100 — there is nothing better to own.
+  //
+  // Compared dimension by dimension, each capped at parity, rather than as one
+  // ratio of totals: otherwise a surplus in one dimension silently pays for a
+  // deficit in another. A file with better audio than its disc but only HDR10
+  // against the disc's Dolby Vision was scoring 100 while still listing that
+  // gap — beating the disc on sound does not make you Dolby Vision.
+  const discParts = disc?.best ? scoreDisc(disc.best) : undefined;
+  const discScore = discFacts?.discScore;
+
+  if (discParts && discScore && discScore > 0) {
+    const share = (mine: number, theirs: number) =>
+      theirs > 0 ? Math.min(1, mine / theirs) : 1;
+
+    scores.overall = Math.round(
+      100 *
+        (share(scores.video, discParts.video) * WEIGHTS.video +
+          share(scores.audio, discParts.audio) * WEIGHTS.audio +
+          share(scores.release, discParts.release) * WEIGHTS.release),
+    );
+  } else {
+    scores.overall = absolute;
+  }
 
   const breakdown: Breakdown = {
     ...lines,
+    relative: Boolean(discScore && discScore > 0),
+    discScore,
+    absolute,
     weighted: Math.round(weighted * 10) / 10,
     ceiling,
     cappedByVideo: ceiling < weighted,
   };
 
-  const { status, priority } = verdict(scores.overall, issues);
+  const { status, priority } = verdict(scores.overall, issues, discFacts);
 
   return {
-    ...base,
+    ...withDisc,
     issues,
     scores,
     breakdown,
     status,
     priority,
-    reasons: explain({ ...base, issues, scores, breakdown, status, priority }),
+    reasons: explain({
+      ...withDisc,
+      issues,
+      scores,
+      breakdown,
+      status,
+      priority,
+    }),
   };
 }

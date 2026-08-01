@@ -15,7 +15,7 @@ function LineRow({ line }: { line: ScoreLine }) {
   const full = line.points === line.max;
 
   return (
-    <div className="grid grid-cols-[10rem_1fr_auto] items-baseline gap-4 border-b border-black/5 py-2.5 last:border-0 dark:border-white/5">
+    <div className="grid grid-cols-[10rem_1fr_auto] items-baseline gap-4 border-b border-line py-2.5 last:border-0">
       <span className="text-sm opacity-60">{line.label}</span>
       <span className="text-sm">
         {line.detail}
@@ -47,7 +47,7 @@ function Component({
   const lost = lines.reduce((sum, l) => sum + (l.max - l.points), 0);
 
   return (
-    <div className="rounded-xl border border-black/10 p-5 dark:border-white/10">
+    <div className="rounded-card border border-line bg-surface p-5">
       <div className="flex items-baseline justify-between gap-4">
         <h3 className="font-medium">
           {title}
@@ -105,7 +105,7 @@ export function ScoreModal({
         onClick={() => setOpen(true)}
         aria-label="Why this score"
         title="Why this score"
-        className="absolute top-3 right-3 grid h-6 w-6 place-items-center rounded-full border border-black/15 text-xs font-medium opacity-40 transition-opacity hover:opacity-100 dark:border-white/20"
+        className="absolute top-3 right-3 grid h-6 w-6 place-items-center rounded-full border border-line text-xs font-medium opacity-40 transition-opacity hover:opacity-100"
       >
         ?
       </button>
@@ -119,7 +119,7 @@ export function ScoreModal({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="flex w-full max-w-2xl flex-col gap-4 rounded-2xl border border-black/10 bg-background p-6 shadow-2xl dark:border-white/15"
+              className="flex w-full max-w-2xl flex-col gap-4 rounded-card border border-line bg-background p-6 shadow-2xl"
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -158,8 +158,15 @@ export function ScoreModal({
                 lines={breakdown.release}
               />
 
-              <div className="rounded-xl border border-black/10 p-5 dark:border-white/10">
+              <div className="rounded-card border border-line bg-surface p-5">
                 <h3 className="font-medium">Final calculation</h3>
+                {breakdown.relative && (
+                  <p className="mt-1 text-sm opacity-60">
+                    Scored against the best disc that exists for this film, not
+                    against an abstract ideal — so a flawless copy of a modest
+                    release is still a 100.
+                  </p>
+                )}
                 <div className="mt-3 flex flex-col gap-2 font-mono text-sm">
                   <div className="flex items-baseline justify-between gap-4">
                     <span className="opacity-70">
@@ -174,22 +181,51 @@ export function ScoreModal({
                     </span>
                     <span className="tabular-nums">{breakdown.ceiling}</span>
                   </div>
-                  <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-black/10 pt-2 dark:border-white/10">
-                    <span>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="opacity-70">
                       {breakdown.cappedByVideo
                         ? "capped at the ceiling"
                         : "lower of the two"}
                     </span>
-                    <span className="text-base font-semibold tabular-nums">
-                      {scores.overall}
-                    </span>
+                    <span className="tabular-nums">{breakdown.absolute}</span>
                   </div>
+
+                  {breakdown.relative && breakdown.discScore ? (
+                    <>
+                      <div className="flex items-baseline justify-between gap-4">
+                        <span className="opacity-70">
+                          the disc on the same rubric
+                        </span>
+                        <span className="tabular-nums">
+                          {breakdown.discScore}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-line pt-2">
+                        <span>
+                          {breakdown.absolute} ÷ {breakdown.discScore} of the
+                          disc
+                        </span>
+                        <span className="text-base font-semibold tabular-nums">
+                          {scores.overall}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-line pt-2">
+                      <span>no disc data — scored on the rubric alone</span>
+                      <span className="text-base font-semibold tabular-nums">
+                        {scores.overall}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <p className="mt-3 text-xs opacity-50">
-                  {breakdown.cappedByVideo
-                    ? `The weighted total reached ${breakdown.weighted}, but strong audio and a clean container cannot lift a file more than ${VIDEO_CEILING_BONUS} points above its picture quality.`
-                    : "The ceiling did not bind here — the weighted total was already below it."}
+                  {scores.overall === 100 && breakdown.relative
+                    ? "This copy is as good as the best release available, so there is nothing to upgrade to."
+                    : breakdown.cappedByVideo
+                      ? `The weighted total reached ${breakdown.weighted}, but strong audio and a clean container cannot lift a file more than ${VIDEO_CEILING_BONUS} points above its picture quality.`
+                      : "The ceiling did not bind here — the weighted total was already below it."}
                 </p>
               </div>
 

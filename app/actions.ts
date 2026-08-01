@@ -11,6 +11,8 @@ import { db } from "@/lib/db";
 import { setManualMatch } from "@/lib/enrich";
 import { deriveAll } from "@/lib/library";
 import { getScanState, startScan, type ScanState } from "@/lib/scanner";
+import { revealInFinder } from "@/lib/system";
+import { setTriage } from "@/lib/triage";
 import { imageUrl } from "@/lib/image-url";
 import {
   getImages,
@@ -72,6 +74,8 @@ export async function beginScan(): Promise<ScanState> {
       matched: 0,
       needsReview: 0,
       removed: 0,
+      discTotal: 0,
+      discDone: 0,
       error: "No library folder selected.",
     };
   }
@@ -130,6 +134,53 @@ export async function confirmMatch(
     await setManualMatch(moviePath, tmdbId);
     deriveAll();
     refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Triage and shell
+// ---------------------------------------------------------------------------
+
+/** Accept a film as-is so it stops counting toward the attention totals. */
+export async function acknowledge(
+  moviePath: string,
+  value: boolean,
+  note?: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+
+  // Reported rather than thrown: an uncaught error here surfaces as a blank
+  // failure in the browser console, which is how a missing table went unnoticed.
+  try {
+    setTriage(moviePath, value, note);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+/** Selects the file in Finder — the step between "this copy is worse" and deleting it. */
+export async function reveal(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  try {
+    await revealInFinder(moviePath);
     return { ok: true };
   } catch (err) {
     return {

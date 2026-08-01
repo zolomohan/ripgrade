@@ -19,7 +19,7 @@ function Breadcrumb({
       <button
         type="button"
         onClick={() => onNavigate("/")}
-        className="rounded px-1 hover:bg-black/10 dark:hover:bg-white/10"
+        className="rounded-chip px-1 hover:bg-surface-strong"
       >
         /
       </button>
@@ -28,7 +28,7 @@ function Breadcrumb({
           <button
             type="button"
             onClick={() => onNavigate("/" + segments.slice(0, i + 1).join("/"))}
-            className="rounded px-1 hover:bg-black/10 dark:hover:bg-white/10"
+            className="rounded-chip px-1 hover:bg-surface-strong"
           >
             {segment}
           </button>
@@ -41,7 +41,11 @@ function Breadcrumb({
 
 // The first listing is fetched on the server and passed in, so the picker opens
 // with folders already on screen rather than flashing a loading state.
-export function FolderPicker({ initialListing }: { initialListing: DirListing }) {
+export function FolderPicker({
+  initialListing,
+}: {
+  initialListing: DirListing;
+}) {
   const [listing, setListing] = useState<DirListing>(initialListing);
   const [pathInput, setPathInput] = useState(initialListing.path);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -77,18 +81,18 @@ export function FolderPicker({ initialListing }: { initialListing: DirListing })
           onChange={(e) => setPathInput(e.target.value)}
           spellCheck={false}
           placeholder="/Volumes/…"
-          className="flex-1 rounded-md border border-black/15 bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-black/40 dark:border-white/15 dark:focus:border-white/40"
+          className="flex-1 rounded-chip border border-line bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-line-strong"
         />
         <button
           type="submit"
-          className="rounded-md border border-black/15 px-3 py-2 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+          className="rounded-chip border border-line px-3 py-2 text-sm hover:bg-surface-strong"
         >
           Go
         </button>
       </form>
 
-      <div className="rounded-lg border border-black/15 dark:border-white/15">
-        <div className="flex items-center justify-between gap-3 border-b border-black/10 px-3 py-2 dark:border-white/10">
+      <div className="rounded-control border border-line">
+        <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-2">
           <Breadcrumb path={listing.path} onNavigate={navigate} />
           {pending && <span className="text-xs opacity-60">working…</span>}
         </div>
@@ -110,7 +114,7 @@ export function FolderPicker({ initialListing }: { initialListing: DirListing })
             <button
               type="button"
               onClick={() => navigate(listing.parent!)}
-              className="block w-full px-3 py-2 text-left font-mono text-sm opacity-60 hover:bg-black/5 dark:hover:bg-white/5"
+              className="block w-full px-3 py-2 text-left font-mono text-sm opacity-60 hover:bg-surface-strong"
             >
               ../
             </button>
@@ -121,7 +125,7 @@ export function FolderPicker({ initialListing }: { initialListing: DirListing })
               key={entry.path}
               type="button"
               onClick={() => navigate(entry.path)}
-              className="block w-full px-3 py-2 text-left font-mono text-sm hover:bg-black/5 dark:hover:bg-white/5"
+              className="block w-full px-3 py-2 text-left font-mono text-sm hover:bg-surface-strong"
             >
               {entry.name}/
             </button>
@@ -139,7 +143,7 @@ export function FolderPicker({ initialListing }: { initialListing: DirListing })
         type="button"
         onClick={save}
         disabled={pending}
-        className="self-start rounded-md bg-foreground px-4 py-2 text-sm text-background disabled:opacity-40"
+        className="self-start rounded-chip bg-foreground px-4 py-2 text-sm text-background disabled:opacity-40"
       >
         Use this folder
       </button>

@@ -4,8 +4,10 @@ import path from "node:path";
 
 import { db } from "./db";
 import { derive, titleKey, type Derived, type TmdbFacts } from "./derive";
+import { getDiscs } from "./disc";
 import { getMatches, getTmdbMovies } from "./enrich";
 import { decodeMovieId } from "./routes";
+import { getTriage } from "./triage";
 
 type ProbeRow = { path: string; size: number; mediainfo: string | null };
 
@@ -15,11 +17,14 @@ type ProbeRow = { path: string; size: number; mediainfo: string | null };
  */
 export function deriveAll(): number {
   const rows = db
-    .prepare("SELECT path, size, mediainfo FROM probes WHERE mediainfo IS NOT NULL")
+    .prepare(
+      "SELECT path, size, mediainfo FROM probes WHERE mediainfo IS NOT NULL",
+    )
     .all() as ProbeRow[];
 
   const matches = getMatches();
   const tmdbMovies = getTmdbMovies();
+  const discs = getDiscs();
 
   const factsFor = (path: string): TmdbFacts | undefined => {
     const match = matches.get(path);
@@ -31,7 +36,9 @@ export function deriveAll(): number {
     return {
       id: movie.id,
       title: movie.title,
-      year: movie.release_date ? Number(movie.release_date.slice(0, 4)) : undefined,
+      year: movie.release_date
+        ? Number(movie.release_date.slice(0, 4))
+        : undefined,
       runtimeMinutes: movie.runtime ?? undefined,
       imdbId: movie.imdb_id ?? undefined,
       collection: movie.belongs_to_collection?.name,
@@ -57,11 +64,21 @@ export function deriveAll(): number {
 
   const write = db.transaction((items: ProbeRow[]) => {
     for (const row of items) {
+      const facts = factsFor(row.path);
+      // Disc data is keyed by film, so it only applies once a film is matched.
+      const disc = facts ? discs.get(facts.id) : undefined;
+
       const derived = derive(
         row.path,
         row.size,
         JSON.parse(row.mediainfo!),
-        factsFor(row.path),
+        facts,
+        disc?.best
+          ? {
+              uhdExists: disc.uhdExists,
+              best: { ...disc.best, audioTracks: disc.best.audio },
+            }
+          : disc && { uhdExists: disc.uhdExists },
       );
       upsert.run({ path: row.path, now, derived: JSON.stringify(derived) });
     }
@@ -77,27 +94,39 @@ export function deriveAll(): number {
  * Artwork is a filesystem fact rather than a property of the media, so it is
  * joined on at read time instead of being baked into the derived payload.
  */
-export type LibraryItem = Derived & { poster?: string; fanart?: string };
+export type LibraryItem = Derived & {
+  poster?: string;
+  fanart?: string;
+  /** You have looked at this one and accepted it as-is. */
+  acknowledged: boolean;
+  note?: string;
+};
 
 export function getLibrary(): LibraryItem[] {
   const rows = db
     .prepare("SELECT derived FROM movies WHERE present = 1 ORDER BY path")
     .all() as { derived: string }[];
 
-  const artRows = db.prepare("SELECT dir, poster, fanart FROM artwork").all() as {
+  const artRows = db
+    .prepare("SELECT dir, poster, fanart FROM artwork")
+    .all() as {
     dir: string;
     poster: string | null;
     fanart: string | null;
   }[];
   const art = new Map(artRows.map((a) => [a.dir, a]));
+  const triage = getTriage();
 
   return rows.map((r) => {
     const derived = JSON.parse(r.derived) as Derived;
     const found = art.get(path.dirname(derived.path));
+    const decided = triage.get(derived.path);
     return {
       ...derived,
       poster: found?.poster ?? undefined,
       fanart: found?.fanart ?? undefined,
+      acknowledged: decided?.acknowledged ?? false,
+      note: decided?.note,
     };
   });
 }

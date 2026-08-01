@@ -37,6 +37,25 @@ CREATE TABLE IF NOT EXISTS settings (
   value       TEXT NOT NULL
 );
 
+-- Disc specs scraped from Blu-ray.com, keyed by TMDb id because this describes
+-- the film's best commercial release, not any particular file. Cached forever:
+-- refetching is slow and someone else's bandwidth.
+CREATE TABLE IF NOT EXISTS disc (
+  tmdb_id     INTEGER PRIMARY KEY,
+  fetched_at  INTEGER NOT NULL,
+  lookup      TEXT NOT NULL,
+  error       TEXT
+);
+
+-- Your decisions about a film, kept apart from anything derived so a rescan or
+-- a change to the heuristics never discards them.
+CREATE TABLE IF NOT EXISTS triage (
+  path          TEXT PRIMARY KEY,
+  acknowledged  INTEGER NOT NULL DEFAULT 0,
+  note          TEXT,
+  updated_at    INTEGER NOT NULL
+);
+
 -- Raw TMDb records, cached like probes: expensive to fetch, cheap to re-derive
 -- from. Keyed by TMDb id so several files of the same film share one row.
 CREATE TABLE IF NOT EXISTS tmdb_movies (
@@ -76,7 +95,6 @@ function open(): Database.Database {
   db.pragma("journal_mode = WAL");
   // Scans write in batched transactions, so durability per-statement is wasted work.
   db.pragma("synchronous = NORMAL");
-  db.exec(SCHEMA);
   return db;
 }
 
@@ -84,6 +102,11 @@ function open(): Database.Database {
 const globalForDb = globalThis as unknown as { medlibDb?: Database.Database };
 
 export const db = globalForDb.medlibDb ?? open();
+
+// Applied on every module evaluation, not just on first open. Every statement
+// is CREATE TABLE IF NOT EXISTS, so it is idempotent — and it means a new table
+// reaches the cached dev connection without needing a server restart.
+db.exec(SCHEMA);
 
 if (process.env.NODE_ENV !== "production") globalForDb.medlibDb = db;
 

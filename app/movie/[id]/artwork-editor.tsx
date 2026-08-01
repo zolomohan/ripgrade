@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 
 import { chooseArtwork, listArtwork, type ArtworkChoice } from "@/app/actions";
 import { imageUrl } from "@/lib/image-url";
+import { HERO_BUTTON } from "./hero-button";
 
 type Tab = "poster" | "fanart";
 type Sort = "default" | "largest";
@@ -91,9 +92,23 @@ export function ArtworkEditor({
       <button
         type="button"
         onClick={show}
-        className="absolute top-6 right-6 rounded-md bg-background/80 px-3 py-1.5 text-sm backdrop-blur hover:bg-background"
+        aria-label="Edit artwork"
+        title="Edit artwork"
+        className={HERO_BUTTON}
       >
-        Edit artwork
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="h-4 w-4"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <path d="m21 15-5-5L5 21" />
+        </svg>
       </button>
 
       {open &&
@@ -105,7 +120,7 @@ export function ArtworkEditor({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-5xl rounded-2xl border border-black/10 bg-background p-6 shadow-2xl dark:border-white/15"
+              className="w-full max-w-5xl rounded-card border border-line bg-background p-6 shadow-2xl"
             >
               <div className="flex flex-wrap items-center gap-3">
                 <h2 className="text-lg font-semibold">Artwork</h2>
@@ -119,7 +134,7 @@ export function ArtworkEditor({
                       className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                         tab === t
                           ? "border-transparent bg-foreground text-background"
-                          : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+                          : "border-line hover:bg-surface-strong"
                       }`}
                     >
                       {t === "poster" ? "Posters" : "Backdrops"}
@@ -131,7 +146,7 @@ export function ArtworkEditor({
                   <select
                     value={sort}
                     onChange={(e) => setSort(e.target.value as Sort)}
-                    className="cursor-pointer appearance-none rounded-lg border border-black/10 bg-transparent py-1.5 pr-8 pl-3 text-xs outline-none focus:border-black/30 dark:border-white/10 dark:focus:border-white/30"
+                    className="cursor-pointer appearance-none rounded-control border border-line bg-transparent py-1.5 pr-8 pl-3 text-xs outline-none focus:border-line-strong"
                   >
                     <option value="largest">Largest dimensions</option>
                     <option value="default">TMDb order</option>
@@ -167,7 +182,11 @@ export function ArtworkEditor({
               </div>
 
               {!images && !error && (
-                <p className="mt-6 text-sm opacity-50">Loading artwork…</p>
+                <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-6">
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <div key={i} className="skeleton aspect-[2/3] w-full" />
+                  ))}
+                </div>
               )}
 
               {images && choices.length === 0 && (
@@ -191,7 +210,7 @@ export function ArtworkEditor({
                       type="button"
                       onClick={() => save(choice.filePath)}
                       disabled={pending}
-                      className="group relative overflow-hidden rounded-lg ring-1 ring-black/10 transition-transform hover:scale-[1.02] disabled:opacity-40 dark:ring-white/10"
+                      className="group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img

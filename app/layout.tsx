@@ -1,15 +1,31 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { scanStatus } from "./actions";
+import { ScanProvider } from "./scan-provider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Inter for the interface: it holds up at 11px, which this app leans on, and
+// its tabular figures keep the score columns from jittering.
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// A slightly warmer geometric face for titles, so headings read as a different
+// voice from the dense technical text rather than just a larger size of it.
+const display = Instrument_Sans({
+  variable: "--font-display-face",
   subsets: ["latin"],
+  display: "swap",
+});
+
+// Paths, codecs and encoder strings — JetBrains Mono disambiguates 0/O and 1/l,
+// which matters when you are reading release names character by character.
+const mono = JetBrains_Mono({
+  variable: "--font-mono-face",
+  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -17,17 +33,22 @@ export const metadata: Metadata = {
   description: "Audit the technical quality of a local movie library",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Seeded here so a reload mid-scan shows progress immediately.
+  const scan = await scanStatus();
+
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${display.variable} ${mono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">
+        <ScanProvider initialState={scan}>{children}</ScanProvider>
+      </body>
     </html>
   );
 }

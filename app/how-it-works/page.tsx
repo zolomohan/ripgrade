@@ -30,7 +30,7 @@ function Section({
 }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <h2 className="font-display text-lg font-semibold">{title}</h2>
       {lede && <p className="text-sm opacity-70">{lede}</p>}
       {children}
     </section>
@@ -45,9 +45,9 @@ function Table({
   rows: (string | number)[][];
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-black/15 dark:border-white/15">
+    <div className="overflow-x-auto rounded-control border border-line">
       <table className="w-full text-left text-sm">
-        <thead className="border-b border-black/10 text-xs uppercase tracking-wide opacity-60 dark:border-white/10">
+        <thead className="border-b border-line text-xs uppercase tracking-wide opacity-60">
           <tr>
             {head.map((h, i) => (
               <th
@@ -61,10 +61,7 @@ function Table({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr
-              key={i}
-              className="border-b border-black/5 last:border-0 dark:border-white/5"
-            >
+            <tr key={i} className="border-b border-line last:border-0">
               {row.map((cell, j) => (
                 <td
                   key={j}
@@ -90,7 +87,7 @@ export default function HowItWorks() {
         <Link href="/" className="text-sm opacity-60 hover:opacity-100">
           ← Back to library
         </Link>
-        <h1 className="text-2xl font-semibold">How it works</h1>
+        <h1 className="font-display text-2xl font-semibold">How it works</h1>
         <p className="text-sm opacity-70">
           Every number on this page is read directly from the scoring engine in{" "}
           <code className="font-mono text-xs">lib/derive.ts</code>, so it cannot
@@ -176,7 +173,7 @@ export default function HowItWorks() {
         title="Bits per pixel per frame"
         lede="The single most useful number for judging an encode, and the one that makes different resolutions comparable."
       >
-        <p className="rounded-lg border border-black/15 px-4 py-3 font-mono text-sm dark:border-white/15">
+        <p className="rounded-control border border-line px-4 py-3 font-mono text-sm">
           bpp = video bitrate ÷ (width × height × frame rate)
         </p>
         <p className="text-sm opacity-70">
@@ -295,7 +292,7 @@ export default function HowItWorks() {
         title="Overall score"
         lede="A weighted blend, with one deliberate constraint."
       >
-        <p className="rounded-lg border border-black/15 px-4 py-3 font-mono text-sm dark:border-white/15">
+        <p className="rounded-control border border-line px-4 py-3 font-mono text-sm">
           overall = min(
           <br />
           &nbsp;&nbsp;video × {WEIGHTS.video} + audio × {WEIGHTS.audio} +
@@ -342,7 +339,7 @@ export default function HowItWorks() {
           {Object.entries(ISSUE_CATALOGUE).map(([code, meta]) => (
             <div
               key={code}
-              className="rounded-lg border border-black/15 px-4 py-3 dark:border-white/15"
+              className="rounded-control border border-line px-4 py-3"
             >
               <div className="flex items-baseline justify-between gap-3">
                 <code className="font-mono text-sm">{code}</code>

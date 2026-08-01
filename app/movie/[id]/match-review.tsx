@@ -47,14 +47,14 @@ export function MatchReview({
   }
 
   return (
-    <div className="mt-4 border-t border-black/10 pt-4 dark:border-white/10">
+    <div className="mt-4 border-t border-line pt-4">
       <div className="flex flex-wrap items-center gap-2">
         {needsReview && currentId !== undefined && (
           <button
             type="button"
             onClick={() => choose(currentId)}
             disabled={pending}
-            className="rounded-lg bg-foreground px-3 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="rounded-control bg-foreground px-3 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             This is correct
           </button>
@@ -63,9 +63,13 @@ export function MatchReview({
           type="button"
           onClick={() => setOpen((v) => !v)}
           disabled={pending}
-          className="rounded-lg border border-black/10 px-3 py-1.5 text-sm hover:bg-black/5 disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
+          className="rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40"
         >
-          {open ? "Cancel" : currentId === undefined ? "Find on TMDb" : "Wrong film?"}
+          {open
+            ? "Cancel"
+            : currentId === undefined
+              ? "Find on TMDb"
+              : "Wrong film?"}
         </button>
         {pending && <span className="text-xs opacity-50">working…</span>}
       </div>
@@ -90,12 +94,12 @@ export function MatchReview({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search TMDb…"
-              className="flex-1 rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/30 dark:border-white/10 dark:focus:border-white/30"
+              className="flex-1 rounded-control border border-line bg-transparent px-3 py-2 text-sm outline-none focus:border-line-strong"
             />
             <button
               type="submit"
               disabled={pending}
-              className="rounded-lg border border-black/10 px-3 py-2 text-sm hover:bg-black/5 disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
+              className="rounded-control border border-line px-3 py-2 text-sm hover:bg-surface-strong disabled:opacity-40"
             >
               Search
             </button>
@@ -113,10 +117,8 @@ export function MatchReview({
                     type="button"
                     onClick={() => choose(hit.id)}
                     disabled={pending}
-                    className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/5 ${
-                      hit.id === currentId
-                        ? "ring-1 ring-black/15 dark:ring-white/20"
-                        : ""
+                    className={`flex w-full items-center gap-3 rounded-control px-2 py-2 text-left hover:bg-surface-strong disabled:opacity-40 ${
+                      hit.id === currentId ? "ring-1 ring-line-strong" : ""
                     }`}
                   >
                     {hit.posterPath ? (
@@ -125,10 +127,10 @@ export function MatchReview({
                         src={imageUrl(hit.posterPath, "w92")}
                         alt=""
                         loading="lazy"
-                        className="h-16 w-11 shrink-0 rounded object-cover"
+                        className="h-16 w-11 shrink-0 rounded-chip object-cover"
                       />
                     ) : (
-                      <span className="h-16 w-11 shrink-0 rounded bg-black/[0.06] dark:bg-white/[0.08]" />
+                      <span className="h-16 w-11 shrink-0 rounded-chip bg-surface-strong" />
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">

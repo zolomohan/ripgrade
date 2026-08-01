@@ -2,9 +2,12 @@ import { notFound } from "next/navigation";
 
 import { artUrl } from "@/lib/routes";
 import { type Status } from "@/lib/derive";
+import { getDisc } from "@/lib/disc";
 import { getMovie, type LibraryItem } from "@/lib/library";
 import { ArtworkEditor } from "./artwork-editor";
 import { BackButton } from "./back-button";
+import { FileActions } from "./file-actions";
+import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
 import { ScoreModal } from "./score-modal";
 
@@ -13,6 +16,11 @@ export const dynamic = "force-dynamic";
 // Tailwind needs literal class names, so each status carries its own palette.
 const STATUS_THEME: Record<Status, { text: string; bg: string; ring: string }> =
   {
+    "Best Available": {
+      text: "text-emerald-600 dark:text-emerald-400",
+      bg: "bg-emerald-500/10",
+      ring: "stroke-emerald-500",
+    },
     Reference: {
       text: "text-emerald-600 dark:text-emerald-400",
       bg: "bg-emerald-500/10",
@@ -40,16 +48,10 @@ const STATUS_THEME: Record<Status, { text: string; bg: string; ring: string }> =
     },
   };
 
-const SEVERITY_THEME: Record<string, { text: string; border: string }> = {
-  critical: {
-    text: "text-red-600 dark:text-red-400",
-    border: "border-red-500/40",
-  },
-  warning: {
-    text: "text-amber-600 dark:text-amber-400",
-    border: "border-amber-500/40",
-  },
-  info: { text: "opacity-60", border: "border-black/15 dark:border-white/15" },
+const SEVERITY_THEME: Record<string, { text: string }> = {
+  critical: { text: "text-red-600 dark:text-red-400" },
+  warning: { text: "text-amber-600 dark:text-amber-400" },
+  info: { text: "opacity-60" },
 };
 
 function bytes(n: number) {
@@ -78,7 +80,7 @@ function ScoreRing({ score, ring }: { score: number; ring: string }) {
           r={radius}
           fill="none"
           strokeWidth="8"
-          className="stroke-black/10 dark:stroke-white/10"
+          className="stroke-line"
         />
         <circle
           cx="60"
@@ -111,7 +113,7 @@ function SubScore({ label, value }: { label: string; value: number }) {
         </span>
         <span className="text-sm font-medium tabular-nums">{value}</span>
       </div>
-      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-strong">
         <div
           className="h-full rounded-full bg-foreground/70"
           style={{ width: `${value}%` }}
@@ -124,84 +126,174 @@ function SubScore({ label, value }: { label: string; value: number }) {
 /**
  * Format badges for the title block.
  *
- * These are typographic marks, not the Dolby/DTS logos — those are licensed
- * trademark artwork and are not ours to bundle. The styling follows how the
- * marks appear on packaging: Dolby formats as an inverted wordmark, the rest
- * tinted by family. Swapping in licensed SVGs later means changing only the
- * `label` of the relevant entry.
+ * Official marks are used wherever one exists as a public-domain vector on
+ * Wikimedia Commons — below the threshold of originality for copyright, so only
+ * a trademark restriction applies, which governs commercial use rather than a
+ * private tool. Formats with no usable vector (DTS:X) stay typographic.
  */
+type Badge = {
+  key: string;
+  label: string;
+  className?: string;
+  /** When set, the official mark replaces the text pill. */
+  logo?: {
+    src: string;
+    height: string;
+    invert?: boolean;
+    /** For mixed-colour marks, where inverting would ruin the brand fills. */
+    darkSrc?: string;
+  };
+};
+
+/** Black wordmarks flip for dark mode; brand-coloured marks must not. */
+const MARK = {
+  dolbyVision: {
+    src: "/formats/dolby-vision.svg",
+    height: "h-3",
+    invert: true,
+  },
+  dolbyAtmos: { src: "/formats/dolby-atmos.svg", height: "h-3", invert: true },
+  dolbyTrueHd: {
+    src: "/formats/dolby-truehd.svg",
+    height: "h-4",
+    invert: true,
+  },
+  dolbyDigitalPlus: {
+    src: "/formats/dolby-digital-plus.svg",
+    height: "h-4",
+    invert: true,
+  },
+  dolbyDigital: {
+    src: "/formats/dolby-digital.svg",
+    height: "h-4",
+    invert: true,
+  },
+  ultraHd: { src: "/formats/ultra-hd.svg", height: "h-4", invert: true },
+  hdr10: { src: "/formats/hdr10.svg", height: "h-5", invert: true },
+  hdr10plus: { src: "/formats/hdr10plus.svg", height: "h-5", invert: true },
+  // Orange and blue brand marks — inverting these would wreck them.
+  // The DTS wordmark itself has no fill of its own, so it defaults to black and
+  // disappears on a dark background; a second file sets the inherited fill to
+  // white while leaving the orange and grey brand fills alone.
+  dtsX: {
+    src: "/formats/dts-x.svg",
+    darkSrc: "/formats/dts-x-dark.svg",
+    height: "h-5",
+  },
+  dtsHdMa: {
+    src: "/formats/dts-hd-ma.svg",
+    darkSrc: "/formats/dts-hd-ma-dark.svg",
+    height: "h-5",
+  },
+  uhdBluray: { src: "/formats/uhd-bluray.svg", height: "h-5" },
+} as const;
+
 function FormatBadges({ movie }: { movie: LibraryItem }) {
-  const DOLBY = "bg-foreground text-background";
-  const OUTLINE =
-    "ring-1 ring-inset ring-black/15 dark:ring-white/20 opacity-70";
+  const OUTLINE = "ring-1 ring-inset ring-line-strong opacity-70";
+  const badges: Badge[] = [];
 
-  const badges: { key: string; label: string; className: string }[] = [];
-
-  if (movie.resolution === "2160p") {
-    badges.push({ key: "res", label: "4K ULTRA HD", className: OUTLINE });
+  // The Ultra HD Blu-ray mark is a claim about the source, so it is only used
+  // where that is actually true — a 2160p web pull gets the neutral text badge.
+  if (movie.resolution === "2160p" && movie.releaseType === "REMUX") {
+    badges.push({
+      key: "src",
+      label: "Ultra HD Blu-ray",
+      logo: MARK.uhdBluray,
+    });
+  } else if (movie.resolution === "2160p") {
+    badges.push({ key: "res", label: "Ultra HD", logo: MARK.ultraHd });
   } else if (movie.resolution !== "unknown") {
     badges.push({ key: "res", label: movie.resolution, className: OUTLINE });
   }
 
   if (movie.hdr === "Dolby Vision") {
-    badges.push({ key: "dv", label: "DOLBY VISION", className: DOLBY });
+    badges.push({ key: "dv", label: "Dolby Vision", logo: MARK.dolbyVision });
   } else if (movie.hdr === "HDR10+") {
-    badges.push({
-      key: "hdr",
-      label: "HDR10+",
-      className:
-        "bg-amber-500/15 text-amber-700 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300",
-    });
+    badges.push({ key: "hdr", label: "HDR10+", logo: MARK.hdr10plus });
   } else if (movie.hdr === "HDR10") {
-    badges.push({
-      key: "hdr",
-      label: "HDR10",
-      className:
-        "bg-amber-500/15 text-amber-700 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300",
-    });
+    badges.push({ key: "hdr", label: "HDR10", logo: MARK.hdr10 });
   }
 
   const atmos = movie.audio.find((a) => a.atmos);
   const dtsx = movie.audio.find((a) => a.dtsx);
   const lossless = movie.audio.find((a) => a.lossless);
+  const primary = movie.audio[0];
 
   if (atmos) {
-    badges.push({ key: "atmos", label: "DOLBY ATMOS", className: DOLBY });
-  }
-  if (dtsx) {
+    badges.push({ key: "atmos", label: "Dolby Atmos", logo: MARK.dolbyAtmos });
+  } else if (dtsx) {
+    badges.push({ key: "dtsx", label: "DTS:X", logo: MARK.dtsX });
+  } else if (lossless && /TrueHD/i.test(lossless.label)) {
+    badges.push({ key: "au", label: "Dolby TrueHD", logo: MARK.dolbyTrueHd });
+  } else if (lossless && /DTS-HD Master/i.test(lossless.label)) {
     badges.push({
-      key: "dtsx",
-      label: "DTS:X",
-      className:
-        "bg-sky-500/15 text-sky-700 ring-1 ring-inset ring-sky-500/30 dark:text-sky-300",
+      key: "au",
+      label: "DTS-HD Master Audio",
+      logo: MARK.dtsHdMa,
     });
-  }
-  if (!atmos && !dtsx && lossless) {
+  } else if (lossless) {
     badges.push({
-      key: "lossless",
-      label: /TrueHD/i.test(lossless.label)
-        ? "DOLBY TRUEHD"
-        : /DTS-HD Master/i.test(lossless.label)
-          ? "DTS-HD MA"
-          : lossless.format.toUpperCase(),
+      key: "au",
+      label: lossless.format.toUpperCase(),
+      className: OUTLINE,
+    });
+  } else if (primary && /Digital Plus/i.test(primary.label)) {
+    badges.push({
+      key: "au",
+      label: "Dolby Digital Plus",
+      logo: MARK.dolbyDigitalPlus,
+    });
+  } else if (primary && /Dolby Digital/i.test(primary.label)) {
+    badges.push({ key: "au", label: "Dolby Digital", logo: MARK.dolbyDigital });
+  } else if (primary) {
+    badges.push({
+      key: "au",
+      label: primary.format.toUpperCase(),
       className: OUTLINE,
     });
   }
 
-  if (movie.releaseType === "REMUX") {
-    badges.push({ key: "remux", label: "REMUX", className: OUTLINE });
-  }
-
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {badges.map((badge) => (
-        <span
-          key={badge.key}
-          className={`rounded px-2 py-1 text-[10px] font-semibold tracking-[0.12em] ${badge.className}`}
-        >
-          {badge.label}
-        </span>
-      ))}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      {badges.map((badge) =>
+        badge.logo ? (
+          badge.logo.darkSrc ? (
+            <span key={badge.key} title={badge.label}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={badge.logo.src}
+                alt={badge.label}
+                className={`${badge.logo.height} w-auto dark:hidden`}
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={badge.logo.darkSrc}
+                alt=""
+                aria-hidden
+                className={`hidden ${badge.logo.height} w-auto dark:block`}
+              />
+            </span>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={badge.key}
+              src={badge.logo.src}
+              alt={badge.label}
+              title={badge.label}
+              className={`${badge.logo.height} w-auto ${
+                badge.logo.invert ? "opacity-90 dark:invert" : ""
+              }`}
+            />
+          )
+        ) : (
+          <span
+            key={badge.key}
+            className={`rounded-chip px-2 py-1 text-[10px] font-semibold tracking-[0.12em] ${badge.className}`}
+          >
+            {badge.label}
+          </span>
+        ),
+      )}
     </div>
   );
 }
@@ -230,6 +322,35 @@ function Spec({ movie }: { movie: LibraryItem }) {
         : movie.hdr,
     ],
     [
+      // The grid had a Video row and no Audio counterpart; the per-track table
+      // further down is the detail, this is the summary.
+      "Audio",
+      (() => {
+        const best =
+          movie.audio.find((a) => a.atmos || a.dtsx) ??
+          movie.audio.find((a) => a.lossless) ??
+          movie.audio[0];
+        if (!best) return "none";
+
+        const others = movie.audio.length - 1;
+        return (
+          [
+            best.label,
+            best.channels ? `${best.channels}ch` : null,
+            best.lossless ? "lossless" : "lossy",
+            best.bitrateKbps
+              ? `${best.bitrateKbps.toLocaleString()} kbps`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") +
+          (others > 0
+            ? ` · +${others} more track${others === 1 ? "" : "s"}`
+            : "")
+        );
+      })(),
+    ],
+    [
       "Release",
       `${movie.releaseType}${movie.encoder ? ` · ${movie.encoder}` : ""}`,
     ],
@@ -243,13 +364,16 @@ function Spec({ movie }: { movie: LibraryItem }) {
     ...(movie.aspectRatio
       ? ([["Aspect ratio", `${movie.aspectRatio}:1`]] as [string, string][])
       : []),
+    ...(movie.edition
+      ? ([["Edition", movie.edition]] as [string, string][])
+      : []),
     ["Subtitles", movie.subtitleLanguages.join(", ") || "none"],
     ...(movie.imdbId ? ([["IMDb", movie.imdbId]] as [string, string][]) : []),
     ["Path", movie.path],
   ];
 
   return (
-    <div className="rounded-xl border border-black/15 p-5 dark:border-white/15">
+    <div className="rounded-card border border-line bg-surface p-5">
       <dl className="grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
         {rows.map(([label, value]) => (
           <div key={label} className="contents">
@@ -273,6 +397,8 @@ export default async function MoviePage({
 
   const theme = STATUS_THEME[movie.status];
   const { breakdown } = movie;
+  // Full specs live in the disc table; the derived payload only carries the gaps.
+  const disc = movie.tmdb ? getDisc(movie.tmdb.id) : undefined;
 
   return (
     <main className="flex flex-col pb-16">
@@ -289,14 +415,17 @@ export default async function MoviePage({
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
           </>
         ) : (
-          <div className="absolute inset-0 bg-black/5 dark:bg-white/5" />
+          <div className="absolute inset-0 bg-surface-strong" />
         )}
 
         <BackButton />
 
-        {movie.tmdb && (
-          <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
-        )}
+        <div className="absolute top-6 right-6 flex items-center gap-2">
+          <RevealInFinder moviePath={movie.path} />
+          {movie.tmdb && (
+            <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
+          )}
+        </div>
       </div>
 
       {/* relative + z-10: the hero above is positioned, so without its own
@@ -310,19 +439,19 @@ export default async function MoviePage({
             <img
               src={artUrl(movie.poster)}
               alt=""
-              className="h-60 w-40 shrink-0 rounded-xl object-cover shadow-2xl ring-1 ring-black/10 dark:ring-white/10"
+              className="h-60 w-40 shrink-0 rounded-card object-cover shadow-2xl ring-1 ring-line"
             />
           )}
 
           <div className="flex flex-col gap-2 pb-1">
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
               {movie.title}
             </h1>
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm opacity-60">
+              {/* Dynamic range moved out: the logos directly below say it
+                  better. Edition lives in Technical details. */}
               {movie.year && <span>{movie.year}</span>}
-              {movie.edition && <span>· {movie.edition}</span>}
               <span>· {movie.resolution}</span>
-              <span>· {movie.hdr}</span>
               <span>· {movie.releaseType}</span>
               <span>· {bytes(movie.sizeBytes)}</span>
             </p>
@@ -333,7 +462,7 @@ export default async function MoviePage({
         </div>
 
         {/* Scores */}
-        <section className="relative mt-10 flex flex-col items-center gap-8 rounded-2xl border border-black/15 p-6 sm:flex-row dark:border-white/15">
+        <section className="relative mt-10 flex flex-col items-center gap-8 rounded-card border border-line bg-surface p-6 sm:flex-row">
           <div className="flex shrink-0 flex-col items-center gap-2">
             <ScoreRing score={movie.scores.overall} ring={theme.ring} />
             <span className={`text-sm font-medium ${theme.text}`}>
@@ -363,35 +492,49 @@ export default async function MoviePage({
           ))}
         </ul>
 
-        {/* Issues */}
-        {movie.issues.length > 0 && (
-          <section className="mt-8 flex flex-col gap-3">
-            <h2 className="text-sm font-medium uppercase tracking-wide opacity-50">
-              Issues
-            </h2>
-            {movie.issues.map((issue) => {
-              const style = SEVERITY_THEME[issue.severity];
-              return (
-                <div
-                  key={issue.code}
-                  className={`rounded-xl border px-4 py-3 ${style.border}`}
-                >
-                  <div className="flex items-baseline gap-2">
-                    <span
-                      className={`text-xs font-semibold uppercase ${style.text}`}
-                    >
-                      {issue.severity}
-                    </span>
-                    <code className="font-mono text-xs opacity-40">
-                      {issue.code}
-                    </code>
+        {/* Issues, and the actions that resolve them */}
+        <section className="mt-8 flex flex-col gap-3">
+          <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
+            Issues
+          </h2>
+
+          <div className="rounded-card border border-line bg-surface p-5">
+            {movie.issues.length === 0 ? (
+              <p className="text-sm opacity-50">
+                Nothing flagged on this file.
+              </p>
+            ) : (
+              // Rows rather than nested cards: the section border already frames
+              // them, and a border inside a border reads as clutter.
+              <div className="divide-y divide-line">
+                {movie.issues.map((issue) => (
+                  <div key={issue.code} className="py-3 first:pt-0 last:pb-0">
+                    <div className="flex items-baseline gap-2">
+                      <span
+                        className={`text-xs font-semibold uppercase ${SEVERITY_THEME[issue.severity].text}`}
+                      >
+                        {issue.severity}
+                      </span>
+                      <code className="font-mono text-xs opacity-40">
+                        {issue.code}
+                      </code>
+                    </div>
+                    <p className="mt-1 text-sm">{issue.message}</p>
                   </div>
-                  <p className="mt-1 text-sm">{issue.message}</p>
-                </div>
-              );
-            })}
-          </section>
-        )}
+                ))}
+              </div>
+            )}
+
+            <div className="mt-5 border-t border-line pt-4">
+              <FileActions
+                moviePath={movie.path}
+                acknowledged={movie.acknowledged}
+                note={movie.note}
+                hasIssues={movie.issues.length > 0}
+              />
+            </div>
+          </div>
+        </section>
 
         {/* TMDb identity */}
         {movie.tmdb && (
@@ -401,7 +544,7 @@ export default async function MoviePage({
                 Identified as
               </h2>
               <span
-                className={`rounded-md px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
+                className={`rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
                   movie.tmdb.confidence === "high"
                     ? "text-emerald-700 ring-emerald-500/30 dark:text-emerald-300"
                     : "bg-amber-500/[0.08] text-amber-700 ring-amber-500/30 dark:text-amber-300"
@@ -411,7 +554,7 @@ export default async function MoviePage({
               </span>
             </div>
 
-            <div className="rounded-xl border border-black/10 p-5 dark:border-white/10">
+            <div className="rounded-card border border-line bg-surface p-5">
               <p className="font-medium">
                 {movie.tmdb.title}
                 {movie.tmdb.year && (
@@ -490,7 +633,7 @@ export default async function MoviePage({
             <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
               Not identified
             </h2>
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-5">
+            <div className="rounded-card border border-amber-500/30 bg-amber-500/[0.06] p-5">
               <p className="text-sm">
                 No TMDb match was found for this file, so there is no canonical
                 title, runtime or artwork for it. Search below to link it by
@@ -511,6 +654,101 @@ export default async function MoviePage({
           </section>
         )}
 
+        {/* Best disc available */}
+        {disc && (
+          <section className="mt-10 flex flex-col gap-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
+                Best disc available
+              </h2>
+              {movie.disc?.bestAvailable && (
+                <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium text-emerald-700 ring-1 ring-emerald-500/30 ring-inset dark:text-emerald-300">
+                  your copy matches it
+                </span>
+              )}
+            </div>
+
+            <div className="rounded-card border border-line bg-surface p-5">
+              {disc.error || !disc.best ? (
+                <p className="text-sm opacity-60">
+                  No disc release found on Blu-ray.com
+                  {disc.error ? ` — ${disc.error}` : ""}.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-baseline justify-between gap-3">
+                    <p className="font-medium">
+                      {disc.best.title}
+                      <span className="ml-2 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
+                        {disc.best.format}
+                      </span>
+                    </p>
+                    <a
+                      href={disc.best.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+                    >
+                      View on Blu-ray.com ↗
+                    </a>
+                  </div>
+
+                  <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2 text-sm">
+                    {(
+                      [
+                        [
+                          "Video",
+                          [
+                            disc.best.videoCodec,
+                            disc.best.videoBitrateMbps
+                              ? `${disc.best.videoBitrateMbps} Mbps`
+                              : null,
+                            disc.best.resolution,
+                          ]
+                            .filter(Boolean)
+                            .join(" · "),
+                        ],
+                        ["Dynamic range", disc.best.hdr.join(", ") || "SDR"],
+                        ["Aspect ratio", disc.best.aspectRatio ?? "unknown"],
+                        ["Audio", disc.best.audio.join(" · ") || "unknown"],
+                        [
+                          "Editions",
+                          `${disc.releaseCount} on Blu-ray.com${
+                            disc.uhdExists
+                              ? " · 4K available"
+                              : " · no 4K release"
+                          }`,
+                        ],
+                      ] as [string, string][]
+                    ).map(([label, value]) => (
+                      <div key={label} className="contents">
+                        <dt className="opacity-50">{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+
+                  {movie.disc && movie.disc.gaps.length > 0 && (
+                    <div className="mt-4 border-t border-line pt-4">
+                      <p className="text-xs tracking-wide uppercase opacity-45">
+                        Where your copy falls short
+                      </p>
+                      <ul className="mt-2 flex flex-col gap-1 text-sm">
+                        {movie.disc.gaps.map((gap) => (
+                          <li key={gap} className="flex gap-2">
+                            <span className="opacity-30">—</span>
+                            {gap}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* Technical */}
         <section className="mt-10 flex flex-col gap-4">
           <h2 className="text-sm font-medium uppercase tracking-wide opacity-50">
@@ -524,9 +762,9 @@ export default async function MoviePage({
           <h2 className="text-sm font-medium uppercase tracking-wide opacity-50">
             Audio tracks ({movie.audio.length})
           </h2>
-          <div className="overflow-x-auto rounded-xl border border-black/15 dark:border-white/15">
+          <div className="overflow-x-auto rounded-card border border-line bg-surface">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-black/10 text-xs uppercase tracking-wide opacity-50 dark:border-white/10">
+              <thead className="border-b border-line text-xs uppercase tracking-wide opacity-50">
                 <tr>
                   <th className="px-4 py-2 font-medium">Format</th>
                   <th className="px-4 py-2 font-medium">Channels</th>
@@ -536,10 +774,7 @@ export default async function MoviePage({
               </thead>
               <tbody>
                 {movie.audio.map((track, i) => (
-                  <tr
-                    key={i}
-                    className="border-b border-black/5 last:border-0 dark:border-white/5"
-                  >
+                  <tr key={i} className="border-b border-line last:border-0">
                     <td className="px-4 py-2">{track.label}</td>
                     <td className="px-4 py-2 opacity-70">
                       {track.channels || "—"}

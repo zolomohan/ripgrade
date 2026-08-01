@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -i '' '/server-only/d' data/_check/*.js)",
+      "Bash(node -e ' *)",
+      "Bash(ffmpeg -hide_banner -ss 1200 -i '/Volumes/Expansion/Movies/Blade Runner/Blade Runner 2049/Blade.Runner.2049.2017.Hybrid.2160p.UHD.Blu-ray.Remux.HEVC.DV.HDR.TrueHD.7.1.Atmos-HDT.mkv' -frames:v 10 -vf cropdetect=limit=24:round=2:reset=0 -an -sn -f null -)",
+      "Bash(ffmpeg -hide_banner -ss 3000 -i '/Volumes/Expansion/Movies/Dune/Dune꞉ Part I/Dune.2021.2160p.BluRay.REMUX.HEVC.DTS-HD.MA.TrueHD.7.1.Atmos-FGT.mkv' -frames:v 6 -vf cropdetect=limit=64:round=2:reset=0 -an -sn -f null -)",
+      "Bash(grep -n \"Summary \\\\*/\\\\|FileActions\\\\|Issues \\\\*/\\\\|TMDb identity\" \"app/movie/[id]/page.tsx\"; echo \"---\"; sed -n '/{\\\\/\\\\* Issues \\\\*\\\\/}/,/^        \\)}/p' \"app/movie/[id]/page.tsx\" | head -40)",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -oE '<\\(g|path|polygon\\)[^>]{0,60}' dolby-atmos.svg)",
+      "Bash(curl -s http://localhost:3000/movie/__TRACKED_VAR__ -o /tmp/at.html -w 'movie %{http_code}\\\\n')",
+      "Bash(curl -s http://localhost:3000/movie/__TRACKED_VAR__ -o /tmp/mt.html -w 'movie %{http_code}\\\\n')",
+      "Bash(curl -sL -A \"RipGrade/local\" -o ultra-hd.svg \"https://commons.wikimedia.org/wiki/Special:FilePath/Ultra%20HD%20-%20Logo%20\\(transparent\\).svg\")",
+      "Bash(grep -oE '<svg[^>]{0,160}' ultra-hd.svg)",
+      "Bash(curl -s http://localhost:3000/ -o /private/tmp/claude-501/-Users-mohanraj-Development-personal-medlib/c0ef2058-9f62-48c7-9c3a-2906dbd7dcb7/scratchpad/z.html)",
+      "Bash(curl -s -o /tmp/sl.html -w \"seeklogo page: HTTP %{http_code}\\\\n\" -A \"Mozilla/5.0\" \"https://seeklogo.com/vector-logo/486441/4k-ultra-hd\" --max-time 20)",
+      "Bash(curl -sL -A \"Mozilla/5.0\" -o /tmp/4k-ref.png \"https://images.seeklogo.com/logo-png/48/1/4k-ultra-hd-logo-png_seeklogo-486441.png\" --max-time 25)",
+      "Bash(curl -s http://localhost:3000/movie/__TRACKED_VAR__ -o /tmp/u.html -w 'movie %{http_code}\\\\n')",
+      "Bash(curl -s -o /dev/null -w \"asset %{http_code} \\(%{size_download} bytes\\)\\\\n\" http://localhost:3000/formats/ultra-hd.svg)",
+      "Bash(curl -s -A \"Mozilla/5.0\" --max-time 20 \"https://seeklogo.com/search?q=dts%20x\" -o /tmp/s1.html -w \"search: %{http_code}\\\\n\")",
+      "Bash(curl -s -A \"Mozilla/5.0\" --max-time 20 \"https://seeklogo.com/vector-logo/433137/dts-x\" -o /tmp/dx.html -w \"page: %{http_code}\\\\n\")",
+      "Bash(curl -sL -A \"Mozilla/5.0\" --max-time 25 -o /tmp/dtsx.png \"https://images.seeklogo.com/logo-png/43/1/dts-x-logo-png_seeklogo-433137.png\")",
+      "Bash(python3 -c \"import PIL; print\\('Pillow', PIL.__version__\\)\")",
+      "Bash(command -v sips)",
+      "Bash(qlmanage -t -s 700 -o /tmp public/formats/ultra-hd.svg)",
+      "Bash(python3 -c 'print\\(f\"{349.3/47.7:.2f}:1\"\\)')",
+      "Bash(echo \"rendered $\\(wc -c < public/formats/ultra-hd.svg\\) bytes, aspect $\\(python3 -c 'print\\(f\"{349.3/47.7:.2f}:1\"\\)'\\)\")",
+      "Bash(curl -s http://localhost:3000/movie/__TRACKED_VAR__ -o /tmp/f.html -w 'movie %{http_code}\\\\n')",
+      "Bash(qlmanage -t -s 700 -o /tmp public/formats/dts-x.svg)",
+      "Bash(curl -s http://localhost:3000/ -o /tmp/st.html -w \"home %{http_code}\\\\n\")",
+      "Bash(curl -s -o /tmp/br.html -w \"search page: HTTP %{http_code}, %{size_download} bytes\\\\n\" -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)\" --max-time 25 \"https://www.blu-ray.com/search/?quicksearch=1&quicksearch_country=US&quicksearch_keyword=Dune&section=bluraymovies\")",
+      "Bash(curl -s -G \"https://www.wikidata.org/w/api.php\" --data-urlencode \"action=wbsearchentities\" --data-urlencode \"search=blu-ray.com\" --data-urlencode \"type=property\" --data-urlencode \"language=en\" --data-urlencode \"format=json\" --max-time 20)",
+      "Bash(curl -s -o /tmp/p1.html -w '  arbitrary slug: HTTP %{http_code} → %{url_effective}\\\\n' -A 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)' -L --max-time 25 https://www.blu-ray.com/movies/x/35820/)",
+      "Bash(curl -s -o /tmp/p2.html -w '  search: HTTP %{http_code}\\\\n' -A 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)' --max-time 25 'https://www.blu-ray.com/search/?quicksearch=1&quicksearch_country=all&quicksearch_keyword=Blade+Runner+2049&section=bluraymovies')",
+      "Bash(curl -s -o /tmp/brm.html -w 'page: HTTP %{http_code}, %{size_download} bytes\\\\n' -A 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/605.1.15' --max-time 30 https://www.blu-ray.com/movies/Blade-Runner-2049-4K-Blu-ray/189774/)"
+    ],
+    "additionalDirectories": [
+      "/Users/mohanraj/Development/personal/medlib/app/movie/[id]"
+    ]
+  }
+}

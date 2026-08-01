@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { HERO_BUTTON } from "./hero-button";
 
 /**
  * Goes back through history rather than linking to "/", so the library's
@@ -19,7 +20,7 @@ export function BackButton() {
       }}
       aria-label="Back to library"
       title="Back to library"
-      className="absolute top-6 left-6 grid h-8 w-8 place-items-center rounded-md bg-background/80 text-sm backdrop-blur hover:bg-background"
+      className={`absolute top-6 left-6 ${HERO_BUTTON}`}
     >
       ←
     </button>
