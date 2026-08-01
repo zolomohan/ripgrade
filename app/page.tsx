@@ -5,8 +5,8 @@ import { FolderSection } from "./folder-section";
 import { LibraryView } from "./library-view";
 import { ScanButton } from "./scan-button";
 import { DEFAULT_ROOT } from "@/lib/browse";
-import { duplicateGroups, getLibrary } from "@/lib/library";
-import { movieId } from "@/lib/routes";
+import { duplicateGroups, getLibrary, groupKeyOf } from "@/lib/library";
+import { compareId, movieId } from "@/lib/routes";
 
 // Every render reads the local database, so there is nothing worth prerendering.
 export const dynamic = "force-dynamic";
@@ -47,14 +47,22 @@ export default async function Page() {
                 key={group[0].path}
                 className="rounded-xl border border-black/10 px-4 py-3 dark:border-white/10"
               >
-                <p className="font-medium">
-                  {group[0].title}
-                  {group[0].year && (
-                    <span className="ml-1.5 font-normal opacity-40">
-                      {group[0].year}
-                    </span>
-                  )}
-                </p>
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className="font-medium">
+                    {group[0].title}
+                    {group[0].year && (
+                      <span className="ml-1.5 font-normal opacity-40">
+                        {group[0].year}
+                      </span>
+                    )}
+                  </p>
+                  <Link
+                    href={`/compare/${compareId(groupKeyOf(group[0]))}`}
+                    className="shrink-0 rounded-lg border border-black/10 px-2.5 py-1 text-xs hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
+                  >
+                    Compare
+                  </Link>
+                </div>
                 <ul className="mt-2 flex flex-col gap-1.5">
                   {group.map((m, i) => (
                     <li

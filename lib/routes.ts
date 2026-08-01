@@ -15,16 +15,22 @@ export const artUrl = (filePath: string) =>
  * folder names contain non-ASCII characters (exFAT-safe titles use U+A789 in
  * place of a colon) that a byte-naive encoder would corrupt.
  */
-export function movieId(filePath: string): string {
-  const bytes = new TextEncoder().encode(filePath);
+export function encodeId(value: string): string {
+  const bytes = new TextEncoder().encode(value);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function decodeMovieId(id: string): string {
+export function decodeId(id: string): string {
   const base64 = id.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(base64);
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return new TextDecoder().decode(bytes);
 }
+
+export const movieId = encodeId;
+export const decodeMovieId = decodeId;
+
+/** Route id for a duplicate group, built from its title+year grouping key. */
+export const compareId = encodeId;

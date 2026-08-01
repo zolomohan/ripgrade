@@ -112,6 +112,16 @@ export function getMovie(id: string): LibraryItem | undefined {
   return getLibrary().find((m) => m.path === target);
 }
 
+/** The grouping key a film belongs to — also its compare-page route id. */
+export const groupKeyOf = (item: Derived) => titleKey(item.title, item.year);
+
+/** One duplicate group by its key, best copy first. Undefined if it is gone. */
+export function findDuplicateGroup(key: string): LibraryItem[] | undefined {
+  return duplicateGroups(getLibrary()).find(
+    (group) => groupKeyOf(group[0]) === key,
+  );
+}
+
 /** Films appearing more than once, keyed by title + year. */
 export function duplicateGroups<T extends Derived>(items: T[]): T[][] {
   const groups = new Map<string, T[]>();
