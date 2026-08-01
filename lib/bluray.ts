@@ -35,8 +35,7 @@ async function fetchPage(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: {
       "User-Agent": UA,
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-GB,en;q=0.9",
     },
     cache: "no-store",
@@ -144,7 +143,9 @@ export type DiscSpec = {
 };
 
 const text = (html: string) =>
-  decode(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+  decode(html.replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
 
 /** Pulls the run of text following a section heading such as "Video". */
 function section(html: string, heading: string, length = 700): string {
@@ -152,10 +153,31 @@ function section(html: string, heading: string, length = 700): string {
   return m ? text(html.slice(m.index + m[0].length, m.index + length)) : "";
 }
 
-export function parseRelease(
-  html: string,
-  candidate: Candidate,
-): DiscSpec {
+/**
+ * Turns a pasted Blu-ray.com URL into a candidate. The slug carries the format,
+ * which is all that is needed before the page itself is fetched.
+ */
+export function candidateFromUrl(raw: string): Candidate | undefined {
+  const m = raw
+    .trim()
+    .match(/^https?:\/\/(?:www\.)?blu-ray\.com\/movies\/([^/?#]+)\/(\d+)\/?/i);
+  if (!m) return undefined;
+
+  const [, slug, id] = m;
+  return {
+    id,
+    url: `${BASE}/movies/${slug}/${id}/`,
+    // A placeholder: the real title is read off the page once fetched.
+    title: decodeURIComponent(slug).replace(/-/g, " "),
+    format: /-4K-Blu-ray$/i.test(slug)
+      ? "4K"
+      : /-3D-Blu-ray$/i.test(slug)
+        ? "3D"
+        : "BD",
+  };
+}
+
+export function parseRelease(html: string, candidate: Candidate): DiscSpec {
   const video = section(html, "Video");
   const audioBlock = section(html, "Audio", 900);
 
@@ -189,10 +211,27 @@ export function parseRelease(
     ),
   ];
 
+  const pageTitle = decode(
+    html.match(/<title>([^<]+)<\/title>/i)?.[1] ?? "",
+  ).trim();
+
+  // Blu-ray.com resolves a URL by its numeric id and ignores the slug, so a
+  // pasted link can say "4K-Blu-ray" while serving a 1080p release. Trust what
+  // the page actually reports over what the URL claims.
+  const format: Candidate["format"] = /4K|2160p/i.test(resolution ?? "")
+    ? "4K"
+    : /\b4K\b/i.test(pageTitle)
+      ? "4K"
+      : /\b3D\b/i.test(pageTitle)
+        ? "3D"
+        : /1080|720|Blu-ray/i.test(`${resolution} ${pageTitle}`)
+          ? "BD"
+          : candidate.format;
+
   return {
     url: candidate.url,
-    title: candidate.title,
-    format: candidate.format,
+    title: pageTitle || candidate.title,
+    format,
     videoCodec: codec?.trim(),
     videoBitrateMbps: bitrate ? Number(bitrate) : undefined,
     resolution: resolution?.trim(),
@@ -219,7 +258,33 @@ export type DiscLookup = {
   releaseCount: number;
   best?: DiscSpec;
   error?: string;
+  /** You picked this release by hand; automatic runs must leave it alone. */
+  manual?: boolean;
 };
+
+/** Fetches one specific release — used when you choose the edition yourself. */
+export async function lookupRelease(
+  candidate: Candidate,
+  known?: { uhdExists: boolean; releaseCount: number },
+): Promise<DiscLookup> {
+  try {
+    const best = parseRelease(await fetchPage(candidate.url), candidate);
+    return {
+      // Take it from the parsed release, not the slug, for the same reason.
+      uhdExists: known?.uhdExists ?? best.format === "4K",
+      releaseCount: known?.releaseCount ?? 1,
+      best,
+      manual: true,
+    };
+  } catch (err) {
+    return {
+      uhdExists: known?.uhdExists ?? false,
+      releaseCount: known?.releaseCount ?? 0,
+      error: err instanceof Error ? err.message : String(err),
+      manual: true,
+    };
+  }
+}
 
 /**
  * Finds the best disc release for a film: a 4K edition where one exists, the

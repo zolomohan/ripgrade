@@ -767,6 +767,16 @@ function compareToDisc(
       );
     }
 
+    if (d.releaseType !== "REMUX") {
+      gaps.push(
+        `Disc is the untouched source; this copy is a ${
+          d.releaseType === "UNKNOWN"
+            ? "re-encode of unknown origin"
+            : d.releaseType
+        }`,
+      );
+    }
+
     if (
       best.videoBitrateMbps &&
       d.videoBitrateKbps &&
@@ -1011,23 +1021,21 @@ function verdict(
     return { status: "Must Upgrade", priority: "Critical" };
   }
 
-  // Nothing better exists to buy, so no score should imply otherwise. This is
-  // the whole point of the disc lookup: it stops the app nagging about films
-  // that cannot be improved.
-  if (disc?.bestAvailable) {
-    return { status: "Best Available", priority: "None" };
-  }
-
-  // A real, purchasable upgrade outranks the raw score — a 1080p file can score
-  // respectably and still be the wrong copy to own.
-  if (disc && disc.gaps.length > 0) {
+  if (disc?.discScore) {
     // Missing an entire 4K release is a different order of gap from missing
-    // Atmos, so it is the one that escalates to Must Upgrade.
-    const missingUhd = disc.gaps.some((g) => g.startsWith("A 4K disc exists"));
-    return {
-      status: missingUhd ? "Must Upgrade" : "Upgrade Recommended",
-      priority: missingUhd ? "High" : "Medium",
-    };
+    // Atmos, so it escalates regardless of where the score lands.
+    if (disc.gaps.some((g) => g.startsWith("A 4K disc exists"))) {
+      return { status: "Must Upgrade", priority: "High" };
+    }
+
+    // Otherwise the relative score is the verdict. Banding it here rather than
+    // keying off "are there any gaps" is what stops a 91 with one gap ranking
+    // below a 76 with none.
+    if (overall >= 100) return { status: "Best Available", priority: "None" };
+    if (overall >= 85) return { status: "Good", priority: "Low" };
+    if (overall >= 65)
+      return { status: "Upgrade Recommended", priority: "Medium" };
+    return { status: "Must Upgrade", priority: "High" };
   }
 
   const band = STATUS_BANDS.find((b) => overall >= b.min);
@@ -1320,6 +1328,10 @@ export function derive(
     ceiling,
     cappedByVideo: ceiling < weighted,
   };
+
+  // Set from the final score so "Best Available" and a sub-100 score can never
+  // both be true — that contradiction is what made Brave look untouchable.
+  if (discFacts) discFacts.bestAvailable = scores.overall >= 100;
 
   const { status, priority } = verdict(scores.overall, issues, discFacts);
 

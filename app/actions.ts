@@ -8,6 +8,12 @@ import { listDirectory, type DirListing } from "@/lib/browse";
 import { getSetting, setSetting } from "@/lib/db";
 import { reindexDir, saveArtwork } from "@/lib/artwork";
 import { db } from "@/lib/db";
+import {
+  candidateFromUrl,
+  clearDisc,
+  searchReleases,
+  setManualDisc,
+} from "@/lib/disc";
 import { setManualMatch } from "@/lib/enrich";
 import { deriveAll } from "@/lib/library";
 import { getScanState, startScan, type ScanState } from "@/lib/scanner";
@@ -132,6 +138,86 @@ export async function confirmMatch(
 
   try {
     await setManualMatch(moviePath, tmdbId);
+    deriveAll();
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Discs
+// ---------------------------------------------------------------------------
+
+export type DiscCandidate = {
+  id: string;
+  url: string;
+  title: string;
+  year?: number;
+  format: "4K" | "3D" | "BD";
+};
+
+/** Every edition Blu-ray.com lists for a film, for you to choose between. */
+export async function searchDiscs(
+  title: string,
+  year?: number,
+): Promise<
+  { ok: true; results: DiscCandidate[] } | { ok: false; error: string }
+> {
+  try {
+    return { ok: true, results: await searchReleases(title, year) };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function linkDisc(
+  tmdbId: number,
+  candidate: DiscCandidate,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const lookup = await setManualDisc(tmdbId, candidate);
+    if (lookup.error) return { ok: false, error: lookup.error };
+    deriveAll();
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** Links a release from a pasted Blu-ray.com URL. */
+export async function linkDiscByUrl(
+  tmdbId: number,
+  url: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const candidate = candidateFromUrl(url);
+  if (!candidate) {
+    return {
+      ok: false,
+      error:
+        "Not a Blu-ray.com release URL — expected .../movies/<title>/<id>/",
+    };
+  }
+  return linkDisc(tmdbId, candidate);
+}
+
+/** Forgets the stored release so the next scan searches again. */
+export async function unlinkDisc(
+  tmdbId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    clearDisc(tmdbId);
     deriveAll();
     refresh();
     return { ok: true };

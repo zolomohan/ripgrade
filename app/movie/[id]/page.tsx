@@ -6,6 +6,7 @@ import { getDisc } from "@/lib/disc";
 import { getMovie, type LibraryItem } from "@/lib/library";
 import { ArtworkEditor } from "./artwork-editor";
 import { BackButton } from "./back-button";
+import { DiscReview } from "./disc-review";
 import { FileActions } from "./file-actions";
 import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
@@ -655,13 +656,13 @@ export default async function MoviePage({
         )}
 
         {/* Best disc available */}
-        {disc && (
+        {movie.tmdb && (
           <section className="mt-10 flex flex-col gap-3">
             <div className="flex items-baseline justify-between gap-4">
               <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
                 Best disc available
               </h2>
-              {movie.disc?.bestAvailable && (
+              {disc?.best && movie.disc?.bestAvailable && (
                 <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium text-emerald-700 ring-1 ring-emerald-500/30 ring-inset dark:text-emerald-300">
                   your copy matches it
                 </span>
@@ -669,10 +670,11 @@ export default async function MoviePage({
             </div>
 
             <div className="rounded-card border border-line bg-surface p-5">
-              {disc.error || !disc.best ? (
+              {!disc || disc.error || !disc.best ? (
                 <p className="text-sm opacity-60">
-                  No disc release found on Blu-ray.com
-                  {disc.error ? ` — ${disc.error}` : ""}.
+                  {disc
+                    ? `No disc release found on Blu-ray.com${disc.error ? ` — ${disc.error}` : ""}.`
+                    : "Not looked up yet — this happens automatically during a scan."}
                 </p>
               ) : (
                 <>
@@ -693,7 +695,7 @@ export default async function MoviePage({
                     </a>
                   </div>
 
-                  <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2 text-sm">
+                  <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
                     {(
                       [
                         [
@@ -723,7 +725,7 @@ export default async function MoviePage({
                     ).map(([label, value]) => (
                       <div key={label} className="contents">
                         <dt className="opacity-50">{label}</dt>
-                        <dd>{value}</dd>
+                        <dd className="font-mono text-xs break-all">{value}</dd>
                       </div>
                     ))}
                   </dl>
@@ -745,6 +747,14 @@ export default async function MoviePage({
                   )}
                 </>
               )}
+
+              <DiscReview
+                tmdbId={movie.tmdb.id}
+                title={movie.tmdb.title}
+                year={movie.tmdb.year}
+                currentUrl={disc?.best?.url}
+                manual={disc?.manual}
+              />
             </div>
           </section>
         )}
