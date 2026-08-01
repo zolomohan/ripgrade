@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "data/_test",
+    "jsx": "preserve",
+    "types": ["node"]
+  },
+  "include": ["test/**/*.ts", "lib/derive.ts"]
+}

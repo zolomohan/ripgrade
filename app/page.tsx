@@ -1,64 +1,109 @@
-import Image from "next/image";
+import Link from "next/link";
 
-export default function Home() {
+import { getLibraryRoot, scanStatus } from "./actions";
+import { FolderPicker } from "./folder-picker";
+import { LibraryView } from "./library-view";
+import { ScanButton } from "./scan-button";
+import { DEFAULT_ROOT, listDirectory } from "@/lib/browse";
+import { duplicateGroups, getLibrary } from "@/lib/library";
+import { movieId } from "@/lib/routes";
+
+// Every render reads the local database, so there is nothing worth prerendering.
+export const dynamic = "force-dynamic";
+
+export default async function Page() {
+  const root = await getLibraryRoot();
+  const scan = await scanStatus();
+  const movies = getLibrary();
+  const duplicates = duplicateGroups(movies);
+  const initialListing = await listDirectory(root ?? DEFAULT_ROOT);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="flex flex-col">
+      <header className="sticky top-0 z-20 border-b border-black/10 bg-background/80 backdrop-blur dark:border-white/10">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-4 sm:px-8">
+          <h1 className="text-lg font-semibold tracking-tight">RipGrade</h1>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/how-it-works"
+              className="rounded-lg border border-black/10 px-3 py-1.5 text-sm hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              How it works
+            </Link>
+            {root && <ScanButton initialState={scan} />}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+      </header>
+
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-8 sm:px-8">
+        {movies.length > 0 && <LibraryView movies={movies} />}
+
+        {duplicates.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-[11px] font-medium uppercase tracking-widest opacity-45">
+              Duplicates
+            </h2>
+            {duplicates.map((group) => (
+              <div
+                key={group[0].path}
+                className="rounded-xl border border-black/10 px-4 py-3 dark:border-white/10"
+              >
+                <p className="font-medium">
+                  {group[0].title}
+                  {group[0].year && (
+                    <span className="ml-1.5 font-normal opacity-40">
+                      {group[0].year}
+                    </span>
+                  )}
+                </p>
+                <ul className="mt-2 flex flex-col gap-1.5">
+                  {group.map((m, i) => (
+                    <li
+                      key={m.path}
+                      className="flex items-center gap-2.5 text-sm"
+                    >
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                          i === 0
+                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            : "bg-red-500/10 text-red-700 dark:text-red-300"
+                        }`}
+                      >
+                        {i === 0 ? "keep" : "drop"}
+                      </span>
+                      <Link
+                        href={`/movie/${movieId(m.path)}`}
+                        className="min-w-0 flex-1 truncate opacity-70 hover:opacity-100"
+                      >
+                        {m.resolution} {m.releaseType} · {m.fileName}
+                      </Link>
+                      <span className="shrink-0 tabular-nums opacity-50">
+                        {m.scores.overall}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </section>
+        )}
+
+        <details
+          open={!root}
+          className="rounded-xl border border-black/10 dark:border-white/10"
+        >
+          <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm">
+            <span className="shrink-0 opacity-70">
+              {root ? "Change library folder" : "Select library folder"}
+            </span>
+            <span className="truncate font-mono text-xs opacity-40">
+              {root ?? "None selected"}
+            </span>
+          </summary>
+          <div className="border-t border-black/10 p-4 dark:border-white/10">
+            <FolderPicker initialListing={initialListing} />
+          </div>
+        </details>
       </main>
     </div>
   );

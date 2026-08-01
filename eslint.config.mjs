@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local database plus compiled test output — not source.
+    "data/**",
   ]),
 ]);
 
