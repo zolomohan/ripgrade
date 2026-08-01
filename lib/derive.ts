@@ -53,6 +53,13 @@ export const STATUS_BANDS: { min: number; status: Status; priority: Priority }[]
 ];
 
 /**
+ * File duration ÷ the runtime TMDb lists. Generous on both sides: TMDb runtimes
+ * are rounded to the minute and usually describe the theatrical cut, and 25fps
+ * PAL transfers legitimately run about 4% short.
+ */
+export const RUNTIME_TOLERANCE = { longer: 1.07, shorter: 0.93, truncated: 0.75 };
+
+/**
  * Every check `detectIssues` can raise. Severity lives here rather than at each
  * call site so the engine and the documentation page cannot disagree.
  */
@@ -117,6 +124,21 @@ export const ISSUE_CATALOGUE = {
     trigger: "Subtitle tracks exist but none is English",
     why: "Informational only — it does not affect the score.",
   },
+  "runtime-longer": {
+    severity: "info",
+    trigger: `File runs more than ${Math.round((RUNTIME_TOLERANCE.longer - 1) * 100)}% longer than the runtime TMDb lists`,
+    why: "Usually an extended or director's cut, since TMDb lists the theatrical runtime. Worth confirming the edition is the one you wanted.",
+  },
+  "runtime-shorter": {
+    severity: "warning",
+    trigger: `File runs more than ${Math.round((1 - RUNTIME_TOLERANCE.shorter) * 100)}% shorter than the runtime TMDb lists`,
+    why: "Could be a cut version, a different edition, or the wrong film. PAL transfers also run about 4% short by design.",
+  },
+  "runtime-truncated": {
+    severity: "critical",
+    trigger: `File runs under ${Math.round(RUNTIME_TOLERANCE.truncated * 100)}% of the runtime TMDb lists`,
+    why: "A gap this large usually means an incomplete download or a damaged file rather than an alternate cut.",
+  },
 } as const satisfies Record<string, { severity: Severity; trigger: string; why: string }>;
 
 export type IssueCode = keyof typeof ISSUE_CATALOGUE;
@@ -130,6 +152,7 @@ export const BPP = { excellent: 0.18, good: 0.1, fair: 0.06 };
 
 /** How far the overall score may exceed the video score. See scoring note below. */
 export const VIDEO_CEILING_BONUS = 15;
+
 
 // ---------------------------------------------------------------------------
 // Types
@@ -184,6 +207,24 @@ export type AudioTrack = {
   dtsx: boolean;
 };
 
+/**
+ * Facts supplied by TMDb. Identity only — nothing here influences the quality
+ * scores, which stay derived purely from the file.
+ */
+export type TmdbFacts = {
+  id: number;
+  title: string;
+  year?: number;
+  runtimeMinutes?: number;
+  imdbId?: string;
+  collection?: string;
+  genres?: string[];
+  posterPath?: string;
+  overview?: string;
+  /** Only "high" is trusted enough to raise runtime issues. */
+  confidence: "high" | "medium" | "low";
+};
+
 export type Derived = {
   path: string;
   fileName: string;
@@ -192,6 +233,9 @@ export type Derived = {
   year?: number;
   edition?: string;
   imdbId?: string;
+  /** TMDb id written into the container by the muxer, if any. */
+  tmdbIdHint?: number;
+  tmdb?: TmdbFacts;
 
   sizeBytes: number;
   durationSec?: number;
@@ -458,6 +502,28 @@ function detectIssues(
   }
   if (d.subtitleLanguages.length > 0 && !d.subtitleLanguages.includes("en")) {
     raise("no-english-subs", "No English subtitle track.");
+  }
+
+  // Runtime is only compared on high-confidence matches. A wrong film would
+  // otherwise manufacture a convincing but meaningless discrepancy.
+  const listed = d.tmdb?.confidence === "high" ? d.tmdb.runtimeMinutes : undefined;
+  if (listed && listed > 0 && d.durationSec) {
+    const actual = d.durationSec / 60;
+    const ratio = actual / listed;
+    const delta = `file runs ${actual.toFixed(0)} min against TMDb's ${listed} min`;
+
+    if (ratio < RUNTIME_TOLERANCE.truncated) {
+      raise("runtime-truncated", `Only ${Math.round(ratio * 100)}% of the expected length — ${delta}.`);
+    } else if (ratio < RUNTIME_TOLERANCE.shorter) {
+      raise("runtime-shorter", `Shorter than expected — ${delta}.`);
+    } else if (ratio > RUNTIME_TOLERANCE.longer) {
+      raise(
+        "runtime-longer",
+        d.edition
+          ? `Longer than TMDb's theatrical runtime, consistent with the ${d.edition} — ${delta}.`
+          : `Longer than expected — ${delta}. Likely an extended cut.`,
+      );
+    }
   }
 
   return issues;
@@ -732,6 +798,7 @@ export function derive(
   filePath: string,
   sizeBytes: number,
   mediainfo: unknown,
+  tmdb?: TmdbFacts,
 ): Derived {
   const all = tracks(mediainfo);
   const general = all.find((t) => t["@type"] === "General") ?? {};
@@ -776,14 +843,23 @@ export function derive(
       ? tidyContainerTitle(containerTitle, parsed.year)
       : undefined;
 
+  // Muxers write ids like "movie/597" into the container's extra fields.
+  const tmdbHint = extra?.TMDB?.match(/movie\/(\d+)/)?.[1];
+
   const base = {
     path: filePath,
     fileName,
     folder,
-    title: cleanContainerTitle || parsed.title,
-    year: parsed.year,
+    // A confirmed match beats every parsing heuristic; anything less does not.
+    title:
+      tmdb?.confidence === "high"
+        ? tmdb.title
+        : cleanContainerTitle || parsed.title,
+    year: tmdb?.confidence === "high" ? (tmdb.year ?? parsed.year) : parsed.year,
     edition: parsed.edition,
-    imdbId: extra?.IMDB,
+    imdbId: extra?.IMDB ?? tmdb?.imdbId,
+    tmdbIdHint: tmdbHint ? Number(tmdbHint) : undefined,
+    tmdb,
 
     sizeBytes,
     durationSec: num(general, "Duration"),

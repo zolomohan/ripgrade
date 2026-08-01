@@ -89,6 +89,92 @@ test("the video ceiling is reported when it binds", () => {
   assert.equal(d.scores.overall, d.breakdown.ceiling);
 });
 
+// ---------------------------------------------------------------------------
+// TMDb runtime cross-check
+// ---------------------------------------------------------------------------
+
+/** A plain 2160p remux whose duration is set by the caller. */
+function withDuration(seconds: number) {
+  return {
+    media: {
+      track: [
+        { "@type": "General", Duration: String(seconds), Encoded_Application: "mkvmerge" },
+        { "@type": "Video", Width: "3840", Height: "2160", FrameRate: "23.976", Format: "HEVC" },
+        { "@type": "Audio", Format: "MLP FBA", Channels: "8" },
+      ],
+    },
+  };
+}
+
+const facts = (
+  runtimeMinutes: number,
+  confidence: "high" | "medium" | "low" = "high",
+) => ({ id: 1, title: "Test", runtimeMinutes, confidence });
+
+test("a matching runtime raises nothing", () => {
+  const d = derive("/m/T/T.2020.mkv", 40e9, withDuration(120 * 60), facts(120));
+  assert.ok(!d.issues.some((i) => i.code.startsWith("runtime-")));
+});
+
+test("an extended cut is flagged as longer, and says so", () => {
+  const d = derive(
+    "/m/T/T.2020.Extended.mkv",
+    40e9,
+    withDuration(150 * 60),
+    facts(120),
+  );
+  const issue = d.issues.find((i) => i.code === "runtime-longer");
+  assert.ok(issue);
+  assert.match(issue!.message, /Extended/);
+  // Informational only: a longer cut is not a defect.
+  assert.equal(issue!.severity, "info");
+});
+
+test("a badly short file is critical", () => {
+  const d = derive("/m/T/T.2020.mkv", 40e9, withDuration(60 * 60), facts(120));
+  assert.ok(d.issues.some((i) => i.code === "runtime-truncated"));
+  assert.equal(d.status, "Must Upgrade");
+});
+
+test("a 4% PAL speed-up does not trip the shorter check", () => {
+  // 25fps PAL transfers legitimately run ~4% short of the listed runtime.
+  const d = derive("/m/T/T.1990.mkv", 40e9, withDuration(120 * 60 * 0.96), facts(120));
+  assert.ok(!d.issues.some((i) => i.code.startsWith("runtime-")));
+});
+
+test("runtime is not checked on a low-confidence match", () => {
+  // The whole point: a wrong film would invent a convincing discrepancy.
+  const d = derive(
+    "/m/T/T.2020.mkv",
+    40e9,
+    withDuration(60 * 60),
+    facts(120, "low"),
+  );
+  assert.ok(!d.issues.some((i) => i.code.startsWith("runtime-")));
+});
+
+test("a high-confidence match overrides the parsed title", () => {
+  const d = derive(
+    "/m/T/Some.Badly.Named.File.2020.mkv",
+    40e9,
+    withDuration(120 * 60),
+    { id: 9, title: "The Real Title", year: 1999, confidence: "high" },
+  );
+  assert.equal(d.title, "The Real Title");
+  assert.equal(d.year, 1999);
+});
+
+test("a low-confidence match leaves the parsed title alone", () => {
+  const d = derive(
+    "/m/T/Ford.v.Ferrari.2019.mkv",
+    40e9,
+    withDuration(120 * 60),
+    { id: 9, title: "Wrong Film", year: 1999, confidence: "low" },
+  );
+  assert.equal(d.title, "Ford v Ferrari");
+  assert.equal(d.year, 2019);
+});
+
 test("status bands descend and reach zero", () => {
   // The page derives each band's upper bound from the previous entry's min, so
   // an out-of-order or gapped list would render nonsense ranges.

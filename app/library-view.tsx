@@ -1,15 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 
+import { titleKey } from "@/lib/derive";
 import type { LibraryItem } from "@/lib/library";
 import { artUrl, movieId } from "@/lib/routes";
+
+/**
+ * Duplicate detection needs to compare films against each other, which a
+ * per-item predicate cannot do — so the set is computed once and handed in.
+ */
+type FilterContext = { duplicatePaths: Set<string> };
 
 const FILTERS: {
   key: string;
   label: string;
-  test: (m: LibraryItem) => boolean;
+  test: (m: LibraryItem, ctx: FilterContext) => boolean;
 }[] = [
   { key: "issues", label: "Has issues", test: (m) => m.issues.length > 0 },
   {
@@ -33,6 +41,21 @@ const FILTERS: {
     key: "1080",
     label: "1080p or below",
     test: (m) => m.resolution !== "2160p",
+  },
+  {
+    key: "review",
+    label: "Match needs review",
+    test: (m) => !m.tmdb || m.tmdb.confidence !== "high",
+  },
+  {
+    key: "dupes",
+    label: "Duplicates",
+    test: (m, ctx) => ctx.duplicatePaths.has(m.path),
+  },
+  {
+    key: "noart",
+    label: "Missing artwork",
+    test: (m) => !m.poster || !m.fanart,
   },
 ];
 
@@ -218,6 +241,9 @@ function Row({ movie }: { movie: LibraryItem }) {
               <Chip>lossy</Chip>
             </>
           )}
+          {movie.tmdb && movie.tmdb.confidence !== "high" && (
+            <Chip tone="warn">match?</Chip>
+          )}
           {movie.issues.length > 0 && (
             <Chip tone={critical ? "danger" : "warn"}>
               {movie.issues.length}{" "}
@@ -242,17 +268,66 @@ function Row({ movie }: { movie: LibraryItem }) {
 }
 
 export function LibraryView({ movies }: { movies: LibraryItem[] }) {
-  const [active, setActive] = useState<string[]>([]);
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState(SORTS[0].key);
+  // The URL is the single source of truth, so filters survive navigating into a
+  // film and back. `history.replaceState` syncs `useSearchParams` without a
+  // server round-trip, which matters when the search box updates per keystroke.
+  const searchParams = useSearchParams();
+
+  const active = (searchParams.get("f") ?? "").split(",").filter(Boolean);
+  const query = searchParams.get("q") ?? "";
+  const sort = searchParams.get("sort") ?? SORTS[0].key;
+
+  function update(next: { f?: string[]; q?: string; sort?: string }) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (next.f !== undefined) {
+      if (next.f.length) params.set("f", next.f.join(","));
+      else params.delete("f");
+    }
+    if (next.q !== undefined) {
+      if (next.q) params.set("q", next.q);
+      else params.delete("q");
+    }
+    // Defaults are omitted so a plain "/" stays clean.
+    if (next.sort !== undefined) {
+      if (next.sort !== SORTS[0].key) params.set("sort", next.sort);
+      else params.delete("sort");
+    }
+
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+  }
+
+  const setActive = (keys: string[]) => update({ f: keys });
+  const setQuery = (q: string) => update({ q });
+  const setSort = (s: string) => update({ sort: s });
+
+  // Same grouping key the server uses for the duplicates section, so the two
+  // can never disagree about what counts as a duplicate.
+  const duplicatePaths = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    for (const movie of movies) {
+      const key = titleKey(movie.title, movie.year);
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(movie.path);
+      else groups.set(key, [movie.path]);
+    }
+
+    const paths = new Set<string>();
+    for (const bucket of groups.values()) {
+      if (bucket.length > 1) bucket.forEach((p) => paths.add(p));
+    }
+    return paths;
+  }, [movies]);
 
   const shown = useMemo(() => {
     const tests = FILTERS.filter((f) => active.includes(f.key));
     const q = query.trim().toLowerCase();
     const compare = (SORTS.find((s) => s.key === sort) ?? SORTS[0]).compare;
+    const ctx: FilterContext = { duplicatePaths };
 
     return movies
-      .filter((m) => tests.every((f) => f.test(m)))
+      .filter((m) => tests.every((f) => f.test(m, ctx)))
       .filter(
         (m) =>
           !q ||
@@ -260,7 +335,7 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
           m.fileName.toLowerCase().includes(q),
       )
       .sort(compare);
-  }, [movies, active, query, sort]);
+  }, [movies, active, query, sort, duplicatePaths]);
 
   const stats = useMemo(
     () => ({
@@ -271,6 +346,13 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
       atmos: movies.filter((m) => m.audio.some((a) => a.atmos)).length,
       issues: movies.filter((m) => m.issues.length > 0).length,
     }),
+    [movies],
+  );
+
+  // Only counts films that were actually matched — unmatched ones have nothing
+  // to review until a matching run has been done at all.
+  const needsReview = useMemo(
+    () => movies.filter((m) => m.tmdb && m.tmdb.confidence !== "high").length,
     [movies],
   );
 
@@ -352,8 +434,8 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
                 key={f.key}
                 type="button"
                 onClick={() =>
-                  setActive((prev) =>
-                    on ? prev.filter((k) => k !== f.key) : [...prev, f.key],
+                  setActive(
+                    on ? active.filter((k) => k !== f.key) : [...active, f.key],
                   )
                 }
                 className={`rounded-full border px-3 py-1 text-xs transition-colors ${
@@ -369,10 +451,7 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
           {(active.length > 0 || query) && (
             <button
               type="button"
-              onClick={() => {
-                setActive([]);
-                setQuery("");
-              }}
+              onClick={() => update({ f: [], q: "" })}
               className="ml-1 text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
             >
               Reset
@@ -380,6 +459,22 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
           )}
         </div>
       </div>
+
+      {needsReview > 0 && !active.includes("review") && (
+        <button
+          type="button"
+          onClick={() => setActive([...active, "review"])}
+          className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 text-left text-sm"
+        >
+          <span className="font-medium text-amber-700 dark:text-amber-300">
+            {needsReview} {needsReview === 1 ? "match needs" : "matches need"}{" "}
+            review
+          </span>
+          <span className="opacity-60">
+            Open one and confirm it, or pick the right film.
+          </span>
+        </button>
+      )}
 
       <div className="flex items-baseline justify-between">
         <p className="text-xs opacity-45">

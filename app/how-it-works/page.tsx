@@ -61,7 +61,10 @@ function Table({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-black/5 last:border-0 dark:border-white/5">
+            <tr
+              key={i}
+              className="border-b border-black/5 last:border-0 dark:border-white/5"
+            >
               {row.map((cell, j) => (
                 <td
                   key={j}
@@ -90,8 +93,9 @@ export default function HowItWorks() {
         <h1 className="text-2xl font-semibold">How it works</h1>
         <p className="text-sm opacity-70">
           Every number on this page is read directly from the scoring engine in{" "}
-          <code className="font-mono text-xs">lib/derive.ts</code>, so it cannot drift
-          out of date. Change a constant there and this page updates with it.
+          <code className="font-mono text-xs">lib/derive.ts</code>, so it cannot
+          drift out of date. Change a constant there and this page updates with
+          it.
           <br />
           <br />
           This is the general rubric. For a specific film, open it from the
@@ -128,7 +132,9 @@ export default function HowItWorks() {
             ],
           ].map(([name, text], i) => (
             <li key={name} className="flex gap-3">
-              <span className="shrink-0 font-mono text-xs opacity-40">{i + 1}</span>
+              <span className="shrink-0 font-mono text-xs opacity-40">
+                {i + 1}
+              </span>
               <span>
                 <span className="font-medium">{name}</span>
                 <span className="opacity-70"> — {text}</span>
@@ -136,6 +142,34 @@ export default function HowItWorks() {
             </li>
           ))}
         </ol>
+      </Section>
+
+      <Section
+        title="Identification"
+        lede="Films are matched against TMDb to establish what they are — never to judge how good they are."
+      >
+        <p className="text-sm opacity-70">
+          Matching walks from strongest evidence to weakest and stops at the
+          first hit: a TMDb id embedded in the container, then an embedded IMDb
+          id, then title with an exact year, then title with a year within one,
+          and finally title alone.
+        </p>
+        <p className="text-sm opacity-70">
+          Only the first three count as <strong>high confidence</strong>.
+          Everything below that is applied as a best guess and marked
+          &ldquo;match?&rdquo; in the library, because a wrong match is worse
+          than no match — it would manufacture a runtime discrepancy that means
+          nothing. For that reason the runtime checks below only run on
+          high-confidence matches.
+        </p>
+        <p className="text-sm opacity-70">
+          <strong>TMDb never changes a score.</strong> It supplies the canonical
+          title, year, runtime and collection, and it enables the runtime
+          checks. Quality remains derived entirely from the file itself — TMDb
+          knows nothing about how your copy was encoded, and it has no record of
+          what discs exist, so it cannot tell you whether a better release is
+          out there.
+        </p>
       </Section>
 
       <Section
@@ -171,7 +205,10 @@ export default function HowItWorks() {
       >
         <Table
           head={["Resolution", "Points"]}
-          rows={Object.entries(VIDEO_POINTS.resolution).map(([k, v]) => [k, `+${v}`])}
+          rows={Object.entries(VIDEO_POINTS.resolution).map(([k, v]) => [
+            k,
+            `+${v}`,
+          ])}
         />
         <Table
           head={["HDR format", "Points"]}
@@ -182,15 +219,18 @@ export default function HowItWorks() {
           rows={[
             ["10-bit depth or higher", `+${VIDEO_POINTS.tenBit}`],
             ["Release is a REMUX", `+${VIDEO_POINTS.remux}`],
-            [`Encode at bpp ≥ ${BPP.excellent}`, `+${VIDEO_POINTS.bppExcellent}`],
+            [
+              `Encode at bpp ≥ ${BPP.excellent}`,
+              `+${VIDEO_POINTS.bppExcellent}`,
+            ],
             [`Encode at bpp ≥ ${BPP.good}`, `+${VIDEO_POINTS.bppGood}`],
             [`Encode at bpp ≥ ${BPP.fair}`, `+${VIDEO_POINTS.bppFair}`],
           ]}
         />
         <p className="text-sm opacity-70">
-          Resolution is judged on frame <em>width</em>, not height. A 2.40:1 scope
-          transfer is 3840×1600 — reading the height alone would misfile it as
-          1080p.
+          Resolution is judged on frame <em>width</em>, not height. A 2.40:1
+          scope transfer is 3840×1600 — reading the height alone would misfile
+          it as 1080p.
         </p>
       </Section>
 
@@ -201,7 +241,10 @@ export default function HowItWorks() {
         <Table
           head={["Attribute", "Points"]}
           rows={[
-            ["Lossless base (TrueHD, DTS-HD MA, PCM, FLAC)", AUDIO_POINTS.lossless],
+            [
+              "Lossless base (TrueHD, DTS-HD MA, PCM, FLAC)",
+              AUDIO_POINTS.lossless,
+            ],
             ["Lossy base (Dolby Digital, DD+, AAC, DTS)", AUDIO_POINTS.lossy],
             ["Object audio (Atmos or DTS:X)", `+${AUDIO_POINTS.objectAudio}`],
             ["8 channels or more", `+${AUDIO_POINTS.channels8}`],
@@ -209,9 +252,9 @@ export default function HowItWorks() {
           ]}
         />
         <p className="text-sm opacity-70">
-          &quot;Best&quot; is chosen by ranking lossless above object audio above
-          channel count, so a 7.1 TrueHD Atmos track always wins over a 5.1
-          Dolby Digital one.
+          &quot;Best&quot; is chosen by ranking lossless above object audio
+          above channel count, so a 7.1 TrueHD Atmos track always wins over a
+          5.1 Dolby Digital one.
         </p>
       </Section>
 
@@ -233,11 +276,11 @@ export default function HowItWorks() {
           ]}
         />
         <p className="text-sm opacity-70">
-          Release type is decided from the video stream itself, not the filename.
-          A stream with no encoder library was copied rather than re-compressed —
-          that is what makes it a remux. Filenames are used only to break ties,
-          and lose: a file claiming REMUX over an x265 stream is classified as an
-          encode.
+          Release type is decided from the video stream itself, not the
+          filename. A stream with no encoder library was copied rather than
+          re-compressed — that is what makes it a remux. Filenames are used only
+          to break ties, and lose: a file claiming REMUX over an x265 stream is
+          classified as an encode.
         </p>
         <p className="text-sm opacity-70">
           One subtlety worth knowing: studios cut UHD discs on professional
@@ -255,23 +298,26 @@ export default function HowItWorks() {
         <p className="rounded-lg border border-black/15 px-4 py-3 font-mono text-sm dark:border-white/15">
           overall = min(
           <br />
-          &nbsp;&nbsp;video × {WEIGHTS.video} + audio × {WEIGHTS.audio} + release ×{" "}
-          {WEIGHTS.release},
+          &nbsp;&nbsp;video × {WEIGHTS.video} + audio × {WEIGHTS.audio} +
+          release × {WEIGHTS.release},
           <br />
           &nbsp;&nbsp;video + {VIDEO_CEILING_BONUS}
           <br />)
         </p>
         <p className="text-sm opacity-70">
           The cap is the important half. Without it, a 1080p SDR remux carrying
-          TrueHD Atmos scores in the high seventies purely on perfect audio and a
-          perfect container — outranking a genuinely better 4K HDR encode.
+          TrueHD Atmos scores in the high seventies purely on perfect audio and
+          a perfect container — outranking a genuinely better 4K HDR encode.
           Flawless sound cannot rescue a weak picture, so the overall score is
           never allowed to exceed the video score by more than{" "}
           {VIDEO_CEILING_BONUS} points.
         </p>
       </Section>
 
-      <Section title="Status bands" lede="Applied to the overall score, highest first.">
+      <Section
+        title="Status bands"
+        lede="Applied to the overall score, highest first."
+      >
         <Table
           head={["Score", "Status", "Upgrade priority"]}
           rows={STATUS_BANDS.map((b, i) => {
@@ -282,8 +328,9 @@ export default function HowItWorks() {
         <p className="text-sm opacity-70">
           Any <span className={SEVERITY_STYLE.critical}>critical</span> issue
           overrides the bands outright and forces{" "}
-          <span className="font-medium">Must Upgrade</span> at Critical priority.
-          A fake 4K upscale is a problem no matter how good its audio is.
+          <span className="font-medium">Must Upgrade</span> at Critical
+          priority. A fake 4K upscale is a problem no matter how good its audio
+          is.
         </p>
       </Section>
 
@@ -321,9 +368,9 @@ export default function HowItWorks() {
             <span className="font-medium opacity-100">
               Whether a better release exists.
             </span>{" "}
-            Scores are absolute, judged against a fixed rubric rather than against
-            the best disc ever pressed. A film may sit at the top of this scale
-            and still have a superior release available.
+            Scores are absolute, judged against a fixed rubric rather than
+            against the best disc ever pressed. A film may sit at the top of
+            this scale and still have a superior release available.
           </li>
           <li>
             <span className="font-medium opacity-100">
@@ -345,8 +392,8 @@ export default function HowItWorks() {
             <span className="font-medium opacity-100">
               Whether the Dolby Vision layer is valid.
             </span>{" "}
-            The profile and fallback flag are read from the header. Verifying the
-            RPU metadata itself would mean demuxing the whole video stream.
+            The profile and fallback flag are read from the header. Verifying
+            the RPU metadata itself would mean demuxing the whole video stream.
           </li>
         </ul>
       </Section>

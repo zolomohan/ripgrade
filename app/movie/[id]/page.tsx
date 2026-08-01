@@ -1,14 +1,12 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { artUrl } from "@/lib/routes";
-import {
-  VIDEO_CEILING_BONUS,
-  WEIGHTS,
-  type ScoreLine,
-  type Status,
-} from "@/lib/derive";
+import { type Status } from "@/lib/derive";
 import { getMovie, type LibraryItem } from "@/lib/library";
+import { ArtworkEditor } from "./artwork-editor";
+import { BackButton } from "./back-button";
+import { MatchReview } from "./match-review";
+import { ScoreModal } from "./score-modal";
 
 export const dynamic = "force-dynamic";
 
@@ -123,64 +121,87 @@ function SubScore({ label, value }: { label: string; value: number }) {
   );
 }
 
-function LineRow({ line }: { line: ScoreLine }) {
-  const full = line.points === line.max;
+/**
+ * Format badges for the title block.
+ *
+ * These are typographic marks, not the Dolby/DTS logos — those are licensed
+ * trademark artwork and are not ours to bundle. The styling follows how the
+ * marks appear on packaging: Dolby formats as an inverted wordmark, the rest
+ * tinted by family. Swapping in licensed SVGs later means changing only the
+ * `label` of the relevant entry.
+ */
+function FormatBadges({ movie }: { movie: LibraryItem }) {
+  const DOLBY = "bg-foreground text-background";
+  const OUTLINE =
+    "ring-1 ring-inset ring-black/15 dark:ring-white/20 opacity-70";
+
+  const badges: { key: string; label: string; className: string }[] = [];
+
+  if (movie.resolution === "2160p") {
+    badges.push({ key: "res", label: "4K ULTRA HD", className: OUTLINE });
+  } else if (movie.resolution !== "unknown") {
+    badges.push({ key: "res", label: movie.resolution, className: OUTLINE });
+  }
+
+  if (movie.hdr === "Dolby Vision") {
+    badges.push({ key: "dv", label: "DOLBY VISION", className: DOLBY });
+  } else if (movie.hdr === "HDR10+") {
+    badges.push({
+      key: "hdr",
+      label: "HDR10+",
+      className:
+        "bg-amber-500/15 text-amber-700 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300",
+    });
+  } else if (movie.hdr === "HDR10") {
+    badges.push({
+      key: "hdr",
+      label: "HDR10",
+      className:
+        "bg-amber-500/15 text-amber-700 ring-1 ring-inset ring-amber-500/30 dark:text-amber-300",
+    });
+  }
+
+  const atmos = movie.audio.find((a) => a.atmos);
+  const dtsx = movie.audio.find((a) => a.dtsx);
+  const lossless = movie.audio.find((a) => a.lossless);
+
+  if (atmos) {
+    badges.push({ key: "atmos", label: "DOLBY ATMOS", className: DOLBY });
+  }
+  if (dtsx) {
+    badges.push({
+      key: "dtsx",
+      label: "DTS:X",
+      className:
+        "bg-sky-500/15 text-sky-700 ring-1 ring-inset ring-sky-500/30 dark:text-sky-300",
+    });
+  }
+  if (!atmos && !dtsx && lossless) {
+    badges.push({
+      key: "lossless",
+      label: /TrueHD/i.test(lossless.label)
+        ? "DOLBY TRUEHD"
+        : /DTS-HD Master/i.test(lossless.label)
+          ? "DTS-HD MA"
+          : lossless.format.toUpperCase(),
+      className: OUTLINE,
+    });
+  }
+
+  if (movie.releaseType === "REMUX") {
+    badges.push({ key: "remux", label: "REMUX", className: OUTLINE });
+  }
 
   return (
-    <div className="grid grid-cols-[10rem_1fr_auto] items-baseline gap-4 border-b border-black/5 py-2.5 last:border-0 dark:border-white/5">
-      <span className="text-sm opacity-60">{line.label}</span>
-      <span className="text-sm">
-        {line.detail}
-        {line.note && (
-          <span className="mt-0.5 block text-xs opacity-50">{line.note}</span>
-        )}
-      </span>
-      <span
-        className={`font-mono text-sm tabular-nums ${full ? "" : "opacity-50"}`}
-      >
-        {line.points}
-        <span className="opacity-40">/{line.max}</span>
-      </span>
-    </div>
-  );
-}
-
-function Component({
-  title,
-  weight,
-  score,
-  lines,
-}: {
-  title: string;
-  weight: number;
-  score: number;
-  lines: ScoreLine[];
-}) {
-  const lost = lines.reduce((sum, l) => sum + (l.max - l.points), 0);
-
-  return (
-    <div className="rounded-xl border border-black/15 p-5 dark:border-white/15">
-      <div className="flex items-baseline justify-between gap-4">
-        <h3 className="font-medium">
-          {title}
-          <span className="ml-2 text-xs opacity-50">
-            {Math.round(weight * 100)}% of overall
-          </span>
-        </h3>
-        <span className="text-lg font-semibold tabular-nums">{score}</span>
-      </div>
-
-      <div className="mt-3">
-        {lines.map((line) => (
-          <LineRow key={line.label} line={line} />
-        ))}
-      </div>
-
-      {lost > 0 && (
-        <p className="mt-3 text-xs opacity-50">
-          {lost} {lost === 1 ? "point" : "points"} left on the table.
-        </p>
-      )}
+    <div className="flex flex-wrap items-center gap-1.5">
+      {badges.map((badge) => (
+        <span
+          key={badge.key}
+          className={`rounded px-2 py-1 text-[10px] font-semibold tracking-[0.12em] ${badge.className}`}
+        >
+          {badge.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -228,14 +249,16 @@ function Spec({ movie }: { movie: LibraryItem }) {
   ];
 
   return (
-    <dl className="grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
-      {rows.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="opacity-50">{label}</dt>
-          <dd className="font-mono text-xs break-all">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="rounded-xl border border-black/15 p-5 dark:border-white/15">
+      <dl className="grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="opacity-50">{label}</dt>
+            <dd className="font-mono text-xs break-all">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -254,7 +277,7 @@ export default async function MoviePage({
   return (
     <main className="flex flex-col pb-16">
       {/* Hero */}
-      <div className="relative h-64 w-full overflow-hidden sm:h-80">
+      <div className="relative h-96 w-full overflow-hidden sm:h-[32rem]">
         {movie.fanart ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -269,12 +292,11 @@ export default async function MoviePage({
           <div className="absolute inset-0 bg-black/5 dark:bg-white/5" />
         )}
 
-        <Link
-          href="/"
-          className="absolute top-6 left-6 rounded-md bg-background/80 px-3 py-1.5 text-sm backdrop-blur hover:bg-background"
-        >
-          ← Library
-        </Link>
+        <BackButton />
+
+        {movie.tmdb && (
+          <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
+        )}
       </div>
 
       {/* relative + z-10: the hero above is positioned, so without its own
@@ -305,28 +327,30 @@ export default async function MoviePage({
               <span>· {bytes(movie.sizeBytes)}</span>
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <span
-                className={`rounded-full px-3 py-1 text-sm font-medium ${theme.bg} ${theme.text}`}
-              >
-                {movie.status}
-              </span>
-              {movie.priority !== "None" && (
-                <span className="rounded-full border border-black/15 px-3 py-1 text-sm opacity-70 dark:border-white/15">
-                  {movie.priority} priority
-                </span>
-              )}
+              <FormatBadges movie={movie} />
             </div>
           </div>
         </div>
 
         {/* Scores */}
-        <section className="mt-10 flex flex-col items-center gap-8 rounded-2xl border border-black/15 p-6 sm:flex-row dark:border-white/15">
-          <ScoreRing score={movie.scores.overall} ring={theme.ring} />
+        <section className="relative mt-10 flex flex-col items-center gap-8 rounded-2xl border border-black/15 p-6 sm:flex-row dark:border-white/15">
+          <div className="flex shrink-0 flex-col items-center gap-2">
+            <ScoreRing score={movie.scores.overall} ring={theme.ring} />
+            <span className={`text-sm font-medium ${theme.text}`}>
+              {movie.status}
+            </span>
+            {movie.priority !== "None" && (
+              <span className="text-xs opacity-50">
+                {movie.priority} priority
+              </span>
+            )}
+          </div>
           <div className="grid w-full flex-1 gap-4 sm:grid-cols-3">
             <SubScore label="Video" value={movie.scores.video} />
             <SubScore label="Audio" value={movie.scores.audio} />
             <SubScore label="Release" value={movie.scores.release} />
           </div>
+          <ScoreModal scores={movie.scores} breakdown={breakdown} />
         </section>
 
         {/* Summary */}
@@ -369,79 +393,123 @@ export default async function MoviePage({
           </section>
         )}
 
-        {/* Score explanation */}
-        <section className="mt-10 flex flex-col gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">Why this score</h2>
-            <p className="mt-1 text-sm opacity-60">
-              Each category is scored out of 100 from the criteria below, then
-              blended. The right-hand column shows points awarded against the
-              most that criterion can pay.
-            </p>
-          </div>
-
-          <Component
-            title="Video"
-            weight={WEIGHTS.video}
-            score={movie.scores.video}
-            lines={breakdown.video}
-          />
-          <Component
-            title="Audio"
-            weight={WEIGHTS.audio}
-            score={movie.scores.audio}
-            lines={breakdown.audio}
-          />
-          <Component
-            title="Release"
-            weight={WEIGHTS.release}
-            score={movie.scores.release}
-            lines={breakdown.release}
-          />
-
-          <div className="rounded-xl border border-black/15 p-5 dark:border-white/15">
-            <h3 className="font-medium">Final calculation</h3>
-            <div className="mt-3 flex flex-col gap-2 font-mono text-sm">
-              <div className="flex items-baseline justify-between gap-4">
-                <span className="opacity-70">
-                  {movie.scores.video} × {WEIGHTS.video} + {movie.scores.audio}{" "}
-                  × {WEIGHTS.audio} + {movie.scores.release} × {WEIGHTS.release}
-                </span>
-                <span className="tabular-nums">{breakdown.weighted}</span>
-              </div>
-              <div className="flex items-baseline justify-between gap-4">
-                <span className="opacity-70">
-                  video ceiling ({movie.scores.video} + {VIDEO_CEILING_BONUS})
-                </span>
-                <span className="tabular-nums">{breakdown.ceiling}</span>
-              </div>
-              <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-black/10 pt-2 dark:border-white/10">
-                <span>
-                  {breakdown.cappedByVideo
-                    ? "capped at the ceiling"
-                    : "lower of the two"}
-                </span>
-                <span className="text-base font-semibold tabular-nums">
-                  {movie.scores.overall}
-                </span>
-              </div>
+        {/* TMDb identity */}
+        {movie.tmdb && (
+          <section className="mt-10 flex flex-col gap-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
+                Identified as
+              </h2>
+              <span
+                className={`rounded-md px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
+                  movie.tmdb.confidence === "high"
+                    ? "text-emerald-700 ring-emerald-500/30 dark:text-emerald-300"
+                    : "bg-amber-500/[0.08] text-amber-700 ring-amber-500/30 dark:text-amber-300"
+                }`}
+              >
+                {movie.tmdb.confidence} confidence
+              </span>
             </div>
 
-            <p className="mt-3 text-xs opacity-50">
-              {breakdown.cappedByVideo
-                ? `The weighted total reached ${breakdown.weighted}, but strong audio and a clean container cannot lift a file more than ${VIDEO_CEILING_BONUS} points above its picture quality.`
-                : "The ceiling did not bind here — the weighted total was already below it."}
-            </p>
-          </div>
+            <div className="rounded-xl border border-black/10 p-5 dark:border-white/10">
+              <p className="font-medium">
+                {movie.tmdb.title}
+                {movie.tmdb.year && (
+                  <span className="ml-1.5 font-normal opacity-40">
+                    {movie.tmdb.year}
+                  </span>
+                )}
+              </p>
 
-          <p className="text-sm opacity-60">
-            The full rubric, including every threshold, is on the{" "}
-            <Link href="/how-it-works" className="underline underline-offset-4">
-              How it works
-            </Link>{" "}
-            page.
-          </p>
-        </section>
+              {movie.tmdb.overview && (
+                <p className="mt-2 text-sm opacity-70">{movie.tmdb.overview}</p>
+              )}
+
+              <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2 text-sm">
+                {movie.tmdb.runtimeMinutes && (
+                  <div className="contents">
+                    <dt className="opacity-50">Listed runtime</dt>
+                    <dd>
+                      {movie.tmdb.runtimeMinutes} min
+                      {movie.durationSec && (
+                        <span className="opacity-50">
+                          {" "}
+                          · file is {Math.round(movie.durationSec / 60)} min
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                )}
+                {movie.tmdb.collection && (
+                  <div className="contents">
+                    <dt className="opacity-50">Collection</dt>
+                    <dd>{movie.tmdb.collection}</dd>
+                  </div>
+                )}
+                {movie.tmdb.genres && movie.tmdb.genres.length > 0 && (
+                  <div className="contents">
+                    <dt className="opacity-50">Genres</dt>
+                    <dd>{movie.tmdb.genres.join(", ")}</dd>
+                  </div>
+                )}
+                <div className="contents">
+                  <dt className="opacity-50">TMDb</dt>
+                  <dd>
+                    <a
+                      href={`https://www.themoviedb.org/movie/${movie.tmdb.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 opacity-70 hover:opacity-100"
+                    >
+                      {movie.tmdb.id}
+                    </a>
+                  </dd>
+                </div>
+              </dl>
+
+              {movie.tmdb.confidence !== "high" && (
+                <p className="mt-4 text-xs opacity-50">
+                  This match was a best guess from the filename, so runtime
+                  checks are skipped for it — a wrong match would invent a
+                  discrepancy that means nothing.
+                </p>
+              )}
+
+              <MatchReview
+                moviePath={movie.path}
+                currentId={movie.tmdb.id}
+                needsReview={movie.tmdb.confidence !== "high"}
+                defaultQuery={movie.title}
+              />
+            </div>
+          </section>
+        )}
+
+        {!movie.tmdb && (
+          <section className="mt-10 flex flex-col gap-3">
+            <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
+              Not identified
+            </h2>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.06] p-5">
+              <p className="text-sm">
+                No TMDb match was found for this file, so there is no canonical
+                title, runtime or artwork for it. Search below to link it by
+                hand — the link is kept as a manual match and later scans will
+                not overwrite it.
+              </p>
+
+              <MatchReview
+                moviePath={movie.path}
+                needsReview={false}
+                defaultQuery={
+                  movie.edition
+                    ? movie.title.replace(movie.edition, "").trim()
+                    : movie.title
+                }
+              />
+            </div>
+          </section>
+        )}
 
         {/* Technical */}
         <section className="mt-10 flex flex-col gap-4">

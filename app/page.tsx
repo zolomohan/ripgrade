@@ -1,10 +1,10 @@
 import Link from "next/link";
 
 import { getLibraryRoot, scanStatus } from "./actions";
-import { FolderPicker } from "./folder-picker";
+import { FolderSection } from "./folder-section";
 import { LibraryView } from "./library-view";
 import { ScanButton } from "./scan-button";
-import { DEFAULT_ROOT, listDirectory } from "@/lib/browse";
+import { DEFAULT_ROOT } from "@/lib/browse";
 import { duplicateGroups, getLibrary } from "@/lib/library";
 import { movieId } from "@/lib/routes";
 
@@ -16,7 +16,6 @@ export default async function Page() {
   const scan = await scanStatus();
   const movies = getLibrary();
   const duplicates = duplicateGroups(movies);
-  const initialListing = await listDirectory(root ?? DEFAULT_ROOT);
 
   return (
     <div className="flex flex-col">
@@ -88,22 +87,10 @@ export default async function Page() {
           </section>
         )}
 
-        <details
-          open={!root}
-          className="rounded-xl border border-black/10 dark:border-white/10"
-        >
-          <summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3 text-sm">
-            <span className="shrink-0 opacity-70">
-              {root ? "Change library folder" : "Select library folder"}
-            </span>
-            <span className="truncate font-mono text-xs opacity-40">
-              {root ?? "None selected"}
-            </span>
-          </summary>
-          <div className="border-t border-black/10 p-4 dark:border-white/10">
-            <FolderPicker initialListing={initialListing} />
-          </div>
-        </details>
+        <FolderSection
+          initialPath={root ?? DEFAULT_ROOT}
+          hasRoot={Boolean(root)}
+        />
       </main>
     </div>
   );

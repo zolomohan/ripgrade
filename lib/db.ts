@@ -37,6 +37,25 @@ CREATE TABLE IF NOT EXISTS settings (
   value       TEXT NOT NULL
 );
 
+-- Raw TMDb records, cached like probes: expensive to fetch, cheap to re-derive
+-- from. Keyed by TMDb id so several files of the same film share one row.
+CREATE TABLE IF NOT EXISTS tmdb_movies (
+  tmdb_id     INTEGER PRIMARY KEY,
+  fetched_at  INTEGER NOT NULL,
+  json        TEXT NOT NULL
+);
+
+-- Which film each file was matched to, and how sure we are. A row with a null
+-- tmdb_id records "searched, found nothing" so it is not retried every run.
+CREATE TABLE IF NOT EXISTS tmdb_matches (
+  path        TEXT PRIMARY KEY,
+  tmdb_id     INTEGER,
+  method      TEXT NOT NULL,
+  confidence  TEXT NOT NULL,
+  manual      INTEGER NOT NULL DEFAULT 0,
+  matched_at  INTEGER NOT NULL
+);
+
 -- Poster/fanart live beside the movie file, so this is keyed by directory
 -- rather than by film. A separate table so adding it needed no rescan.
 CREATE TABLE IF NOT EXISTS artwork (

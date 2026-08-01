@@ -5,23 +5,44 @@ import path from "node:path";
 
 import { findArtwork, type Artwork } from "./artwork";
 import { db } from "./db";
-import { deriveAll } from "./library";
+import { runEnrich } from "./enrich";
+import { deriveAll, getLibrary } from "./library";
 import { probe, VIDEO_EXTENSIONS } from "./media";
+import { hasCredentials } from "./tmdb";
 
 export type ScanState = {
-  status: "idle" | "scanning" | "done" | "error";
+  /** "matching" is the TMDb phase that runs automatically after probing. */
+  status: "idle" | "scanning" | "matching" | "done" | "error";
   root?: string;
   discovered: number;
   probed: number;
   cached: number;
   failed: number;
   current?: string;
+  /** TMDb phase counters, filled once probing finishes. */
+  matchTotal: number;
+  matchDone: number;
+  matched: number;
+  needsReview: number;
+  /** Files that vanished from disk since the last scan. */
+  removed: number;
   startedAt?: number;
   finishedAt?: number;
   error?: string;
 };
 
-const IDLE: ScanState = { status: "idle", discovered: 0, probed: 0, cached: 0, failed: 0 };
+const IDLE: ScanState = {
+  status: "idle",
+  discovered: 0,
+  probed: 0,
+  cached: 0,
+  failed: 0,
+  matchTotal: 0,
+  matchDone: 0,
+  matched: 0,
+  needsReview: 0,
+  removed: 0,
+};
 
 // Survives HMR so a save mid-scan doesn't orphan the running scan's progress.
 const globalForScan = globalThis as unknown as { medlibScan?: ScanState };
@@ -44,7 +65,8 @@ const SKIP_DIRS = new Set([
   "lost+found",
 ]);
 
-const SAMPLE_OR_TRAILER = /(^|[.\s_-])(sample|trailer|featurette|extras?)([.\s_-]|$)/i;
+const SAMPLE_OR_TRAILER =
+  /(^|[.\s_-])(sample|trailer|featurette|extras?)([.\s_-]|$)/i;
 
 export type FoundFile = { path: string; size: number; mtimeMs: number };
 
@@ -70,12 +92,17 @@ async function* walk(dir: string): AsyncGenerator<FoundFile> {
       continue;
     }
     if (!dirent.isFile()) continue;
-    if (!VIDEO_EXTENSIONS.has(path.extname(dirent.name).toLowerCase())) continue;
+    if (!VIDEO_EXTENSIONS.has(path.extname(dirent.name).toLowerCase()))
+      continue;
     if (SAMPLE_OR_TRAILER.test(path.parse(dirent.name).name)) continue;
 
     try {
       const stats = await stat(full);
-      yield { path: full, size: stats.size, mtimeMs: Math.floor(stats.mtimeMs) };
+      yield {
+        path: full,
+        size: stats.size,
+        mtimeMs: Math.floor(stats.mtimeMs),
+      };
     } catch {
       // Vanished between readdir and stat.
     }
@@ -132,6 +159,43 @@ async function indexArtwork(files: FoundFile[]) {
   return found.filter((f) => f.poster || f.fanart).length;
 }
 
+/**
+ * Drops rows for files that no longer exist on disk.
+ *
+ * Without this a deleted film lingers forever: `deriveAll` derives from every
+ * probe row and re-stamps `last_seen`, so the `present = 0` fallback never
+ * triggers while the stale probe is still there.
+ *
+ * Scoped to the scanned root, so a folder that is merely unmounted or outside
+ * this scan is left untouched. Match rows are deliberately kept — they are
+ * keyed by path, cost nothing, and preserve any manual correction should the
+ * file come back.
+ */
+function pruneMissing(root: string, files: FoundFile[]): number {
+  const found = new Set(files.map((f) => f.path));
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+
+  const stale = (
+    db.prepare("SELECT path FROM probes").all() as { path: string }[]
+  )
+    .map((r) => r.path)
+    .filter((p) => p.startsWith(prefix) && !found.has(p));
+
+  if (stale.length === 0) return 0;
+
+  const dropProbe = db.prepare("DELETE FROM probes WHERE path = ?");
+  const dropMovie = db.prepare("DELETE FROM movies WHERE path = ?");
+
+  db.transaction((paths: string[]) => {
+    for (const p of paths) {
+      dropProbe.run(p);
+      dropMovie.run(p);
+    }
+  })(stale);
+
+  return stale.length;
+}
+
 async function probeAll(files: FoundFile[]) {
   const cachedStmt = selectCached();
   const upsertStmt = upsertProbe();
@@ -143,10 +207,13 @@ async function probeAll(files: FoundFile[]) {
       const file = files[cursor++];
 
       const existing = cachedStmt.get(file.path) as
-        | { size: number; mtime_ms: number }
-        | undefined;
+        { size: number; mtime_ms: number } | undefined;
 
-      if (existing && existing.size === file.size && existing.mtime_ms === file.mtimeMs) {
+      if (
+        existing &&
+        existing.size === file.size &&
+        existing.mtime_ms === file.mtimeMs
+      ) {
         setState({ ...state, cached: state.cached + 1 });
         continue;
       }
@@ -180,12 +247,9 @@ export function startScan(root: string): ScanState {
   if (state.status === "scanning") return state;
 
   setState({
+    ...IDLE,
     status: "scanning",
     root,
-    discovered: 0,
-    probed: 0,
-    cached: 0,
-    failed: 0,
     startedAt: Date.now(),
   });
 
@@ -198,11 +262,47 @@ export function startScan(root: string): ScanState {
         setState({ ...state, discovered: files.length });
       }
 
+      const removed = pruneMissing(root, files);
+      setState({ ...state, removed });
+
       await probeAll(files);
       await indexArtwork(files);
       deriveAll();
 
-      setState({ ...state, status: "done", current: undefined, finishedAt: Date.now() });
+      // Matching is part of a scan, not a separate job. Without a token it is
+      // simply skipped — the scan still completes normally.
+      if (hasCredentials()) {
+        setState({ ...state, status: "matching", current: undefined });
+
+        const summary = await runEnrich(getLibrary(), {
+          onProgress: (p) =>
+            setState({
+              ...state,
+              matchTotal: p.total,
+              matchDone: p.done,
+              matched: p.matched,
+              needsReview: p.needsReview,
+              current: p.current,
+            }),
+        });
+
+        // Re-derive so the new TMDb facts reach the stored rows.
+        deriveAll();
+        setState({
+          ...state,
+          matchTotal: summary.total,
+          matchDone: summary.done,
+          matched: summary.matched,
+          needsReview: summary.needsReview,
+        });
+      }
+
+      setState({
+        ...state,
+        status: "done",
+        current: undefined,
+        finishedAt: Date.now(),
+      });
     } catch (err) {
       setState({
         ...state,

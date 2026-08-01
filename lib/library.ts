@@ -3,7 +3,8 @@ import "server-only";
 import path from "node:path";
 
 import { db } from "./db";
-import { derive, titleKey, type Derived } from "./derive";
+import { derive, titleKey, type Derived, type TmdbFacts } from "./derive";
+import { getMatches, getTmdbMovies } from "./enrich";
 import { decodeMovieId } from "./routes";
 
 type ProbeRow = { path: string; size: number; mediainfo: string | null };
@@ -17,6 +18,33 @@ export function deriveAll(): number {
     .prepare("SELECT path, size, mediainfo FROM probes WHERE mediainfo IS NOT NULL")
     .all() as ProbeRow[];
 
+  const matches = getMatches();
+  const tmdbMovies = getTmdbMovies();
+
+  const factsFor = (path: string): TmdbFacts | undefined => {
+    const match = matches.get(path);
+    if (!match?.tmdbId) return undefined;
+
+    const movie = tmdbMovies.get(match.tmdbId);
+    if (!movie) return undefined;
+
+    return {
+      id: movie.id,
+      title: movie.title,
+      year: movie.release_date ? Number(movie.release_date.slice(0, 4)) : undefined,
+      runtimeMinutes: movie.runtime ?? undefined,
+      imdbId: movie.imdb_id ?? undefined,
+      collection: movie.belongs_to_collection?.name,
+      genres: movie.genres?.map((g) => g.name),
+      posterPath: movie.poster_path ?? undefined,
+      overview: movie.overview,
+      // A manual correction is authoritative; otherwise trust the match method.
+      confidence: match.manual
+        ? "high"
+        : (match.confidence as "high" | "medium" | "low"),
+    };
+  };
+
   const now = Date.now();
   const upsert = db.prepare(`
     INSERT INTO movies (path, first_seen, last_seen, present, derived)
@@ -29,7 +57,12 @@ export function deriveAll(): number {
 
   const write = db.transaction((items: ProbeRow[]) => {
     for (const row of items) {
-      const derived = derive(row.path, row.size, JSON.parse(row.mediainfo!));
+      const derived = derive(
+        row.path,
+        row.size,
+        JSON.parse(row.mediainfo!),
+        factsFor(row.path),
+      );
       upsert.run({ path: row.path, now, derived: JSON.stringify(derived) });
     }
     // Anything not refreshed in this pass no longer has a probe behind it.
