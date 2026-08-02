@@ -18,9 +18,14 @@ export async function GET(request: Request) {
   const target = new URL(request.url).searchParams.get("p");
   if (!target) return new Response("Missing ?p", { status: 400 });
 
+  // Every artwork column, not a list that has to be remembered: a kind added to
+  // the table but not to this check is served as a 404, which is exactly how
+  // logos arrived broken.
   const known = db
-    .prepare("SELECT 1 FROM artwork WHERE poster = ? OR fanart = ?")
-    .get(target, target);
+    .prepare(
+      "SELECT 1 FROM artwork WHERE poster = ? OR fanart = ? OR logo = ?",
+    )
+    .get(target, target, target);
   if (!known) return new Response(`Not a known artwork path: ${target}`, { status: 404 });
 
   const type = MIME_TYPES[path.extname(target).toLowerCase()];

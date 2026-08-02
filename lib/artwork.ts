@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { db } from "./db";
 
-export type Artwork = { poster?: string; fanart?: string };
+export type Artwork = { poster?: string; fanart?: string; logo?: string };
 
 /**
  * Checked in this order, so the result never depends on readdir ordering. It
@@ -21,8 +21,28 @@ export const MIME_TYPES: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-/** What this app writes when you pick artwork from TMDb. */
-export const SAVED_NAMES = { poster: "poster.jpeg", fanart: "fanart.jpeg" };
+/**
+ * What this app writes when you pick artwork from TMDb.
+ *
+ * The logo is a PNG and must stay one: it is a title treatment cut out against
+ * transparency, and re-encoding it as JPEG would fill that transparency with
+ * white and make it useless over a backdrop.
+ */
+export const SAVED_NAMES = {
+  poster: "poster.jpeg",
+  fanart: "fanart.jpeg",
+  logo: "logo.png",
+};
+
+/**
+ * Stems recognised on disk. `clearlogo` is what Kodi and the *arr stack write,
+ * so a library organised by those tools is picked up without renaming anything.
+ */
+const STEMS = {
+  poster: ["poster"],
+  fanart: ["fanart"],
+  logo: ["logo", "clearlogo"],
+};
 
 /**
  * Finds the poster and backdrop sitting alongside a movie file. Stems are
@@ -45,25 +65,33 @@ export async function findArtwork(dir: string): Promise<Artwork> {
     const ext = path.extname(entry.name).toLowerCase();
     if (!MIME_TYPES[ext]) continue;
 
-    const stem = path.basename(entry.name, path.extname(entry.name)).toLowerCase();
-    if (stem !== "poster" && stem !== "fanart") continue;
+    const stem = path
+      .basename(entry.name, path.extname(entry.name))
+      .toLowerCase();
+    if (!Object.values(STEMS).some((names) => names.includes(stem))) continue;
 
     const found = byStem.get(stem) ?? new Map<string, string>();
     found.set(ext, path.join(dir, entry.name));
     byStem.set(stem, found);
   }
 
-  const pick = (stem: string) => {
-    const found = byStem.get(stem);
-    if (!found) return undefined;
-    for (const ext of EXTENSION_PRIORITY) {
-      const hit = found.get(ext);
-      if (hit) return hit;
+  const pick = (stems: string[]) => {
+    for (const stem of stems) {
+      const found = byStem.get(stem);
+      if (!found) continue;
+      for (const ext of EXTENSION_PRIORITY) {
+        const hit = found.get(ext);
+        if (hit) return hit;
+      }
     }
     return undefined;
   };
 
-  return { poster: pick("poster"), fanart: pick("fanart") };
+  return {
+    poster: pick(STEMS.poster),
+    fanart: pick(STEMS.fanart),
+    logo: pick(STEMS.logo),
+  };
 }
 
 /** Refreshes one folder's row after artwork is added or replaced. */
@@ -71,10 +99,13 @@ export async function reindexDir(dir: string): Promise<Artwork> {
   const art = await findArtwork(dir);
 
   db.prepare(
-    `INSERT INTO artwork (dir, poster, fanart, found_at) VALUES (?, ?, ?, ?)
+    `INSERT INTO artwork (dir, poster, fanart, logo, found_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(dir) DO UPDATE SET
-       poster = excluded.poster, fanart = excluded.fanart, found_at = excluded.found_at`,
-  ).run(dir, art.poster ?? null, art.fanart ?? null, Date.now());
+       poster = excluded.poster,
+       fanart = excluded.fanart,
+       logo = excluded.logo,
+       found_at = excluded.found_at`,
+  ).run(dir, art.poster ?? null, art.fanart ?? null, art.logo ?? null, Date.now());
 
   return art;
 }
@@ -86,7 +117,7 @@ export async function reindexDir(dir: string): Promise<Artwork> {
  */
 export async function saveArtwork(
   dir: string,
-  kind: "poster" | "fanart",
+  kind: keyof typeof SAVED_NAMES,
   url: string,
 ): Promise<string> {
   const response = await fetch(url);

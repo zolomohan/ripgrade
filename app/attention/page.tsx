@@ -43,15 +43,17 @@ export default async function AttentionPage() {
     })),
 
     artwork: movies
-      .filter((m) => !m.poster || !m.fanart)
+      .filter((m) => !m.poster || !m.fanart || !m.logo)
       .map((m) => ({
         path: m.path,
         title: m.title,
         year: m.year,
         poster: m.poster,
-        missing: [!m.poster && "poster", !m.fanart && "backdrop"].filter(
-          Boolean,
-        ) as string[],
+        missing: [
+          !m.poster && "poster",
+          !m.fanart && "backdrop",
+          !m.logo && "logo",
+        ].filter(Boolean) as string[],
       })),
 
     matches: movies

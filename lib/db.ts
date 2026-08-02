@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS artwork (
   dir         TEXT PRIMARY KEY,
   poster      TEXT,
   fanart      TEXT,
+  logo        TEXT,
   found_at    INTEGER NOT NULL
 );
 `;
@@ -137,6 +138,23 @@ export const db = globalForDb.medlibDb ?? open();
 // is CREATE TABLE IF NOT EXISTS, so it is idempotent — and it means a new table
 // reaches the cached dev connection without needing a server restart.
 db.exec(SCHEMA);
+
+/**
+ * The one exception to "delete the database and rescan".
+ *
+ * `artwork` gained a `logo` column, and CREATE TABLE IF NOT EXISTS cannot add
+ * one to a table that already exists. The contents are a directory listing and
+ * would cost nothing to rebuild — but the same file also holds the probe cache,
+ * which would cost a full re-read of the drive, so the column is added in place
+ * instead. Adding it is idempotent: it happens once and is a no-op after.
+ */
+const artworkColumns = (
+  db.prepare("PRAGMA table_info(artwork)").all() as { name: string }[]
+).map((c) => c.name);
+
+if (!artworkColumns.includes("logo")) {
+  db.exec("ALTER TABLE artwork ADD COLUMN logo TEXT");
+}
 
 if (process.env.NODE_ENV !== "production") globalForDb.medlibDb = db;
 

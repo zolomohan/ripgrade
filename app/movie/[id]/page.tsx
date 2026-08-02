@@ -489,14 +489,25 @@ export default async function MoviePage({
           <div className="absolute inset-0 bg-surface-strong" />
         )}
 
+        {/* A title treatment is drawn to sit on artwork, so it goes on the
+            backdrop — in the corner, where the image is at full strength rather
+            than faded into the page. Decorative: the real title is the h1
+            below, and repeating it here would only make a screen reader say it
+            twice. */}
+        {movie.logo && (
+          <div className="pointer-events-none absolute top-6 right-6 z-[5] flex justify-end sm:top-8 sm:right-8">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={artUrl(movie.logo)}
+              alt=""
+              aria-hidden
+              className="max-h-20 w-auto max-w-[45vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:max-h-28 sm:max-w-sm"
+            />
+          </div>
+        )}
+
         <BackButton />
 
-        <div className="absolute top-6 right-6 flex items-center gap-2">
-          <RevealInFinder moviePath={movie.path} />
-          {movie.tmdb && (
-            <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
-          )}
-        </div>
       </div>
 
       {/* relative + z-10: the hero above is positioned, so without its own
@@ -504,7 +515,7 @@ export default async function MoviePage({
           poster overlapping the backdrop would be clipped. */}
       <div className="relative z-10 mx-auto -mt-28 w-full max-w-5xl px-6 sm:px-8">
         {/* Title block */}
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end">
           {movie.poster && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -529,6 +540,17 @@ export default async function MoviePage({
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <FormatBadges movie={movie} />
             </div>
+          </div>
+
+          {/* Pinned to the bottom of the title block rather than given a row of
+              its own: level with the hero it belongs to, and the score card
+              stays where it was. Stacked below on a narrow screen, where there
+              is no room beside the poster to pin anything to. */}
+          <div className="mt-2 flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:bottom-1 sm:mt-0">
+            <RevealInFinder moviePath={movie.path} />
+            {movie.tmdb && (
+              <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
+            )}
           </div>
         </div>
 

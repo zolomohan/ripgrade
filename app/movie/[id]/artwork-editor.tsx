@@ -1,15 +1,37 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 import { chooseArtwork, listArtwork, type ArtworkChoice } from "@/app/actions";
 import { imageUrl } from "@/lib/image-url";
 import { HERO_BUTTON } from "./hero-button";
 
-type Tab = "poster" | "fanart";
+type Tab = "poster" | "fanart" | "logo";
+
+const KINDS: Record<Tab, { label: string; file: string }> = {
+  poster: { label: "Poster", file: "poster.jpeg" },
+  fanart: { label: "Backdrop", file: "fanart.jpeg" },
+  logo: { label: "Logo", file: "logo.png" },
+};
 type Sort = "default" | "largest";
+
+function Spinner({ big }: { big?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      aria-hidden
+      className={`motion-safe:animate-spin ${big ? "h-7 w-7" : "h-4 w-4"}`}
+    >
+      <path d="M12 3a9 9 0 1 0 9 9" />
+    </svg>
+  );
+}
 
 export function ArtworkEditor({
   moviePath,
@@ -19,6 +41,7 @@ export function ArtworkEditor({
   tmdbId: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [tab, setTab] = useState<Tab>("poster");
   // Biggest first by default — the highest-resolution artwork is almost always
   // what you want to save.
@@ -26,11 +49,16 @@ export function ArtworkEditor({
   const [images, setImages] = useState<{
     posters: ArtworkChoice[];
     backdrops: ArtworkChoice[];
+    logos: ArtworkChoice[];
   } | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  /** Which image is downloading, and which one landed — both by file path, so
+   *  the state shows on the tile you actually clicked. */
+  const [saving, setSaving] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [target, setTarget] = useState<HTMLElement | null>(null);
+  const trigger = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -48,9 +76,35 @@ export function ArtworkEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: MouseEvent) => {
+      if (!trigger.current?.contains(e.target as Node)) setMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+
+  // Which kind you want is a decision you have already made by the time you
+  // reach for this button, so it is asked first and the modal opens on that
+  // tab — rather than opening on posters and making you switch.
+  function openWith(kind: Tab) {
+    setTab(kind);
+    setMenu(false);
+    show();
+  }
+
   function show() {
     setOpen(true);
     setError(null);
+    setSaved(null);
     if (images) return;
 
     startTransition(async () => {
@@ -64,11 +118,13 @@ export function ArtworkEditor({
 
   function save(filePath: string) {
     setError(null);
-    setStatus(null);
+    setSaved(null);
+    setSaving(filePath);
     startTransition(async () => {
       const result = await chooseArtwork(moviePath, tab, filePath);
+      setSaving(null);
       if (result.ok) {
-        setStatus(`Saved as ${result.saved.split("/").pop()}`);
+        setSaved(filePath);
         router.refresh();
       } else {
         setError(result.error);
@@ -79,7 +135,9 @@ export function ArtworkEditor({
   const listed = images
     ? tab === "poster"
       ? images.posters
-      : images.backdrops
+      : tab === "fanart"
+        ? images.backdrops
+        : images.logos
     : [];
 
   const choices =
@@ -89,10 +147,12 @@ export function ArtworkEditor({
 
   return (
     <>
+      <div ref={trigger} className="relative">
       <button
         type="button"
-        onClick={show}
+        onClick={() => setMenu((v) => !v)}
         aria-label="Edit artwork"
+        aria-expanded={menu}
         title="Edit artwork"
         className={HERO_BUTTON}
       >
@@ -111,6 +171,28 @@ export function ArtworkEditor({
         </svg>
       </button>
 
+        {menu && (
+          <div className="row-enter absolute right-0 bottom-full z-30 mb-2 w-40 overflow-hidden rounded-card border border-line bg-background py-1 shadow-2xl">
+            {(
+              [
+                ["poster", "Poster"],
+                ["fanart", "Backdrop"],
+                ["logo", "Logo"],
+              ] as [Tab, string][]
+            ).map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => openWith(kind)}
+                className="block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-surface-strong"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {open &&
         target &&
         createPortal(
@@ -123,24 +205,7 @@ export function ArtworkEditor({
               className="w-full max-w-5xl rounded-card border border-line bg-background p-6 shadow-2xl"
             >
               <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-lg font-semibold">Artwork</h2>
-
-                <div className="flex items-center gap-1.5">
-                  {(["poster", "fanart"] as Tab[]).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setTab(t)}
-                      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                        tab === t
-                          ? "border-transparent bg-foreground text-background"
-                          : "border-line hover:bg-surface-strong"
-                      }`}
-                    >
-                      {t === "poster" ? "Posters" : "Backdrops"}
-                    </button>
-                  ))}
-                </div>
+                <h2 className="text-lg font-semibold">{KINDS[tab].label}</h2>
 
                 <div className="relative">
                   <select
@@ -165,12 +230,9 @@ export function ArtworkEditor({
                 </div>
 
                 <span className="text-xs opacity-40">
-                  saves as {tab === "poster" ? "poster.jpeg" : "fanart.jpeg"}
+                  saves as {KINDS[tab].file}
                 </span>
 
-                {pending && (
-                  <span className="text-xs opacity-50">working…</span>
-                )}
 
                 <button
                   type="button"
@@ -191,8 +253,13 @@ export function ArtworkEditor({
 
               {images && choices.length === 0 && (
                 <p className="mt-6 text-sm opacity-50">
-                  TMDb has no {tab === "poster" ? "posters" : "backdrops"} for
-                  this film.
+                  TMDb has no{" "}
+                  {tab === "poster"
+                    ? "posters"
+                    : tab === "fanart"
+                      ? "backdrops"
+                      : "logos"}{" "}
+                  for this film.
                 </p>
               )}
 
@@ -201,7 +268,9 @@ export function ArtworkEditor({
                   className={`mt-5 grid gap-3 ${
                     tab === "poster"
                       ? "grid-cols-3 sm:grid-cols-6"
-                      : "grid-cols-2 sm:grid-cols-3"
+                      : tab === "logo"
+                        ? "grid-cols-2 sm:grid-cols-4"
+                        : "grid-cols-2 sm:grid-cols-3"
                   }`}
                 >
                   {choices.map((choice) => (
@@ -210,7 +279,13 @@ export function ArtworkEditor({
                       type="button"
                       onClick={() => save(choice.filePath)}
                       disabled={pending}
-                      className="group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40"
+                      className={`group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40 ${
+                        // Logos are cut out against transparency and are
+                        // usually white, so they need something behind them to
+                        // be visible at all — and something dark, since that is
+                        // what they are drawn to sit on.
+                        tab === "logo" ? "grid place-items-center bg-black p-4" : ""
+                      }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -220,18 +295,45 @@ export function ArtworkEditor({
                         )}
                         alt=""
                         loading="lazy"
-                        className="w-full object-cover"
+                        className={
+                          tab === "logo"
+                            ? "max-h-16 w-auto object-contain"
+                            : "w-full object-cover"
+                        }
                       />
                       <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
                         {choice.width}×{choice.height}
                         {!choice.language && " · textless"}
                       </span>
+
+                      {/* The tile you clicked says what it is doing, so the
+                          answer to "did that work?" is where you were already
+                          looking. */}
+                      {saving === choice.filePath && (
+                        <span className="absolute inset-0 grid place-items-center bg-black/60 text-white">
+                          <Spinner big />
+                        </span>
+                      )}
+                      {saved === choice.filePath && (
+                        <span className="absolute inset-0 grid place-items-center bg-emerald-600/75 text-white">
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-7 w-7"
+                          >
+                            <path d="m4 12.5 5 5 11-11" />
+                          </svg>
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
               )}
 
-              {status && <p className="mt-4 text-sm opacity-60">{status}</p>}
               {error && (
                 <p className="mt-4 font-mono text-sm text-red-600 dark:text-red-400">
                   {error}

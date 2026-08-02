@@ -132,10 +132,14 @@ export type TmdbImage = {
  */
 export function getImages(
   id: number,
-): Promise<{ posters: TmdbImage[]; backdrops: TmdbImage[] }> {
+): Promise<{
+  posters: TmdbImage[];
+  backdrops: TmdbImage[];
+  logos: TmdbImage[];
+}> {
   return api(`/movie/${id}/images`, { include_image_language: "en,null" });
 }
 
 /** TMDb file paths are always /<hash>.<ext> — anything else is not ours. */
 export const isTmdbImagePath = (filePath: string) =>
-  /^\/[A-Za-z0-9]+\.(jpg|jpeg|png|webp)$/.test(filePath);
+  /^\/[A-Za-z0-9]+\.(jpg|jpeg|png|webp|svg)$/.test(filePath);

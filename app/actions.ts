@@ -520,9 +520,11 @@ export type ArtworkChoice = {
   vote: number;
 };
 
-export async function listArtwork(
-  tmdbId: number,
-): Promise<{ posters: ArtworkChoice[]; backdrops: ArtworkChoice[] }> {
+export async function listArtwork(tmdbId: number): Promise<{
+  posters: ArtworkChoice[];
+  backdrops: ArtworkChoice[];
+  logos: ArtworkChoice[];
+}> {
   const images = await getImages(tmdbId);
   const map = (list: TmdbImage[]) =>
     list.slice(0, 24).map((i) => ({
@@ -533,13 +535,19 @@ export async function listArtwork(
       vote: i.vote_average,
     }));
 
-  return { posters: map(images.posters), backdrops: map(images.backdrops) };
+  return {
+    posters: map(images.posters),
+    backdrops: map(images.backdrops),
+    // TMDb serves some logos as SVG, which cannot be drawn into a raster file
+    // the way the rest are; the PNGs are what this app can actually save.
+    logos: map((images.logos ?? []).filter((i) => !i.file_path.endsWith(".svg"))),
+  };
 }
 
 /** Downloads the chosen image into the film's own folder. */
 export async function chooseArtwork(
   moviePath: string,
-  kind: "poster" | "fanart",
+  kind: "poster" | "fanart" | "logo",
   tmdbFilePath: string,
 ): Promise<{ ok: true; saved: string } | { ok: false; error: string }> {
   // Both inputs are constrained: the folder must contain a film we scanned, and

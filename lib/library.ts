@@ -101,6 +101,8 @@ export function deriveAll(): number {
 export type LibraryItem = Derived & {
   poster?: string;
   fanart?: string;
+  /** Title treatment, when one has been downloaded or was already there. */
+  logo?: string;
   /** You have looked at this one and accepted it as-is, issues and all. */
   acknowledged: boolean;
   note?: string;
@@ -123,11 +125,12 @@ export function getLibrary(): LibraryItem[] {
     .all() as { derived: string; first_seen: number }[];
 
   const artRows = db
-    .prepare("SELECT dir, poster, fanart FROM artwork")
+    .prepare("SELECT dir, poster, fanart, logo FROM artwork")
     .all() as {
     dir: string;
     poster: string | null;
     fanart: string | null;
+    logo: string | null;
   }[];
   const art = new Map(artRows.map((a) => [a.dir, a]));
   const triage = getTriage();
@@ -141,6 +144,7 @@ export function getLibrary(): LibraryItem[] {
       ...derived,
       poster: found?.poster ?? undefined,
       fanart: found?.fanart ?? undefined,
+      logo: found?.logo ?? undefined,
       acknowledged: decided?.acknowledged ?? false,
       note: decided?.note,
       resolved: acks.get(derived.path) ?? [],

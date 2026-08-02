@@ -140,7 +140,7 @@ const FACETS: {
       {
         key: "noart",
         label: "Missing artwork",
-        test: (m) => !m.poster || !m.fanart,
+        test: (m) => !m.poster || !m.fanart || !m.logo,
       },
       {
         key: "review",
