@@ -1,5 +1,5 @@
 import { classifyEnhancementLayer, openIssues } from "@/lib/derive";
-import { duplicateGroups, getLibrary, groupKeyOf } from "@/lib/library";
+import { duplicateGroups, getMovies, groupKeyOf } from "@/lib/library";
 import { AttentionView, type AttentionData } from "./attention-view";
 
 export const metadata = { title: "Needs attention — RipGrade" };
@@ -7,7 +7,7 @@ export const metadata = { title: "Needs attention — RipGrade" };
 export const dynamic = "force-dynamic";
 
 export default async function AttentionPage() {
-  const movies = getLibrary();
+  const movies = getMovies();
 
   const data: AttentionData = {
     issues: movies

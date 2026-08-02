@@ -41,10 +41,14 @@ import { revealInFinder } from "@/lib/system";
 import { addToWishlist, removeFromWishlist } from "@/lib/wishlist";
 import { setIssueAck, setTriage } from "@/lib/triage";
 import { imageUrl } from "@/lib/image-url";
+import { getShow } from "@/lib/shows";
+import { enrichShow, setManualShowMatch } from "@/lib/tv";
 import {
   getImages,
+  getTvImages,
   isTmdbImagePath,
   searchMovies,
+  searchTv,
   type TmdbImage,
 } from "@/lib/tmdb";
 
@@ -215,6 +219,49 @@ export async function searchTmdb(query: string): Promise<SearchHit[]> {
     posterPath: (r as { poster_path?: string | null }).poster_path ?? undefined,
     overview: (r as { overview?: string }).overview,
   }));
+}
+
+/** The same search against TMDb's TV half, for linking a show by hand. */
+export async function searchTmdbShows(query: string): Promise<SearchHit[]> {
+  if (!query.trim()) return [];
+
+  const { results } = await searchTv(query.trim());
+  return results.slice(0, 12).map((r) => ({
+    id: r.id,
+    title: r.name,
+    year: r.first_air_date?.slice(0, 4) || undefined,
+    posterPath: r.poster_path ?? undefined,
+    overview: r.overview,
+  }));
+}
+
+/**
+ * Links a show to a TMDb series by hand and pulls its facts down straight
+ * away — the alternative is a page that says the right name but has nothing
+ * behind it until the next scan.
+ */
+export async function confirmShowMatch(
+  showKey: string,
+  tmdbId: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const show = getShow(showKey);
+  if (!show) return { ok: false, error: `Unknown show: ${showKey}` };
+
+  try {
+    setManualShowMatch(showKey, tmdbId);
+    await enrichShow(
+      showKey,
+      show.title,
+      show.seasons.map((s) => s.number),
+    );
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**
@@ -606,12 +653,17 @@ export type ArtworkChoice = {
   vote: number;
 };
 
-export async function listArtwork(tmdbId: number): Promise<{
+export async function listArtwork(
+  tmdbId: number,
+  media: "movie" | "tv" = "movie",
+): Promise<{
   posters: ArtworkChoice[];
   backdrops: ArtworkChoice[];
   logos: ArtworkChoice[];
 }> {
-  const images = await getImages(tmdbId);
+  const images = await (media === "tv"
+    ? getTvImages(tmdbId)
+    : getImages(tmdbId));
   const map = (list: TmdbImage[]) =>
     list.slice(0, 24).map((i) => ({
       filePath: i.file_path,
@@ -626,8 +678,43 @@ export async function listArtwork(tmdbId: number): Promise<{
     backdrops: map(images.backdrops),
     // TMDb serves some logos as SVG, which cannot be drawn into a raster file
     // the way the rest are; the PNGs are what this app can actually save.
-    logos: map((images.logos ?? []).filter((i) => !i.file_path.endsWith(".svg"))),
+    logos: map(
+      (images.logos ?? []).filter((i) => !i.file_path.endsWith(".svg")),
+    ),
   };
+}
+
+/**
+ * Downloads the chosen image into the show's own folder — the one above the
+ * season folders, so it belongs to the series rather than to one season.
+ */
+export async function chooseShowArtwork(
+  showKey: string,
+  kind: "poster" | "fanart" | "logo",
+  tmdbFilePath: string,
+): Promise<{ ok: true; saved: string } | { ok: false; error: string }> {
+  const show = getShow(showKey);
+  if (!show) return { ok: false, error: `Unknown show: ${showKey}` };
+  if (!isTmdbImagePath(tmdbFilePath)) {
+    return { ok: false, error: `Not a TMDb image path: ${tmdbFilePath}` };
+  }
+
+  try {
+    const saved = await saveArtwork(
+      show.dir,
+      kind,
+      imageUrl(tmdbFilePath, "original"),
+    );
+    await reindexDir(show.dir);
+    deriveAll();
+    refresh();
+    return { ok: true, saved };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /** Downloads the chosen image into the film's own folder. */

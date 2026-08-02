@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { beginConvert, resolveIssue } from "@/app/actions";
+import { PillCount } from "@/app/controls";
 import { ArtworkEditor } from "@/app/movie/[id]/artwork-editor";
 import { groupIssues, type Issue, type Status } from "@/lib/derive";
 import { artUrl, compareId, movieId } from "@/lib/routes";
@@ -249,277 +250,282 @@ export function AttentionView({ data }: { data: AttentionData }) {
             } ${category.count === 0 ? "opacity-45" : ""}`}
           >
             {category.label}
-            <span
-              className={`text-xs tabular-nums ${
-                tab === category.key ? "opacity-70" : "opacity-45"
-              }`}
-            >
+            <PillCount active={tab === category.key}>
               {category.count}
-            </span>
+            </PillCount>
           </button>
         ))}
       </div>
 
       {tab === "issues" && (
-      <Section title="Open issues" count={data.issues.length}>
-        <div className="flex flex-col gap-4">
-          {data.issues.map((film) => (
-            <div
-              key={film.path}
-              className="flex gap-4 rounded-card border border-line bg-surface p-4"
-            >
-              <Poster src={film.poster} />
+        <Section title="Open issues" count={data.issues.length}>
+          <div className="flex flex-col gap-4">
+            {data.issues.map((film) => (
+              <div
+                key={film.path}
+                className="flex gap-4 rounded-card border border-line bg-surface p-4"
+              >
+                <Poster src={film.poster} />
 
-              <div className="flex min-w-0 flex-1 flex-col gap-3">
-                <Title path={film.path} title={film.title} year={film.year} />
+                <div className="flex min-w-0 flex-1 flex-col gap-3">
+                  <Title path={film.path} title={film.title} year={film.year} />
 
-                {/* One row per code, not per message: a film can raise the
+                  {/* One row per code, not per message: a film can raise the
                     same check more than once — three separate bitrate gaps
                     against one disc, say — and resolving is keyed by code, so
                     listing them separately would offer buttons that silently
                     clear each other. */}
-                <ul className="divide-y divide-line">
-                  {groupIssues(film.issues).map((group) => {
-                    const key = `${film.path}:${group.code}`;
-                    return (
-                      <li
-                        key={group.code}
-                        className="flex items-start gap-3 py-3.5 first:pt-0 last:pb-0"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-baseline gap-2">
-                            <span
-                              className={`text-[10px] font-semibold uppercase ${SEVERITY[group.severity]}`}
-                            >
-                              {group.severity}
-                            </span>
-                            <code className="font-mono text-[10px] opacity-35">
-                              {group.code}
-                            </code>
+                  <ul className="divide-y divide-line">
+                    {groupIssues(film.issues).map((group) => {
+                      const key = `${film.path}:${group.code}`;
+                      return (
+                        <li
+                          key={group.code}
+                          className="flex items-start gap-3 py-3.5 first:pt-0 last:pb-0"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2">
+                              <span
+                                className={`text-[10px] font-semibold uppercase ${SEVERITY[group.severity]}`}
+                              >
+                                {group.severity}
+                              </span>
+                              <code className="font-mono text-[10px] opacity-35">
+                                {group.code}
+                              </code>
+                            </div>
+                            {group.messages.map((message) => (
+                              <p key={message} className="mt-0.5 text-sm">
+                                {message}
+                              </p>
+                            ))}
                           </div>
-                          {group.messages.map((message) => (
-                            <p key={message} className="mt-0.5 text-sm">
-                              {message}
-                            </p>
-                          ))}
-                        </div>
 
-                        {/* `self-center` against a row that may run to three
+                          {/* `self-center` against a row that may run to three
                             lines, so the button sits with the issue rather
                             than pinned to its first line. */}
-                        <button
-                          type="button"
-                          disabled={busy === key}
-                          onClick={() =>
-                            run(key, () =>
-                              resolveIssue(film.path, group.code, true),
-                            )
-                          }
-                          aria-label={`Resolve ${group.code}`}
-                          title="Mark as resolved"
-                          className="grid h-8 w-8 shrink-0 place-items-center self-center rounded-full border border-line opacity-40 transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] hover:text-emerald-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-emerald-300"
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-3.5 w-3.5"
+                          <button
+                            type="button"
+                            disabled={busy === key}
+                            onClick={() =>
+                              run(key, () =>
+                                resolveIssue(film.path, group.code, true),
+                              )
+                            }
+                            aria-label={`Resolve ${group.code}`}
+                            title="Mark as resolved"
+                            className="grid h-8 w-8 shrink-0 place-items-center self-center rounded-full border border-line opacity-40 transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] hover:text-emerald-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-emerald-300"
                           >
-                            <path d="m4 12.5 5 5 11-11" />
-                          </svg>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-3.5 w-3.5"
+                            >
+                              <path d="m4 12.5 5 5 11-11" />
+                            </svg>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
+            ))}
+          </div>
+        </Section>
       )}
 
       {tab === "profile7" && (
-      <Section title="Profile 7" count={data.profile7.length}>
-        <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-          {data.profile7.map((film) => (
-            <div key={film.path} className="flex items-center gap-4 px-4 py-3">
-              <Poster src={film.poster} />
-              <div className="min-w-0 flex-1">
-                <Title path={film.path} title={film.title} year={film.year} />
-                <p
-                  className={`mt-0.5 text-xs ${EL_VERDICT[film.kind ?? "unknown"].tone}`}
-                >
-                  {film.kind
-                    ? EL_VERDICT[film.kind].text
-                    : "Stream not read yet"}
-                </p>
-                {film.provisional && (
-                  <p className="mt-0.5 text-xs opacity-45">
-                    Judged on a sample — needs a full pass before converting.
+        <Section title="Profile 7" count={data.profile7.length}>
+          <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+            {data.profile7.map((film) => (
+              <div
+                key={film.path}
+                className="flex items-center gap-4 px-4 py-3"
+              >
+                <Poster src={film.poster} />
+                <div className="min-w-0 flex-1">
+                  <Title path={film.path} title={film.title} year={film.year} />
+                  <p
+                    className={`mt-0.5 text-xs ${EL_VERDICT[film.kind ?? "unknown"].tone}`}
+                  >
+                    {film.kind
+                      ? EL_VERDICT[film.kind].text
+                      : "Stream not read yet"}
                   </p>
-                )}
-                {failed[film.path] && (
-                  <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">
-                    {failed[film.path]}
-                  </p>
-                )}
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <span className="text-[11px] opacity-35">
-                  {film.read === "full"
-                    ? "read in full"
-                    : film.read === "head"
-                      ? "sampled"
-                      : "unread"}
-                </span>
+                  {film.provisional && (
+                    <p className="mt-0.5 text-xs opacity-45">
+                      Judged on a sample — needs a full pass before converting.
+                    </p>
+                  )}
+                  {failed[film.path] && (
+                    <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">
+                      {failed[film.path]}
+                    </p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="text-[11px] opacity-35">
+                    {film.read === "full"
+                      ? "read in full"
+                      : film.read === "head"
+                        ? "sampled"
+                        : "unread"}
+                  </span>
 
-                {/* Only where the verdict allows it. A complex FEL and a
+                  {/* Only where the verdict allows it. A complex FEL and a
                     provisional one both have a reason not to, and the row
                     above says which. */}
-                {(film.kind === "mel" ||
-                  (film.kind === "simple-fel" && !film.provisional)) &&
-                  (started.includes(film.path) ? (
-                    <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                      Started
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => convert(film.path)}
-                      disabled={busy === film.path}
-                      className="rounded-control border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong disabled:opacity-40"
-                    >
-                      {busy === film.path ? "Starting…" : "Convert"}
-                    </button>
-                  ))}
+                  {(film.kind === "mel" ||
+                    (film.kind === "simple-fel" && !film.provisional)) &&
+                    (started.includes(film.path) ? (
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                        Started
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => convert(film.path)}
+                        disabled={busy === film.path}
+                        className="rounded-control border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong disabled:opacity-40"
+                      >
+                        {busy === film.path ? "Starting…" : "Convert"}
+                      </button>
+                    ))}
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    run(`${film.path}:p7`, () =>
-                      resolveIssue(film.path, "dv-profile-7", true),
-                    )
-                  }
-                  disabled={busy === `${film.path}:p7`}
-                  aria-label={`Resolve Profile 7 on ${film.title}`}
-                  title="Mark as resolved"
-                  className="grid h-8 w-8 place-items-center rounded-full border border-line opacity-40 transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] hover:text-emerald-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-emerald-300"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-3.5 w-3.5"
+                  <button
+                    type="button"
+                    onClick={() =>
+                      run(`${film.path}:p7`, () =>
+                        resolveIssue(film.path, "dv-profile-7", true),
+                      )
+                    }
+                    disabled={busy === `${film.path}:p7`}
+                    aria-label={`Resolve Profile 7 on ${film.title}`}
+                    title="Mark as resolved"
+                    className="grid h-8 w-8 place-items-center rounded-full border border-line opacity-40 transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] hover:text-emerald-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-emerald-300"
                   >
-                    <path d="m4 12.5 5 5 11-11" />
-                  </svg>
-                </button>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path d="m4 12.5 5 5 11-11" />
+                    </svg>
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </Section>
+            ))}
+          </div>
+        </Section>
       )}
 
       {tab === "duplicates" && (
-      <Section title="Duplicates" count={data.duplicates.length}>
-        <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-          {data.duplicates.map((group) => (
-            <div key={group.key} className="flex items-center gap-4 px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="font-medium">
-                  {group.title}
-                  {group.year && (
-                    <span className="ml-1.5 font-normal opacity-40">
-                      {group.year}
-                    </span>
-                  )}
-                </p>
-                <p className="mt-0.5 text-xs opacity-50">
-                  {group.copies
-                    .map(
-                      (c) =>
-                        `${c.resolution} ${c.releaseType} · ${c.score}/100 · ${size(c.sizeBytes)}`,
-                    )
-                    .join("   vs   ")}
-                </p>
-              </div>
-              <Link
-                href={`/compare/${compareId(group.key)}`}
-                className="shrink-0 rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong"
+        <Section title="Duplicates" count={data.duplicates.length}>
+          <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+            {data.duplicates.map((group) => (
+              <div
+                key={group.key}
+                className="flex items-center gap-4 px-4 py-3"
               >
-                Compare
-              </Link>
-            </div>
-          ))}
-        </div>
-      </Section>
-
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">
+                    {group.title}
+                    {group.year && (
+                      <span className="ml-1.5 font-normal opacity-40">
+                        {group.year}
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 text-xs opacity-50">
+                    {group.copies
+                      .map(
+                        (c) =>
+                          `${c.resolution} ${c.releaseType} · ${c.score}/100 · ${size(c.sizeBytes)}`,
+                      )
+                      .join("   vs   ")}
+                  </p>
+                </div>
+                <Link
+                  href={`/compare/${compareId(group.key)}`}
+                  className="shrink-0 rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong"
+                >
+                  Compare
+                </Link>
+              </div>
+            ))}
+          </div>
+        </Section>
       )}
 
       {tab === "matches" && (
-      <Section title="Matches to review" count={data.matches.length}>
-        <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-          {data.matches.map((film) => (
-            <div key={film.path} className="flex items-center gap-4 px-4 py-3">
-              <Poster src={film.poster} />
-              <div className="min-w-0 flex-1">
-                <Title path={film.path} title={film.title} year={film.year} />
-                <p className="mt-0.5 truncate font-mono text-xs opacity-40">
-                  {film.fileName}
-                </p>
+        <Section title="Matches to review" count={data.matches.length}>
+          <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+            {data.matches.map((film) => (
+              <div
+                key={film.path}
+                className="flex items-center gap-4 px-4 py-3"
+              >
+                <Poster src={film.poster} />
+                <div className="min-w-0 flex-1">
+                  <Title path={film.path} title={film.title} year={film.year} />
+                  <p className="mt-0.5 truncate font-mono text-xs opacity-40">
+                    {film.fileName}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-chip bg-amber-500/[0.08] px-1.5 text-[11px] leading-[18px] font-medium text-amber-700 ring-1 ring-amber-500/30 ring-inset dark:text-amber-300">
+                  {film.confidence} confidence
+                </span>
               </div>
-              <span className="shrink-0 rounded-chip bg-amber-500/[0.08] px-1.5 text-[11px] leading-[18px] font-medium text-amber-700 ring-1 ring-amber-500/30 ring-inset dark:text-amber-300">
-                {film.confidence} confidence
-              </span>
-            </div>
-          ))}
-        </div>
-      </Section>
-
+            ))}
+          </div>
+        </Section>
       )}
 
       {tab === "artwork" && (
-      <Section title="Missing artwork" count={data.artwork.length}>
-        <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-          {data.artwork.map((film) => (
-            <div key={film.path} className="flex items-center gap-4 px-4 py-3">
-              <Poster src={film.poster} />
-              <div className="min-w-0 flex-1">
-                <Title path={film.path} title={film.title} year={film.year} />
-                <p className="mt-0.5 text-xs opacity-50">
-                  No {film.missing.map((k) => KIND_WORDS[k]).join(" or ")}
-                </p>
-              </div>
+        <Section title="Missing artwork" count={data.artwork.length}>
+          <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+            {data.artwork.map((film) => (
+              <div
+                key={film.path}
+                className="flex items-center gap-4 px-4 py-3"
+              >
+                <Poster src={film.poster} />
+                <div className="min-w-0 flex-1">
+                  <Title path={film.path} title={film.title} year={film.year} />
+                  <p className="mt-0.5 text-xs opacity-50">
+                    No {film.missing.map((k) => KIND_WORDS[k]).join(" or ")}
+                  </p>
+                </div>
 
-              {/* One button per missing kind, each opening the picker straight
+                {/* One button per missing kind, each opening the picker straight
                   onto it. The row already says which is absent, so making you
                   pick again from a menu would be asking twice. */}
-              {film.tmdbId !== undefined && (
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                  {film.missing.map((kind) => (
-                    <ArtworkEditor
-                      key={kind}
-                      moviePath={film.path}
-                      tmdbId={film.tmdbId!}
-                      openAs={kind}
-                      label={`Add ${KIND_WORDS[kind]}`}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </Section>
+                {film.tmdbId !== undefined && (
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    {film.missing.map((kind) => (
+                      <ArtworkEditor
+                        key={kind}
+                        moviePath={film.path}
+                        tmdbId={film.tmdbId!}
+                        openAs={kind}
+                        label={`Add ${KIND_WORDS[kind]}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
       )}
     </div>
   );

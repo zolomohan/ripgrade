@@ -3,16 +3,27 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { confirmMatch, searchTmdb, type SearchHit } from "@/app/actions";
+import {
+  confirmMatch,
+  confirmShowMatch,
+  searchTmdb,
+  searchTmdbShows,
+  type SearchHit,
+} from "@/app/actions";
 import { imageUrl } from "@/lib/image-url";
+
+/** A film, identified by its file, or a show, identified by its key. */
+type Subject =
+  | { moviePath: string; showKey?: never }
+  | { showKey: string; moviePath?: never };
 
 export function MatchReview({
   moviePath,
+  showKey,
   currentId,
   needsReview,
   defaultQuery,
-}: {
-  moviePath: string;
+}: Subject & {
   /** Absent when nothing matched — the search then opens straight away. */
   currentId?: number;
   needsReview: boolean;
@@ -28,14 +39,16 @@ export function MatchReview({
   function search() {
     setError(null);
     startTransition(async () => {
-      setHits(await searchTmdb(query));
+      setHits(await (showKey ? searchTmdbShows(query) : searchTmdb(query)));
     });
   }
 
   function choose(tmdbId: number) {
     setError(null);
     startTransition(async () => {
-      const result = await confirmMatch(moviePath, tmdbId);
+      const result = showKey
+        ? await confirmShowMatch(showKey, tmdbId)
+        : await confirmMatch(moviePath!, tmdbId);
       if (result.ok) {
         setOpen(false);
         setHits(null);
@@ -69,7 +82,9 @@ export function MatchReview({
             ? "Cancel"
             : currentId === undefined
               ? "Find on TMDb"
-              : "Wrong film?"}
+              : showKey
+                ? "Wrong show?"
+                : "Wrong film?"}
         </button>
         {pending && <span className="text-xs opacity-50">working…</span>}
       </div>
@@ -77,7 +92,7 @@ export function MatchReview({
       {needsReview && currentId !== undefined && !open && (
         <p className="mt-2 text-xs opacity-50">
           Confirming locks this match in — later matching runs will leave it
-          alone, and the runtime check starts applying.
+          alone{showKey ? "" : ", and the runtime check starts applying"}.
         </p>
       )}
 

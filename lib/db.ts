@@ -105,6 +105,34 @@ CREATE TABLE IF NOT EXISTS wishlist (
   overview    TEXT
 );
 
+-- Shows and their seasons, cached exactly like the film records: expensive to
+-- fetch, cheap to re-derive from. Keyed by TMDb id, so every episode of a show
+-- shares one row.
+CREATE TABLE IF NOT EXISTS tmdb_shows (
+  tmdb_id     INTEGER PRIMARY KEY,
+  fetched_at  INTEGER NOT NULL,
+  json        TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tmdb_seasons (
+  tmdb_id     INTEGER NOT NULL,
+  season      INTEGER NOT NULL,
+  fetched_at  INTEGER NOT NULL,
+  json        TEXT NOT NULL,
+  PRIMARY KEY (tmdb_id, season)
+);
+
+-- Which show each set of episodes belongs to. Keyed by the show's grouping key
+-- rather than by path: a show is one thing spread over many files, and the
+-- match belongs to the show.
+CREATE TABLE IF NOT EXISTS tv_matches (
+  show_key    TEXT PRIMARY KEY,
+  tmdb_id     INTEGER,
+  confidence  TEXT NOT NULL,
+  manual      INTEGER NOT NULL DEFAULT 0,
+  matched_at  INTEGER NOT NULL
+);
+
 -- The folders that make up the library. More than one because a collection
 -- outgrows a drive, and the app has no reason to insist they live together.
 CREATE TABLE IF NOT EXISTS library_roots (

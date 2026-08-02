@@ -3,7 +3,13 @@ import "server-only";
 import path from "node:path";
 
 import { db } from "./db";
-import { derive, titleKey, type Derived, type TmdbFacts } from "./derive";
+import {
+  derive,
+  duplicateKey,
+  titleKey,
+  type Derived,
+  type TmdbFacts,
+} from "./derive";
 import { getDiscs } from "./disc";
 import { getDoviScans } from "./dovi";
 import { getMatches, getTmdbMovies } from "./enrich";
@@ -153,6 +159,16 @@ export function getLibrary(): LibraryItem[] {
   });
 }
 
+/** The films. Everything movie-shaped in this app means this, not every file. */
+export function getMovies(): LibraryItem[] {
+  return getLibrary().filter((m) => m.kind === "movie");
+}
+
+/** The episodes, ungrouped — `lib/shows.ts` is what turns them into shows. */
+export function getEpisodes(): LibraryItem[] {
+  return getLibrary().filter((m) => m.kind === "episode");
+}
+
 export function getMovie(id: string): LibraryItem | undefined {
   let target: string;
   try {
@@ -178,7 +194,7 @@ export function duplicateGroups<T extends Derived>(items: T[]): T[][] {
   const groups = new Map<string, T[]>();
 
   for (const item of items) {
-    const key = titleKey(item.title, item.year);
+    const key = duplicateKey(item);
     const bucket = groups.get(key);
     if (bucket) bucket.push(item);
     else groups.set(key, [item]);

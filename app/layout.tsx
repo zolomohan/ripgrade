@@ -6,7 +6,7 @@ import {
   JetBrains_Mono,
 } from "next/font/google";
 import "./globals.css";
-import { getLibraryFolders, scanStatus } from "./actions";
+import { scanStatus } from "./actions";
 import { ScanProvider } from "./scan-provider";
 import { Sidebar } from "./sidebar";
 
@@ -55,10 +55,6 @@ export default async function RootLayout({
 }>) {
   // Seeded here so a reload mid-scan shows progress immediately.
   const scan = await scanStatus();
-  // Only for whether the rail offers a scan; the picker itself lives on the
-  // library page, which is where you go when there is nothing to scan yet.
-  const roots = await getLibraryFolders();
-
   return (
     <html
       lang="en"
@@ -66,7 +62,7 @@ export default async function RootLayout({
     >
       <body className="min-h-full">
         <ScanProvider initialState={scan}>
-          <Sidebar hasRoot={roots.length > 0} />
+          <Sidebar />
           {/* Clears the rail once it is fixed; above that it is a top bar and
               the content simply follows it. */}
           <div className="flex min-h-full flex-col md:pl-56">{children}</div>

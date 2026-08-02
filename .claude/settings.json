@@ -32,7 +32,21 @@
       "Bash(curl -s -G \"https://www.wikidata.org/w/api.php\" --data-urlencode \"action=wbsearchentities\" --data-urlencode \"search=blu-ray.com\" --data-urlencode \"type=property\" --data-urlencode \"language=en\" --data-urlencode \"format=json\" --max-time 20)",
       "Bash(curl -s -o /tmp/p1.html -w '  arbitrary slug: HTTP %{http_code} → %{url_effective}\\\\n' -A 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)' -L --max-time 25 https://www.blu-ray.com/movies/x/35820/)",
       "Bash(curl -s -o /tmp/p2.html -w '  search: HTTP %{http_code}\\\\n' -A 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\)' --max-time 25 'https://www.blu-ray.com/search/?quicksearch=1&quicksearch_country=all&quicksearch_keyword=Blade+Runner+2049&section=bluraymovies')",
-      "Bash(curl -s -o /tmp/brm.html -w 'page: HTTP %{http_code}, %{size_download} bytes\\\\n' -A 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/605.1.15' --max-time 30 https://www.blu-ray.com/movies/Blade-Runner-2049-4K-Blu-ray/189774/)"
+      "Bash(curl -s -o /tmp/brm.html -w 'page: HTTP %{http_code}, %{size_download} bytes\\\\n' -A 'Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/605.1.15' --max-time 30 https://www.blu-ray.com/movies/Blade-Runner-2049-4K-Blu-ray/189774/)",
+      "Bash(curl -s \"http://localhost:3000/show/dGhlbGFzdG9mdXN8\" -o /private/tmp/show4.html -w \"%{http_code}\\\\n\")",
+      "Bash(node -e \"console.log\\(Buffer.from\\('ben10|'\\).toString\\('base64'\\).replace\\(/\\\\+/g,'-'\\).replace\\(/\\\\//g,'_'\\).replace\\(/=+$/,''\\)\\)\")",
+      "Bash(curl -s http://localhost:3000/show/__TRACKED_VAR__ -o /private/tmp/ben.html -w '%{http_code}\\\\n')",
+      "Bash(node -e \"console.log\\(Buffer.from\\('codegeass|'\\).toString\\('base64'\\).replace\\(/\\\\+/g,'-'\\).replace\\(/\\\\//g,'_'\\).replace\\(/=+$/,''\\)\\)\")",
+      "Bash(curl -s http://localhost:3000/show/__TRACKED_VAR__ -o /private/tmp/cg.html -w '%{http_code}\\\\n')",
+      "Bash(curl -s http://localhost:3000/show/__TRACKED_VAR__)",
+      "Bash(node -e \"console.log\\(Buffer.from\\('thelastofus|'\\).toString\\('base64'\\).replace\\(/\\\\+/g,'-'\\).replace\\(/\\\\//g,'_'\\).replace\\(/=+$/,''\\)\\)\")",
+      "Bash(curl -s -o /dev/null -w 'show %{http_code}\\\\n' http://localhost:3000/show/__TRACKED_VAR__)",
+      "Bash(curl -s http://localhost:3000/show/__TRACKED_VAR__ -o /private/tmp/sv2.html -w '%{http_code}\\\\n')",
+      "Bash(curl -s -o /dev/null -w \"library %{http_code}\\\\n\" \"http://localhost:3000/\")",
+      "Bash(curl -s \"http://localhost:3000/?t=tv\" -o /private/tmp/tv.html -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s \"http://localhost:3000/?t=tv\")",
+      "Bash(curl -s \"http://localhost:3000/?t=tv\" -o /private/tmp/tv2.html -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s \"http://localhost:3000/\" -o /private/tmp/lib.html -w \"library %{http_code}\\\\n\")"
     ],
     "additionalDirectories": [
       "/Users/mohanraj/Development/personal/medlib/app/movie/[id]"

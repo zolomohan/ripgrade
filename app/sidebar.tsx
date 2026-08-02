@@ -3,11 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { ScanButton } from "./scan-button";
-
 /**
- * Identity, navigation and the one global action, in a column that survives
- * navigation.
+ * Identity and navigation, in a column that survives navigation.
  *
  * Every page used to carry its own header repeating the app name and links back
  * to the others, which meant three headers to keep in step and a "back to
@@ -25,15 +22,19 @@ const PAGES = [
   { href: "/settings", label: "Settings" },
 ];
 
-/** A film or a comparison is somewhere inside the library, not a place of its own. */
+/**
+ * A film, an episode, a show or a comparison is somewhere inside the library,
+ * not a place of its own.
+ */
 const isActive = (href: string, pathname: string) =>
   href === "/"
     ? pathname === "/" ||
       pathname.startsWith("/movie") ||
+      pathname.startsWith("/show") ||
       pathname.startsWith("/compare")
     : pathname.startsWith(href);
 
-export function Sidebar({ hasRoot }: { hasRoot: boolean }) {
+export function Sidebar() {
   const pathname = usePathname();
 
   return (
@@ -68,14 +69,6 @@ export function Sidebar({ hasRoot }: { hasRoot: boolean }) {
           );
         })}
       </nav>
-
-      {/* Scanning belongs to the library rather than to any page, so it sits
-          with the navigation and works from all of them. */}
-      {hasRoot && (
-        <div className="shrink-0 md:mt-auto md:w-full">
-          <ScanButton />
-        </div>
-      )}
     </aside>
   );
 }

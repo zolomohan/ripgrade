@@ -1,10 +1,15 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { artUrl } from "@/lib/routes";
+import { artUrl, movieId, showId } from "@/lib/routes";
+import { imageUrl } from "@/lib/image-url";
+import { getEpisodeContext, type ShowEpisode } from "@/lib/shows";
 import { groupIssues, type Status } from "@/lib/derive";
 import { backupBytes } from "@/lib/convert";
 import { getDisc } from "@/lib/disc";
 import { getMovie, type LibraryItem } from "@/lib/library";
+import { FormatBadges } from "@/app/format-badges";
+import { ScoreRing, SubScore } from "@/app/score-card";
 import { ArtworkEditor } from "./artwork-editor";
 import { BackButton } from "./back-button";
 import { DiscReview } from "./disc-review";
@@ -43,330 +48,6 @@ function duration(seconds?: number) {
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-/** One size for both rings — the two scores are peers, not headline and aside. */
-const RING_BOX = "h-28 w-28";
-
-function ScoreRing({
-  score,
-  ring,
-  caption,
-  ceiling,
-}: {
-  score: number;
-  ring: string;
-  caption: string;
-  /** The best disc, drawn as a ghost arc behind the score. */
-  ceiling?: number;
-}) {
-  const radius = 52;
-  const circumference = 2 * Math.PI * radius;
-  const short = ceiling !== undefined && score < ceiling;
-  const arc = (value: number) => circumference * (1 - value / 100);
-
-  return (
-    <div
-      className={`relative grid ${RING_BOX} shrink-0 place-items-center`}
-      title={short ? `${score} of a possible ${ceiling}` : undefined}
-    >
-      <svg viewBox="0 0 120 120" className={`${RING_BOX} -rotate-90`}>
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          strokeWidth="8"
-          className="stroke-line"
-        />
-        {/* How far the best disc reaches — the same mark the meters carry,
-            drawn here as an arc rather than a tick. */}
-        {ceiling !== undefined && ceiling < 100 && (
-          <circle
-            cx="60"
-            cy="60"
-            r={radius}
-            fill="none"
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={arc(ceiling)}
-            className="stroke-foreground/20"
-          />
-        )}
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={arc(score)}
-          className={
-            ceiling === undefined
-              ? ring
-              : short
-                ? "stroke-amber-500/80"
-                : "stroke-emerald-500/80"
-          }
-        />
-      </svg>
-      <div className="absolute text-center">
-        <span className="font-display text-3xl font-semibold tabular-nums">
-          {score}
-        </span>
-        <span className="block text-[10px] tracking-widest uppercase opacity-50">
-          {caption}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * A meter with the disc marked on it.
- *
- * The ceiling used to be a single number in a footnote, which said nothing
- * about where the shortfall actually was. Marking each dimension shows it
- * directly: a bar short of its mark is the thing you could buy your way out of,
- * and a bar past its mark is where your copy beats the disc.
- */
-/** Below this share of the disc, a picture or sound shortfall is not a nuance. */
-const SEVERE_SHORTFALL = 0.8;
-
-function SubScore({
-  label,
-  value,
-  ceiling,
-  escalates,
-}: {
-  label: string;
-  value: number;
-  ceiling?: number;
-  /** Video and audio go red when far short; release only ever goes amber. */
-  escalates?: boolean;
-}) {
-  const short = ceiling !== undefined && value < ceiling;
-  const severe =
-    escalates && ceiling !== undefined && value / ceiling < SEVERE_SHORTFALL;
-
-  return (
-    <div className="flex items-center gap-4">
-      <span className="w-16 shrink-0 text-[11px] tracking-widest uppercase opacity-45">
-        {label}
-      </span>
-
-      <span className="relative h-1.5 flex-1 rounded-full bg-surface-strong">
-        <span
-          className={`absolute inset-y-0 left-0 rounded-full ${
-            ceiling === undefined
-              ? "bg-foreground/55"
-              : severe
-                ? "bg-red-500/75"
-                : short
-                  ? "bg-amber-500/70"
-                  : "bg-emerald-500/70"
-          }`}
-          style={{ width: `${value}%` }}
-        />
-        {ceiling !== undefined && (
-          // Centred on its value rather than starting at it, which also keeps
-          // the mark on the track at 100 instead of hanging off the end.
-          <span
-            aria-hidden
-            title={`Best disc: ${ceiling}`}
-            className="absolute -top-[5px] h-4 w-0.5 -translate-x-1/2 rounded-full bg-foreground/70"
-            style={{ left: `${ceiling}%` }}
-          />
-        )}
-      </span>
-
-      <span className="w-14 shrink-0 text-right font-display text-sm font-semibold tabular-nums">
-        {value}
-        {short && (
-          <span className="font-sans text-xs font-normal opacity-40">
-            /{ceiling}
-          </span>
-        )}
-      </span>
-    </div>
-  );
-}
-
-/**
- * Format badges for the title block.
- *
- * Official marks are used wherever one exists as a public-domain vector on
- * Wikimedia Commons — below the threshold of originality for copyright, so only
- * a trademark restriction applies, which governs commercial use rather than a
- * private tool. Formats with no usable vector (DTS:X) stay typographic.
- */
-type Badge = {
-  key: string;
-  label: string;
-  className?: string;
-  /** When set, the official mark replaces the text pill. */
-  logo?: {
-    src: string;
-    height: string;
-    invert?: boolean;
-    /** For mixed-colour marks, where inverting would ruin the brand fills. */
-    darkSrc?: string;
-  };
-};
-
-/** Black wordmarks flip for dark mode; brand-coloured marks must not. */
-const MARK = {
-  dolbyVision: {
-    src: "/formats/dolby-vision.svg",
-    height: "h-3",
-    invert: true,
-  },
-  dolbyAtmos: { src: "/formats/dolby-atmos.svg", height: "h-3", invert: true },
-  dolbyTrueHd: {
-    src: "/formats/dolby-truehd.svg",
-    height: "h-4",
-    invert: true,
-  },
-  dolbyDigitalPlus: {
-    src: "/formats/dolby-digital-plus.svg",
-    height: "h-4",
-    invert: true,
-  },
-  dolbyDigital: {
-    src: "/formats/dolby-digital.svg",
-    height: "h-4",
-    invert: true,
-  },
-  ultraHd: { src: "/formats/ultra-hd.svg", height: "h-4", invert: true },
-  hdr10: { src: "/formats/hdr10.svg", height: "h-5", invert: true },
-  hdr10plus: { src: "/formats/hdr10plus.svg", height: "h-5", invert: true },
-  // Orange and blue brand marks — inverting these would wreck them.
-  // The DTS wordmark itself has no fill of its own, so it defaults to black and
-  // disappears on a dark background; a second file sets the inherited fill to
-  // white while leaving the orange and grey brand fills alone.
-  dtsX: {
-    src: "/formats/dts-x.svg",
-    darkSrc: "/formats/dts-x-dark.svg",
-    height: "h-5",
-  },
-  dtsHdMa: {
-    src: "/formats/dts-hd-ma.svg",
-    darkSrc: "/formats/dts-hd-ma-dark.svg",
-    height: "h-5",
-  },
-  uhdBluray: { src: "/formats/uhd-bluray.svg", height: "h-5" },
-} as const;
-
-function FormatBadges({ movie }: { movie: LibraryItem }) {
-  const OUTLINE = "ring-1 ring-inset ring-line-strong opacity-70";
-  const badges: Badge[] = [];
-
-  // The Ultra HD Blu-ray mark is a claim about the source, so it is only used
-  // where that is actually true — a 2160p web pull gets the neutral text badge.
-  if (movie.resolution === "2160p" && movie.releaseType === "REMUX") {
-    badges.push({
-      key: "src",
-      label: "Ultra HD Blu-ray",
-      logo: MARK.uhdBluray,
-    });
-  } else if (movie.resolution === "2160p") {
-    badges.push({ key: "res", label: "Ultra HD", logo: MARK.ultraHd });
-  } else if (movie.resolution !== "unknown") {
-    badges.push({ key: "res", label: movie.resolution, className: OUTLINE });
-  }
-
-  if (movie.hdr === "Dolby Vision") {
-    badges.push({ key: "dv", label: "Dolby Vision", logo: MARK.dolbyVision });
-  } else if (movie.hdr === "HDR10+") {
-    badges.push({ key: "hdr", label: "HDR10+", logo: MARK.hdr10plus });
-  } else if (movie.hdr === "HDR10") {
-    badges.push({ key: "hdr", label: "HDR10", logo: MARK.hdr10 });
-  }
-
-  const atmos = movie.audio.find((a) => a.atmos);
-  const dtsx = movie.audio.find((a) => a.dtsx);
-  const lossless = movie.audio.find((a) => a.lossless);
-  const primary = movie.audio[0];
-
-  if (atmos) {
-    badges.push({ key: "atmos", label: "Dolby Atmos", logo: MARK.dolbyAtmos });
-  } else if (dtsx) {
-    badges.push({ key: "dtsx", label: "DTS:X", logo: MARK.dtsX });
-  } else if (lossless && /TrueHD/i.test(lossless.label)) {
-    badges.push({ key: "au", label: "Dolby TrueHD", logo: MARK.dolbyTrueHd });
-  } else if (lossless && /DTS-HD Master/i.test(lossless.label)) {
-    badges.push({
-      key: "au",
-      label: "DTS-HD Master Audio",
-      logo: MARK.dtsHdMa,
-    });
-  } else if (lossless) {
-    badges.push({
-      key: "au",
-      label: lossless.format.toUpperCase(),
-      className: OUTLINE,
-    });
-  } else if (primary && /Digital Plus/i.test(primary.label)) {
-    badges.push({
-      key: "au",
-      label: "Dolby Digital Plus",
-      logo: MARK.dolbyDigitalPlus,
-    });
-  } else if (primary && /Dolby Digital/i.test(primary.label)) {
-    badges.push({ key: "au", label: "Dolby Digital", logo: MARK.dolbyDigital });
-  } else if (primary) {
-    badges.push({
-      key: "au",
-      label: primary.format.toUpperCase(),
-      className: OUTLINE,
-    });
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      {badges.map((badge) =>
-        badge.logo ? (
-          badge.logo.darkSrc ? (
-            <span key={badge.key} title={badge.label}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={badge.logo.src}
-                alt={badge.label}
-                className={`${badge.logo.height} w-auto dark:hidden`}
-              />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={badge.logo.darkSrc}
-                alt=""
-                aria-hidden
-                className={`hidden ${badge.logo.height} w-auto dark:block`}
-              />
-            </span>
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={badge.key}
-              src={badge.logo.src}
-              alt={badge.label}
-              title={badge.label}
-              className={`${badge.logo.height} w-auto ${
-                badge.logo.invert ? "opacity-90 dark:invert" : ""
-              }`}
-            />
-          )
-        ) : (
-          <span
-            key={badge.key}
-            className={`rounded-chip px-2 py-1 text-[10px] font-semibold tracking-[0.12em] ${badge.className}`}
-          >
-            {badge.label}
-          </span>
-        ),
-      )}
-    </div>
-  );
 }
 
 function Spec({ movie }: { movie: LibraryItem }) {
@@ -457,6 +138,60 @@ function Spec({ movie }: { movie: LibraryItem }) {
   );
 }
 
+const airDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+/**
+ * One neighbour in the season. The empty side of a run keeps its space rather
+ * than letting the other link slide across — the first episode's "next" should
+ * stay where every other episode's next was.
+ */
+function EpisodeLink({
+  episode,
+  direction,
+}: {
+  episode?: ShowEpisode;
+  direction: "prev" | "next";
+}) {
+  if (!episode) return <span />;
+
+  const forward = direction === "next";
+  return (
+    <Link
+      href={`/movie/${movieId(episode.item.path)}`}
+      className={`group flex min-w-0 items-center gap-2 rounded-control border border-line px-3 py-2 transition-colors hover:bg-surface-strong ${
+        forward ? "col-start-2 flex-row-reverse text-right" : ""
+      }`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className={`h-3.5 w-3.5 shrink-0 opacity-40 ${forward ? "" : "rotate-180"}`}
+      >
+        <path d="m9 6 6 6-6 6" />
+      </svg>
+      <span className="min-w-0">
+        <span className="block text-[10px] tracking-[0.1em] uppercase opacity-40">
+          {forward ? "Next" : "Previous"} · E
+          {String(episode.number).padStart(2, "0")}
+        </span>
+        <span className="block truncate text-sm">
+          {episode.title ?? episode.item.fileName}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
 export default async function MoviePage({
   params,
 }: {
@@ -471,15 +206,31 @@ export default async function MoviePage({
   // Full specs live in the disc table; the derived payload only carries the gaps.
   const disc = movie.tmdb ? getDisc(movie.tmdb.id) : undefined;
 
+  // An episode is not identified on its own — everything TMDb knows about it
+  // comes through its series, so the page looks the file up in its show and
+  // borrows the show's artwork and match for the parts a film gets from its
+  // own record.
+  const tv =
+    movie.kind === "episode" ? getEpisodeContext(movie.path) : undefined;
+  // The still is of this episode; the show's backdrop is of the series. For a
+  // page about one episode the still is the truer image, and it also stops
+  // every episode of a show looking identical.
+  const backdrop = tv?.episode.stillPath
+    ? imageUrl(tv.episode.stillPath, "original")
+    : (movie.fanart ?? tv?.show.fanart) &&
+      artUrl(movie.fanart ?? tv!.show.fanart!);
+  const poster = movie.poster ?? tv?.show.poster;
+  const logo = movie.logo ?? tv?.show.logo;
+
   return (
     <main className="flex flex-col pb-16">
       {/* Hero */}
       <div className="relative h-96 w-full overflow-hidden sm:h-[32rem]">
-        {movie.fanart ? (
+        {backdrop ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={artUrl(movie.fanart)}
+              src={backdrop}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
             />
@@ -494,11 +245,11 @@ export default async function MoviePage({
             than faded into the page. Decorative: the real title is the h1
             below, and repeating it here would only make a screen reader say it
             twice. */}
-        {movie.logo && (
+        {logo && (
           <div className="pointer-events-none absolute top-6 right-6 z-[5] flex justify-end sm:top-8 sm:right-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={artUrl(movie.logo)}
+              src={artUrl(logo)}
               alt=""
               aria-hidden
               className="max-h-20 w-auto max-w-[45vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:max-h-28 sm:max-w-sm"
@@ -507,7 +258,6 @@ export default async function MoviePage({
         )}
 
         <BackButton />
-
       </div>
 
       {/* relative + z-10: the hero above is positioned, so without its own
@@ -516,23 +266,43 @@ export default async function MoviePage({
       <div className="relative z-10 mx-auto -mt-28 w-full max-w-5xl px-6 sm:px-8">
         {/* Title block */}
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end">
-          {movie.poster && (
+          {poster && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={artUrl(movie.poster)}
+              src={artUrl(poster)}
               alt=""
               className="h-60 w-40 shrink-0 rounded-card object-cover shadow-2xl ring-1 ring-line"
             />
           )}
 
           <div className="flex flex-col gap-2 pb-1">
+            {/* An episode is a part of something, so the series is named above
+                it and links back — the h1 is the episode, which is what this
+                page is actually about. */}
+            {tv && (
+              <Link
+                href={`/show/${showId(tv.show.key)}`}
+                className="text-sm opacity-60 transition-opacity hover:opacity-100"
+              >
+                {tv.show.title}
+              </Link>
+            )}
             <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
-              {movie.title}
+              {tv ? (tv.episode.title ?? movie.fileName) : movie.title}
             </h1>
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm opacity-60">
               {/* Dynamic range moved out: the logos directly below say it
                   better. Edition lives in Technical details. */}
-              {movie.year && <span>{movie.year}</span>}
+              {tv ? (
+                <span>
+                  S{String(tv.season.number).padStart(2, "0")}E
+                  {String(tv.episode.number).padStart(2, "0")}
+                  {tv.episode.numberEnd &&
+                    `–${String(tv.episode.numberEnd).padStart(2, "0")}`}
+                </span>
+              ) : (
+                movie.year && <span>{movie.year}</span>
+              )}
               <span>· {movie.resolution}</span>
               <span>· {movie.releaseType}</span>
               <span>· {bytes(movie.sizeBytes)}</span>
@@ -548,8 +318,14 @@ export default async function MoviePage({
               is no room beside the poster to pin anything to. */}
           <div className="mt-2 flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:bottom-1 sm:mt-0">
             <RevealInFinder moviePath={movie.path} />
-            {movie.tmdb && (
-              <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
+            {/* An episode has no artwork of its own — the poster and backdrop
+                above are the show's, so this edits the show's. */}
+            {tv?.show.tmdb ? (
+              <ArtworkEditor showKey={tv.show.key} tmdbId={tv.show.tmdb.id} />
+            ) : (
+              movie.tmdb && (
+                <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
+              )
             )}
           </div>
         </div>
@@ -777,7 +553,121 @@ export default async function MoviePage({
           </section>
         )}
 
-        {!movie.tmdb && (
+        {tv && (
+          <section className="mt-10 flex flex-col gap-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
+                Episode
+              </h2>
+              {tv.show.tmdb && (
+                <span
+                  className={`rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
+                    tv.show.tmdb.confidence === "high"
+                      ? "text-emerald-700 ring-emerald-500/30 dark:text-emerald-300"
+                      : "bg-amber-500/[0.08] text-amber-700 ring-amber-500/30 dark:text-amber-300"
+                  }`}
+                >
+                  {tv.show.tmdb.confidence} confidence
+                </span>
+              )}
+            </div>
+
+            <div className="rounded-card border border-line bg-surface p-5">
+              {tv.show.tmdb ? (
+                <>
+                  <p className="font-medium">
+                    {tv.episode.title ?? "Untitled episode"}
+                    <span className="ml-1.5 font-normal opacity-40">
+                      S{String(tv.season.number).padStart(2, "0")}E
+                      {String(tv.episode.number).padStart(2, "0")}
+                    </span>
+                  </p>
+
+                  {tv.episode.overview && (
+                    <p className="mt-2 text-sm opacity-70">
+                      {tv.episode.overview}
+                    </p>
+                  )}
+
+                  <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2 text-sm">
+                    <div className="contents">
+                      <dt className="opacity-50">Series</dt>
+                      <dd>
+                        <Link
+                          href={`/show/${showId(tv.show.key)}`}
+                          className="underline underline-offset-4 decoration-transparent transition-colors hover:decoration-current"
+                        >
+                          {tv.show.tmdb.name}
+                        </Link>
+                        <span className="opacity-50">
+                          {" "}
+                          · season {tv.season.number} of{" "}
+                          {tv.show.seasons.length} held
+                        </span>
+                      </dd>
+                    </div>
+                    {tv.episode.airDate && (
+                      <div className="contents">
+                        <dt className="opacity-50">First aired</dt>
+                        <dd>{airDate(tv.episode.airDate)}</dd>
+                      </div>
+                    )}
+                    <div className="contents">
+                      <dt className="opacity-50">TMDb</dt>
+                      <dd>
+                        <a
+                          href={`https://www.themoviedb.org/tv/${tv.show.tmdb.id}/season/${tv.season.number}/episode/${tv.episode.number}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline underline-offset-4 opacity-70 hover:opacity-100"
+                        >
+                          {tv.show.tmdb.id}
+                        </a>
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {/* The match belongs to the series, so correcting it belongs
+                      on the show's page — doing it here would fix one file and
+                      leave its neighbours wrong. */}
+                  {tv.show.tmdb.confidence !== "high" && (
+                    <p className="mt-4 text-xs opacity-50">
+                      This series was matched by name and not confirmed.{" "}
+                      <Link
+                        href={`/show/${showId(tv.show.key)}`}
+                        className="underline underline-offset-4"
+                      >
+                        Review it on the show page
+                      </Link>{" "}
+                      — the match covers every episode at once.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm">
+                  No TMDb match for this series, so there is no episode title or
+                  air date.{" "}
+                  <Link
+                    href={`/show/${showId(tv.show.key)}`}
+                    className="underline underline-offset-4"
+                  >
+                    Link it on the show page
+                  </Link>{" "}
+                  and every episode gets its facts at once.
+                </p>
+              )}
+
+              {/* A season is read in order, so its neighbours are one click
+                  away rather than two through the show page. */}
+              <div className="mt-5 grid grid-cols-2 gap-3 border-t border-line pt-4">
+                <EpisodeLink episode={tv.prev} direction="prev" />
+                <EpisodeLink episode={tv.next} direction="next" />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!movie.tmdb && !tv && (
           <section className="mt-10 flex flex-col gap-3">
             <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
               Not identified

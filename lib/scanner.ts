@@ -7,22 +7,18 @@ import { findArtwork, type Artwork } from "./artwork";
 import { db } from "./db";
 import { getDoviScans, scanDovi } from "./dovi";
 import { recordRun } from "./jobs";
+import { getShows } from "./shows";
+import { enrichShow } from "./tv";
 import { runEnrich } from "./enrich";
 import { fetchDisc, hasDisc } from "./disc";
-import { deriveAll, getLibrary } from "./library";
+import { deriveAll, getLibrary, getMovies } from "./library";
 import { probe, VIDEO_EXTENSIONS } from "./media";
 import { hasCredentials } from "./tmdb";
 
 export type ScanState = {
   /** "matching" is the TMDb phase that runs automatically after probing. */
   status:
-    | "idle"
-    | "scanning"
-    | "dovi"
-    | "matching"
-    | "discs"
-    | "done"
-    | "error";
+    "idle" | "scanning" | "dovi" | "matching" | "discs" | "done" | "error";
   root?: string;
   discovered: number;
   probed: number;
@@ -88,6 +84,9 @@ const SKIP_DIRS = new Set([
   "@eaDir",
   "lost+found",
 ]);
+
+/** "Season 2", "S02" — a folder that names a season rather than a show. */
+const SEASON_DIR = /^(?:season[\s._-]*|s)(\d{1,2})$/i;
 
 const SAMPLE_OR_TRAILER =
   /(^|[.\s_-])(sample|trailer|featurette|extras?)([.\s_-]|$)/i;
@@ -175,7 +174,18 @@ const CONCURRENCY = 3;
 
 /** Artwork is a directory-level fact, so each folder is only read once. */
 async function indexArtwork(files: FoundFile[]) {
-  const dirs = [...new Set(files.map((f) => path.dirname(f.path)))];
+  // Both the folders holding files and the folders above any season folder:
+  // a show's artwork sits with the show, not inside Season 01.
+  const dirs = [
+    ...new Set(
+      files.flatMap((f) => {
+        const dir = path.dirname(f.path);
+        return SEASON_DIR.test(path.basename(dir))
+          ? [dir, path.dirname(dir)]
+          : [dir];
+      }),
+    ),
+  ];
 
   const upsert = db.prepare(`
     INSERT INTO artwork (dir, poster, fanart, found_at)
@@ -365,7 +375,7 @@ export function startScan(roots: string[]): ScanState {
       if (hasCredentials()) {
         setState({ ...current(), status: "matching", current: undefined });
 
-        const summary = await runEnrich(getLibrary(), {
+        const summary = await runEnrich(getMovies(), {
           onProgress: (p) =>
             setState({
               ...current(),
@@ -387,10 +397,35 @@ export function startScan(roots: string[]): ScanState {
           needsReview: summary.needsReview,
         });
 
+        // Shows are matched once each, not once per episode, and only the
+        // seasons actually held are pulled down.
+        const shows = getShows();
+        if (shows.length > 0) {
+          setState({
+            ...current(),
+            status: "matching",
+            matchTotal: summary.total + shows.length,
+            matchDone: summary.done,
+          });
+
+          let showDone = 0;
+          for (const show of shows) {
+            setState({ ...current(), current: show.title });
+            await enrichShow(
+              show.key,
+              show.title,
+              show.seasons.map((s) => s.number),
+            );
+            showDone += 1;
+            setState({ ...current(), matchDone: summary.done + showDone });
+          }
+          deriveAll();
+        }
+
         // Disc lookups need a TMDb match to know what to search for, so this
         // runs last. Results are cached permanently, which is what keeps a
         // repeat scan from hammering someone else's server.
-        const films = getLibrary().filter((m) => m.tmdb?.id);
+        const films = getMovies().filter((m) => m.tmdb?.id);
         const pending = films.filter((m) => !hasDisc(m.tmdb!.id));
 
         setState({
@@ -427,7 +462,9 @@ export function startScan(roots: string[]): ScanState {
           `${current().cached} unchanged`,
           ...(current().removed ? [`${current().removed} removed`] : []),
           ...(current().failed ? [`${current().failed} failed`] : []),
-          ...(current().doviTotal ? [`${current().doviTotal} DV streams read`] : []),
+          ...(current().doviTotal
+            ? [`${current().doviTotal} DV streams read`]
+            : []),
         ].join(" · "),
       });
 

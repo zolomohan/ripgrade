@@ -9,6 +9,7 @@ import {
   STATUS_BANDS,
   classifyEnhancementLayer,
   derive,
+  parseEpisode,
   parseName,
   runtimeDrift,
   titleKey,
@@ -508,3 +509,58 @@ test("a doubled runtime is caught, a rounding difference is not", () => {
   assert.ok(runtimeDrift(film, film / 2) > RUNTIME_DRIFT, "halved must fail");
   assert.equal(runtimeDrift(film, film), 0);
 });
+
+// ---------------------------------------------------------------------------
+// Episode detection
+//
+// The only test that really matters is the negative one: a film wrongly read
+// as an episode disappears from the movie library into a show that does not
+// exist, and 2160p / 1080p / years are all digit-pairs a loose pattern eats.
+// ---------------------------------------------------------------------------
+
+const episodeCases: [string, string[], string, number, number][] = [
+  ["Breaking.Bad.S01E02.2160p.BluRay.REMUX.mkv", [], "Breaking Bad", 1, 2],
+  ["The.Wire.s03e07.Back.Burners.1080p.WEB-DL.mkv", [], "The Wire", 3, 7],
+  ["Chernobyl.1x02.Please.Remain.Calm.2160p.mkv", [], "Chernobyl", 1, 2],
+  ["Severance.S02E05.mkv", [], "Severance", 2, 5],
+  ["Show Name - S01E09 - Title.mkv", [], "Show Name", 1, 9],
+  // Leads with the marker: the show comes from the folder above the season.
+  ["S01E04.1080p.mkv", ["Andor", "Season 1", "S01E04.1080p.mkv"], "Andor", 1, 4],
+];
+
+for (const [file, segments, show, season, number] of episodeCases) {
+  test(`reads ${file} as an episode`, () => {
+    const info = parseEpisode(file, segments);
+    assert.ok(info, `expected an episode from ${file}`);
+    assert.equal(info.showTitle, show);
+    assert.equal(info.season, season);
+    assert.equal(info.episode, number);
+  });
+}
+
+test("a double episode keeps both numbers", () => {
+  const info = parseEpisode("Show.S01E01-E02.1080p.mkv", []);
+  assert.equal(info?.episode, 1);
+  assert.equal(info?.episodeEnd, 2);
+});
+
+test("the episode's own title is kept, without the quality tags", () => {
+  const info = parseEpisode(
+    "The.Wire.s03e07.Back.Burners.1080p.WEB-DL.DD5.1.mkv",
+    [],
+  );
+  assert.equal(info?.episodeTitle, "Back Burners");
+});
+
+for (const film of [
+  "Dune.2021.2160p.BluRay.REMUX.HEVC.DTS-HD.MA.TrueHD.7.1.Atmos-FGT.mkv",
+  "Blade.Runner.2049.2017.2160p.UHD.BluRay.REMUX.mkv",
+  "1917.2019.2160p.UHD.BluRay.x265.mkv",
+  "Se7en.1995.2160p.UHD.BluRay.REMUX.HEVC.mkv",
+  "The.Hateful.Eight.2015.1080p.BluRay.x264.mkv",
+  "Skyfall.2012.UHD.BluRay.2160p.DTS-HD.MA.5.1.DV.HEVC.REMUX-FraMeSToR.mkv",
+]) {
+  test(`does not read ${film.split(".")[0]} as an episode`, () => {
+    assert.equal(parseEpisode(film, []), undefined);
+  });
+}

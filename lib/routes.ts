@@ -34,3 +34,7 @@ export const decodeMovieId = decodeId;
 
 /** Route id for a duplicate group, built from its title+year grouping key. */
 export const compareId = encodeId;
+
+/** A show is addressed by its title key, which survives a rescan unchanged. */
+export const showId = encodeId;
+export const decodeShowId = decodeId;

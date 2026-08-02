@@ -4,7 +4,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
-import { chooseArtwork, listArtwork, type ArtworkChoice } from "@/app/actions";
+import {
+  chooseArtwork,
+  chooseShowArtwork,
+  listArtwork,
+  type ArtworkChoice,
+} from "@/app/actions";
 import { imageUrl } from "@/lib/image-url";
 import { HERO_BUTTON } from "./hero-button";
 
@@ -61,13 +66,22 @@ function Spinner({ big }: { big?: boolean }) {
   );
 }
 
+/**
+ * Either a film — identified by its file — or a show, identified by its key.
+ * The two differ in where the image lands and which TMDb endpoint it comes
+ * from; everything between the button and the download is the same.
+ */
+type Subject =
+  | { moviePath: string; showKey?: never }
+  | { showKey: string; moviePath?: never };
+
 export function ArtworkEditor({
   moviePath,
+  showKey,
   tmdbId,
   openAs,
   label,
-}: {
-  moviePath: string;
+}: Subject & {
   tmdbId: number;
   /**
    * Skips the kind menu and opens straight onto one kind. For places that
@@ -147,7 +161,7 @@ export function ArtworkEditor({
 
     startTransition(async () => {
       try {
-        setImages(await listArtwork(tmdbId));
+        setImages(await listArtwork(tmdbId, showKey ? "tv" : "movie"));
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -159,7 +173,9 @@ export function ArtworkEditor({
     setSaved(null);
     setSaving(filePath);
     startTransition(async () => {
-      const result = await chooseArtwork(moviePath, tab, filePath);
+      const result = showKey
+        ? await chooseShowArtwork(showKey, tab, filePath)
+        : await chooseArtwork(moviePath!, tab, filePath);
       setSaving(null);
       if (result.ok) {
         setSaved(filePath);
@@ -186,38 +202,38 @@ export function ArtworkEditor({
   return (
     <>
       <div ref={trigger} className="relative">
-      {label ? (
-        <button
-          type="button"
-          onClick={() => openWith(openAs ?? "poster")}
-          className="rounded-control border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
-        >
-          {label}
-        </button>
-      ) : (
-      <button
-        type="button"
-        onClick={() => (openAs ? openWith(openAs) : setMenu((v) => !v))}
-        aria-label="Edit artwork"
-        aria-expanded={openAs ? undefined : menu}
-        title="Edit artwork"
-        className={HERO_BUTTON}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-4 w-4"
-        >
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <path d="m21 15-5-5L5 21" />
-        </svg>
-      </button>
-      )}
+        {label ? (
+          <button
+            type="button"
+            onClick={() => openWith(openAs ?? "poster")}
+            className="rounded-control border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
+          >
+            {label}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => (openAs ? openWith(openAs) : setMenu((v) => !v))}
+            aria-label="Edit artwork"
+            aria-expanded={openAs ? undefined : menu}
+            title="Edit artwork"
+            className={HERO_BUTTON}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <path d="m21 15-5-5L5 21" />
+            </svg>
+          </button>
+        )}
 
         {menu && (
           <div className="row-enter absolute right-0 bottom-full z-30 mb-2 w-40 overflow-hidden rounded-card border border-line bg-background py-1 shadow-2xl">
@@ -285,7 +301,6 @@ export function ArtworkEditor({
                   saves as {KINDS[tab].file}
                 </span>
 
-
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
@@ -296,101 +311,103 @@ export function ArtworkEditor({
               </div>
 
               <div className="flex-1 overflow-y-auto p-5">
-              {!images && !error && (
-                <div className={`grid gap-3 ${KINDS[tab].grid}`}>
-                  {Array.from({ length: KINDS[tab].count }, (_, i) => (
-                    <div
-                      key={i}
-                      className={`skeleton w-full ${KINDS[tab].shape}`}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {images && choices.length === 0 && (
-                <p className="text-sm opacity-50">
-                  TMDb has no{" "}
-                  {tab === "poster"
-                    ? "posters"
-                    : tab === "fanart"
-                      ? "backdrops"
-                      : "logos"}{" "}
-                  for this film.
-                </p>
-              )}
-
-              {choices.length > 0 && (
-                <div className={`grid gap-3 ${KINDS[tab].grid}`}>
-                  {choices.map((choice) => (
-                    <button
-                      key={choice.filePath}
-                      type="button"
-                      onClick={() => save(choice.filePath)}
-                      disabled={pending}
-                      // The same shape the placeholder held. Without it a tile
-                      // has no height until its image arrives, so the grid
-                      // collapsed to a row of lines between the skeletons
-                      // disappearing and the pictures landing.
-                      className={`group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40 ${KINDS[tab].shape} ${
-                        // Logos are cut out against transparency and are
-                        // usually white, so they need something behind them to
-                        // be visible at all — and something dark, since that is
-                        // what they are drawn to sit on.
-                        tab === "logo" ? "grid place-items-center bg-black p-4" : ""
-                      }`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={imageUrl(
-                          choice.filePath,
-                          tab === "poster" ? "w185" : "w300",
-                        )}
-                        alt=""
-                        loading="lazy"
-                        className={
-                          tab === "logo"
-                            ? "max-h-full w-auto object-contain"
-                            : "h-full w-full object-cover"
-                        }
+                {!images && !error && (
+                  <div className={`grid gap-3 ${KINDS[tab].grid}`}>
+                    {Array.from({ length: KINDS[tab].count }, (_, i) => (
+                      <div
+                        key={i}
+                        className={`skeleton w-full ${KINDS[tab].shape}`}
                       />
-                      <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
-                        {choice.width}×{choice.height}
-                        {!choice.language && " · textless"}
-                      </span>
+                    ))}
+                  </div>
+                )}
 
-                      {/* The tile you clicked says what it is doing, so the
+                {images && choices.length === 0 && (
+                  <p className="text-sm opacity-50">
+                    TMDb has no{" "}
+                    {tab === "poster"
+                      ? "posters"
+                      : tab === "fanart"
+                        ? "backdrops"
+                        : "logos"}{" "}
+                    for this film.
+                  </p>
+                )}
+
+                {choices.length > 0 && (
+                  <div className={`grid gap-3 ${KINDS[tab].grid}`}>
+                    {choices.map((choice) => (
+                      <button
+                        key={choice.filePath}
+                        type="button"
+                        onClick={() => save(choice.filePath)}
+                        disabled={pending}
+                        // The same shape the placeholder held. Without it a tile
+                        // has no height until its image arrives, so the grid
+                        // collapsed to a row of lines between the skeletons
+                        // disappearing and the pictures landing.
+                        className={`group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40 ${KINDS[tab].shape} ${
+                          // Logos are cut out against transparency and are
+                          // usually white, so they need something behind them to
+                          // be visible at all — and something dark, since that is
+                          // what they are drawn to sit on.
+                          tab === "logo"
+                            ? "grid place-items-center bg-black p-4"
+                            : ""
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={imageUrl(
+                            choice.filePath,
+                            tab === "poster" ? "w185" : "w300",
+                          )}
+                          alt=""
+                          loading="lazy"
+                          className={
+                            tab === "logo"
+                              ? "max-h-full w-auto object-contain"
+                              : "h-full w-full object-cover"
+                          }
+                        />
+                        <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
+                          {choice.width}×{choice.height}
+                          {!choice.language && " · textless"}
+                        </span>
+
+                        {/* The tile you clicked says what it is doing, so the
                           answer to "did that work?" is where you were already
                           looking. */}
-                      {saving === choice.filePath && (
-                        <span className="absolute inset-0 grid place-items-center bg-black/60 text-white">
-                          <Spinner big />
-                        </span>
-                      )}
-                      {saved === choice.filePath && (
-                        <span className="absolute inset-0 grid place-items-center bg-emerald-600/75 text-white">
-                          <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-7 w-7"
-                          >
-                            <path d="m4 12.5 5 5 11-11" />
-                          </svg>
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+                        {saving === choice.filePath && (
+                          <span className="absolute inset-0 grid place-items-center bg-black/60 text-white">
+                            <Spinner big />
+                          </span>
+                        )}
+                        {saved === choice.filePath && (
+                          <span className="absolute inset-0 grid place-items-center bg-emerald-600/75 text-white">
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-7 w-7"
+                            >
+                              <path d="m4 12.5 5 5 11-11" />
+                            </svg>
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-              {error && (
-                <p className="mt-4 font-mono text-sm text-red-600 dark:text-red-400">
-                  {error}
-                </p>
-              )}
+                {error && (
+                  <p className="mt-4 font-mono text-sm text-red-600 dark:text-red-400">
+                    {error}
+                  </p>
+                )}
               </div>
 
               <p className="shrink-0 border-t border-line px-5 py-3 text-xs opacity-45">

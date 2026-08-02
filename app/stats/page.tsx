@@ -1,4 +1,4 @@
-import { getLibrary } from "@/lib/library";
+import { getMovies } from "@/lib/library";
 import { computeStats } from "@/lib/stats";
 import { StatsView } from "./stats-view";
 
@@ -8,7 +8,7 @@ export const metadata = { title: "Stats — RipGrade" };
 export const dynamic = "force-dynamic";
 
 export default async function StatsPage() {
-  const stats = computeStats(getLibrary());
+  const stats = computeStats(getMovies());
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8 sm:px-8">

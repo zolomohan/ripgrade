@@ -86,10 +86,15 @@ export function searchMovies(
 }
 
 /** Resolves an IMDb id (many of your remuxes embed one) to a TMDb record. */
-export async function findByImdbId(imdbId: string): Promise<number | undefined> {
-  const found = await api<{ movie_results: { id: number }[] }>(`/find/${imdbId}`, {
-    external_source: "imdb_id",
-  });
+export async function findByImdbId(
+  imdbId: string,
+): Promise<number | undefined> {
+  const found = await api<{ movie_results: { id: number }[] }>(
+    `/find/${imdbId}`,
+    {
+      external_source: "imdb_id",
+    },
+  );
   return found.movie_results[0]?.id;
 }
 
@@ -117,6 +122,60 @@ export function getCollection(id: number): Promise<TmdbCollection> {
   return api<TmdbCollection>(`/collection/${id}`);
 }
 
+// --- Television -------------------------------------------------------------
+
+export type TmdbShow = {
+  id: number;
+  name: string;
+  overview?: string;
+  first_air_date?: string;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  number_of_seasons?: number;
+  seasons?: { season_number: number; episode_count: number; name: string }[];
+};
+
+export type TmdbEpisode = {
+  episode_number: number;
+  name: string;
+  overview?: string;
+  air_date?: string;
+  runtime?: number | null;
+  still_path?: string | null;
+};
+
+export function searchTv(
+  name: string,
+  year?: number,
+): Promise<{
+  results: (TmdbShow & { popularity?: number; vote_count?: number })[];
+}> {
+  return api("/search/tv", {
+    query: name,
+    first_air_date_year: year ? String(year) : undefined,
+  });
+}
+
+export function getTvShow(id: number): Promise<TmdbShow> {
+  return api<TmdbShow>(`/tv/${id}`);
+}
+
+/** One season's episode list — the only place episode titles come from. */
+export function getSeason(
+  id: number,
+  season: number,
+): Promise<{ episodes: TmdbEpisode[] }> {
+  return api(`/tv/${id}/season/${season}`);
+}
+
+export function getTvImages(id: number): Promise<{
+  posters: TmdbImage[];
+  backdrops: TmdbImage[];
+  logos: TmdbImage[];
+}> {
+  return api(`/tv/${id}/images`, { include_image_language: "en,null" });
+}
+
 export type TmdbImage = {
   file_path: string;
   width: number;
@@ -130,9 +189,7 @@ export type TmdbImage = {
  * All artwork for a film. `include_image_language=null` keeps the textless
  * versions, which are usually the better backdrops.
  */
-export function getImages(
-  id: number,
-): Promise<{
+export function getImages(id: number): Promise<{
   posters: TmdbImage[];
   backdrops: TmdbImage[];
   logos: TmdbImage[];

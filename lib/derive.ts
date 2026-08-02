@@ -338,6 +338,15 @@ export type Derived = {
   path: string;
   fileName: string;
   folder: string;
+  /**
+   * What this file is. Everything else here is per-file and applies to both —
+   * a 2160p REMUX with Atmos scores the same whether it is a film or an
+   * episode — so this only decides which shelf it goes on and which of the
+   * film-only comparisons are skipped.
+   */
+  kind: "movie" | "episode";
+  /** Set on episodes: the show, and where in it this file sits. */
+  episode?: EpisodeInfo;
   title: string;
   year?: number;
   edition?: string;
@@ -431,6 +440,78 @@ const EDITIONS = [
 /** Tags that mark where the title ends and release metadata begins. */
 const TAG_START =
   /\b(2160p|1080p|720p|480p|UHD|BluRay|Blu-ray|BDRip|BRRip|WEB-?DL|WEBRip|REMUX|Remux|HDTV|DVDRip|COMPLETE|REPACK|PROPER)\b/i;
+
+/**
+ * What an episode file says about itself.
+ *
+ * Release names put the marker between the show and the episode title, so one
+ * match splits the whole name: everything before it names the show, everything
+ * after it (up to the first quality tag) is the episode's own title. A file
+ * with no marker is not an episode, which is the only test that matters —
+ * everything in this app is per-file, so a mistake here is one film in the
+ * wrong tab rather than a broken library.
+ */
+export type EpisodeInfo = {
+  showTitle: string;
+  season: number;
+  episode: number;
+  /** Set when one file holds two episodes: S01E01-E02. */
+  episodeEnd?: number;
+  episodeTitle?: string;
+};
+
+/** S01E02 · s1e2 · S01E01-E02 · S01E01E02 · 1x02 */
+const EPISODE_MARKER =
+  /[\s._-]*\b(?:[Ss](\d{1,2})[\s._-]*[Ee](\d{1,3})(?:[\s._-]*[Ee]?(\d{1,3}))?|(\d{1,2})x(\d{2}))\b[\s._-]*/;
+
+/** "Season 2", "season_02", "S02" — a folder that names a season, not a show. */
+const SEASON_FOLDER = /^(?:season[\s._-]*|s)(\d{1,2})$/i;
+
+export function parseEpisode(
+  fileName: string,
+  segments: string[],
+): EpisodeInfo | undefined {
+  const base = fileName.replace(/\.[^.]+$/, "");
+  const match = base.match(EPISODE_MARKER);
+  if (!match || match.index === undefined) return undefined;
+
+  const season = Number(match[1] ?? match[4]);
+  const episode = Number(match[2] ?? match[5]);
+  const episodeEnd = match[3] ? Number(match[3]) : undefined;
+  if (!Number.isFinite(season) || !Number.isFinite(episode)) return undefined;
+
+  // The name before the marker, or — when the file leads with it, as files
+  // inside a season folder often do — the folder above the season.
+  const parent = segments[segments.length - 2] ?? "";
+  const grandparent = segments[segments.length - 3] ?? "";
+  const fromName = tidy(base.slice(0, match.index));
+  const fromFolder = SEASON_FOLDER.test(parent) ? grandparent : parent;
+
+  const showTitle = fromName || tidy(fromFolder) || "Unknown show";
+
+  // What follows the marker, cut at the first quality tag the way a film title
+  // is — leaving the episode's own name when the release carries one.
+  const after = base.slice(match.index + match[0].length);
+  const tagAt = after.match(TAG_START)?.index;
+  const episodeTitle = tidy(tagAt === undefined ? after : after.slice(0, tagAt));
+
+  return {
+    showTitle,
+    season,
+    episode,
+    episodeEnd: episodeEnd !== episode ? episodeEnd : undefined,
+    episodeTitle: episodeTitle || undefined,
+  };
+}
+
+/** Release names are dot-separated; titles are not. */
+function tidy(raw: string): string {
+  return raw
+    .replace(/[._]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s\-–]+|[\s\-–]+$/g, "")
+    .trim();
+}
 
 export function parseName(
   fileName: string,
@@ -1340,6 +1421,18 @@ export function titleKey(title: string, year?: number): string {
   return `${normalised}|${year ?? ""}`;
 }
 
+/**
+ * What counts as the same thing twice. For a film that is title and year; for
+ * an episode it has to include which episode, or a show would read as sixty
+ * duplicates of itself.
+ */
+export function duplicateKey(item: Derived): string {
+  return item.episode
+    ? `${titleKey(item.episode.showTitle)}|s${item.episode.season}e${item.episode.episode}`
+    : titleKey(item.title, item.year);
+}
+
+
 function explain(d: Omit<Derived, "reasons">): string[] {
   const reasons: string[] = [];
 
@@ -1398,6 +1491,7 @@ export function derive(
   const fileName = segments[segments.length - 1] ?? filePath;
   const folder = segments[segments.length - 2] ?? "";
 
+  const episode = parseEpisode(fileName, segments);
   const parsed = parseName(fileName, folder);
   const containerTitle = str(general, "Movie") ?? str(general, "Title");
 
@@ -1444,13 +1538,19 @@ export function derive(
     path: filePath,
     fileName,
     folder,
+    kind: (episode ? "episode" : "movie") as "movie" | "episode",
+    episode,
     // A confirmed match beats every parsing heuristic; anything less does not.
-    title:
-      tmdb?.confidence === "high"
+    title: episode
+      ? episode.showTitle
+      : tmdb?.confidence === "high"
         ? tmdb.title
         : cleanContainerTitle || parsed.title,
-    year:
-      tmdb?.confidence === "high" ? (tmdb.year ?? parsed.year) : parsed.year,
+    year: episode
+      ? undefined
+      : tmdb?.confidence === "high"
+        ? (tmdb.year ?? parsed.year)
+        : parsed.year,
     edition: parsed.edition,
     imdbId: extra?.IMDB ?? tmdb?.imdbId,
     tmdbIdHint: tmdbHint ? Number(tmdbHint) : undefined,
@@ -1493,7 +1593,7 @@ export function derive(
     releaseType,
   };
 
-  const discFacts = disc ? compareToDisc(base, disc) : undefined;
+  const discFacts = disc && !episode ? compareToDisc(base, disc) : undefined;
   const withDisc = { ...base, disc: discFacts };
 
   const issues = detectIssues(withDisc);

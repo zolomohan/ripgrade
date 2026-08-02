@@ -1,5 +1,5 @@
 import { getCollectionSets } from "@/lib/collections";
-import { getLibrary } from "@/lib/library";
+import { getMovies } from "@/lib/library";
 import { hasCredentials } from "@/lib/tmdb";
 import { getWishlistIds } from "@/lib/wishlist";
 import { CollectionsView } from "./collections-view";
@@ -17,7 +17,7 @@ export default async function CollectionsPage({
   // expensive half of this page, so it should be a link you can share, land on
   // and reload without surprise.
   const withMissing = (await searchParams).missing === "1";
-  const sets = await getCollectionSets(getLibrary(), withMissing);
+  const sets = await getCollectionSets(getMovies(), withMissing);
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-8 sm:px-8">
