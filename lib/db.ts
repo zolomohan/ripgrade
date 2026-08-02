@@ -105,6 +105,13 @@ CREATE TABLE IF NOT EXISTS wishlist (
   overview    TEXT
 );
 
+-- The folders that make up the library. More than one because a collection
+-- outgrows a drive, and the app has no reason to insist they live together.
+CREATE TABLE IF NOT EXISTS library_roots (
+  path      TEXT PRIMARY KEY,
+  added_at  INTEGER NOT NULL
+);
+
 -- What the long-running jobs have done. Everything else about a job lives in
 -- memory and dies with the process; this is the only record that a scan ran at
 -- all, which is the difference between "nothing is happening" and "nothing has
@@ -168,6 +175,22 @@ const artworkColumns = (
 
 if (!artworkColumns.includes("logo")) {
   db.exec("ALTER TABLE artwork ADD COLUMN logo TEXT");
+}
+
+/**
+ * The single library folder became a list. Moved rather than mirrored: leaving
+ * the old key behind would mean two places claiming to say where the library
+ * is, and the one that lost would be the one still being read somewhere.
+ */
+const oldRoot = db
+  .prepare("SELECT value FROM settings WHERE key = 'libraryRoot'")
+  .get() as { value: string } | undefined;
+
+if (oldRoot) {
+  db.prepare(
+    "INSERT INTO library_roots (path, added_at) VALUES (?, ?) ON CONFLICT(path) DO NOTHING",
+  ).run(oldRoot.value, Date.now());
+  db.prepare("DELETE FROM settings WHERE key = 'libraryRoot'").run();
 }
 
 if (process.env.NODE_ENV !== "production") globalForDb.medlibDb = db;

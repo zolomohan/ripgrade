@@ -1,4 +1,4 @@
-import { getConvertTempDir, getLibraryRoot } from "../actions";
+import { getConvertTempDir, getLibraryFolders } from "../actions";
 import { FolderSection } from "../folder-section";
 import { TempFolder } from "./temp-folder";
 import { DEFAULT_ROOT } from "@/lib/browse";
@@ -30,7 +30,7 @@ function Row({
 }
 
 export default async function SettingsPage() {
-  const root = await getLibraryRoot();
+  const roots = await getLibraryFolders();
   const tempDir = await getConvertTempDir();
   const movies = getLibrary();
 
@@ -38,17 +38,14 @@ export default async function SettingsPage() {
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8 sm:px-8">
       <section className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold tracking-tight">
-          Library folder
+          Library folders
         </h2>
         <p className="text-sm opacity-60">
-          Everything the app knows comes from scanning this folder. Changing it
-          does not delete anything already scanned — the next scan simply reads
-          somewhere else.
+          Everything the app knows comes from scanning these. Add as many as the
+          library is spread across; a scan walks all of them and the films land
+          in one library.
         </p>
-        <FolderSection
-          initialPath={root ?? DEFAULT_ROOT}
-          hasRoot={Boolean(root)}
-        />
+        <FolderSection roots={roots} defaultPath={DEFAULT_ROOT} />
       </section>
 
       <section className="flex flex-col gap-3">
@@ -75,8 +72,14 @@ export default async function SettingsPage() {
         <dl className="divide-y divide-line rounded-card border border-line bg-surface px-4 py-3">
           <Row
             label="Scanning"
-            value={root ?? "No folder selected"}
-            detail={root ? undefined : "pick one above to get started"}
+            value={
+              roots.length === 0
+                ? "No folder selected"
+                : roots.length === 1
+                  ? roots[0]
+                  : `${roots.length} folders`
+            }
+            detail={roots.length === 0 ? "pick one above to get started" : undefined}
           />
           <Row label="Films scanned" value={`${movies.length}`} />
           <Row

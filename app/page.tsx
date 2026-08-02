@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { getLibraryRoot } from "./actions";
+import { getLibraryFolders } from "./actions";
 import { LibraryView } from "./library-view";
 import { getLibrary } from "@/lib/library";
 
@@ -8,7 +8,7 @@ import { getLibrary } from "@/lib/library";
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  const root = await getLibraryRoot();
+  const roots = await getLibraryFolders();
   const movies = getLibrary();
 
   return (
@@ -20,7 +20,7 @@ export default async function Page() {
         // say where to go rather than simply being blank.
         <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
           <p className="text-sm opacity-60">
-            {root
+            {roots.length > 0
               ? "Nothing scanned yet — run a scan from the sidebar."
               : "No library folder chosen yet."}
           </p>
@@ -28,7 +28,9 @@ export default async function Page() {
             href="/settings"
             className="mt-2 inline-block text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
           >
-            {root ? "Change the folder in Settings" : "Choose one in Settings"}
+            {roots.length > 0
+              ? "Manage folders in Settings"
+              : "Choose one in Settings"}
           </Link>
         </div>
       )}

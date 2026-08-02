@@ -32,6 +32,11 @@ import {
 import { setManualMatch } from "@/lib/enrich";
 import { deriveAll, getLibrary } from "@/lib/library";
 import { getScanState, startScan, type ScanState } from "@/lib/scanner";
+import {
+  addLibraryRoot,
+  getLibraryRoots,
+  removeLibraryRoot,
+} from "@/lib/roots";
 import { revealInFinder } from "@/lib/system";
 import { addToWishlist, removeFromWishlist } from "@/lib/wishlist";
 import { setIssueAck, setTriage } from "@/lib/triage";
@@ -51,18 +56,22 @@ function knownMoviePath(moviePath: string): boolean {
 }
 
 // Not exported: a "use server" module may only export async functions.
-const LIBRARY_ROOT_KEY = "libraryRoot";
 const CONVERT_TEMP_KEY = "convertTempDir";
 
 export async function browse(target: string): Promise<DirListing> {
   return listDirectory(target);
 }
 
-export async function getLibraryRoot(): Promise<string | undefined> {
-  return getSetting(LIBRARY_ROOT_KEY);
+export async function getLibraryFolders(): Promise<string[]> {
+  return getLibraryRoots();
 }
 
-export async function setLibraryRoot(
+/**
+ * Adds a folder to the library. Nested folders are refused rather than merged:
+ * one inside another means every film under it is scanned twice and pruned by
+ * whichever pass ran last.
+ */
+export async function addLibraryFolder(
   target: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const resolved = path.resolve(target);
@@ -78,9 +87,36 @@ export async function setLibraryRoot(
     };
   }
 
-  setSetting(LIBRARY_ROOT_KEY, resolved);
+  const existing = getLibraryRoots();
+  const overlaps = existing.find(
+    (root) =>
+      resolved === root ||
+      resolved.startsWith(root.endsWith("/") ? root : `${root}/`) ||
+      root.startsWith(resolved.endsWith("/") ? resolved : `${resolved}/`),
+  );
+  if (overlaps) {
+    return {
+      ok: false,
+      error:
+        resolved === overlaps
+          ? "That folder is already in the library."
+          : `Overlaps a folder already in the library: ${overlaps}`,
+    };
+  }
+
+  addLibraryRoot(resolved);
   refresh();
   return { ok: true };
+}
+
+/** Forgets a folder and every film scanned from it. */
+export async function removeLibraryFolder(
+  target: string,
+): Promise<{ ok: true; removed: number }> {
+  const removed = removeLibraryRoot(target);
+  deriveAll();
+  refresh();
+  return { ok: true, removed };
 }
 
 /**
@@ -122,8 +158,8 @@ export async function clearConvertTempDir(): Promise<void> {
 }
 
 export async function beginScan(): Promise<ScanState> {
-  const root = getSetting(LIBRARY_ROOT_KEY);
-  if (!root) {
+  const roots = getLibraryRoots();
+  if (roots.length === 0) {
     return {
       status: "error",
       discovered: 0,
@@ -142,7 +178,7 @@ export async function beginScan(): Promise<ScanState> {
       error: "No library folder selected.",
     };
   }
-  return startScan(root);
+  return startScan(roots);
 }
 
 export async function scanStatus(): Promise<ScanState> {

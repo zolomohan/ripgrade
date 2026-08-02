@@ -289,26 +289,36 @@ async function probeAll(files: FoundFile[]) {
   );
 }
 
-export function startScan(root: string): ScanState {
+export function startScan(roots: string[]): ScanState {
   if (current().status === "scanning") return current();
 
   setState({
     ...IDLE,
     status: "scanning",
-    root,
+    root: roots[0],
     startedAt: Date.now(),
   });
 
   // Deliberately not awaited: the caller returns immediately and the UI polls.
   void (async () => {
     try {
+      // Every folder into one list: the probe cache is keyed by path, so the
+      // scan does not care which root a file came from — only pruning does.
       const files: FoundFile[] = [];
-      for await (const file of walk(root)) {
-        files.push(file);
-        setState({ ...current(), discovered: files.length });
+      for (const root of roots) {
+        setState({ ...current(), root });
+        for await (const file of walk(root)) {
+          files.push(file);
+          setState({ ...current(), discovered: files.length });
+        }
       }
 
-      const removed = pruneMissing(root, files);
+      // Pruned per root against the whole set, so a file is only dropped when
+      // the folder it lives under was walked and did not turn it up.
+      const removed = roots.reduce(
+        (n, root) => n + pruneMissing(root, files),
+        0,
+      );
       setState({ ...current(), removed });
 
       await probeAll(files);
@@ -408,7 +418,7 @@ export function startScan(root: string): ScanState {
 
       recordRun({
         kind: "scan",
-        label: root,
+        label: roots.length === 1 ? roots[0] : `${roots.length} folders`,
         startedAt: current().startedAt ?? Date.now(),
         finishedAt: Date.now(),
         status: "done",
@@ -431,7 +441,7 @@ export function startScan(root: string): ScanState {
       const message = err instanceof Error ? err.message : String(err);
       recordRun({
         kind: "scan",
-        label: root,
+        label: roots.length === 1 ? roots[0] : `${roots.length} folders`,
         startedAt: current().startedAt ?? Date.now(),
         finishedAt: Date.now(),
         status: "error",
