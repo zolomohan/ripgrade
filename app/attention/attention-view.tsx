@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { acknowledge, resolveIssue } from "@/app/actions";
+import { resolveIssue } from "@/app/actions";
 import type { Issue, Status } from "@/lib/derive";
 import { artUrl, compareId, movieId } from "@/lib/routes";
 
@@ -178,7 +178,7 @@ export function AttentionView({ data }: { data: AttentionData }) {
   return (
     <div className="flex flex-col gap-8">
       <Section title="Open issues" count={data.issues.length}>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           {data.issues.map((film) => (
             <div
               key={film.path}
@@ -187,23 +187,7 @@ export function AttentionView({ data }: { data: AttentionData }) {
               <Poster src={film.poster} />
 
               <div className="flex min-w-0 flex-1 flex-col gap-3">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <Title
-                    path={film.path}
-                    title={film.title}
-                    year={film.year}
-                  />
-                  <button
-                    type="button"
-                    disabled={busy === film.path}
-                    onClick={() =>
-                      run(film.path, () => acknowledge(film.path, true))
-                    }
-                    className="text-xs opacity-45 hover:opacity-100 disabled:opacity-25"
-                  >
-                    Accept the film as-is
-                  </button>
-                </div>
+                <Title path={film.path} title={film.title} year={film.year} />
 
                 {/* One row per code, not per message: a film can raise the
                     same check more than once — three separate bitrate gaps
@@ -216,7 +200,7 @@ export function AttentionView({ data }: { data: AttentionData }) {
                     return (
                       <li
                         key={group.code}
-                        className="flex items-start gap-3 py-2 first:pt-0 last:pb-0"
+                        className="flex items-start gap-3 py-3.5 first:pt-0 last:pb-0"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline gap-2">

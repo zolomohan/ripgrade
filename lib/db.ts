@@ -74,6 +74,14 @@ CREATE TABLE IF NOT EXISTS tmdb_movies (
   json        TEXT NOT NULL
 );
 
+-- Collections as TMDb defines them, so the app can say what a set is missing
+-- rather than only what it holds. Cached like the film records beside them.
+CREATE TABLE IF NOT EXISTS tmdb_collections (
+  tmdb_id     INTEGER PRIMARY KEY,
+  fetched_at  INTEGER NOT NULL,
+  json        TEXT NOT NULL
+);
+
 -- Which film each file was matched to, and how sure we are. A row with a null
 -- tmdb_id records "searched, found nothing" so it is not retried every run.
 CREATE TABLE IF NOT EXISTS tmdb_matches (

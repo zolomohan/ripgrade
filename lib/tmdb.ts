@@ -98,6 +98,25 @@ export async function checkCredentials(): Promise<void> {
   await api("/authentication");
 }
 
+export type TmdbCollection = {
+  id: number;
+  name: string;
+  overview?: string;
+  poster_path?: string | null;
+  parts: {
+    id: number;
+    title: string;
+    release_date?: string;
+    poster_path?: string | null;
+    overview?: string;
+  }[];
+};
+
+/** Every film TMDb lists as part of a collection, in release order. */
+export function getCollection(id: number): Promise<TmdbCollection> {
+  return api<TmdbCollection>(`/collection/${id}`);
+}
+
 export type TmdbImage = {
   file_path: string;
   width: number;

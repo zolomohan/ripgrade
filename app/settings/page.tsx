@@ -69,7 +69,7 @@ export default async function SettingsPage() {
             detail={
               hasCredentials()
                 ? "titles, artwork and collections"
-                : "set TMDB_API_KEY and restart"
+                : "set TMDB_READ_TOKEN and restart"
             }
           />
         </dl>

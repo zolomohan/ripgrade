@@ -360,7 +360,7 @@ export function WishlistView({
 
         {!canSearch && (
           <p className="text-sm opacity-50">
-            Searching needs a TMDb key — set TMDB_API_KEY and restart. Anything
+            Searching needs a TMDb key — set TMDB_READ_TOKEN and restart. Anything
             already on the list below still works without one.
           </p>
         )}

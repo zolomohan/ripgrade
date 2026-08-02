@@ -44,6 +44,7 @@ export function deriveAll(): number {
       runtimeMinutes: movie.runtime ?? undefined,
       imdbId: movie.imdb_id ?? undefined,
       collection: movie.belongs_to_collection?.name,
+      collectionId: movie.belongs_to_collection?.id,
       genres: movie.genres?.map((g) => g.name),
       posterPath: movie.poster_path ?? undefined,
       overview: movie.overview,

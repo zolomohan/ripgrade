@@ -302,6 +302,7 @@ export type TmdbFacts = {
   runtimeMinutes?: number;
   imdbId?: string;
   collection?: string;
+  collectionId?: number;
   genres?: string[];
   posterPath?: string;
   overview?: string;
