@@ -42,6 +42,11 @@ import { addToWishlist, removeFromWishlist } from "@/lib/wishlist";
 import { setIssueAck, setTriage } from "@/lib/triage";
 import { imageUrl } from "@/lib/image-url";
 import { getShow } from "@/lib/shows";
+import {
+  clearSeasonDisc,
+  searchSeasonReleases,
+  setManualSeasonDisc,
+} from "@/lib/tv-disc";
 import { enrichShow, setManualShowMatch } from "@/lib/tv";
 import {
   getImages,
@@ -383,6 +388,80 @@ export async function unlinkDisc(
   try {
     clearDisc(tmdbId);
     deriveAll();
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * The same three, for one season of a show. A series is sold a season at a
+ * time, so the release being picked belongs to the season and not to the show.
+ */
+export async function searchSeasonDiscs(
+  showTitle: string,
+  season: number,
+  year?: number,
+): Promise<
+  { ok: true; results: DiscCandidate[] } | { ok: false; error: string }
+> {
+  try {
+    return {
+      ok: true,
+      results: await searchSeasonReleases(showTitle, season, year),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function linkSeasonDisc(
+  showKey: string,
+  season: number,
+  candidate: DiscCandidate,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const lookup = await setManualSeasonDisc(showKey, season, candidate);
+    if (lookup.error) return { ok: false, error: lookup.error };
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function linkSeasonDiscByUrl(
+  showKey: string,
+  season: number,
+  url: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const candidate = candidateFromUrl(url);
+  if (!candidate) {
+    return {
+      ok: false,
+      error:
+        "Not a Blu-ray.com release URL — expected .../movies/<title>/<id>/",
+    };
+  }
+  return linkSeasonDisc(showKey, season, candidate);
+}
+
+export async function unlinkSeasonDisc(
+  showKey: string,
+  season: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    clearSeasonDisc(showKey, season);
     refresh();
     return { ok: true };
   } catch (err) {

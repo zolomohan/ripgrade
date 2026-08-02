@@ -493,7 +493,9 @@ export function parseEpisode(
   // is — leaving the episode's own name when the release carries one.
   const after = base.slice(match.index + match[0].length);
   const tagAt = after.match(TAG_START)?.index;
-  const episodeTitle = tidy(tagAt === undefined ? after : after.slice(0, tagAt));
+  const episodeTitle = tidy(
+    tagAt === undefined ? after : after.slice(0, tagAt),
+  );
 
   return {
     showTitle,
@@ -1040,7 +1042,9 @@ export function classifyEnhancementLayer(
   // Below 100 nits the figure is not a real content light level — some muxers
   // write 0 when they have nothing. dovi_convert discards those too.
   const declared =
-    hdr10?.maxCll !== undefined && hdr10.maxCll >= 100 ? hdr10.maxCll : undefined;
+    hdr10?.maxCll !== undefined && hdr10.maxCll >= 100
+      ? hdr10.maxCll
+      : undefined;
   const blPeak = declared ?? ASSUMED_BL_PEAK;
   const base = {
     blPeak,
@@ -1432,7 +1436,6 @@ export function duplicateKey(item: Derived): string {
     : titleKey(item.title, item.year);
 }
 
-
 function explain(d: Omit<Derived, "reasons">): string[] {
   const reasons: string[] = [];
 
@@ -1593,7 +1596,9 @@ export function derive(
     releaseType,
   };
 
-  const discFacts = disc && !episode ? compareToDisc(base, disc) : undefined;
+  // A season set is the disc an episode came from, so an episode is compared
+  // the same way a film is — the caller decides which release that is.
+  const discFacts = disc ? compareToDisc(base, disc) : undefined;
   const withDisc = { ...base, disc: discFacts };
 
   const issues = detectIssues(withDisc);

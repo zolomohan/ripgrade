@@ -122,6 +122,168 @@ export async function searchReleases(
 }
 
 // ---------------------------------------------------------------------------
+// Seasons
+//
+// A series is not released as a series: it is released a season at a time, and
+// the season is the thing a set can be compared against. Blu-ray.com files
+// those sets among the films, titled "Show: The Complete Third Season", so
+// finding one is a matter of reading the season out of the title.
+// ---------------------------------------------------------------------------
+
+const ORDINALS = [
+  "first",
+  "second",
+  "third",
+  "fourth",
+  "fifth",
+  "sixth",
+  "seventh",
+  "eighth",
+  "ninth",
+  "tenth",
+  "eleventh",
+  "twelfth",
+  "thirteenth",
+  "fourteenth",
+  "fifteenth",
+  "sixteenth",
+  "seventeenth",
+  "eighteenth",
+  "nineteenth",
+  "twentieth",
+];
+
+const CARDINALS = [
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+];
+
+/** The season a release title names, if it names one at all. */
+export function seasonOf(title: string): number | undefined {
+  const t = title.toLowerCase();
+
+  // "Season 3", "Series 3", "Volume 3" — the digit form, and the commonest.
+  const digits = t.match(
+    /\b(?:season|series|s[ée]rie|volume|vol)\.?\s*(\d{1,2})\b/,
+  );
+  if (digits) return Number(digits[1]);
+
+  // "The Complete Third Season", "Season Three".
+  const ordinal = ORDINALS.findIndex((word) =>
+    new RegExp(`\\b${word}\\s+(?:season|series)\\b`).test(t),
+  );
+  if (ordinal !== -1) return ordinal + 1;
+
+  const cardinal = CARDINALS.findIndex((word) =>
+    new RegExp(`\\b(?:season|series)\\s+${word}\\b`).test(t),
+  );
+  if (cardinal !== -1) return cardinal + 1;
+
+  return undefined;
+}
+
+/** A set that covers the whole show, which for a one-season show is the show. */
+const coversEverything = (title: string) =>
+  /\bcomplete\s+(?:series|collection)\b|\blimited\s+series\b|\bmini[-\s]?series\b/i.test(
+    title,
+  );
+
+/** The show's own name, with what a shop adds to it taken off. */
+const stripSeason = (title: string) =>
+  cleanTitle(title)
+    .replace(/:?\s*the\s+complete\s+.*$/i, "")
+    .replace(/:?\s*(?:season|series|volume|vol)\.?\s*\d{1,2}.*$/i, "")
+    .replace(
+      /:?\s*(?:an?\s+)?(?:hbo\s+)?(?:limited\s+series|mini[-\s]?series).*$/i,
+      "",
+    )
+    .replace(/[:\-–]\s*$/, "")
+    .trim();
+
+/**
+ * Candidate sets for one season of one show.
+ *
+ * Two things have to be true: the release is of this show, and it is of this
+ * season. A set that names no season at all counts only when it covers the
+ * whole show — "Chernobyl" is a complete miniseries, and rejecting it because
+ * the box does not say "Season 1" would leave every miniseries unmatched.
+ */
+export async function searchSeasonReleases(
+  show: string,
+  season: number,
+  year?: number,
+): Promise<Candidate[]> {
+  const url =
+    `${BASE}/search/?quicksearch=1&quicksearch_country=all` +
+    `&quicksearch_keyword=${encodeURIComponent(show)}&section=bluraymovies`;
+
+  const all = parseSearch(await fetchPage(url));
+  const wanted = titleKey(show);
+
+  return all.filter((c) => {
+    if (titleKey(stripSeason(c.title)) !== wanted) return false;
+
+    const named = seasonOf(c.title);
+    if (named !== undefined) return named === season;
+
+    // Unnamed: a complete set is this season only if the show is that short,
+    // and anything else with a bare title is the film of the same name far
+    // more often than it is the series.
+    if (!coversEverything(c.title)) return false;
+    return season === 1 || year === undefined || c.year === undefined
+      ? season === 1
+      : Math.abs(c.year - year) <= 1;
+  });
+}
+
+/**
+ * The best set for one season: the 4K edition where one exists, the standard
+ * Blu-ray otherwise. Only the chosen release is fetched.
+ */
+export async function lookupSeasonDisc(
+  show: string,
+  season: number,
+  year?: number,
+): Promise<DiscLookup> {
+  try {
+    const candidates = await searchSeasonReleases(show, season, year);
+    if (candidates.length === 0) {
+      return { uhdExists: false, releaseCount: 0, error: "No release found" };
+    }
+
+    const uhd = candidates.filter((c) => c.format === "4K");
+    const chosen = uhd[0] ?? candidates.find((c) => c.format === "BD");
+    if (!chosen) {
+      return {
+        uhdExists: false,
+        releaseCount: candidates.length,
+        error: "Only 3D editions found",
+      };
+    }
+
+    return {
+      uhdExists: uhd.length > 0,
+      releaseCount: candidates.length,
+      best: parseRelease(await fetchPage(chosen.url), chosen),
+    };
+  } catch (err) {
+    return {
+      uhdExists: false,
+      releaseCount: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Release page
 // ---------------------------------------------------------------------------
 

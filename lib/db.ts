@@ -47,6 +47,19 @@ CREATE TABLE IF NOT EXISTS disc (
   error       TEXT
 );
 
+-- The same lookup for television, keyed by season rather than by title: a
+-- series is sold a season at a time, so the season is the only unit a disc set
+-- can be compared against. Keyed on the show key, not a TMDb id, so a season
+-- keeps its release through a re-match.
+CREATE TABLE IF NOT EXISTS tv_disc (
+  show_key    TEXT NOT NULL,
+  season      INTEGER NOT NULL,
+  fetched_at  INTEGER NOT NULL,
+  lookup      TEXT NOT NULL,
+  error       TEXT,
+  PRIMARY KEY (show_key, season)
+);
+
 -- Your decisions about a film, kept apart from anything derived so a rescan or
 -- a change to the heuristics never discards them.
 CREATE TABLE IF NOT EXISTS triage (
@@ -224,9 +237,9 @@ if (oldRoot) {
 if (process.env.NODE_ENV !== "production") globalForDb.medlibDb = db;
 
 export function getSetting(key: string): string | undefined {
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-    | { value: string }
-    | undefined;
+  const row = db
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
   return row?.value;
 }
 

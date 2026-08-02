@@ -6,11 +6,13 @@ import { db } from "./db";
 import {
   derive,
   duplicateKey,
+  parseEpisode,
   titleKey,
   type Derived,
   type TmdbFacts,
 } from "./derive";
 import { getDiscs } from "./disc";
+import { getSeasonDiscs } from "./tv-disc";
 import { getDoviScans } from "./dovi";
 import { getMatches, getTmdbMovies } from "./enrich";
 import { decodeMovieId } from "./routes";
@@ -32,7 +34,22 @@ export function deriveAll(): number {
   const matches = getMatches();
   const tmdbMovies = getTmdbMovies();
   const discs = getDiscs();
+  const seasonDiscs = getSeasonDiscs();
   const doviScans = getDoviScans();
+
+  /**
+   * The set an episode was released as, found without needing the show list —
+   * which is itself built from these rows, so it cannot exist yet. The show key
+   * and season number come straight off the filename, the same two facts
+   * `getShows` groups by.
+   */
+  const seasonDiscFor = (filePath: string) => {
+    const segments = filePath.split("/");
+    const episode = parseEpisode(segments[segments.length - 1] ?? "", segments);
+    return episode
+      ? seasonDiscs.get(`${titleKey(episode.showTitle)}:${episode.season}`)
+      : undefined;
+  };
 
   const factsFor = (path: string): TmdbFacts | undefined => {
     const match = matches.get(path);
@@ -74,8 +91,10 @@ export function deriveAll(): number {
   const write = db.transaction((items: ProbeRow[]) => {
     for (const row of items) {
       const facts = factsFor(row.path);
-      // Disc data is keyed by film, so it only applies once a film is matched.
-      const disc = facts ? discs.get(facts.id) : undefined;
+      // Disc data is keyed by film, so it only applies once a film is matched;
+      // an episode's comes from its season instead.
+      const disc =
+        seasonDiscFor(row.path) ?? (facts ? discs.get(facts.id) : undefined);
 
       const derived = derive(
         row.path,

@@ -46,10 +46,16 @@
       "Bash(curl -s \"http://localhost:3000/?t=tv\" -o /private/tmp/tv.html -w \"%{http_code}\\\\n\")",
       "Bash(curl -s \"http://localhost:3000/?t=tv\")",
       "Bash(curl -s \"http://localhost:3000/?t=tv\" -o /private/tmp/tv2.html -w \"%{http_code}\\\\n\")",
-      "Bash(curl -s \"http://localhost:3000/\" -o /private/tmp/lib.html -w \"library %{http_code}\\\\n\")"
+      "Bash(curl -s \"http://localhost:3000/\" -o /private/tmp/lib.html -w \"library %{http_code}\\\\n\")",
+      "Bash(cd /Users/mohanraj/Development/personal/ripgrade *)",
+      "Bash(sqlite3 data/medlib.db \"select show_key, season, substr\\(lookup,1,40\\) from tv_disc limit 4; select count\\(*\\) from tv_disc;\")",
+      "Bash(sqlite3 data/medlib.db \"select json_extract\\(derived,'\\\\$.scores.overall'\\), json_extract\\(derived,'\\\\$.breakdown.relative'\\), json_extract\\(derived,'\\\\$.status'\\) from movies where path like '%The Last Of Us%S01E03%';\")",
+      "Bash(curl -s -o /dev/null -w \"library %{http_code} \" \"http://localhost:3000/\")",
+      "Bash(curl -s -o /dev/null -w \"tv %{http_code}\\\\n\" \"http://localhost:3000/?t=tv\")"
     ],
     "additionalDirectories": [
-      "/Users/mohanraj/Development/personal/medlib/app/movie/[id]"
+      "/Users/mohanraj/Development/personal/medlib/app/movie/[id]",
+      "/Users/mohanraj/Development/personal/ripgrade/app/movie/[id]"
     ]
   }
 }

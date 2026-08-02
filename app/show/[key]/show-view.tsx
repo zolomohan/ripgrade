@@ -8,12 +8,18 @@ import { BackButton } from "@/app/movie/[id]/back-button";
 import { MatchReview } from "@/app/movie/[id]/match-review";
 import { FormatBadges } from "@/app/format-badges";
 import { PillCount } from "@/app/controls";
+import { DiscReview } from "@/app/movie/[id]/disc-review";
 import { ScoreCircle } from "@/app/score-circle";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { openIssues } from "@/lib/derive";
 import { imageUrl } from "@/lib/image-url";
 import { artUrl, movieId } from "@/lib/routes";
-import type { MissingEpisode, Show, ShowEpisode } from "@/lib/shows";
+import type {
+  MissingEpisode,
+  Show,
+  ShowEpisode,
+  ShowSeason,
+} from "@/lib/shows";
 
 /**
  * A show, season by season.
@@ -220,6 +226,16 @@ function Seasons({ show }: { show: Show }) {
     season.episodes.map((e) => e.item.videoBitrateKbps ?? 0),
   );
   const score = average(season.episodes.map((e) => e.item.scores.overall));
+  // Every episode of a season is compared against the same set, so the disc's
+  // own score and its parts are one fact about the season, not one per file.
+  const relative = season.episodes.some((e) => e.item.breakdown.relative);
+  const absolute = average(
+    season.episodes.map((e) => e.item.breakdown.absolute),
+  );
+  const discScore = season.episodes.find((e) => e.item.breakdown.discScore)
+    ?.item.breakdown.discScore;
+  const discParts = season.episodes.find((e) => e.item.disc?.discParts)?.item
+    .disc?.discParts;
 
   // What the season is made of, when it is made of one thing. "2160p REMUX"
   // says more than a list of every value found, and a season that is a mix is
@@ -281,12 +297,23 @@ function Seasons({ show }: { show: Show }) {
           themselves in the list below. The same card a film gets, averaged. */}
       <section className="flex flex-col gap-6 rounded-card border border-line bg-surface p-6">
         <div className="flex flex-col items-center gap-8 sm:flex-row sm:items-stretch">
-          <div className="flex shrink-0 items-center justify-center">
+          {/* Against the set the season was released as where there is one, on
+              the rubric where there is not — the same two rings a film gets,
+              averaged over the season. */}
+          <div className="flex shrink-0 items-center justify-center gap-5">
             <ScoreRing
               score={score}
               ring={SCORE_RING(score)}
-              caption="average"
+              caption={relative ? "vs disc" : "average"}
             />
+            {relative && (
+              <ScoreRing
+                score={absolute}
+                ring="stroke-foreground/35"
+                caption="absolute"
+                ceiling={discScore}
+              />
+            )}
           </div>
 
           <div className="hidden w-px shrink-0 bg-line sm:block" />
@@ -295,14 +322,19 @@ function Seasons({ show }: { show: Show }) {
             <SubScore
               label="Video"
               value={average(season.episodes.map((e) => e.item.scores.video))}
+              ceiling={discParts?.video}
+              escalates
             />
             <SubScore
               label="Audio"
               value={average(season.episodes.map((e) => e.item.scores.audio))}
+              ceiling={discParts?.audio}
+              escalates
             />
             <SubScore
               label="Release"
               value={average(season.episodes.map((e) => e.item.scores.release))}
+              ceiling={discParts?.release}
             />
           </div>
         </div>
@@ -367,6 +399,8 @@ function Seasons({ show }: { show: Show }) {
         </dl>
       </section>
 
+      <SeasonDisc show={show} season={season} />
+
       <ul className="flex flex-col gap-5">
         {rows.map((row) =>
           row.episode ? (
@@ -376,6 +410,143 @@ function Seasons({ show }: { show: Show }) {
           ),
         )}
       </ul>
+    </section>
+  );
+}
+
+/**
+ * How this season falls short of the set it was released as.
+ *
+ * Each episode is already compared against that set — the same comparison a
+ * film gets — so this is only a matter of collecting what they said, with the
+ * count of episodes each shortfall applies to. A gap on every episode is a gap
+ * in the season; a gap on two of nine is worth saying so.
+ */
+function discGaps(season: ShowSeason): { text: string; count: number }[] {
+  const counts = new Map<string, number>();
+
+  for (const episode of season.episodes) {
+    for (const gap of episode.item.disc?.gaps ?? []) {
+      counts.set(gap, (counts.get(gap) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .map(([text, count]) => ({ text, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** The disc set this season was released as, and how your copy compares. */
+function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
+  const disc = season.disc;
+  const gaps = discGaps(season);
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-4">
+        <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
+          Best disc available
+        </h2>
+        {disc?.best && gaps.length === 0 && (
+          <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium text-emerald-700 ring-1 ring-emerald-500/30 ring-inset dark:text-emerald-300">
+            your copy matches it
+          </span>
+        )}
+      </div>
+
+      <div className="rounded-card border border-line bg-surface p-5">
+        {!disc || disc.error || !disc.best ? (
+          <p className="text-sm opacity-60">
+            {disc
+              ? `No disc release found on Blu-ray.com for this season${disc.error ? ` — ${disc.error}` : ""}.`
+              : "Not looked up yet — this happens automatically during a scan."}
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <p className="font-medium">
+                {disc.best.title}
+                <span className="ml-2 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
+                  {disc.best.format}
+                </span>
+              </p>
+              <a
+                href={disc.best.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+              >
+                View on Blu-ray.com ↗
+              </a>
+            </div>
+
+            <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
+              {(
+                [
+                  [
+                    "Video",
+                    [
+                      disc.best.videoCodec,
+                      disc.best.videoBitrateMbps
+                        ? `${disc.best.videoBitrateMbps} Mbps`
+                        : null,
+                      disc.best.resolution,
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                  ],
+                  ["Dynamic range", disc.best.hdr.join(", ") || "SDR"],
+                  ["Audio", disc.best.audio.join(" · ") || "unknown"],
+                  [
+                    "Editions",
+                    `${disc.releaseCount} for this season${
+                      disc.uhdExists ? " · 4K available" : " · no 4K release"
+                    }`,
+                  ],
+                ] as [string, string][]
+              ).map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt className="opacity-50">{label}</dt>
+                  <dd className="font-mono text-xs break-all">{value}</dd>
+                </div>
+              ))}
+            </dl>
+
+            {gaps.length > 0 && (
+              <div className="mt-4 border-t border-line pt-4">
+                <p className="text-xs tracking-wide uppercase opacity-45">
+                  Where your copy falls short
+                </p>
+                <ul className="mt-2 flex flex-col gap-1 text-sm">
+                  {gaps.map((gap) => (
+                    <li key={gap.text} className="flex gap-2">
+                      <span className="opacity-30">—</span>
+                      <span>
+                        {gap.text}
+                        {gap.count < season.episodes.length && (
+                          <span className="opacity-45">
+                            {" "}
+                            ({gap.count} of {season.episodes.length} episodes)
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+
+        <DiscReview
+          showKey={show.key}
+          season={season.number}
+          title={show.tmdb?.name ?? show.title}
+          year={season.year}
+          currentUrl={disc?.best?.url}
+          manual={disc?.manual}
+        />
+      </div>
     </section>
   );
 }

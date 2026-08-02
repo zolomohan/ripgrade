@@ -7,10 +7,11 @@ import { findArtwork, type Artwork } from "./artwork";
 import { db } from "./db";
 import { getDoviScans, scanDovi } from "./dovi";
 import { recordRun } from "./jobs";
-import { getShows } from "./shows";
+import { getShows, seasonYear } from "./shows";
 import { enrichShow } from "./tv";
 import { runEnrich } from "./enrich";
 import { fetchDisc, hasDisc } from "./disc";
+import { fetchSeasonDisc, hasSeasonDisc } from "./tv-disc";
 import { deriveAll, getLibrary, getMovies } from "./library";
 import { probe, VIDEO_EXTENSIONS } from "./media";
 import { hasCredentials } from "./tmdb";
@@ -436,6 +437,21 @@ export function startScan(roots: string[]): ScanState {
           current: undefined,
         });
 
+        // A series is sold a season at a time, so each season is looked up on
+        // its own — a show has no single release to compare against.
+        const seasons = getShows()
+          .filter((show) => show.tmdb)
+          .flatMap((show) =>
+            show.seasons
+              .filter((season) => !hasSeasonDisc(show.key, season.number))
+              .map((season) => ({ show, season })),
+          );
+
+        setState({
+          ...current(),
+          discTotal: pending.length + seasons.length,
+        });
+
         let done = 0;
         for (const film of pending) {
           setState({ ...current(), current: film.title });
@@ -443,6 +459,25 @@ export function startScan(roots: string[]): ScanState {
             await fetchDisc(film.tmdb!.id, film.tmdb!.title, film.tmdb!.year);
           } catch {
             // A single failed lookup should not end the scan.
+          }
+          done += 1;
+          setState({ ...current(), discDone: done });
+        }
+
+        for (const { show, season } of seasons) {
+          setState({
+            ...current(),
+            current: `${show.title} — season ${season.number}`,
+          });
+          try {
+            await fetchSeasonDisc(
+              show.key,
+              season.number,
+              show.tmdb!.name,
+              seasonYear(season),
+            );
+          } catch {
+            // As above.
           }
           done += 1;
           setState({ ...current(), discDone: done });

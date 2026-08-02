@@ -5,7 +5,9 @@ import path from "node:path";
 import { db } from "./db";
 import { titleKey } from "./derive";
 import { getEpisodes, type LibraryItem } from "./library";
+import type { DiscLookup } from "./bluray";
 import { getSeasonRecords, getShowRecords, getTvMatches } from "./tv";
+import { getSeasonDiscs } from "./tv-disc";
 
 /**
  * Shows, built from the episodes on disk rather than stored.
@@ -48,6 +50,10 @@ export type ShowSeason = {
   missing: MissingEpisode[];
   /** How long TMDb says the season is, when it has been asked. */
   total?: number;
+  /** The disc set this season was released as, once looked up. */
+  disc?: DiscLookup;
+  /** The year it first aired — what tells one season's disc set from another. */
+  year?: number;
 };
 
 export type Show = {
@@ -119,6 +125,7 @@ export function getShows(): Show[] {
     byShow.set(key, [...(byShow.get(key) ?? []), item]);
   }
 
+  const discs = getSeasonDiscs();
   const matches = getTvMatches();
   const records = getShowRecords();
   const seasonRecords = getSeasonRecords();
@@ -181,9 +188,12 @@ export function getShows(): Show[] {
                 }))
             : gapsWithin([...held]).map((number) => ({ number })),
           total: known?.length,
+          disc: discs.get(`${key}:${number}`),
         };
       })
       .sort((a, b) => a.number - b.number);
+
+    for (const season of seasons) season.year = seasonYear(season);
 
     const dir = showDirOf(episodes);
     const found = art.get(dir);
@@ -216,6 +226,24 @@ export function getShows(): Show[] {
   });
 
   return shows.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/**
+ * The year a season first aired, from whichever episode TMDb dates earliest —
+ * held or missing, since a gap still knows when it went out. It is what tells
+ * one season's disc set apart from another's.
+ */
+export function seasonYear(
+  season: Pick<ShowSeason, "episodes" | "missing">,
+): number | undefined {
+  const dates = [
+    ...season.episodes.map((e) => e.airDate),
+    ...season.missing.map((m) => m.airDate),
+  ]
+    .filter((d): d is string => Boolean(d))
+    .sort();
+
+  return dates[0] ? Number(dates[0].slice(0, 4)) : undefined;
 }
 
 export function getShow(key: string): Show | undefined {

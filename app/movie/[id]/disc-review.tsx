@@ -6,8 +6,12 @@ import { useState, useTransition } from "react";
 import {
   linkDisc,
   linkDiscByUrl,
+  linkSeasonDisc,
+  linkSeasonDiscByUrl,
   searchDiscs,
+  searchSeasonDiscs,
   unlinkDisc,
+  unlinkSeasonDisc,
   type DiscCandidate,
 } from "@/app/actions";
 
@@ -16,14 +20,24 @@ import {
  * steelbooks, remasters — and the automatic pick takes the first 4K result,
  * which is not always the one you own or the one worth comparing against.
  */
+/**
+ * A film, identified by its TMDb id, or one season of a show, identified by the
+ * show key and the season number. The search differs — a season release is
+ * titled "Show: The Complete Third Season" — but the picking is the same.
+ */
+type Subject =
+  | { tmdbId: number; showKey?: never; season?: never }
+  | { showKey: string; season: number; tmdbId?: never };
+
 export function DiscReview({
   tmdbId,
+  showKey,
+  season,
   title,
   year,
   currentUrl,
   manual,
-}: {
-  tmdbId: number;
+}: Subject & {
   title: string;
   year?: number;
   currentUrl?: string;
@@ -46,7 +60,10 @@ export function DiscReview({
     if (results) return;
 
     startTransition(async () => {
-      const found = await searchDiscs(title, year);
+      const found =
+        showKey === undefined
+          ? await searchDiscs(title, year)
+          : await searchSeasonDiscs(title, season!, year);
       if (found.ok) setResults(found.results);
       else setError(found.error);
     });
@@ -55,7 +72,10 @@ export function DiscReview({
   function choose(candidate: DiscCandidate) {
     setError(null);
     startTransition(async () => {
-      const result = await linkDisc(tmdbId, candidate);
+      const result =
+        showKey === undefined
+          ? await linkDisc(tmdbId!, candidate)
+          : await linkSeasonDisc(showKey, season!, candidate);
       if (result.ok) {
         setOpen(false);
         router.refresh();
@@ -66,7 +86,10 @@ export function DiscReview({
   function linkUrl() {
     setError(null);
     startTransition(async () => {
-      const result = await linkDiscByUrl(tmdbId, url);
+      const result =
+        showKey === undefined
+          ? await linkDiscByUrl(tmdbId!, url)
+          : await linkSeasonDiscByUrl(showKey, season!, url);
       if (result.ok) {
         setOpen(false);
         setUrl("");
@@ -78,7 +101,10 @@ export function DiscReview({
   function unlink() {
     setError(null);
     startTransition(async () => {
-      const result = await unlinkDisc(tmdbId);
+      const result =
+        showKey === undefined
+          ? await unlinkDisc(tmdbId!)
+          : await unlinkSeasonDisc(showKey, season!);
       if (result.ok) router.refresh();
       else setError(result.error);
     });

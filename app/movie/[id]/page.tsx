@@ -693,6 +693,73 @@ export default async function MoviePage({
           </section>
         )}
 
+        {/* An episode is scored against its season's set, so the page says
+            which set that is — the edition is chosen on the show page, where it
+            applies to every episode at once. */}
+        {tv && movie.disc?.url && (
+          <section className="mt-10 flex flex-col gap-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
+                Best disc available
+              </h2>
+              {movie.disc.bestAvailable && (
+                <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium text-emerald-700 ring-1 ring-emerald-500/30 ring-inset dark:text-emerald-300">
+                  your copy matches it
+                </span>
+              )}
+            </div>
+
+            <div className="rounded-card border border-line bg-surface p-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <p className="font-medium">
+                  {movie.disc.releaseTitle}
+                  {movie.disc.format && (
+                    <span className="ml-2 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
+                      {movie.disc.format}
+                    </span>
+                  )}
+                </p>
+                <a
+                  href={movie.disc.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+                >
+                  View on Blu-ray.com ↗
+                </a>
+              </div>
+
+              {movie.disc.gaps.length > 0 && (
+                <div className="mt-4 border-t border-line pt-4">
+                  <p className="text-xs tracking-wide uppercase opacity-45">
+                    Where this episode falls short
+                  </p>
+                  <ul className="mt-2 flex flex-col gap-1 text-sm">
+                    {movie.disc.gaps.map((gap) => (
+                      <li key={gap} className="flex gap-2">
+                        <span className="opacity-30">—</span>
+                        {gap}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <p className="mt-4 border-t border-line pt-4 text-xs opacity-50">
+                Every episode of season {tv.season.number} is compared against
+                this set.{" "}
+                <Link
+                  href={`/show/${showId(tv.show.key)}`}
+                  className="underline underline-offset-4"
+                >
+                  Change the edition on the show page
+                </Link>
+                .
+              </p>
+            </div>
+          </section>
+        )}
+
         {/* Best disc available */}
         {movie.tmdb && (
           <section className="mt-10 flex flex-col gap-3">
