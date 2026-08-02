@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
-import { Inter, Instrument_Sans, JetBrains_Mono } from "next/font/google";
+import {
+  Afacad,
+  Inter,
+  Instrument_Sans,
+  JetBrains_Mono,
+} from "next/font/google";
 import "./globals.css";
-import { scanStatus } from "./actions";
+import { getLibraryRoot, scanStatus } from "./actions";
 import { ScanProvider } from "./scan-provider";
+import { Sidebar } from "./sidebar";
 
 // Inter for the interface: it holds up at 11px, which this app leans on, and
 // its tabular figures keep the score columns from jittering.
@@ -16,6 +22,15 @@ const inter = Inter({
 // voice from the dense technical text rather than just a larger size of it.
 const display = Instrument_Sans({
   variable: "--font-display-face",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+// The wordmark only. One weight, because the logo is the only thing set in it
+// and a second would just be an invitation to use this face elsewhere.
+const logo = Afacad({
+  variable: "--font-logo-face",
+  weight: "600",
   subsets: ["latin"],
   display: "swap",
 });
@@ -40,14 +55,22 @@ export default async function RootLayout({
 }>) {
   // Seeded here so a reload mid-scan shows progress immediately.
   const scan = await scanStatus();
+  // Only for whether the rail offers a scan; the picker itself lives on the
+  // library page, which is where you go when there is nothing to scan yet.
+  const root = await getLibraryRoot();
 
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${display.variable} ${mono.variable} h-full antialiased`}
+      className={`${inter.variable} ${display.variable} ${mono.variable} ${logo.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col">
-        <ScanProvider initialState={scan}>{children}</ScanProvider>
+      <body className="min-h-full">
+        <ScanProvider initialState={scan}>
+          <Sidebar hasRoot={Boolean(root)} />
+          {/* Clears the rail once it is fixed; above that it is a top bar and
+              the content simply follows it. */}
+          <div className="flex min-h-full flex-col md:pl-56">{children}</div>
+        </ScanProvider>
       </body>
     </html>
   );

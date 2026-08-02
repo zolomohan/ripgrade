@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import {
   ASSUMED_BL_PEAK,
   AUDIO_POINTS,
@@ -87,24 +85,6 @@ function Table({
 export default function HowItWorks() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 p-8">
-      <header className="flex flex-col gap-2">
-        <Link href="/" className="text-sm opacity-60 hover:opacity-100">
-          ← Back to library
-        </Link>
-        <h1 className="font-display text-2xl font-semibold">How it works</h1>
-        <p className="text-sm opacity-70">
-          Every number on this page is read directly from the scoring engine in{" "}
-          <code className="font-mono text-xs">lib/derive.ts</code>, so it cannot
-          drift out of date. Change a constant there and this page updates with
-          it.
-          <br />
-          <br />
-          This is the general rubric. For a specific film, open it from the
-          library — each detail page itemises exactly where its points were
-          earned and where they were lost.
-        </p>
-      </header>
-
       <Section
         title="The pipeline"
         lede="Six stages. Only the first four touch your drive."

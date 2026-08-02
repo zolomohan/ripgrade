@@ -40,6 +40,7 @@
 
   --font-sans: var(--font-inter);
   --font-display: var(--font-display-face);
+  --font-logo: var(--font-logo-face);
   --font-mono: var(--font-mono-face);
 
   /* Three steps, chosen by element size rather than by whim. */

@@ -75,6 +75,18 @@ CREATE TABLE IF NOT EXISTS tmdb_matches (
   matched_at  INTEGER NOT NULL
 );
 
+-- Films you want but do not have. Denormalised on purpose: an entry is a
+-- decision, and it should still render with TMDb unreachable and long after
+-- any cache of the record has been dropped.
+CREATE TABLE IF NOT EXISTS wishlist (
+  tmdb_id     INTEGER PRIMARY KEY,
+  added_at    INTEGER NOT NULL,
+  title       TEXT NOT NULL,
+  year        INTEGER,
+  poster_path TEXT,
+  overview    TEXT
+);
+
 -- Poster/fanart live beside the movie file, so this is keyed by directory
 -- rather than by film. A separate table so adding it needed no rescan.
 CREATE TABLE IF NOT EXISTS artwork (

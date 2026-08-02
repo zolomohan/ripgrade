@@ -25,7 +25,9 @@ export function ScanButton() {
       type="button"
       onClick={start}
       disabled={busy}
-      className="shrink-0 rounded-control bg-foreground px-3 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+      // Full width of the rail it sits in; on a narrow screen the rail is a
+      // top bar, so it falls back to sizing by its label.
+      className="w-full shrink-0 rounded-control bg-foreground px-3 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
     >
       {label}
     </button>

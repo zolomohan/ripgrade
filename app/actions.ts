@@ -33,6 +33,7 @@ import { setManualMatch } from "@/lib/enrich";
 import { deriveAll, getLibrary } from "@/lib/library";
 import { getScanState, startScan, type ScanState } from "@/lib/scanner";
 import { revealInFinder } from "@/lib/system";
+import { addToWishlist, removeFromWishlist } from "@/lib/wishlist";
 import { setTriage } from "@/lib/triage";
 import { imageUrl } from "@/lib/image-url";
 import {
@@ -164,6 +165,30 @@ export async function confirmMatch(
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wishlist
+// ---------------------------------------------------------------------------
+
+/**
+ * Puts a film on the want list. Everything shown later is stored here and now,
+ * so the list keeps working with no network and no TMDb key.
+ */
+export async function addWish(hit: SearchHit): Promise<void> {
+  addToWishlist({
+    tmdbId: hit.id,
+    title: hit.title,
+    year: hit.year ? Number(hit.year) : undefined,
+    posterPath: hit.posterPath,
+    overview: hit.overview,
+  });
+  refresh();
+}
+
+export async function removeWish(tmdbId: number): Promise<void> {
+  removeFromWishlist(tmdbId);
+  refresh();
 }
 
 // ---------------------------------------------------------------------------
