@@ -185,13 +185,16 @@ const SORTS: {
   label: string;
   compare: (a: Show, b: Show) => number;
 }[] = [
+  // Worst first by default: the shelf is a to-do list before it is a catalogue,
+  // and the show most worth doing something about should not need a sort to be
+  // seen.
+  { key: "worst", label: "Lowest score", compare: (a, b) => a.score - b.score },
   {
     key: "title",
     label: "Title A–Z",
     compare: (a, b) => a.title.localeCompare(b.title),
   },
   { key: "score", label: "Score", compare: (a, b) => b.score - a.score },
-  { key: "worst", label: "Lowest score", compare: (a, b) => a.score - b.score },
   {
     key: "episodes",
     label: "Most episodes",
