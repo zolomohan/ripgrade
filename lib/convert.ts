@@ -6,6 +6,7 @@ import { rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { getSetting } from "./db";
+import { recordRun } from "./jobs";
 import { BACKUP_SUFFIX, RUNTIME_DRIFT, runtimeDrift } from "./derive";
 import { scanDovi } from "./dovi";
 import { probe } from "./media";
@@ -115,19 +116,23 @@ const CHECK_STEP = 4;
 
 const IDLE: ConvertJob = { status: "idle", step: 0, steps: CHECK_STEP };
 
-// Survives HMR, as the scan and RPU jobs do.
+/**
+ * Read from globalThis every time, never copied into a module-local variable —
+ * this module can exist more than once in one server, and a local copy stops
+ * hearing about the job the moment a second instance appears.
+ */
 const globalForConvert = globalThis as unknown as {
   medlibConvert?: ConvertJob;
 };
-let job: ConvertJob = globalForConvert.medlibConvert ?? IDLE;
+
+const current = (): ConvertJob => globalForConvert.medlibConvert ?? IDLE;
 
 function setJob(next: ConvertJob) {
-  job = next;
   globalForConvert.medlibConvert = next;
 }
 
 export function getConvertJob(): ConvertJob {
-  return job;
+  return current();
 }
 
 /** The running dovi_convert, and whether someone asked for it to stop. */
@@ -157,7 +162,7 @@ const workingFiles = (filePath: string, tempDir?: string) => {
  * against the drive with nothing to hand their work to.
  */
 export function cancelConvert(): ConvertJob {
-  if (job.status !== "running") return job;
+  if (current().status !== "running") return current();
 
   cancelling = true;
   if (activeChild?.pid) {
@@ -167,7 +172,7 @@ export function cancelConvert(): ConvertJob {
       activeChild.kill();
     }
   }
-  return job;
+  return current();
 }
 
 /** Progress is drawn with cursor moves and colour, none of which we want. */
@@ -262,7 +267,7 @@ function watchProgress(
   const total = (sizes.videoBytes ?? sizes.sourceBytes) + sizes.sourceBytes;
 
   return setInterval(() => {
-    if (job.status !== "running") return;
+    if (current().status !== "running") return;
 
     let written = 0;
     let found = false;
@@ -278,7 +283,7 @@ function watchProgress(
     // Held below 100 so the bar completes when the job does, not when the last
     // byte lands — the verify step still has to run.
     if (found && total > 0) {
-      setJob({ ...job, percent: Math.min(99, (written / total) * 100) });
+      setJob({ ...current(), percent: Math.min(99, (written / total) * 100) });
     }
   }, 1000);
 }
@@ -289,7 +294,10 @@ export function startConvert(
   filePath: string,
   sizes: ConvertSizes,
 ): ConvertJob {
-  if (job.status === "running") return job;
+  if (current().status === "running") return current();
+
+  const startedAt = Date.now();
+  const film = path.basename(filePath);
 
   setJob({
     status: "running",
@@ -330,7 +338,7 @@ export function startConvert(
       STEP.lastIndex = 0;
       while ((match = STEP.exec(text)) !== null) {
         latest = {
-          ...job,
+          ...current(),
           step: Number(match[1]),
           // "Muxing (Cloning Metadata + 1142.5fps)" → "Muxing". The rate was
           // worth showing when the step was all we had; the percentage says it
@@ -356,13 +364,29 @@ export function startConvert(
       await Promise.all(
         workingFiles(filePath, tempDir).map((f) => rm(f, { force: true })),
       );
-      setJob({ ...job, status: "cancelled", finishedAt: Date.now() });
+      recordRun({
+        kind: "convert",
+        label: film,
+        startedAt,
+        finishedAt: Date.now(),
+        status: "cancelled",
+        detail: `stopped at step ${current().step} of ${current().steps}`,
+      });
+      setJob({ ...current(), status: "cancelled", finishedAt: Date.now() });
       return;
     }
 
     if (code !== 0) {
+      recordRun({
+        kind: "convert",
+        label: film,
+        startedAt,
+        finishedAt: Date.now(),
+        status: "error",
+        detail: tail.trim().split("\n").filter(Boolean).slice(-1)[0],
+      });
       setJob({
-        ...job,
+        ...current(),
         status: "error",
         error:
           tail.trim().split("\n").filter(Boolean).slice(-3).join(" ") ||
@@ -373,7 +397,7 @@ export function startConvert(
     }
 
     setJob({
-      ...job,
+      ...current(),
       step: CHECK_STEP,
       label: "Checking runtime",
       percent: 99,
@@ -386,7 +410,7 @@ export function startConvert(
       // The conversion itself succeeded, so this is not a failed job — but the
       // library is now describing a file that no longer exists as described.
       setJob({
-        ...job,
+        ...current(),
         status: "error",
         error: `Converted, but re-reading the file failed: ${
           err instanceof Error ? err.message : String(err)
@@ -396,8 +420,17 @@ export function startConvert(
       return;
     }
 
+    recordRun({
+      kind: "convert",
+      label: film,
+      startedAt,
+      finishedAt: Date.now(),
+      status: check.ok ? "done" : "error",
+      detail: check.message,
+    });
+
     setJob({
-      ...job,
+      ...current(),
       // A file of the wrong length is a failed conversion however cleanly the
       // tool exited, so it is reported as one — with the original still there.
       status: check.ok ? "done" : "error",
@@ -410,5 +443,5 @@ export function startConvert(
     });
   })();
 
-  return job;
+  return current();
 }

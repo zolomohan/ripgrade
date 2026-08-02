@@ -105,6 +105,20 @@ CREATE TABLE IF NOT EXISTS wishlist (
   overview    TEXT
 );
 
+-- What the long-running jobs have done. Everything else about a job lives in
+-- memory and dies with the process; this is the only record that a scan ran at
+-- all, which is the difference between "nothing is happening" and "nothing has
+-- ever happened".
+CREATE TABLE IF NOT EXISTS job_runs (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind         TEXT NOT NULL,
+  label        TEXT,
+  started_at   INTEGER NOT NULL,
+  finished_at  INTEGER NOT NULL,
+  status       TEXT NOT NULL,
+  detail       TEXT
+);
+
 -- Poster/fanart live beside the movie file, so this is keyed by directory
 -- rather than by film. A separate table so adding it needed no rescan.
 CREATE TABLE IF NOT EXISTS artwork (

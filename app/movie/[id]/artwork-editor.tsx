@@ -10,10 +10,38 @@ import { HERO_BUTTON } from "./hero-button";
 
 type Tab = "poster" | "fanart" | "logo";
 
-const KINDS: Record<Tab, { label: string; file: string }> = {
-  poster: { label: "Poster", file: "poster.jpeg" },
-  fanart: { label: "Backdrop", file: "fanart.jpeg" },
-  logo: { label: "Logo", file: "logo.png" },
+/**
+ * Per kind: what it is called, what it is saved as, and the shape it lays out
+ * in — the last of which the placeholders borrow, so the grid that appears
+ * while TMDb answers is the grid that will be there when it does. A column of
+ * poster-shaped boxes standing in for a row of logos is a worse wait than no
+ * placeholder at all.
+ */
+const KINDS: Record<
+  Tab,
+  { label: string; file: string; grid: string; shape: string; count: number }
+> = {
+  poster: {
+    label: "Poster",
+    file: "poster.jpeg",
+    grid: "grid-cols-3 sm:grid-cols-6",
+    shape: "aspect-[2/3]",
+    count: 12,
+  },
+  fanart: {
+    label: "Backdrop",
+    file: "fanart.jpeg",
+    grid: "grid-cols-2 sm:grid-cols-3",
+    shape: "aspect-video",
+    count: 6,
+  },
+  logo: {
+    label: "Logo",
+    file: "logo.png",
+    grid: "grid-cols-2 sm:grid-cols-4",
+    shape: "h-24",
+    count: 8,
+  },
 };
 type Sort = "default" | "largest";
 
@@ -36,9 +64,19 @@ function Spinner({ big }: { big?: boolean }) {
 export function ArtworkEditor({
   moviePath,
   tmdbId,
+  openAs,
+  label,
 }: {
   moviePath: string;
   tmdbId: number;
+  /**
+   * Skips the kind menu and opens straight onto one kind. For places that
+   * already know which is missing — asking again there would be asking a
+   * question the page just answered.
+   */
+  openAs?: Tab;
+  /** A worded trigger instead of the icon, for use in a list. */
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -148,11 +186,20 @@ export function ArtworkEditor({
   return (
     <>
       <div ref={trigger} className="relative">
+      {label ? (
+        <button
+          type="button"
+          onClick={() => openWith(openAs ?? "poster")}
+          className="rounded-control border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
+        >
+          {label}
+        </button>
+      ) : (
       <button
         type="button"
-        onClick={() => setMenu((v) => !v)}
+        onClick={() => (openAs ? openWith(openAs) : setMenu((v) => !v))}
         aria-label="Edit artwork"
-        aria-expanded={menu}
+        aria-expanded={openAs ? undefined : menu}
         title="Edit artwork"
         className={HERO_BUTTON}
       >
@@ -170,6 +217,7 @@ export function ArtworkEditor({
           <path d="m21 15-5-5L5 21" />
         </svg>
       </button>
+      )}
 
         {menu && (
           <div className="row-enter absolute right-0 bottom-full z-30 mb-2 w-40 overflow-hidden rounded-card border border-line bg-background py-1 shadow-2xl">
@@ -197,14 +245,18 @@ export function ArtworkEditor({
         target &&
         createPortal(
           <div
-            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-6"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm"
             onClick={() => setOpen(false)}
           >
+            {/* A fixed height rather than one that follows the contents: the
+                grid runs from four images to twenty-four, and a dialog that
+                resizes with it moves the close button and the sort control
+                every time you switch kind. The images scroll inside instead. */}
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-5xl rounded-card border border-line bg-background p-6 shadow-2xl"
+              className="flex h-[min(80vh,44rem)] w-full max-w-5xl flex-col rounded-card border border-line bg-background shadow-2xl"
             >
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line p-5">
                 <h2 className="text-lg font-semibold">{KINDS[tab].label}</h2>
 
                 <div className="relative">
@@ -243,16 +295,20 @@ export function ArtworkEditor({
                 </button>
               </div>
 
+              <div className="flex-1 overflow-y-auto p-5">
               {!images && !error && (
-                <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-6">
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <div key={i} className="skeleton aspect-[2/3] w-full" />
+                <div className={`grid gap-3 ${KINDS[tab].grid}`}>
+                  {Array.from({ length: KINDS[tab].count }, (_, i) => (
+                    <div
+                      key={i}
+                      className={`skeleton w-full ${KINDS[tab].shape}`}
+                    />
                   ))}
                 </div>
               )}
 
               {images && choices.length === 0 && (
-                <p className="mt-6 text-sm opacity-50">
+                <p className="text-sm opacity-50">
                   TMDb has no{" "}
                   {tab === "poster"
                     ? "posters"
@@ -264,22 +320,18 @@ export function ArtworkEditor({
               )}
 
               {choices.length > 0 && (
-                <div
-                  className={`mt-5 grid gap-3 ${
-                    tab === "poster"
-                      ? "grid-cols-3 sm:grid-cols-6"
-                      : tab === "logo"
-                        ? "grid-cols-2 sm:grid-cols-4"
-                        : "grid-cols-2 sm:grid-cols-3"
-                  }`}
-                >
+                <div className={`grid gap-3 ${KINDS[tab].grid}`}>
                   {choices.map((choice) => (
                     <button
                       key={choice.filePath}
                       type="button"
                       onClick={() => save(choice.filePath)}
                       disabled={pending}
-                      className={`group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40 ${
+                      // The same shape the placeholder held. Without it a tile
+                      // has no height until its image arrives, so the grid
+                      // collapsed to a row of lines between the skeletons
+                      // disappearing and the pictures landing.
+                      className={`group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40 ${KINDS[tab].shape} ${
                         // Logos are cut out against transparency and are
                         // usually white, so they need something behind them to
                         // be visible at all — and something dark, since that is
@@ -297,8 +349,8 @@ export function ArtworkEditor({
                         loading="lazy"
                         className={
                           tab === "logo"
-                            ? "max-h-16 w-auto object-contain"
-                            : "w-full object-cover"
+                            ? "max-h-full w-auto object-contain"
+                            : "h-full w-full object-cover"
                         }
                       />
                       <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
@@ -339,8 +391,9 @@ export function ArtworkEditor({
                   {error}
                 </p>
               )}
+              </div>
 
-              <p className="mt-5 text-xs opacity-45">
+              <p className="shrink-0 border-t border-line px-5 py-3 text-xs opacity-45">
                 The full-resolution image is downloaded into the film&rsquo;s
                 own folder. Any existing file of the same name is replaced.
               </p>

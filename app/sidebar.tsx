@@ -16,11 +16,11 @@ import { ScanButton } from "./scan-button";
  */
 const PAGES = [
   { href: "/", label: "Library" },
-  { href: "/attention", label: "Needs attention" },
   { href: "/collections", label: "Collections" },
   { href: "/stats", label: "Stats" },
   { href: "/wishlist", label: "Wishlist" },
   { href: "/processes", label: "Processes" },
+  { href: "/attention", label: "Needs attention" },
   { href: "/how-it-works", label: "How it works" },
   { href: "/settings", label: "Settings" },
 ];

@@ -1,4 +1,4 @@
-import { openIssues } from "@/lib/derive";
+import { classifyEnhancementLayer, openIssues } from "@/lib/derive";
 import { duplicateGroups, getLibrary, groupKeyOf } from "@/lib/library";
 import { AttentionView, type AttentionData } from "./attention-view";
 
@@ -29,6 +29,32 @@ export default async function AttentionPage() {
           b.issues.length - a.issues.length,
       ),
 
+    // A lens on the issues above rather than a separate pile: the same films
+    // are in "Open issues", but converting a library is its own sitting, and
+    // what decides each one is the enhancement layer rather than the message.
+    profile7: movies
+      .filter((m) =>
+        openIssues(m).some((i) => i.code === "dv-profile-7"),
+      )
+      .map((m) => {
+        const el = classifyEnhancementLayer(m.dovi, m.hdr10);
+        return {
+          path: m.path,
+          title: m.title,
+          year: m.year,
+          poster: m.poster,
+          kind: el?.kind,
+          provisional: el?.provisional ?? false,
+          read: m.dovi?.depth,
+        };
+      })
+      // Convertible first: those are the ones with something to do.
+      .sort(
+        (a, b) =>
+          Number(b.kind === "mel") - Number(a.kind === "mel") ||
+          Number(a.kind === "complex-fel") - Number(b.kind === "complex-fel"),
+      ),
+
     duplicates: duplicateGroups(movies).map((group) => ({
       key: groupKeyOf(group[0]),
       title: group[0].title,
@@ -49,11 +75,14 @@ export default async function AttentionPage() {
         title: m.title,
         year: m.year,
         poster: m.poster,
+        tmdbId: m.tmdb?.id,
+        // Kept as the kinds themselves rather than as words, so the buttons
+        // below can open the picker on the one that is missing.
         missing: [
-          !m.poster && "poster",
-          !m.fanart && "backdrop",
-          !m.logo && "logo",
-        ].filter(Boolean) as string[],
+          !m.poster && ("poster" as const),
+          !m.fanart && ("fanart" as const),
+          !m.logo && ("logo" as const),
+        ].filter(Boolean) as ("poster" | "fanart" | "logo")[],
       })),
 
     matches: movies

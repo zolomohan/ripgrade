@@ -825,6 +825,36 @@ type DiscInput = {
  * count need before they mean anything.
  */
 /**
+ * Issues collapsed to one entry per check.
+ *
+ * A film can raise the same check more than once — three separate bitrate gaps
+ * against one disc, say — so a list keyed by code has duplicate keys, and
+ * resolving is per code anyway. One row, every message it raised.
+ */
+export function groupIssues(issues: Issue[]): {
+  code: string;
+  severity: Severity;
+  messages: string[];
+}[] {
+  const groups = new Map<
+    string,
+    { code: string; severity: Severity; messages: string[] }
+  >();
+
+  for (const issue of issues) {
+    const group = groups.get(issue.code) ?? {
+      code: issue.code,
+      severity: issue.severity,
+      messages: [],
+    };
+    group.messages.push(issue.message);
+    groups.set(issue.code, group);
+  }
+
+  return [...groups.values()];
+}
+
+/**
  * The issues still standing on a film: everything it raised, less the ones you
  * resolved individually, and none at all once the film is accepted wholesale.
  */

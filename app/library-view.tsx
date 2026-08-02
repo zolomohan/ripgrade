@@ -82,6 +82,11 @@ const FACETS: {
         label: "DV Profile 7",
         test: (m) => m.dvProfile === 7,
       },
+      // Straight off the RPU reading rather than through the brightness
+      // classification: MEL and FEL is what the layer *is*, and a film only has
+      // one once its stream has been read.
+      { key: "mel", label: "MEL", test: (m) => m.dovi?.elType === "MEL" },
+      { key: "fel", label: "FEL", test: (m) => m.dovi?.elType === "FEL" },
     ],
   },
   {

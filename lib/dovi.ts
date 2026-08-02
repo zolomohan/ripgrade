@@ -8,6 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { db } from "./db";
+import { recordRun } from "./jobs";
 import type { DoviDepth, DoviScan } from "./derive";
 
 const execFileAsync = promisify(execFile);
@@ -402,17 +403,26 @@ export type DoviJob = {
 
 const IDLE_JOB: DoviJob = { status: "idle", percent: 0, frames: 0 };
 
-// Survives HMR, exactly as the scan state does.
+/**
+ * The job lives on globalThis and is read from there every time — never copied
+ * into a module-local variable.
+ *
+ * This module can exist more than once in one server: a dev reload replaces it
+ * while work is still running, and route handlers, server components and
+ * actions do not always share one instance. A local copy is seeded once at
+ * import and then never hears about anything the running job does, which is
+ * how a pass that had finished went on reporting 59% for good.
+ */
 const globalForJob = globalThis as unknown as { medlibDoviJob?: DoviJob };
-let job: DoviJob = globalForJob.medlibDoviJob ?? IDLE_JOB;
+
+const current = (): DoviJob => globalForJob.medlibDoviJob ?? IDLE_JOB;
 
 function setJob(next: DoviJob) {
-  job = next;
   globalForJob.medlibDoviJob = next;
 }
 
 export function getDoviJob(): DoviJob {
-  return job;
+  return current();
 }
 
 /**
@@ -423,9 +433,10 @@ export function startFullDoviScan(
   filePath: string,
   durationSec?: number,
 ): DoviJob {
-  if (job.status === "running") return job;
+  if (current().status === "running") return current();
 
   cancelled = false;
+  const startedAt = Date.now();
   setJob({ status: "running", path: filePath, percent: 0, frames: 0 });
 
   void (async () => {
@@ -433,7 +444,7 @@ export function startFullDoviScan(
       depth: "full",
       durationSec,
       onProgress: ({ percent, frames }) =>
-        setJob({ ...job, percent: percent ?? job.percent, frames }),
+        setJob({ ...current(), percent: percent ?? current().percent, frames }),
     });
 
     // Folded in here rather than by whoever started the pass: minutes are long
@@ -452,21 +463,39 @@ export function startFullDoviScan(
     }
 
     if (cancelled) {
-      setJob({ ...job, status: "cancelled", finishedAt: Date.now() });
+      recordRun({
+        kind: "dovi",
+        label: filePath.split("/").pop(),
+        startedAt,
+        finishedAt: Date.now(),
+        status: "cancelled",
+        detail: `${current().frames.toLocaleString("en-GB")} frames read`,
+      });
+      setJob({ ...current(), status: "cancelled", finishedAt: Date.now() });
       return;
     }
 
-    setJob({
-      ...job,
+    recordRun({
+      kind: "dovi",
+      label: filePath.split("/").pop(),
+      startedAt,
+      finishedAt: Date.now(),
       status: scan.error ? "error" : "done",
-      percent: scan.error ? job.percent : 100,
-      frames: scan.frames || job.frames,
+      detail:
+        scan.error ?? `${scan.frames.toLocaleString("en-GB")} frames read`,
+    });
+
+    setJob({
+      ...current(),
+      status: scan.error ? "error" : "done",
+      percent: scan.error ? current().percent : 100,
+      frames: scan.frames || current().frames,
       error: scan.error,
       finishedAt: Date.now(),
     });
   })();
 
-  return job;
+  return current();
 }
 
 /**
@@ -475,10 +504,10 @@ export function startFullDoviScan(
  * not the knowledge.
  */
 export function cancelDoviScan(): DoviJob {
-  if (job.status !== "running") return job;
+  if (current().status !== "running") return current();
 
   cancelled = true;
   stopCurrent?.();
-  setJob({ ...job, status: "cancelled", finishedAt: Date.now() });
-  return job;
+  setJob({ ...current(), status: "cancelled", finishedAt: Date.now() });
+  return current();
 }

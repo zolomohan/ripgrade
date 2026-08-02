@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { artUrl } from "@/lib/routes";
-import { type Status } from "@/lib/derive";
+import { groupIssues, type Status } from "@/lib/derive";
 import { backupBytes } from "@/lib/convert";
 import { getDisc } from "@/lib/disc";
 import { getMovie, type LibraryItem } from "@/lib/library";
@@ -638,19 +638,23 @@ export default async function MoviePage({
               // Rows rather than nested cards: the section border already frames
               // them, and a border inside a border reads as clutter.
               <div className="divide-y divide-line">
-                {movie.issues.map((issue) => (
-                  <div key={issue.code} className="py-3 first:pt-0 last:pb-0">
+                {groupIssues(movie.issues).map((group) => (
+                  <div key={group.code} className="py-3 first:pt-0 last:pb-0">
                     <div className="flex items-baseline gap-2">
                       <span
-                        className={`text-xs font-semibold uppercase ${SEVERITY_THEME[issue.severity].text}`}
+                        className={`text-xs font-semibold uppercase ${SEVERITY_THEME[group.severity].text}`}
                       >
-                        {issue.severity}
+                        {group.severity}
                       </span>
                       <code className="font-mono text-xs opacity-40">
-                        {issue.code}
+                        {group.code}
                       </code>
                     </div>
-                    <p className="mt-1 text-sm">{issue.message}</p>
+                    {group.messages.map((message) => (
+                      <p key={message} className="mt-1 text-sm">
+                        {message}
+                      </p>
+                    ))}
                   </div>
                 ))}
               </div>

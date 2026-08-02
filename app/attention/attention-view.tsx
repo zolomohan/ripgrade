@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { resolveIssue } from "@/app/actions";
-import type { Issue, Status } from "@/lib/derive";
+import { beginConvert, resolveIssue } from "@/app/actions";
+import { ArtworkEditor } from "@/app/movie/[id]/artwork-editor";
+import { groupIssues, type Issue, type Status } from "@/lib/derive";
 import { artUrl, compareId, movieId } from "@/lib/routes";
 
 /**
@@ -26,6 +27,15 @@ export type AttentionData = {
     status: Status;
     issues: Issue[];
   }[];
+  profile7: {
+    path: string;
+    title: string;
+    year?: number;
+    poster?: string;
+    kind?: "mel" | "simple-fel" | "complex-fel" | "unknown";
+    provisional: boolean;
+    read?: "head" | "full";
+  }[];
   duplicates: {
     key: string;
     title: string;
@@ -43,7 +53,8 @@ export type AttentionData = {
     title: string;
     year?: number;
     poster?: string;
-    missing: string[];
+    tmdbId?: number;
+    missing: ("poster" | "fanart" | "logo")[];
   }[];
   matches: {
     path: string;
@@ -55,25 +66,11 @@ export type AttentionData = {
   }[];
 };
 
-/** Collapses repeats of the same check into the one thing you can act on. */
-function byCode(issues: Issue[]) {
-  const groups = new Map<
-    string,
-    { code: string; severity: string; messages: string[] }
-  >();
-
-  for (const issue of issues) {
-    const group = groups.get(issue.code) ?? {
-      code: issue.code,
-      severity: issue.severity,
-      messages: [],
-    };
-    group.messages.push(issue.message);
-    groups.set(issue.code, group);
-  }
-
-  return [...groups.values()];
-}
+const KIND_WORDS = {
+  poster: "poster",
+  fanart: "backdrop",
+  logo: "logo",
+} as const;
 
 const SEVERITY: Record<string, string> = {
   critical: "text-red-600 dark:text-red-400",
@@ -120,6 +117,14 @@ function Title({
   );
 }
 
+/**
+ * One category at a time.
+ *
+ * Everything outstanding on one page meant a scroll of several thousand pixels
+ * with four unrelated kinds of work in it — and the four are not done in the
+ * same sitting: clearing issues is a different job from picking artwork. The
+ * bar keeps every count visible so nothing hides behind the choice.
+ */
 function Section({
   title,
   count,
@@ -129,23 +134,56 @@ function Section({
   count: number;
   children: React.ReactNode;
 }) {
-  if (count === 0) return null;
-
-  return (
-    <section className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="font-display text-lg font-semibold tracking-tight">
-          {title}
-        </h2>
-        <span className="text-xs opacity-40">{count}</span>
-      </div>
-      {children}
-    </section>
-  );
+  if (count === 0) {
+    return (
+      <p className="rounded-card border border-line bg-surface px-4 py-12 text-center text-sm opacity-45">
+        Nothing under {title.toLowerCase()}.
+      </p>
+    );
+  }
+  return <section className="flex flex-col gap-2">{children}</section>;
 }
 
+type Category = "issues" | "profile7" | "duplicates" | "matches" | "artwork";
+
+/** What each enhancement layer means for converting, in a few words. */
+const EL_VERDICT: Record<string, { text: string; tone: string }> = {
+  mel: {
+    text: "MEL — safe to convert",
+    tone: "text-emerald-600 dark:text-emerald-400",
+  },
+  "simple-fel": {
+    text: "FEL, no brightness expansion — safe to convert",
+    tone: "text-emerald-600 dark:text-emerald-400",
+  },
+  "complex-fel": {
+    text: "Complex FEL — keep Profile 7",
+    tone: "text-red-600 dark:text-red-400",
+  },
+  unknown: { text: "Enhancement layer unknown", tone: "opacity-50" },
+};
+
 export function AttentionView({ data }: { data: AttentionData }) {
+  const categories: { key: Category; label: string; count: number }[] = [
+    { key: "issues", label: "Open issues", count: data.issues.length },
+    { key: "profile7", label: "Profile 7", count: data.profile7.length },
+    { key: "duplicates", label: "Duplicates", count: data.duplicates.length },
+    {
+      key: "matches",
+      label: "Matches to review",
+      count: data.matches.length,
+    },
+    { key: "artwork", label: "Missing artwork", count: data.artwork.length },
+  ];
+
+  // Opens on the first category that has anything in it, so the page lands on
+  // work rather than on an empty tab.
+  const [tab, setTab] = useState<Category>(
+    categories.find((c) => c.count > 0)?.key ?? "issues",
+  );
   const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<Record<string, string>>({});
+  const [started, setStarted] = useState<string[]>([]);
   const [, startTransition] = useTransition();
   const router = useRouter();
 
@@ -155,6 +193,26 @@ export function AttentionView({ data }: { data: AttentionData }) {
       await action();
       setBusy(null);
       router.refresh();
+    });
+  }
+
+  /**
+   * Starts the conversion and leaves it running: it takes minutes, and this
+   * page is a worklist rather than somewhere to stand and watch. Processes has
+   * the progress bar.
+   */
+  function convert(path: string) {
+    setBusy(path);
+    setFailed((f) => ({ ...f, [path]: "" }));
+    startTransition(async () => {
+      const result = await beginConvert(path);
+      setBusy(null);
+      if (result.ok) {
+        setStarted((s) => [...s, path]);
+        router.refresh();
+      } else {
+        setFailed((f) => ({ ...f, [path]: result.error }));
+      }
     });
   }
 
@@ -176,7 +234,33 @@ export function AttentionView({ data }: { data: AttentionData }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap gap-1.5">
+        {categories.map((category) => (
+          <button
+            key={category.key}
+            type="button"
+            onClick={() => setTab(category.key)}
+            aria-pressed={tab === category.key}
+            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+              tab === category.key
+                ? "border-transparent bg-foreground text-background"
+                : "border-line hover:bg-surface-strong"
+            } ${category.count === 0 ? "opacity-45" : ""}`}
+          >
+            {category.label}
+            <span
+              className={`text-xs tabular-nums ${
+                tab === category.key ? "opacity-70" : "opacity-45"
+              }`}
+            >
+              {category.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {tab === "issues" && (
       <Section title="Open issues" count={data.issues.length}>
         <div className="flex flex-col gap-4">
           {data.issues.map((film) => (
@@ -195,7 +279,7 @@ export function AttentionView({ data }: { data: AttentionData }) {
                     listing them separately would offer buttons that silently
                     clear each other. */}
                 <ul className="divide-y divide-line">
-                  {byCode(film.issues).map((group) => {
+                  {groupIssues(film.issues).map((group) => {
                     const key = `${film.path}:${group.code}`;
                     return (
                       <li
@@ -257,6 +341,95 @@ export function AttentionView({ data }: { data: AttentionData }) {
         </div>
       </Section>
 
+      )}
+
+      {tab === "profile7" && (
+      <Section title="Profile 7" count={data.profile7.length}>
+        <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+          {data.profile7.map((film) => (
+            <div key={film.path} className="flex items-center gap-4 px-4 py-3">
+              <Poster src={film.poster} />
+              <div className="min-w-0 flex-1">
+                <Title path={film.path} title={film.title} year={film.year} />
+                <p
+                  className={`mt-0.5 text-xs ${EL_VERDICT[film.kind ?? "unknown"].tone}`}
+                >
+                  {film.kind
+                    ? EL_VERDICT[film.kind].text
+                    : "Stream not read yet"}
+                </p>
+                {film.provisional && (
+                  <p className="mt-0.5 text-xs opacity-45">
+                    Judged on a sample — needs a full pass before converting.
+                  </p>
+                )}
+                {failed[film.path] && (
+                  <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">
+                    {failed[film.path]}
+                  </p>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="text-[11px] opacity-35">
+                  {film.read === "full"
+                    ? "read in full"
+                    : film.read === "head"
+                      ? "sampled"
+                      : "unread"}
+                </span>
+
+                {/* Only where the verdict allows it. A complex FEL and a
+                    provisional one both have a reason not to, and the row
+                    above says which. */}
+                {(film.kind === "mel" ||
+                  (film.kind === "simple-fel" && !film.provisional)) &&
+                  (started.includes(film.path) ? (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                      Started
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => convert(film.path)}
+                      disabled={busy === film.path}
+                      className="rounded-control border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong disabled:opacity-40"
+                    >
+                      {busy === film.path ? "Starting…" : "Convert"}
+                    </button>
+                  ))}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    run(`${film.path}:p7`, () =>
+                      resolveIssue(film.path, "dv-profile-7", true),
+                    )
+                  }
+                  disabled={busy === `${film.path}:p7`}
+                  aria-label={`Resolve Profile 7 on ${film.title}`}
+                  title="Mark as resolved"
+                  className="grid h-8 w-8 place-items-center rounded-full border border-line opacity-40 transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] hover:text-emerald-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-emerald-300"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-3.5 w-3.5"
+                  >
+                    <path d="m4 12.5 5 5 11-11" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+      )}
+
+      {tab === "duplicates" && (
       <Section title="Duplicates" count={data.duplicates.length}>
         <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
           {data.duplicates.map((group) => (
@@ -290,6 +463,9 @@ export function AttentionView({ data }: { data: AttentionData }) {
         </div>
       </Section>
 
+      )}
+
+      {tab === "matches" && (
       <Section title="Matches to review" count={data.matches.length}>
         <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
           {data.matches.map((film) => (
@@ -309,6 +485,9 @@ export function AttentionView({ data }: { data: AttentionData }) {
         </div>
       </Section>
 
+      )}
+
+      {tab === "artwork" && (
       <Section title="Missing artwork" count={data.artwork.length}>
         <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
           {data.artwork.map((film) => (
@@ -317,13 +496,31 @@ export function AttentionView({ data }: { data: AttentionData }) {
               <div className="min-w-0 flex-1">
                 <Title path={film.path} title={film.title} year={film.year} />
                 <p className="mt-0.5 text-xs opacity-50">
-                  No {film.missing.join(" or ")}
+                  No {film.missing.map((k) => KIND_WORDS[k]).join(" or ")}
                 </p>
               </div>
+
+              {/* One button per missing kind, each opening the picker straight
+                  onto it. The row already says which is absent, so making you
+                  pick again from a menu would be asking twice. */}
+              {film.tmdbId !== undefined && (
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {film.missing.map((kind) => (
+                    <ArtworkEditor
+                      key={kind}
+                      moviePath={film.path}
+                      tmdbId={film.tmdbId!}
+                      openAs={kind}
+                      label={`Add ${KIND_WORDS[kind]}`}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
       </Section>
+      )}
     </div>
   );
 }

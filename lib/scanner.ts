@@ -6,6 +6,7 @@ import path from "node:path";
 import { findArtwork, type Artwork } from "./artwork";
 import { db } from "./db";
 import { getDoviScans, scanDovi } from "./dovi";
+import { recordRun } from "./jobs";
 import { runEnrich } from "./enrich";
 import { fetchDisc, hasDisc } from "./disc";
 import { deriveAll, getLibrary } from "./library";
@@ -63,17 +64,21 @@ const IDLE: ScanState = {
   discDone: 0,
 };
 
-// Survives HMR so a save mid-scan doesn't orphan the running scan's progress.
+/**
+ * Read from globalThis every time rather than kept in a module-local variable.
+ * A save mid-scan replaces this module while the scan is still running, and a
+ * local copy would be frozen at whatever the progress was when that happened.
+ */
 const globalForScan = globalThis as unknown as { medlibScan?: ScanState };
-let state: ScanState = globalForScan.medlibScan ?? IDLE;
+
+const current = (): ScanState => globalForScan.medlibScan ?? IDLE;
 
 function setState(next: ScanState) {
-  state = next;
   globalForScan.medlibScan = next;
 }
 
 export function getScanState(): ScanState {
-  return state;
+  return current();
 }
 
 /** Windows/NAS bookkeeping folders that appear on exFAT and NTFS drives. */
@@ -255,11 +260,11 @@ async function probeAll(files: FoundFile[]) {
         existing.size === file.size &&
         existing.mtime_ms === file.mtimeMs
       ) {
-        setState({ ...state, cached: state.cached + 1 });
+        setState({ ...current(), cached: current().cached + 1 });
         continue;
       }
 
-      setState({ ...state, current: file.path });
+      setState({ ...current(), current: file.path });
       const result = await probe(file.path);
 
       upsertStmt.run({
@@ -273,8 +278,8 @@ async function probeAll(files: FoundFile[]) {
 
       setState(
         result.error
-          ? { ...state, failed: state.failed + 1 }
-          : { ...state, probed: state.probed + 1 },
+          ? { ...current(), failed: current().failed + 1 }
+          : { ...current(), probed: current().probed + 1 },
       );
     }
   }
@@ -285,7 +290,7 @@ async function probeAll(files: FoundFile[]) {
 }
 
 export function startScan(root: string): ScanState {
-  if (state.status === "scanning") return state;
+  if (current().status === "scanning") return current();
 
   setState({
     ...IDLE,
@@ -300,11 +305,11 @@ export function startScan(root: string): ScanState {
       const files: FoundFile[] = [];
       for await (const file of walk(root)) {
         files.push(file);
-        setState({ ...state, discovered: files.length });
+        setState({ ...current(), discovered: files.length });
       }
 
       const removed = pruneMissing(root, files);
-      setState({ ...state, removed });
+      setState({ ...current(), removed });
 
       await probeAll(files);
       await indexArtwork(files);
@@ -324,7 +329,7 @@ export function startScan(root: string): ScanState {
 
       if (dolbyVision.length > 0) {
         setState({
-          ...state,
+          ...current(),
           status: "dovi",
           doviTotal: dolbyVision.length,
           doviDone: 0,
@@ -333,12 +338,12 @@ export function startScan(root: string): ScanState {
 
         let doviDone = 0;
         for (const film of dolbyVision) {
-          setState({ ...state, current: film.title });
+          setState({ ...current(), current: film.title });
           // Never throws — a failure is recorded on the film and the pass
           // carries on to the next one.
           await scanDovi(film.path, { depth: "head" });
           doviDone += 1;
-          setState({ ...state, doviDone });
+          setState({ ...current(), doviDone });
         }
 
         // Fold the RPU readings into the stored rows.
@@ -348,12 +353,12 @@ export function startScan(root: string): ScanState {
       // Matching is part of a scan, not a separate job. Without a token it is
       // simply skipped — the scan still completes normally.
       if (hasCredentials()) {
-        setState({ ...state, status: "matching", current: undefined });
+        setState({ ...current(), status: "matching", current: undefined });
 
         const summary = await runEnrich(getLibrary(), {
           onProgress: (p) =>
             setState({
-              ...state,
+              ...current(),
               matchTotal: p.total,
               matchDone: p.done,
               matched: p.matched,
@@ -365,7 +370,7 @@ export function startScan(root: string): ScanState {
         // Re-derive so the new TMDb facts reach the stored rows.
         deriveAll();
         setState({
-          ...state,
+          ...current(),
           matchTotal: summary.total,
           matchDone: summary.done,
           matched: summary.matched,
@@ -379,7 +384,7 @@ export function startScan(root: string): ScanState {
         const pending = films.filter((m) => !hasDisc(m.tmdb!.id));
 
         setState({
-          ...state,
+          ...current(),
           status: "discs",
           discTotal: pending.length,
           discDone: 0,
@@ -388,34 +393,58 @@ export function startScan(root: string): ScanState {
 
         let done = 0;
         for (const film of pending) {
-          setState({ ...state, current: film.title });
+          setState({ ...current(), current: film.title });
           try {
             await fetchDisc(film.tmdb!.id, film.tmdb!.title, film.tmdb!.year);
           } catch {
             // A single failed lookup should not end the scan.
           }
           done += 1;
-          setState({ ...state, discDone: done });
+          setState({ ...current(), discDone: done });
         }
 
         if (pending.length > 0) deriveAll();
       }
 
+      recordRun({
+        kind: "scan",
+        label: root,
+        startedAt: current().startedAt ?? Date.now(),
+        finishedAt: Date.now(),
+        status: "done",
+        detail: [
+          `${current().probed} probed`,
+          `${current().cached} unchanged`,
+          ...(current().removed ? [`${current().removed} removed`] : []),
+          ...(current().failed ? [`${current().failed} failed`] : []),
+          ...(current().doviTotal ? [`${current().doviTotal} DV streams read`] : []),
+        ].join(" · "),
+      });
+
       setState({
-        ...state,
+        ...current(),
         status: "done",
         current: undefined,
         finishedAt: Date.now(),
       });
     } catch (err) {
-      setState({
-        ...state,
+      const message = err instanceof Error ? err.message : String(err);
+      recordRun({
+        kind: "scan",
+        label: root,
+        startedAt: current().startedAt ?? Date.now(),
+        finishedAt: Date.now(),
         status: "error",
-        error: err instanceof Error ? err.message : String(err),
+        detail: message,
+      });
+      setState({
+        ...current(),
+        status: "error",
+        error: message,
         finishedAt: Date.now(),
       });
     }
   })();
 
-  return state;
+  return current();
 }

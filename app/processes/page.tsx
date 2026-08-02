@@ -1,4 +1,5 @@
 import { getConvertJob } from "@/lib/convert";
+import { getRuns } from "@/lib/jobs";
 import { getDoviJob } from "@/lib/dovi";
 import { getScanState } from "@/lib/scanner";
 import { ProcessesView } from "./processes-view";
@@ -18,6 +19,7 @@ export default async function ProcessesPage() {
           dovi: getDoviJob(),
           convert: getConvertJob(),
         }}
+        history={getRuns()}
       />
     </main>
   );
