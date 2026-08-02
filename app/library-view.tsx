@@ -390,36 +390,6 @@ function size(bytes: number) {
     : `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
-function Stat({
-  label,
-  value,
-  onClick,
-}: {
-  label: string;
-  value: string | number;
-  onClick?: () => void;
-}) {
-  const Tag = onClick ? "button" : "div";
-  return (
-    <Tag
-      type={onClick ? "button" : undefined}
-      onClick={onClick}
-      className={`rounded-card border border-line bg-surface px-4 py-3 text-left transition-colors ${
-        onClick ? "hover:bg-surface-strong" : ""
-      }`}
-    >
-      <p className="text-[11px] tracking-widest uppercase opacity-45">
-        {label}
-      </p>
-      {/* One size across all six: the two-tier version read as inconsistent
-          rather than as hierarchy. */}
-      <p className="mt-1 font-display text-2xl font-semibold tabular-nums">
-        {value}
-      </p>
-    </Tag>
-  );
-}
-
 /**
  * Spec tags. Every chip shares one outline shape and differs only in hue, so a
  * row reads as a set rather than as scattered blobs. Colour is reserved for
@@ -731,14 +701,6 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
     });
   })();
 
-  const stats = {
-    total: movies.length,
-    size: movies.reduce((sum, m) => sum + m.sizeBytes, 0),
-    remux: movies.filter((m) => m.releaseType === "REMUX").length,
-    dv: movies.filter((m) => m.hdr === "Dolby Vision").length,
-    atmos: movies.filter((m) => m.audio.some((a) => a.atmos)).length,
-  };
-
   // Only counts films that were actually matched — unmatched ones have nothing
   // to review until a matching run has been done at all.
   const needsReview = movies.filter(
@@ -747,31 +709,6 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Movies" value={stats.total} />
-        <Stat label="Storage" value={size(stats.size)} />
-        <Stat
-          label="REMUX"
-          value={stats.remux}
-          onClick={() => setActive(["remux"])}
-        />
-        <Stat
-          label="Dolby Vision"
-          value={stats.dv}
-          onClick={() => setActive(["dv"])}
-        />
-        <Stat
-          label="Atmos"
-          value={stats.atmos}
-          onClick={() => setActive(["atmos"])}
-        />
-        <Stat
-          label="Open issues"
-          value={openIssues}
-          onClick={() => setActive(["issues"])}
-        />
-      </div>
-
       <div className="flex flex-col gap-3">
         <div className="relative flex flex-col gap-2 rounded-card border border-line bg-surface p-3 pr-9">
           <div className="absolute top-2 right-2 flex items-center gap-2">
