@@ -55,7 +55,7 @@ function Card({
   return (
     <section className="flex flex-col gap-4 rounded-card border border-line bg-surface p-5">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-[11px] font-medium tracking-widest uppercase opacity-45">
+        <h2 className="font-display text-lg font-semibold tracking-tight">
           {title}
         </h2>
         {hint && <span className="text-[11px] opacity-35">{hint}</span>}

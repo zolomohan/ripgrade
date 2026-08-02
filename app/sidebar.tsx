@@ -21,6 +21,7 @@ const PAGES = [
   { href: "/wishlist", label: "Wishlist" },
   { href: "/processes", label: "Processes" },
   { href: "/how-it-works", label: "How it works" },
+  { href: "/settings", label: "Settings" },
 ];
 
 /** A film or a comparison is somewhere inside the library, not a place of its own. */

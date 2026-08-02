@@ -114,6 +114,82 @@ function Entry({
   );
 }
 
+const VIEWS = [
+  { key: "list", label: "List", path: "M4 6h16M4 12h16M4 18h16" },
+  {
+    key: "grid",
+    label: "Grid",
+    path: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  },
+];
+
+/** A wanted film as a poster, with the same remove affordance as the row. */
+function Tile({
+  entry,
+  onRemove,
+  busy,
+}: {
+  entry: WishlistEntry;
+  onRemove: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="row-enter group relative flex flex-col gap-2">
+      <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+        {entry.posterPath && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl(entry.posterPath, "w342")}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        )}
+
+        {entry.owned && (
+          <Link
+            href={`/movie/${movieId(entry.owned.path)}`}
+            className="absolute inset-x-2 bottom-2 rounded-chip bg-background/85 px-1.5 text-center text-[10px] leading-[18px] font-medium text-emerald-600 backdrop-blur dark:text-emerald-400"
+          >
+            In the library
+          </Link>
+        )}
+
+        {/* Only on hover: a grid of posters should read as posters until you
+            reach for one. */}
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={busy}
+          aria-label={`Remove ${entry.title}`}
+          title="Remove from wishlist"
+          className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded-full bg-background/85 opacity-0 backdrop-blur transition-opacity hover:text-red-700 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-30 dark:hover:text-red-300"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            className="h-3 w-3"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium" title={entry.title}>
+          {entry.title}
+        </p>
+        {entry.year && (
+          <p className="text-[11px] opacity-45">{entry.year}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function WishlistView({
   entries,
   canSearch,
@@ -121,6 +197,7 @@ export function WishlistView({
   entries: WishlistEntry[];
   canSearch: boolean;
 }) {
+  const [view, setView] = useState("grid");
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -297,15 +374,48 @@ export function WishlistView({
 
       <section className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-4">
-          <h2 className="text-[11px] font-medium tracking-widest uppercase opacity-45">
+          <h2 className="font-display text-lg font-semibold tracking-tight">
             Wishlist
           </h2>
-          {entries.length > 0 && (
-            <p className="text-xs opacity-45">
-              {entries.length} {entries.length === 1 ? "film" : "films"}
-              {owned > 0 && ` · ${owned} now in the library`}
-            </p>
-          )}
+          <div className="flex items-center gap-3">
+            {entries.length > 0 && (
+              <p className="text-xs opacity-45">
+                {entries.length} {entries.length === 1 ? "film" : "films"}
+                {owned > 0 && ` · ${owned} now in the library`}
+              </p>
+            )}
+            {entries.length > 0 && (
+              <div className="flex items-center gap-0.5 rounded-control border border-line p-0.5">
+                {VIEWS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setView(option.key)}
+                    aria-label={`${option.label} view`}
+                    aria-pressed={view === option.key}
+                    title={`${option.label} view`}
+                    className={`grid h-7 w-7 place-items-center rounded-[6px] transition-colors ${
+                      view === option.key
+                        ? "bg-surface-strong"
+                        : "opacity-40 hover:opacity-100"
+                    }`}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path d={option.path} />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {entries.length === 0 ? (
@@ -314,6 +424,17 @@ export function WishlistView({
               Nothing on the list yet. Search above to add the films you are
               hunting for.
             </p>
+          </div>
+        ) : view === "grid" ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            {entries.map((entry) => (
+              <Tile
+                key={entry.tmdbId}
+                entry={entry}
+                busy={pending}
+                onRemove={() => run(() => removeWish(entry.tmdbId))}
+              />
+            ))}
           </div>
         ) : (
           <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">

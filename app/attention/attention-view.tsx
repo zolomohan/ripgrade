@@ -134,7 +134,7 @@ function Section({
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-[11px] font-medium tracking-widest uppercase opacity-45">
+        <h2 className="font-display text-lg font-semibold tracking-tight">
           {title}
         </h2>
         <span className="text-xs opacity-40">{count}</span>
@@ -236,6 +236,9 @@ export function AttentionView({ data }: { data: AttentionData }) {
                           ))}
                         </div>
 
+                        {/* `self-center` against a row that may run to three
+                            lines, so the button sits with the issue rather
+                            than pinned to its first line. */}
                         <button
                           type="button"
                           disabled={busy === key}
@@ -244,9 +247,21 @@ export function AttentionView({ data }: { data: AttentionData }) {
                               resolveIssue(film.path, group.code, true),
                             )
                           }
-                          className="shrink-0 rounded-control border border-line px-2.5 py-1 text-xs hover:bg-surface-strong disabled:opacity-40"
+                          aria-label={`Resolve ${group.code}`}
+                          title="Mark as resolved"
+                          className="grid h-8 w-8 shrink-0 place-items-center self-center rounded-full border border-line opacity-40 transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] hover:text-emerald-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-emerald-300"
                         >
-                          Resolve
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-3.5 w-3.5"
+                          >
+                            <path d="m4 12.5 5 5 11-11" />
+                          </svg>
                         </button>
                       </li>
                     );

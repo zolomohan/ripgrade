@@ -80,7 +80,7 @@ function Job({
                 : "bg-foreground/20"
             }`}
           />
-          <span className="text-[11px] font-medium tracking-widest uppercase opacity-45">
+          <span className="font-display text-lg font-semibold tracking-tight">
             {name}
           </span>
         </div>
