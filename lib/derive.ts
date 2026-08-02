@@ -68,6 +68,50 @@ export const RUNTIME_TOLERANCE = {
 };
 
 /**
+ * How much of the expected RPU count a full pass has to find before the stream
+ * counts as carrying Dolby Vision throughout. Frame counts and container
+ * durations routinely disagree by a frame or two, so only a real shortfall —
+ * an RPU that stops partway through the film — is worth reporting.
+ */
+export const RPU_COVERAGE_TOLERANCE = 0.995;
+
+/**
+ * How far the Dolby Vision grade may peak above the base layer before the
+ * enhancement layer counts as reconstructing brightness rather than merely
+ * refining it. Matches dovi_convert, so the two tools agree on a film.
+ */
+export const EL_BRIGHTNESS_MARGIN = 50;
+
+/**
+ * Assumed base layer peak when the file declares no MaxCLL. Also dovi_convert's
+ * default: a UHD disc base layer is trimmed to 1000 nits far more often than
+ * not, and assuming it is what makes a missing figure conservative rather than
+ * unanswerable.
+ */
+export const ASSUMED_BL_PEAK = 1000;
+
+/**
+ * What dovi_convert renames an original to before replacing it. Its convention,
+ * not ours — but both the server that restores from it and the page that offers
+ * to need to agree on the name, so it is stated once here.
+ *
+ * Not a video extension, so the scanner walks past it and it never enters the
+ * library as a film of its own.
+ */
+export const BACKUP_SUFFIX = ".bak.dovi_convert";
+
+/**
+ * How far a converted file's runtime may drift from the original's before the
+ * mux is treated as faulty. The two hold the same frames and should agree to
+ * the millisecond — what this catches is not rounding but a remux that emits
+ * the stream twice and comes out at double the length.
+ */
+export const RUNTIME_DRIFT = 0.01;
+
+export const runtimeDrift = (before: number, after: number) =>
+  Math.abs(after - before) / before;
+
+/**
  * Every check `detectIssues` can raise. Severity lives here rather than at each
  * call site so the engine and the documentation page cannot disagree.
  */
@@ -75,7 +119,7 @@ export const ISSUE_CATALOGUE = {
   "dv-profile-7": {
     severity: "warning",
     trigger: "Dolby Vision profile reads dvhe.07",
-    why: "Dual-layer Profile 7 is a disc format. Many TVs, streaming boxes and Plex clients drop the enhancement layer or refuse the file; a Profile 8.1 version plays everywhere.",
+    why: "Dual-layer Profile 7 is a disc format. Many TVs, streaming boxes and Plex clients drop the enhancement layer or refuse the file; a Profile 8.1 version plays everywhere. The scan reads the RPU to establish whether that enhancement layer is MEL or FEL, which is what decides whether converting discards anything.",
   },
   "dv-no-fallback": {
     severity: "critical",
@@ -319,6 +363,14 @@ export type Derived = {
   hdr: HdrKind;
   dvProfile?: number;
   dvHasHdr10Fallback?: boolean;
+  /**
+   * Static HDR10 metadata on the base layer. On a dual-layer file this is what
+   * a player without Dolby Vision sees, which makes it the thing the Dolby
+   * Vision grade has to be compared against.
+   */
+  hdr10?: Hdr10Static;
+  /** Present once a scan has read the RPU out of the video stream itself. */
+  dovi?: DoviScan;
 
   audio: AudioTrack[];
   subtitleLanguages: string[];
@@ -501,6 +553,26 @@ function hdrOf(video: Track): {
   return { hdr: "SDR" };
 }
 
+/**
+ * The base layer's own light levels. MaxCLL is written as a bare number by some
+ * muxers and with its unit by others, and the mastering display arrives as one
+ * string holding both ends of the range.
+ */
+function hdr10Of(video: Track): Hdr10Static | undefined {
+  const luminance = str(video, "MasteringDisplay_Luminance") ?? "";
+  const min = luminance.match(/min:\s*([\d.]+)/i);
+  const max = luminance.match(/max:\s*([\d.]+)/i);
+
+  const hdr10: Hdr10Static = {
+    maxCll: num(video, "MaxCLL"),
+    maxFall: num(video, "MaxFALL"),
+    masteringMin: min ? Number(min[1]) : undefined,
+    masteringMax: max ? Number(max[1]) : undefined,
+  };
+
+  return Object.values(hdr10).some((v) => v !== undefined) ? hdr10 : undefined;
+}
+
 const LOSSLESS = /MLP FBA|TrueHD|DTS-HD Master|PCM|FLAC|ALAC/i;
 
 function audioOf(track: Track): AudioTrack {
@@ -540,9 +612,22 @@ function detectIssues(
     issues.push({ code, severity: ISSUE_CATALOGUE[code].severity, message });
 
   if (d.dvProfile === 7) {
+    // What a conversion to 8.1 would actually cost is the first thing you want
+    // to know here, so it goes in the sentence rather than only on the page.
+    const verdict = classifyEnhancementLayer(d.dovi, d.hdr10);
+    const cost =
+      verdict?.kind === "mel"
+        ? " Its enhancement layer is MEL, which carries no picture data — converting discards nothing."
+        : verdict?.kind === "simple-fel"
+          ? ` Its enhancement layer is a FEL, but the grade stays within the base layer's ${verdict.blPeak} nits, so converting costs refinement rather than picture.`
+          : verdict?.kind === "complex-fel"
+            ? ` Its enhancement layer reconstructs brightness — the grade peaks at ${Math.round(verdict.elPeak!)} nits against a base layer of ${verdict.blPeak} — so converting would clip those highlights.`
+            : "";
+
     raise(
       "dv-profile-7",
-      "Dolby Vision Profile 7 (dual-layer). Many TVs, Apple TV and Plex clients ignore or refuse the enhancement layer — a Profile 8.1 version plays everywhere.",
+      "Dolby Vision Profile 7 (dual-layer). Many TVs, Apple TV and Plex clients ignore or refuse the enhancement layer — a Profile 8.1 version plays everywhere." +
+        cost,
     );
   }
   if (d.dvProfile === 5) {
@@ -731,6 +816,123 @@ type DiscInput = {
     audioTracks: string[];
   };
 };
+
+/**
+ * How deeply the RPU was read. `head` parses the first few hundred frames,
+ * which is everything authored once and fixed — profile, EL type, CM version,
+ * L6. `full` parses every frame, which is what the light levels and the frame
+ * count need before they mean anything.
+ */
+/** Nits, as MediaInfo reports them from the stream's SEI messages. */
+export type Hdr10Static = {
+  maxCll?: number;
+  maxFall?: number;
+  masteringMin?: number;
+  masteringMax?: number;
+};
+
+export type DoviDepth = "head" | "full";
+
+/**
+ * What is inside the Dolby Vision RPU, which MediaInfo does not read — it
+ * reports the profile from the container's configuration record and stops.
+ * Populated by `lib/dovi.ts`; every field is optional because it is parsed from
+ * a summary dovi_tool prints for people rather than for programs.
+ */
+export type DoviScan = {
+  depth: DoviDepth;
+  scannedAt: number;
+  /** Frames actually parsed — the sample every measured number describes. */
+  frames: number;
+  profile?: number;
+  /**
+   * Profile 7 only, and the whole question when converting to 8.1: a minimum
+   * enhancement layer carries no picture data, a full one carries real detail.
+   */
+  elType?: "MEL" | "FEL";
+  /** "CM v2.9" or "CM v4.0" — v4.0 is what adds the L8/L9/L11 trims. */
+  cmVersion?: string;
+  scenes?: number;
+  /** Mastering display the RPU declares, in nits. */
+  mastering?: { min: number; max: number };
+  /** Measured, so only meaningful once the whole file has been read. */
+  l1?: { maxCll: number; maxFall: number };
+  /** Static fallback metadata, authored once — right even from a head scan. */
+  l6?: { min: number; max: number; maxCll: number; maxFall: number };
+  /** Letterbox bars the RPU declares, in pixels. */
+  l5?: { top: number; bottom: number; left: number; right: number };
+  /** Target displays the trims were authored for, in nits. */
+  l2Trims?: number[];
+  l8Trims?: number[];
+  /** CM v4.0 extras, kept as printed rather than parsed further. */
+  l9?: string;
+  l11?: string;
+  hdr10plus?: boolean;
+  /** The raw summary, so a field added later costs no rescan to recover. */
+  summary: string;
+  error?: string;
+};
+
+/**
+ * What a Profile 7 file's enhancement layer is actually doing, and so what
+ * discarding it would cost. Three answers, following dovi_convert:
+ *
+ *   mel         nothing in the layer at all — converting is lossless
+ *   simple-fel  real data, but the grade stays within the base layer's range,
+ *               so what is lost is refinement rather than picture
+ *   complex-fel the grade peaks above what the base layer holds. The layer is
+ *               reconstructing brightness the base layer does not have, and
+ *               discarding it clips those highlights
+ *
+ * The comparison is the Dolby Vision grade's measured peak against the base
+ * layer's own peak. The textbook complex case is a film mastered at 4000 nits
+ * whose HDR10 base was trimmed to 1000: the missing 3000 nits live in the
+ * enhancement layer, and a conversion throws them away.
+ */
+export type ElVerdict = {
+  kind: "mel" | "simple-fel" | "complex-fel" | "unknown";
+  /** Peak the base layer itself declares, in nits. */
+  blPeak: number;
+  /** True when the file declared no MaxCLL and the default stood in. */
+  blPeakAssumed: boolean;
+  /** Peak the Dolby Vision grade reaches across the frames read, in nits. */
+  elPeak?: number;
+  /**
+   * Set when only a sample was read and the answer could still change. Finding
+   * expansion in a sample proves it exists; not finding it proves nothing, so
+   * this is only ever true of a "simple" verdict.
+   */
+  provisional: boolean;
+};
+
+export function classifyEnhancementLayer(
+  dovi: DoviScan | undefined,
+  hdr10: Hdr10Static | undefined,
+): ElVerdict | undefined {
+  if (!dovi || dovi.profile !== 7) return undefined;
+
+  // Below 100 nits the figure is not a real content light level — some muxers
+  // write 0 when they have nothing. dovi_convert discards those too.
+  const declared =
+    hdr10?.maxCll !== undefined && hdr10.maxCll >= 100 ? hdr10.maxCll : undefined;
+  const blPeak = declared ?? ASSUMED_BL_PEAK;
+  const base = {
+    blPeak,
+    blPeakAssumed: declared === undefined,
+    elPeak: dovi.l1?.maxCll,
+  };
+
+  if (dovi.elType === "MEL") {
+    return { ...base, kind: "mel", provisional: false };
+  }
+  if (dovi.elType !== "FEL" || dovi.l1?.maxCll === undefined) {
+    return { ...base, kind: "unknown", provisional: false };
+  }
+
+  return dovi.l1.maxCll > blPeak + EL_BRIGHTNESS_MARGIN
+    ? { ...base, kind: "complex-fel", provisional: false }
+    : { ...base, kind: "simple-fel", provisional: dovi.depth === "head" };
+}
 
 const HDR_ORDER = ["SDR", "HDR10", "HDR10+", "Dolby Vision"];
 
@@ -1139,6 +1341,7 @@ export function derive(
   mediainfo: unknown,
   tmdb?: TmdbFacts,
   disc?: DiscInput,
+  dovi?: DoviScan,
 ): Derived {
   const all = tracks(mediainfo);
   const general = all.find((t) => t["@type"] === "General") ?? {};
@@ -1228,6 +1431,10 @@ export function derive(
     hdr,
     dvProfile,
     dvHasHdr10Fallback,
+    hdr10: hdr10Of(video),
+    // Only carried when the reading is usable; a failed pass is recorded in the
+    // probe row so it is not retried, but it is not a fact about the film.
+    dovi: dovi && !dovi.error ? dovi : undefined,
 
     audio: audioTracks,
     subtitleLanguages: [

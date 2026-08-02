@@ -1,15 +1,19 @@
 import Link from "next/link";
 
 import {
+  ASSUMED_BL_PEAK,
   AUDIO_POINTS,
   BPP,
+  EL_BRIGHTNESS_MARGIN,
   ISSUE_CATALOGUE,
   RELEASE_POINTS,
+  RPU_COVERAGE_TOLERANCE,
   STATUS_BANDS,
   VIDEO_CEILING_BONUS,
   VIDEO_POINTS,
   WEIGHTS,
 } from "@/lib/derive";
+import { HEAD_FRAMES } from "@/lib/dovi";
 
 export const metadata = { title: "How it works — RipGrade" };
 
@@ -103,7 +107,7 @@ export default function HowItWorks() {
 
       <Section
         title="The pipeline"
-        lede="Five stages. Only the first three touch your drive."
+        lede="Six stages. Only the first four touch your drive."
       >
         <ol className="flex flex-col gap-2 text-sm">
           {[
@@ -118,6 +122,10 @@ export default function HowItWorks() {
             [
               "Index artwork",
               "Reads each folder once for a poster and fanart image, accepting either .jpg or .jpeg. These are streamed from the drive on demand rather than copied into the app.",
+            ],
+            [
+              "Read Dolby Vision",
+              `Demuxes the video stream of each Dolby Vision film and parses its RPU, which is the only place the enhancement layer type is recorded. Reads the first ${HEAD_FRAMES} frames, so it costs under a second per film however large the file is.`,
             ],
             [
               "Derive",
@@ -167,6 +175,142 @@ export default function HowItWorks() {
           what discs exist, so it cannot tell you whether a better release is
           out there.
         </p>
+      </Section>
+
+      <Section
+        title="Dolby Vision"
+        lede="MediaInfo reads the profile out of the container's configuration record and stops there. Everything that decides what can be done with the file is inside the RPU, and the only way to see it is to demux the stream."
+      >
+        <p className="text-sm opacity-70">
+          So every scan does. The video stream of each Dolby Vision film is piped
+          through <code className="font-mono text-xs">dovi_tool</code>, which
+          parses the first {HEAD_FRAMES} frames — enough to be past the studio
+          logos and into the film itself. Nothing the size of the film is ever
+          written to disk, and because the read stops at the head of the file it
+          takes well under a second whether the film is 5 GB or 90 GB. What comes
+          back is authored once and fixed for the whole stream: the profile, the
+          enhancement layer type, the content mapping version, the L5 active
+          area, and the static L6 fallback metadata.
+        </p>
+        <p className="text-sm opacity-70">
+          The enhancement layer is the reason this stage exists. Profile 7 is a
+          disc format that many players refuse, and flattening it to Profile 8.1
+          means discarding that layer — so what the layer is <em>doing</em> is
+          the whole question. There are three answers, and only the third is a
+          reason not to convert.
+        </p>
+        <div className="flex flex-col gap-3">
+          {[
+            {
+              name: "MEL — minimum enhancement layer",
+              doing: "Nothing. The layer carries no picture data at all.",
+              cost: "Nothing — the conversion is lossless.",
+              verdict: "Convert",
+              tone: "text-emerald-600 dark:text-emerald-400",
+            },
+            {
+              name: "Simple FEL — no brightness expansion",
+              doing:
+                "Refining the picture, within the range the base layer already covers.",
+              cost: "That refinement, and nothing structural.",
+              verdict: "Convert",
+              tone: "text-emerald-600 dark:text-emerald-400",
+            },
+            {
+              name: "Complex FEL — brightness expansion",
+              doing:
+                "Reconstructing brightness the base layer does not hold. The classic case is a film mastered at 4000 nits whose HDR10 base was trimmed to 1000 — the missing highlights live in the enhancement layer.",
+              cost:
+                "Those highlights clip, and the tone mapping below them was authored for the two layers combined, so the result is wrong rather than merely poorer.",
+              verdict: "Keep Profile 7",
+              tone: "text-red-600 dark:text-red-400",
+            },
+          ].map((el) => (
+            <div
+              key={el.name}
+              className="rounded-control border border-line px-4 py-3"
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-sm font-medium">{el.name}</p>
+                <span className={`text-xs font-medium uppercase ${el.tone}`}>
+                  {el.verdict}
+                </span>
+              </div>
+              <p className="mt-1 text-sm">
+                <span className="opacity-60">Doing: </span>
+                <span className="opacity-70">{el.doing}</span>
+              </p>
+              <p className="mt-1 text-sm">
+                <span className="opacity-60">Discarding it costs: </span>
+                <span className="opacity-70">{el.cost}</span>
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="text-sm opacity-70">
+          Telling the last two apart is a brightness comparison. The Dolby Vision
+          grade&rsquo;s measured peak — MaxCLL across the frames read — is set
+          against the peak the base layer declares for itself. Clearing it by
+          more than {EL_BRIGHTNESS_MARGIN} nits means the layer is adding
+          brightness rather than refining it. Files that declare no MaxCLL are
+          judged against {ASSUMED_BL_PEAK} nits, which is what a UHD disc base
+          layer is trimmed to far more often than not. These are{" "}
+          <a
+            href="https://docs.doviconvert.com/"
+            className="underline underline-offset-4 hover:opacity-100"
+          >
+            dovi_convert
+          </a>
+          &rsquo;s thresholds, so the two tools reach the same verdict on the
+          same film.
+        </p>
+        <p className="text-sm opacity-70">
+          A Profile 7 film&rsquo;s page states which it is in words rather than
+          leaving you to interpret a three-letter field, and prints the exact{" "}
+          <code className="font-mono text-xs">dovi_tool</code> command the
+          conversion would take. It never runs it — rewriting a 90 GB file, and
+          deciding where it lands, is not a call an audit tool should make for
+          you.
+        </p>
+        <p className="text-sm opacity-70">
+          Readings are cached against the file, and thrown away the moment its
+          size or modification time changes, so a rescan costs nothing and a
+          replaced file is never described by the old file&rsquo;s metadata.
+        </p>
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-medium tracking-wide uppercase opacity-50">
+            Reading every frame
+          </h3>
+          <p className="text-sm opacity-70">
+            The scan reads a sample, and two things a sample cannot establish are
+            offered on demand from each film&rsquo;s page. It takes minutes
+            rather than milliseconds, because it reads the entire file.
+          </p>
+          <ul className="list-disc space-y-2 pl-5 text-sm opacity-70">
+            <li>
+              <span className="font-medium opacity-100">
+                What the film actually peaks at.
+              </span>{" "}
+              The measured L1 light levels describe only the frames parsed, and
+              the opening of a film is logos and titles rather than its brightest
+              moment. Sampling Skyfall&rsquo;s first frames reports MaxCLL near
+              200 nits; across the whole film it is over 700. Since that peak is
+              what separates a simple FEL from a complex one, a sample can only
+              settle the question one way: finding expansion proves it is there,
+              while not finding it proves only that the opening was clean.
+            </li>
+            <li>
+              <span className="font-medium opacity-100">
+                Whether the metadata covers the whole film.
+              </span>{" "}
+              One RPU is expected per frame. Finding fewer than{" "}
+              {(RPU_COVERAGE_TOLERANCE * 100).toFixed(1)}% of the frame count
+              means the Dolby Vision layer stops partway, and a converted file
+              would lose it partway too — which nothing short of a full read
+              would reveal.
+            </li>
+          </ul>
+        </div>
       </Section>
 
       <Section
@@ -386,10 +530,12 @@ export default function HowItWorks() {
           </li>
           <li>
             <span className="font-medium opacity-100">
-              Whether the Dolby Vision layer is valid.
+              Whether the Dolby Vision grade is any good.
             </span>{" "}
-            The profile and fallback flag are read from the header. Verifying
-            the RPU metadata itself would mean demuxing the whole video stream.
+            The RPU is parsed, so what the metadata declares is known precisely.
+            Whether it was authored well — whether those trims suit the picture
+            they sit on — would mean decoding and looking at frames, which
+            nothing here does.
           </li>
         </ul>
       </Section>

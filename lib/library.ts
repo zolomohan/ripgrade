@@ -5,6 +5,7 @@ import path from "node:path";
 import { db } from "./db";
 import { derive, titleKey, type Derived, type TmdbFacts } from "./derive";
 import { getDiscs } from "./disc";
+import { getDoviScans } from "./dovi";
 import { getMatches, getTmdbMovies } from "./enrich";
 import { decodeMovieId } from "./routes";
 import { getTriage } from "./triage";
@@ -25,6 +26,7 @@ export function deriveAll(): number {
   const matches = getMatches();
   const tmdbMovies = getTmdbMovies();
   const discs = getDiscs();
+  const doviScans = getDoviScans();
 
   const factsFor = (path: string): TmdbFacts | undefined => {
     const match = matches.get(path);
@@ -79,6 +81,7 @@ export function deriveAll(): number {
               best: { ...disc.best, audioTracks: disc.best.audio },
             }
           : disc && { uhdExists: disc.uhdExists },
+        doviScans.get(row.path),
       );
       upsert.run({ path: row.path, now, derived: JSON.stringify(derived) });
     }
@@ -100,12 +103,21 @@ export type LibraryItem = Derived & {
   /** You have looked at this one and accepted it as-is. */
   acknowledged: boolean;
   note?: string;
+  /**
+   * When the file first appeared in the library. Every row inserted by one
+   * `deriveAll` pass carries the same timestamp, so films added by the same
+   * scan share this value exactly — which is what "added in the last scan"
+   * means without needing a scan history table.
+   */
+  addedAt: number;
 };
 
 export function getLibrary(): LibraryItem[] {
   const rows = db
-    .prepare("SELECT derived FROM movies WHERE present = 1 ORDER BY path")
-    .all() as { derived: string }[];
+    .prepare(
+      "SELECT derived, first_seen FROM movies WHERE present = 1 ORDER BY path",
+    )
+    .all() as { derived: string; first_seen: number }[];
 
   const artRows = db
     .prepare("SELECT dir, poster, fanart FROM artwork")
@@ -127,6 +139,7 @@ export function getLibrary(): LibraryItem[] {
       fanart: found?.fanart ?? undefined,
       acknowledged: decided?.acknowledged ?? false,
       note: decided?.note,
+      addedAt: r.first_seen,
     };
   });
 }

@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ISSUE_CATALOGUE, STATUS_BANDS, derive, parseName, titleKey } from "../lib/derive";
+import {
+  ASSUMED_BL_PEAK,
+  EL_BRIGHTNESS_MARGIN,
+  ISSUE_CATALOGUE,
+  RUNTIME_DRIFT,
+  STATUS_BANDS,
+  classifyEnhancementLayer,
+  derive,
+  parseName,
+  runtimeDrift,
+  titleKey,
+  type DoviScan,
+} from "../lib/derive";
 
 // ---------------------------------------------------------------------------
 // Duplicate grouping
@@ -369,4 +381,130 @@ test("perfect audio cannot lift a 1080p SDR file into the top tier", () => {
   assert.equal(d.scores.audio, 100);
   assert.equal(d.scores.release, 100);
   assert.ok(d.scores.overall < 75, `expected capped score, got ${d.scores.overall}`);
+});
+
+// ---------------------------------------------------------------------------
+// Enhancement layer classification
+//
+// The numbers are from real files: The Godfather is a 4000-nit grade over a
+// 1000-nit base layer, La La Land measures 1500 nits over the same, and Dune
+// declares its own MaxCLL rather than leaving it to the default.
+// ---------------------------------------------------------------------------
+
+const rpu = (over: Partial<DoviScan> = {}): DoviScan => ({
+  depth: "full",
+  scannedAt: 0,
+  frames: 100000,
+  profile: 7,
+  elType: "FEL",
+  summary: "",
+  ...over,
+});
+
+test("a MEL is safe whatever the brightness figures say", () => {
+  const v = classifyEnhancementLayer(
+    rpu({ elType: "MEL", l1: { maxCll: 4000, maxFall: 90 } }),
+    { maxCll: 1000 },
+  );
+  assert.equal(v?.kind, "mel");
+  assert.equal(v?.provisional, false);
+});
+
+test("a FEL grading above the base layer is brightness expansion", () => {
+  const v = classifyEnhancementLayer(
+    rpu({ l1: { maxCll: 4008.77, maxFall: 92.36 } }),
+    { masteringMax: 1000 },
+  );
+  assert.equal(v?.kind, "complex-fel");
+  // No MaxCLL in the file, so the base layer peak is the assumed default.
+  assert.equal(v?.blPeak, ASSUMED_BL_PEAK);
+  assert.equal(v?.blPeakAssumed, true);
+});
+
+test("a FEL inside the base layer's range is only refinement", () => {
+  const v = classifyEnhancementLayer(rpu({ l1: { maxCll: 708, maxFall: 12 } }), {
+    maxCll: 1000,
+  });
+  assert.equal(v?.kind, "simple-fel");
+  assert.equal(v?.blPeakAssumed, false);
+});
+
+test("the margin is inclusive at its edge", () => {
+  const at = classifyEnhancementLayer(
+    rpu({ l1: { maxCll: 1000 + EL_BRIGHTNESS_MARGIN, maxFall: 10 } }),
+    { maxCll: 1000 },
+  );
+  const over = classifyEnhancementLayer(
+    rpu({ l1: { maxCll: 1000 + EL_BRIGHTNESS_MARGIN + 0.01, maxFall: 10 } }),
+    { maxCll: 1000 },
+  );
+  assert.equal(at?.kind, "simple-fel");
+  assert.equal(over?.kind, "complex-fel");
+});
+
+test("a declared MaxCLL below 100 nits is not believed", () => {
+  // Some muxers write 0. Falling back to the default is what stops that
+  // turning every FEL into brightness expansion.
+  const v = classifyEnhancementLayer(rpu({ l1: { maxCll: 900, maxFall: 10 } }), {
+    maxCll: 0,
+  });
+  assert.equal(v?.blPeak, ASSUMED_BL_PEAK);
+  assert.equal(v?.kind, "simple-fel");
+});
+
+test("a clean sample is provisional but a dirty one is conclusive", () => {
+  // Finding expansion in 300 frames proves it exists; not finding it proves
+  // only that the opening is clean.
+  const clean = classifyEnhancementLayer(
+    rpu({ depth: "head", frames: 301, l1: { maxCll: 700, maxFall: 10 } }),
+    { maxCll: 1000 },
+  );
+  const dirty = classifyEnhancementLayer(
+    rpu({ depth: "head", frames: 301, l1: { maxCll: 4000, maxFall: 10 } }),
+    { maxCll: 1000 },
+  );
+  assert.equal(clean?.provisional, true);
+  assert.equal(dirty?.provisional, false);
+});
+
+test("nothing is claimed without a reading, or for other profiles", () => {
+  assert.equal(classifyEnhancementLayer(undefined, { maxCll: 1000 }), undefined);
+  assert.equal(classifyEnhancementLayer(rpu({ profile: 8 }), {}), undefined);
+  // A FEL with no measured light level cannot be judged either way.
+  assert.equal(classifyEnhancementLayer(rpu({ l1: undefined }), {})?.kind, "unknown");
+});
+
+test("the Profile 7 issue text names what a conversion would cost", () => {
+  const d = derive(
+    "/m/GF/The.Godfather.1972.2160p.BluRay.REMUX.mkv",
+    90e9,
+    mediainfo(
+      {},
+      {
+        Format: "HEVC",
+        HDR_Format: "Dolby Vision",
+        HDR_Format_Profile: "dvhe.07 / ",
+        HDR_Format_Compatibility: "HDR10",
+      },
+    ),
+    undefined,
+    undefined,
+    rpu({ l1: { maxCll: 4008.77, maxFall: 92.36 } }),
+  );
+  const issue = d.issues.find((i) => i.code === "dv-profile-7");
+  assert.ok(issue?.message.includes("4009 nits"), issue?.message);
+  assert.ok(issue?.message.includes("clip"), issue?.message);
+});
+
+// ---------------------------------------------------------------------------
+// Runtime drift after a conversion
+// ---------------------------------------------------------------------------
+
+test("a doubled runtime is caught, a rounding difference is not", () => {
+  const film = 8580; // 2h 23m, Skyfall
+  assert.ok(runtimeDrift(film, film * 2) > RUNTIME_DRIFT, "doubled must fail");
+  assert.ok(runtimeDrift(film, film + 0.4) < RUNTIME_DRIFT, "0.4s must pass");
+  // Direction does not matter: a truncated file is as wrong as a doubled one.
+  assert.ok(runtimeDrift(film, film / 2) > RUNTIME_DRIFT, "halved must fail");
+  assert.equal(runtimeDrift(film, film), 0);
 });

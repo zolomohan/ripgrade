@@ -11,8 +11,13 @@ import { artUrl, compareId, movieId } from "@/lib/routes";
 /**
  * Duplicate detection needs to compare films against each other, which a
  * per-item predicate cannot do — so the set is computed once and handed in.
+ * "Added in the last scan" is the same shape of question: it depends on the
+ * newest timestamp in the library, not on any one film.
  */
-type FilterContext = { duplicatePaths: Set<string> };
+type FilterContext = {
+  duplicatePaths: Set<string>;
+  recentPaths: Set<string>;
+};
 
 type Option = {
   key: string;
@@ -29,7 +34,27 @@ type Option = {
  * "Everything without Dolby Vision" is not "SDR only" — it also covers HDR10
  * and HDR10+ films. Now it is one click: exclude Dolby Vision.
  */
-const FACETS: { key: string; label: string; options: Option[] }[] = [
+const FACETS: {
+  key: string;
+  label: string;
+  options: Option[];
+  /** Facets that only mean something for some libraries are hidden otherwise. */
+  when?: (ctx: FilterContext) => boolean;
+}[] = [
+  {
+    key: "added",
+    label: "Added",
+    // Before a second scan every film shares one timestamp, so "the last scan"
+    // would select the whole library and answer nothing. Hidden until it does.
+    when: (ctx) => ctx.recentPaths.size > 0,
+    options: [
+      {
+        key: "recent",
+        label: "Last scan",
+        test: (m, ctx) => ctx.recentPaths.has(m.path),
+      },
+    ],
+  },
   {
     key: "resolution",
     label: "Resolution",
@@ -643,6 +668,22 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
     return { sets, paths, recoverable };
   })();
 
+  /**
+   * What the last scan brought in. One scan stamps every film it adds with the
+   * same `addedAt`, so the newest timestamp identifies that batch exactly —
+   * unless it covers everything, which means there has only ever been one scan.
+   */
+  const recentPaths = (() => {
+    if (movies.length === 0) return new Set<string>();
+    const newest = Math.max(...movies.map((m) => m.addedAt));
+    const batch = movies.filter((m) => m.addedAt === newest);
+    return batch.length === movies.length
+      ? new Set<string>()
+      : new Set(batch.map((m) => m.path));
+  })();
+
+  const ctx: FilterContext = { duplicatePaths: duplicates.paths, recentPaths };
+
   const openIssues = movies.filter(
     (m) => m.issues.length > 0 && !m.acknowledged,
   ).length;
@@ -652,7 +693,6 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
   const shown = (() => {
     const q = query.trim().toLowerCase();
     const compare = (SORTS.find((s) => s.key === sort) ?? SORTS[0]).compare;
-    const ctx: FilterContext = { duplicatePaths: duplicates.paths };
     const active = parseSelection(rawFilters);
 
     return movies
@@ -746,7 +786,7 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
             )}
             <HelpTip text="Click once to include, twice to exclude. Options in a row are OR-ed; rows are AND-ed." />
           </div>
-          {FACETS.map((facet) => (
+          {FACETS.filter((facet) => facet.when?.(ctx) ?? true).map((facet) => (
             <div
               key={facet.key}
               className="grid grid-cols-[7rem_1fr] items-start gap-3"

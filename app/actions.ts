@@ -14,8 +14,23 @@ import {
   searchReleases,
   setManualDisc,
 } from "@/lib/disc";
+import {
+  cancelConvert,
+  deleteBackup,
+  getConvertJob,
+  restoreOriginal as restore,
+  startConvert,
+  type ConvertJob,
+} from "@/lib/convert";
+import { classifyEnhancementLayer } from "@/lib/derive";
+import {
+  cancelDoviScan,
+  getDoviJob,
+  startFullDoviScan,
+  type DoviJob,
+} from "@/lib/dovi";
 import { setManualMatch } from "@/lib/enrich";
-import { deriveAll } from "@/lib/library";
+import { deriveAll, getLibrary } from "@/lib/library";
 import { getScanState, startScan, type ScanState } from "@/lib/scanner";
 import { revealInFinder } from "@/lib/system";
 import { setTriage } from "@/lib/triage";
@@ -80,6 +95,8 @@ export async function beginScan(): Promise<ScanState> {
       matched: 0,
       needsReview: 0,
       removed: 0,
+      doviTotal: 0,
+      doviDone: 0,
       discTotal: 0,
       discDone: 0,
       error: "No library folder selected.",
@@ -227,6 +244,168 @@ export async function unlinkDisc(
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Dolby Vision
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads every frame of one film's RPU. Minutes of disk, so it starts a job and
+ * returns — `doviJobStatus` is how the page follows it.
+ */
+export async function beginFullDoviScan(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+
+  const job = getDoviJob();
+  if (job.status === "running" && job.path !== moviePath) {
+    return { ok: false, error: "Another full pass is already running." };
+  }
+  if (getConvertJob().status === "running") {
+    return { ok: false, error: "Wait for the conversion to finish." };
+  }
+
+  // The duration is only used to turn elapsed time into a percentage.
+  const movie = getLibrary().find((m) => m.path === moviePath);
+  startFullDoviScan(moviePath, movie?.durationSec);
+  return { ok: true };
+}
+
+export async function doviJobStatus(): Promise<DoviJob> {
+  return getDoviJob();
+}
+
+/** Stops a full pass. The film keeps the reading it already had. */
+export async function stopFullDoviScan(): Promise<DoviJob> {
+  return cancelDoviScan();
+}
+
+/**
+ * Repaints the page once a full pass has finished. The pass folds itself into
+ * the derived rows as it completes, so this only has to invalidate the cache.
+ */
+export async function refreshAfterDoviScan(): Promise<void> {
+  refresh();
+}
+
+/**
+ * Rewrites a Profile 7 file as Profile 8.1, in place, via dovi_convert.
+ *
+ * The only action in this app that changes a film rather than describing one,
+ * so every precondition is checked here and not merely in the button: a page
+ * can be stale, and this one is expensive to be wrong about.
+ */
+export async function beginConvert(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  if (getConvertJob().status === "running") {
+    return { ok: false, error: "A conversion is already running." };
+  }
+  // Both hammer the same drive, and the reading would describe a file that is
+  // being rewritten underneath it.
+  if (getDoviJob().status === "running") {
+    return { ok: false, error: "Wait for the current full pass to finish." };
+  }
+
+  const movie = getLibrary().find((m) => m.path === moviePath);
+  if (!movie) return { ok: false, error: "Film is no longer in the library." };
+  if (movie.dvProfile !== 7) {
+    return { ok: false, error: "Only Profile 7 files need converting." };
+  }
+
+  const el = classifyEnhancementLayer(movie.dovi, movie.hdr10);
+  if (el?.kind === "complex-fel") {
+    return {
+      ok: false,
+      error:
+        "This film's enhancement layer reconstructs brightness — converting would clip it. Run dovi_convert with --force yourself if you want it anyway.",
+    };
+  }
+
+  // Read from the file we already know about, so the progress watcher has
+  // something to measure against.
+  startConvert(moviePath, {
+    sourceBytes: movie.sizeBytes,
+    videoBytes:
+      movie.videoBitrateKbps && movie.durationSec
+        ? (movie.videoBitrateKbps * 1000 * movie.durationSec) / 8
+        : undefined,
+  });
+  return { ok: true };
+}
+
+/**
+ * Throws away the pre-conversion original to reclaim its space. The one action
+ * here that cannot be walked back, so it is kept separate from restoring.
+ */
+export async function discardBackup(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  if (getConvertJob().status === "running") {
+    return { ok: false, error: "A conversion is running — wait for it." };
+  }
+
+  try {
+    await deleteBackup(moviePath);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+export async function convertJobStatus(): Promise<ConvertJob> {
+  return getConvertJob();
+}
+
+/** Stops a conversion and sweeps up its partial output. */
+export async function stopConvert(): Promise<ConvertJob> {
+  return cancelConvert();
+}
+
+/**
+ * Puts back the Profile 7 original a conversion set aside, and deletes the
+ * converted file. Fast enough to do inline — it is two renames plus a re-read,
+ * not a rewrite.
+ */
+export async function restoreOriginal(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  if (getConvertJob().status === "running") {
+    return { ok: false, error: "A conversion is running — wait for it." };
+  }
+  if (getDoviJob().status === "running") {
+    return { ok: false, error: "A full pass is running — wait for it." };
+  }
+
+  try {
+    await restore(moviePath);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  refresh();
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------

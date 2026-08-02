@@ -15,7 +15,7 @@ import type { ScanState } from "@/lib/scanner";
  * mid-scan unmounted the button and took the progress toast with it.
  */
 
-const BUSY = ["scanning", "matching", "discs"];
+const BUSY = ["scanning", "dovi", "matching", "discs"];
 
 type ScanContext = { state: ScanState; start: () => void; busy: boolean };
 
@@ -57,6 +57,7 @@ export function ScanProvider({
           `${next.cached} unchanged`,
           ...(next.removed ? [`${next.removed} removed`] : []),
           ...(next.failed ? [`${next.failed} failed`] : []),
+          ...(next.doviTotal ? [`${next.doviTotal} DV streams read`] : []),
           ...(next.matchTotal ? [`${next.matched} matched`] : []),
           ...(next.needsReview ? [`${next.needsReview} need review`] : []),
           ...(next.discTotal ? [`${next.discTotal} discs looked up`] : []),
@@ -93,17 +94,23 @@ export function ScanProvider({
           done: handled,
           total: state.discovered,
         }
-      : state.status === "matching"
+      : state.status === "dovi"
         ? {
-            label: `Matching against TMDb — ${state.matchDone} of ${state.matchTotal}`,
-            done: state.matchDone,
-            total: state.matchTotal,
+            label: `Reading Dolby Vision metadata — ${state.doviDone} of ${state.doviTotal}`,
+            done: state.doviDone,
+            total: state.doviTotal,
           }
-        : {
-            label: `Looking up discs — ${state.discDone} of ${state.discTotal}`,
-            done: state.discDone,
-            total: state.discTotal,
-          };
+        : state.status === "matching"
+          ? {
+              label: `Matching against TMDb — ${state.matchDone} of ${state.matchTotal}`,
+              done: state.matchDone,
+              total: state.matchTotal,
+            }
+          : {
+              label: `Looking up discs — ${state.discDone} of ${state.discTotal}`,
+              done: state.discDone,
+              total: state.discTotal,
+            };
 
   return (
     <Ctx.Provider value={{ state, start, busy }}>

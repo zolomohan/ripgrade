@@ -2,11 +2,13 @@ import { notFound } from "next/navigation";
 
 import { artUrl } from "@/lib/routes";
 import { type Status } from "@/lib/derive";
+import { backupBytes } from "@/lib/convert";
 import { getDisc } from "@/lib/disc";
 import { getMovie, type LibraryItem } from "@/lib/library";
 import { ArtworkEditor } from "./artwork-editor";
 import { BackButton } from "./back-button";
 import { DiscReview } from "./disc-review";
+import { DolbyVision } from "./dolby-vision";
 import { FileActions } from "./file-actions";
 import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
@@ -642,6 +644,20 @@ export default async function MoviePage({
             </div>
           </div>
         </section>
+
+        {/* What is actually inside the Dolby Vision stream */}
+        {movie.hdr === "Dolby Vision" && (
+          <DolbyVision
+            moviePath={movie.path}
+            fileName={movie.fileName}
+            dvProfile={movie.dvProfile}
+            durationSec={movie.durationSec}
+            frameRate={movie.frameRate}
+            scan={movie.dovi}
+            hdr10={movie.hdr10}
+            backupBytes={backupBytes(movie.path)}
+          />
+        )}
 
         {/* TMDb identity */}
         {movie.tmdb && (

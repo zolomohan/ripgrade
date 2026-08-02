@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { findArtwork, type Artwork } from "./artwork";
 import { db } from "./db";
+import { getDoviScans, scanDovi } from "./dovi";
 import { runEnrich } from "./enrich";
 import { fetchDisc, hasDisc } from "./disc";
 import { deriveAll, getLibrary } from "./library";
@@ -13,7 +14,14 @@ import { hasCredentials } from "./tmdb";
 
 export type ScanState = {
   /** "matching" is the TMDb phase that runs automatically after probing. */
-  status: "idle" | "scanning" | "matching" | "discs" | "done" | "error";
+  status:
+    | "idle"
+    | "scanning"
+    | "dovi"
+    | "matching"
+    | "discs"
+    | "done"
+    | "error";
   root?: string;
   discovered: number;
   probed: number;
@@ -27,6 +35,9 @@ export type ScanState = {
   needsReview: number;
   /** Files that vanished from disk since the last scan. */
   removed: number;
+  /** Dolby Vision RPU head scans, one per DV film we have not read yet. */
+  doviTotal: number;
+  doviDone: number;
   /** Blu-ray.com lookups, the final phase. */
   discTotal: number;
   discDone: number;
@@ -46,6 +57,8 @@ const IDLE: ScanState = {
   matched: 0,
   needsReview: 0,
   removed: 0,
+  doviTotal: 0,
+  doviDone: 0,
   discTotal: 0,
   discDone: 0,
 };
@@ -127,8 +140,30 @@ const upsertProbe = () =>
       mtime_ms = excluded.mtime_ms,
       probed_at = excluded.probed_at,
       mediainfo = excluded.mediainfo,
-      error = excluded.error
+      error = excluded.error,
+      -- Only reached when size or mtime changed, so the RPU reading stored
+      -- against this path describes a file that no longer exists.
+      dovi = NULL
   `);
+
+/**
+ * Re-reads one file that changed under us — after a conversion rewrites it in
+ * place, for instance. The stored RPU reading is dropped with it, since it
+ * described the stream that has just been replaced.
+ */
+export async function reprobeFile(filePath: string): Promise<void> {
+  const stats = await stat(filePath);
+  const result = await probe(filePath);
+
+  upsertProbe().run({
+    path: filePath,
+    size: stats.size,
+    mtime_ms: Math.floor(stats.mtimeMs),
+    probed_at: Date.now(),
+    mediainfo: result.mediainfo ? JSON.stringify(result.mediainfo) : null,
+    error: result.error ?? null,
+  });
+}
 
 /** A spinning external drive thrashes under parallel reads; keep this low. */
 const CONCURRENCY = 3;
@@ -274,6 +309,41 @@ export function startScan(root: string): ScanState {
       await probeAll(files);
       await indexArtwork(files);
       deriveAll();
+
+      // Dolby Vision details MediaInfo cannot see. A head scan reads only the
+      // start of the file, so this costs well under a second per film — cheap
+      // enough to belong in every scan rather than being a separate chore.
+      //
+      // Films that failed are skipped on later scans just as failed disc
+      // lookups are: the result is stored, error and all. The full pass on the
+      // film's own page is how you retry one.
+      const alreadyRead = getDoviScans();
+      const dolbyVision = getLibrary().filter(
+        (m) => m.hdr === "Dolby Vision" && !alreadyRead.has(m.path),
+      );
+
+      if (dolbyVision.length > 0) {
+        setState({
+          ...state,
+          status: "dovi",
+          doviTotal: dolbyVision.length,
+          doviDone: 0,
+          current: undefined,
+        });
+
+        let doviDone = 0;
+        for (const film of dolbyVision) {
+          setState({ ...state, current: film.title });
+          // Never throws — a failure is recorded on the film and the pass
+          // carries on to the next one.
+          await scanDovi(film.path, { depth: "head" });
+          doviDone += 1;
+          setState({ ...state, doviDone });
+        }
+
+        // Fold the RPU readings into the stored rows.
+        deriveAll();
+      }
 
       // Matching is part of a scan, not a separate job. Without a token it is
       // simply skipped — the scan still completes normally.

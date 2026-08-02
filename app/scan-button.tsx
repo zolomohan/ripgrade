@@ -12,11 +12,13 @@ export function ScanButton() {
   const label =
     state.status === "scanning"
       ? "Scanning…"
-      : state.status === "matching"
-        ? "Matching…"
-        : state.status === "discs"
-          ? "Discs…"
-          : "Scan library";
+      : state.status === "dovi"
+        ? "Dolby Vision…"
+        : state.status === "matching"
+          ? "Matching…"
+          : state.status === "discs"
+            ? "Discs…"
+            : "Scan library";
 
   return (
     <button
