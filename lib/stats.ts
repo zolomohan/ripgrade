@@ -1,5 +1,5 @@
 import type { LibraryItem } from "./library";
-import { classifyEnhancementLayer, type Status } from "./derive";
+import { classifyEnhancementLayer, openIssues, type Status } from "./derive";
 
 /**
  * There are two scales here, not one ladder.
@@ -112,8 +112,7 @@ export function computeStats(items: LibraryItem[]): LibraryStats {
     dolbyVision: items.filter((m) => m.hdr === "Dolby Vision").length,
     atmos: items.filter((m) => m.audio.some((a) => a.atmos)).length,
     lossless: items.filter((m) => m.audio.some((a) => a.lossless)).length,
-    openIssues: items.filter((m) => m.issues.length > 0 && !m.acknowledged)
-      .length,
+    openIssues: items.filter((m) => openIssues(m).length > 0).length,
   };
 
   // Split by which scale judged the film, since the two do not share an axis.

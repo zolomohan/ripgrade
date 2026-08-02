@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS triage (
   updated_at    INTEGER NOT NULL
 );
 
+-- Issues you have dealt with or decided to live with, one row each. Separate
+-- from the triage table because that is a verdict on a whole film, and most
+-- films that need attention need it for one reason out of several.
+CREATE TABLE IF NOT EXISTS issue_acks (
+  path      TEXT NOT NULL,
+  code      TEXT NOT NULL,
+  acked_at  INTEGER NOT NULL,
+  PRIMARY KEY (path, code)
+);
+
 -- Raw TMDb records, cached like probes: expensive to fetch, cheap to re-derive
 -- from. Keyed by TMDb id so several files of the same film share one row.
 CREATE TABLE IF NOT EXISTS tmdb_movies (

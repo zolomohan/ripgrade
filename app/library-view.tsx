@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { titleKey } from "@/lib/derive";
+import { openIssues, titleKey } from "@/lib/derive";
 import type { LibraryItem } from "@/lib/library";
-import { artUrl, compareId, movieId } from "@/lib/routes";
+import { artUrl, movieId } from "@/lib/routes";
 
 /**
  * Duplicate detection needs to compare films against each other, which a
@@ -125,7 +125,7 @@ const FACETS: {
       {
         key: "issues",
         label: "Open issues",
-        test: (m) => m.issues.length > 0 && !m.acknowledged,
+        test: (m) => openIssues(m).length > 0,
       },
       {
         key: "upgrade",
@@ -472,7 +472,8 @@ function HelpTip({ text }: { text: string }) {
 function Row({ movie }: { movie: LibraryItem }) {
   const object = movie.audio.find((a) => a.atmos || a.dtsx);
   const lossless = movie.audio.find((a) => a.lossless);
-  const critical = movie.issues.some((i) => i.severity === "critical");
+  const open = openIssues(movie);
+  const critical = open.some((i) => i.severity === "critical");
 
   return (
     <Link
@@ -533,10 +534,9 @@ function Row({ movie }: { movie: LibraryItem }) {
           {movie.tmdb && movie.tmdb.confidence !== "high" && (
             <Chip tone="warn">match?</Chip>
           )}
-          {movie.issues.length > 0 && !movie.acknowledged && (
+          {open.length > 0 && (
             <Chip tone={critical ? "danger" : "warn"}>
-              {movie.issues.length}{" "}
-              {movie.issues.length === 1 ? "issue" : "issues"}
+              {open.length} {open.length === 1 ? "issue" : "issues"}
             </Chip>
           )}
         </div>
@@ -552,6 +552,7 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
   // film and back. `history.replaceState` syncs `useSearchParams` without a
   // server round-trip, which matters when the search box updates per keystroke.
   const searchParams = useSearchParams();
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Kept as the raw string for memo dependencies: a Map is a fresh object every
   // render, so it would defeat memoization and trip the exhaustive-deps rule.
@@ -591,8 +592,6 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
     window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
   }
 
-  const setActive = (keys: string[]) => update({ f: keys });
-
   /** off → include → exclude → off */
   function cycle(key: string) {
     const next: Selection = new Map(selection);
@@ -602,6 +601,13 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
     else next.delete(key);
     update({ f: serialiseSelection(next) });
   }
+  /** Drops one filter, for the chips shown while the panel is closed. */
+  function clear(key: string) {
+    const next: Selection = new Map(selection);
+    next.delete(key);
+    update({ f: serialiseSelection(next) });
+  }
+
   const setQuery = (q: string) => update({ q });
   const setSort = (s: string) => update({ sort: s });
   const setGroup = (g: string) => update({ g });
@@ -621,21 +627,13 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
       else groups.set(key, [movie]);
     }
 
-    const sets = [...groups.entries()]
-      .filter(([, g]) => g.length > 1)
-      .map(([key, g]) => ({
-        key,
-        copies: [...g].sort((a, b) => b.scores.overall - a.scores.overall),
-      }));
-
-    const paths = new Set(sets.flatMap((s) => s.copies.map((c) => c.path)));
-    // Everything past the best copy is what you would reclaim by deleting.
-    const recoverable = sets.reduce(
-      (sum, s) => sum + s.copies.slice(1).reduce((n, c) => n + c.sizeBytes, 0),
-      0,
+    // Only the paths: what the duplicates are and what deleting them would
+    // reclaim is the attention page's job now, not this list's.
+    return new Set(
+      [...groups.values()].filter((g) => g.length > 1).flatMap((g) =>
+        g.map((m) => m.path),
+      ),
     );
-
-    return { sets, paths, recoverable };
   })();
 
   /**
@@ -652,13 +650,7 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
       : new Set(batch.map((m) => m.path));
   })();
 
-  const ctx: FilterContext = { duplicatePaths: duplicates.paths, recentPaths };
-
-  const openIssues = movies.filter(
-    (m) => m.issues.length > 0 && !m.acknowledged,
-  ).length;
-
-  const missingArtwork = movies.filter((m) => !m.poster || !m.fanart).length;
+  const ctx: FilterContext = { duplicatePaths: duplicates, recentPaths };
 
   const shown = (() => {
     const q = query.trim().toLowerCase();
@@ -701,17 +693,64 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
     });
   })();
 
-  // Only counts films that were actually matched — unmatched ones have nothing
-  // to review until a matching run has been done at all.
-  const needsReview = movies.filter(
-    (m) => m.tmdb && m.tmdb.confidence !== "high",
-  ).length;
-
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <div className="relative flex flex-col gap-2 rounded-card border border-line bg-surface p-3 pr-9">
-          <div className="absolute top-2 right-2 flex items-center gap-2">
+      {/* Closed by default, because the grid is six rows of chips and the
+          list is what you came for. What is active never hides with it: those
+          chips move up into the summary row, where they can also be cleared —
+          a filter you cannot see is a filter you will forget is on. */}
+      <div className="rounded-card border border-line bg-surface">
+        <div className="flex flex-wrap items-center gap-2 p-3">
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            className="flex items-center gap-2 rounded-control px-2 py-1 text-sm transition-colors hover:bg-surface-strong"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`h-3.5 w-3.5 opacity-40 motion-safe:transition-transform motion-safe:duration-200 ${
+                filtersOpen ? "rotate-90" : ""
+              }`}
+            >
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+            Filters
+            {selection.size > 0 && (
+              <span className="rounded-full bg-foreground px-1.5 text-[10px] leading-[16px] font-medium text-background tabular-nums">
+                {selection.size}
+              </span>
+            )}
+          </button>
+
+          {!filtersOpen &&
+            [...selection.entries()].map(([key, mode]) => {
+              const option = OPTIONS.get(key)!;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => clear(key)}
+                  title="Remove this filter"
+                  className={`row-enter flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                    mode === "include"
+                      ? "border-transparent bg-foreground text-background"
+                      : "border-red-500/40 bg-red-500/[0.08] text-red-700 dark:text-red-300"
+                  }`}
+                >
+                  {mode === "exclude" && <span className="opacity-60">not</span>}
+                  {option.label}
+                  <span className="opacity-50">✕</span>
+                </button>
+              );
+            })}
+
+          <div className="ml-auto flex items-center gap-2">
             {(selection.size > 0 || query) && (
               <button
                 type="button"
@@ -723,129 +762,65 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
             )}
             <HelpTip text="Click once to include, twice to exclude. Options in a row are OR-ed; rows are AND-ed." />
           </div>
-          {FACETS.filter((facet) => facet.when?.(ctx) ?? true).map((facet) => (
+        </div>
+
+        {/* 0fr to 1fr animates a height nobody has to measure. */}
+        <div
+          className={`grid motion-safe:transition-[grid-template-rows] motion-safe:duration-200 motion-safe:ease-out ${
+            filtersOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          }`}
+        >
+          <div className="overflow-hidden">
             <div
-              key={facet.key}
-              className="grid grid-cols-[7rem_1fr] items-start gap-3"
+              // Nothing inside a closed panel should be tabbable.
+              inert={!filtersOpen}
+              className="flex flex-col gap-2 border-t border-line p-3"
             >
-              <span className="pt-1 text-[11px] tracking-widest uppercase opacity-40">
-                {facet.label}
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {facet.options.map((option) => {
-                  const mode = selection.get(option.key);
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      aria-pressed={mode !== undefined}
-                      title={
-                        mode === "include"
-                          ? "Click to exclude"
-                          : mode === "exclude"
-                            ? "Click to clear"
-                            : "Click to include"
-                      }
-                      onClick={() => cycle(option.key)}
-                      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                        mode === "include"
-                          ? "border-transparent bg-foreground text-background"
-                          : mode === "exclude"
-                            ? "border-red-500/40 bg-red-500/[0.08] text-red-700 line-through dark:text-red-300"
-                            : "border-line hover:bg-surface-strong"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {FACETS.filter((facet) => facet.when?.(ctx) ?? true).map(
+                (facet) => (
+                  <div
+                    key={facet.key}
+                    className="grid grid-cols-[7rem_1fr] items-start gap-3"
+                  >
+                    <span className="pt-1 text-[11px] tracking-widest uppercase opacity-40">
+                      {facet.label}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {facet.options.map((option) => {
+                        const mode = selection.get(option.key);
+                        return (
+                          <button
+                            key={option.key}
+                            type="button"
+                            aria-pressed={mode !== undefined}
+                            title={
+                              mode === "include"
+                                ? "Click to exclude"
+                                : mode === "exclude"
+                                  ? "Click to clear"
+                                  : "Click to include"
+                            }
+                            onClick={() => cycle(option.key)}
+                            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                              mode === "include"
+                                ? "border-transparent bg-foreground text-background"
+                                : mode === "exclude"
+                                  ? "border-red-500/40 bg-red-500/[0.08] text-red-700 line-through dark:text-red-300"
+                                  : "border-line hover:bg-surface-strong"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
-          ))}
+          </div>
         </div>
       </div>
-
-      {(openIssues > 0 ||
-        duplicates.sets.length > 0 ||
-        missingArtwork > 0 ||
-        needsReview > 0) && (
-        <section className="flex flex-col gap-2 rounded-card border border-line bg-surface p-4">
-          <h2 className="text-[11px] font-medium tracking-widest uppercase opacity-45">
-            Needs attention
-          </h2>
-
-          {duplicates.sets.length > 0 && (
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-              <span className="font-medium">
-                {duplicates.sets.length}{" "}
-                {duplicates.sets.length === 1
-                  ? "duplicate group"
-                  : "duplicate groups"}
-              </span>
-              <span className="opacity-60">
-                — {size(duplicates.recoverable)} recoverable
-              </span>
-              {duplicates.sets.map((set) => (
-                <Link
-                  key={set.key}
-                  href={`/compare/${compareId(set.key)}`}
-                  className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ring-line-strong hover:bg-surface-strong"
-                >
-                  Compare {set.copies[0].title}
-                </Link>
-              ))}
-            </div>
-          )}
-
-          {openIssues > 0 && (
-            <button
-              type="button"
-              onClick={() => setActive(["issues"])}
-              className="flex flex-wrap items-baseline gap-2 text-left text-sm"
-            >
-              <span className="font-medium">
-                {openIssues} {openIssues === 1 ? "film has" : "films have"} open
-                issues
-              </span>
-              <span className="opacity-60">
-                — accept one as-is to clear it from here
-              </span>
-            </button>
-          )}
-
-          {missingArtwork > 0 && (
-            <button
-              type="button"
-              onClick={() => setActive(["noart"])}
-              className="flex flex-wrap items-baseline gap-2 text-left text-sm"
-            >
-              <span className="font-medium">
-                {missingArtwork}{" "}
-                {missingArtwork === 1 ? "film is" : "films are"} missing artwork
-              </span>
-              <span className="opacity-60">
-                — open one and pick a poster or backdrop from TMDb
-              </span>
-            </button>
-          )}
-
-          {needsReview > 0 && (
-            <button
-              type="button"
-              onClick={() => setActive(["review"])}
-              className="flex flex-wrap items-baseline gap-2 text-left text-sm"
-            >
-              <span className="font-medium">
-                {needsReview}{" "}
-                {needsReview === 1 ? "match needs" : "matches need"} review
-              </span>
-              <span className="opacity-60">
-                — confirm it, or pick the right film
-              </span>
-            </button>
-          )}
-        </section>
-      )}
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">

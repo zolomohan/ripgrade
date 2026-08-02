@@ -34,7 +34,7 @@ import { deriveAll, getLibrary } from "@/lib/library";
 import { getScanState, startScan, type ScanState } from "@/lib/scanner";
 import { revealInFinder } from "@/lib/system";
 import { addToWishlist, removeFromWishlist } from "@/lib/wishlist";
-import { setTriage } from "@/lib/triage";
+import { setIssueAck, setTriage } from "@/lib/triage";
 import { imageUrl } from "@/lib/image-url";
 import {
   getImages,
@@ -451,6 +451,34 @@ export async function acknowledge(
   // failure in the browser console, which is how a missing table went unnoticed.
   try {
     setTriage(moviePath, value, note);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+/**
+ * Marks one issue on one film as dealt with, or reopens it. Separate from
+ * accepting a film wholesale: most films that need attention need it for one
+ * reason out of several, and clearing them one at a time is how the list
+ * actually empties.
+ */
+export async function resolveIssue(
+  moviePath: string,
+  code: string,
+  resolved: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+
+  try {
+    setIssueAck(moviePath, code, resolved);
   } catch (err) {
     return {
       ok: false,

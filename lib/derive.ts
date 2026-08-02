@@ -823,6 +823,20 @@ type DiscInput = {
  * L6. `full` parses every frame, which is what the light levels and the frame
  * count need before they mean anything.
  */
+/**
+ * The issues still standing on a film: everything it raised, less the ones you
+ * resolved individually, and none at all once the film is accepted wholesale.
+ */
+export function openIssues(m: {
+  issues: Issue[];
+  acknowledged?: boolean;
+  resolved?: string[];
+}): Issue[] {
+  if (m.acknowledged) return [];
+  const resolved = m.resolved ?? [];
+  return m.issues.filter((i) => !resolved.includes(i.code));
+}
+
 /** Nits, as MediaInfo reports them from the stream's SEI messages. */
 export type Hdr10Static = {
   maxCll?: number;

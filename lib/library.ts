@@ -8,7 +8,7 @@ import { getDiscs } from "./disc";
 import { getDoviScans } from "./dovi";
 import { getMatches, getTmdbMovies } from "./enrich";
 import { decodeMovieId } from "./routes";
-import { getTriage } from "./triage";
+import { getIssueAcks, getTriage } from "./triage";
 
 type ProbeRow = { path: string; size: number; mediainfo: string | null };
 
@@ -100,9 +100,11 @@ export function deriveAll(): number {
 export type LibraryItem = Derived & {
   poster?: string;
   fanart?: string;
-  /** You have looked at this one and accepted it as-is. */
+  /** You have looked at this one and accepted it as-is, issues and all. */
   acknowledged: boolean;
   note?: string;
+  /** Issue codes dealt with individually, rather than the film wholesale. */
+  resolved: string[];
   /**
    * When the file first appeared in the library. Every row inserted by one
    * `deriveAll` pass carries the same timestamp, so films added by the same
@@ -128,6 +130,7 @@ export function getLibrary(): LibraryItem[] {
   }[];
   const art = new Map(artRows.map((a) => [a.dir, a]));
   const triage = getTriage();
+  const acks = getIssueAcks();
 
   return rows.map((r) => {
     const derived = JSON.parse(r.derived) as Derived;
@@ -139,6 +142,7 @@ export function getLibrary(): LibraryItem[] {
       fanart: found?.fanart ?? undefined,
       acknowledged: decided?.acknowledged ?? false,
       note: decided?.note,
+      resolved: acks.get(derived.path) ?? [],
       addedAt: r.first_seen,
     };
   });
