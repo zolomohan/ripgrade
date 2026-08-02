@@ -52,6 +52,7 @@ function knownMoviePath(moviePath: string): boolean {
 
 // Not exported: a "use server" module may only export async functions.
 const LIBRARY_ROOT_KEY = "libraryRoot";
+const CONVERT_TEMP_KEY = "convertTempDir";
 
 export async function browse(target: string): Promise<DirListing> {
   return listDirectory(target);
@@ -80,6 +81,44 @@ export async function setLibraryRoot(
   setSetting(LIBRARY_ROOT_KEY, resolved);
   refresh();
   return { ok: true };
+}
+
+/**
+ * Where dovi_convert should put its working files.
+ *
+ * A conversion reads the source and writes the converted video at the same
+ * time; on one spinning drive those compete for the same head. Pointing the
+ * intermediate file at an SSD splits the two.
+ */
+export async function getConvertTempDir(): Promise<string | undefined> {
+  return getSetting(CONVERT_TEMP_KEY);
+}
+
+export async function setConvertTempDir(
+  target: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const resolved = path.resolve(target);
+
+  try {
+    if (!(await stat(resolved)).isDirectory()) {
+      return { ok: false, error: `Not a directory: ${resolved}` };
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  setSetting(CONVERT_TEMP_KEY, resolved);
+  refresh();
+  return { ok: true };
+}
+
+/** Back to writing beside the source file. */
+export async function clearConvertTempDir(): Promise<void> {
+  db.prepare("DELETE FROM settings WHERE key = ?").run(CONVERT_TEMP_KEY);
+  refresh();
 }
 
 export async function beginScan(): Promise<ScanState> {
@@ -351,6 +390,17 @@ export async function beginConvert(
       ok: false,
       error:
         "This film's enhancement layer reconstructs brightness — converting would clip it. Run dovi_convert with --force yourself if you want it anyway.",
+    };
+  }
+  // A full enhancement layer judged safe on a few hundred frames has only been
+  // judged on those frames: expansion anywhere later in the film would not have
+  // shown up. `provisional` is set for exactly that case, and converting on it
+  // is the one way to discard highlights while believing you checked.
+  if (el?.provisional) {
+    return {
+      ok: false,
+      error:
+        "This is a full enhancement layer and only the start of it has been read. Read every frame first — a sample cannot rule out brightness expansion later in the film.",
     };
   }
 

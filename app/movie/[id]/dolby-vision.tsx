@@ -795,13 +795,21 @@ export function DolbyVision({
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs opacity-45">
-                  Hand this to dovi_convert, which keeps the original and
-                  verifies the result.
+                  {el?.provisional
+                    ? "Read every frame before converting — a sample cannot rule out brightness expansion later in the film."
+                    : "Hand this to dovi_convert, which keeps the original and verifies the result."}
                 </p>
                 <button
                   type="button"
                   onClick={() => setConfirming(true)}
-                  disabled={running}
+                  // A full enhancement layer has to be read in full first: the
+                  // verdict that makes it safe rests on frames nobody has read.
+                  disabled={running || el?.provisional}
+                  title={
+                    el?.provisional
+                      ? "Needs a full pass first"
+                      : "Convert to Profile 8.1"
+                  }
                   className="shrink-0 rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40"
                 >
                   Convert to Profile 8.1

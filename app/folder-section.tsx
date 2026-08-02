@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 
-import { browse } from "./actions";
+import { browse, setLibraryRoot } from "./actions";
 import { FolderPicker } from "./folder-picker";
 import type { DirListing } from "@/lib/browse";
 
@@ -53,7 +53,7 @@ export function FolderSection({
       </summary>
       <div className="border-t border-line p-4">
         {listing ? (
-          <FolderPicker initialListing={listing} />
+          <FolderPicker initialListing={listing} onSave={setLibraryRoot} />
         ) : (
           <div className="flex flex-col gap-2">
             <p className="text-sm opacity-50">

@@ -1,5 +1,6 @@
-import { getLibraryRoot } from "../actions";
+import { getConvertTempDir, getLibraryRoot } from "../actions";
 import { FolderSection } from "../folder-section";
+import { TempFolder } from "./temp-folder";
 import { DEFAULT_ROOT } from "@/lib/browse";
 import { getLibrary } from "@/lib/library";
 import { hasCredentials } from "@/lib/tmdb";
@@ -30,6 +31,7 @@ function Row({
 
 export default async function SettingsPage() {
   const root = await getLibraryRoot();
+  const tempDir = await getConvertTempDir();
   const movies = getLibrary();
 
   return (
@@ -51,6 +53,20 @@ export default async function SettingsPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold tracking-tight">
+          Conversion scratch space
+        </h2>
+        <p className="text-sm opacity-60">
+          A Profile 7 conversion reads the film and writes the converted video
+          at the same time. On one spinning drive those compete for the same
+          head; pointing the working file at an SSD splits them and the job runs
+          at the speed of the faster disk. The converted film still lands beside
+          the original.
+        </p>
+        <TempFolder current={tempDir} defaultPath={DEFAULT_ROOT} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold tracking-tight">
           What is set up
         </h2>
         {/* Read-only: these are environment and disk facts, not preferences,
@@ -63,6 +79,11 @@ export default async function SettingsPage() {
             detail={root ? undefined : "pick one above to get started"}
           />
           <Row label="Films scanned" value={`${movies.length}`} />
+          <Row
+            label="Convert scratch"
+            value={tempDir ?? "Beside the film"}
+            detail={tempDir ? undefined : "set one above if the library is on a HDD"}
+          />
           <Row
             label="TMDb"
             value={hasCredentials() ? "Connected" : "No API key"}

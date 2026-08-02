@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { browse, setLibraryRoot } from "./actions";
+import { browse } from "./actions";
 import type { DirListing } from "@/lib/browse";
 
 function Breadcrumb({
@@ -43,8 +43,13 @@ function Breadcrumb({
 // with folders already on screen rather than flashing a loading state.
 export function FolderPicker({
   initialListing,
+  onSave,
+  saveLabel = "Use this folder",
 }: {
   initialListing: DirListing;
+  /** What the chosen folder is for — the picker itself does not care. */
+  onSave: (path: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  saveLabel?: string;
 }) {
   const [listing, setListing] = useState<DirListing>(initialListing);
   const [pathInput, setPathInput] = useState(initialListing.path);
@@ -62,7 +67,7 @@ export function FolderPicker({
 
   function save() {
     startTransition(async () => {
-      const result = await setLibraryRoot(listing.path);
+      const result = await onSave(listing.path);
       if (!result.ok) setSaveError(result.error);
     });
   }
@@ -145,7 +150,7 @@ export function FolderPicker({
         disabled={pending}
         className="self-start rounded-chip bg-foreground px-4 py-2 text-sm text-background disabled:opacity-40"
       >
-        Use this folder
+        {saveLabel}
       </button>
     </div>
   );

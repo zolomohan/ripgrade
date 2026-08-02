@@ -5,6 +5,7 @@ import { existsSync, statSync } from "node:fs";
 import { rename, rm } from "node:fs/promises";
 import path from "node:path";
 
+import { getSetting } from "./db";
 import { BACKUP_SUFFIX, RUNTIME_DRIFT, runtimeDrift } from "./derive";
 import { scanDovi } from "./dovi";
 import { probe } from "./media";
@@ -134,9 +135,14 @@ let activeChild: import("node:child_process").ChildProcess | undefined;
 let cancelling = false;
 
 /** The half-built files dovi_convert leaves behind if it is interrupted. */
-const workingFiles = (filePath: string) => {
+const workingFiles = (filePath: string, tempDir?: string) => {
   const stem = filePath.replace(/\.[^.]+$/, "");
-  return [`${stem}.p81.hevc`, `${stem}.p81.tmp`];
+  return [
+    tempDir
+      ? path.join(tempDir, `${path.basename(stem)}.p81.hevc`)
+      : `${stem}.p81.hevc`,
+    `${stem}.p81.tmp`,
+  ];
 };
 
 /**
@@ -240,9 +246,19 @@ async function checkRuntime(
  * steps by the work they actually do instead of by a guess: the video stream
  * for the first, very nearly the whole file for the second.
  */
-function watchProgress(filePath: string, sizes: ConvertSizes) {
+function watchProgress(
+  filePath: string,
+  sizes: ConvertSizes,
+  tempDir?: string,
+) {
   const stem = filePath.replace(/\.[^.]+$/, "");
-  const targets = [`${stem}.p81.hevc`, `${stem}.p81.tmp`];
+  // Only the video goes to the temp drive; the remux always stays beside the
+  // source. Watching both in one place would have quietly lost the first half
+  // of the progress the moment a temp directory was set.
+  const hevc = tempDir
+    ? path.join(tempDir, `${path.basename(stem)}.p81.hevc`)
+    : `${stem}.p81.hevc`;
+  const targets = [hevc, `${stem}.p81.tmp`];
   const total = (sizes.videoBytes ?? sizes.sourceBytes) + sizes.sourceBytes;
 
   return setInterval(() => {
@@ -284,13 +300,22 @@ export function startConvert(
   });
 
   void (async () => {
-    const ticker = watchProgress(filePath, sizes);
+    const tempDir = getSetting("convertTempDir");
+    const ticker = watchProgress(filePath, sizes, tempDir);
     cancelling = false;
     // Its own process group, so a cancel can take its children down with it.
-    const child = spawn("dovi_convert", ["convert", path.basename(filePath)], {
-      cwd: path.dirname(filePath),
-      detached: true,
-    });
+    const child = spawn(
+      "dovi_convert",
+      [
+        "convert",
+        path.basename(filePath),
+        ...(tempDir ? ["--temp", tempDir] : []),
+      ],
+      {
+        cwd: path.dirname(filePath),
+        detached: true,
+      },
+    );
     activeChild = child;
 
     let tail = "";
@@ -329,7 +354,7 @@ export function startConvert(
     if (cancelling) {
       // Nothing to undo, only to sweep: the original was never moved.
       await Promise.all(
-        workingFiles(filePath).map((f) => rm(f, { force: true })),
+        workingFiles(filePath, tempDir).map((f) => rm(f, { force: true })),
       );
       setJob({ ...job, status: "cancelled", finishedAt: Date.now() });
       return;
