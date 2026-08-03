@@ -6,11 +6,18 @@ import path from "node:path";
 
 import { listDirectory, type DirListing } from "@/lib/browse";
 import { getSetting, setSetting } from "@/lib/db";
-import { reindexDir, saveArtwork } from "@/lib/artwork";
+import { recordArtworkSource, reindexDir, saveArtwork } from "@/lib/artwork";
+import {
+  countUnidentifiedArtwork,
+  identifyArtwork,
+  type IdentifyResult,
+} from "@/lib/identify-art";
 import { db } from "@/lib/db";
 import {
   candidateFromUrl,
   clearDisc,
+  fetchDisc,
+  getDisc,
   searchReleases,
   setManualDisc,
 } from "@/lib/disc";
@@ -29,7 +36,14 @@ import {
   startFullDoviScan,
   type DoviJob,
 } from "@/lib/dovi";
-import { setManualMatch } from "@/lib/enrich";
+import { fetchAndCache, setManualMatch } from "@/lib/enrich";
+import {
+  clearJackettConfig,
+  getJackettConfig,
+  setJackettConfig,
+  testJackett,
+} from "@/lib/jackett";
+import { findUpgrades, type UpgradeSearch } from "@/lib/upgrades";
 import { deriveAll, getLibrary } from "@/lib/library";
 import { getScanState, startScan, type ScanState } from "@/lib/scanner";
 import {
@@ -38,18 +52,20 @@ import {
   removeLibraryRoot,
 } from "@/lib/roots";
 import { revealInFinder } from "@/lib/system";
-import { addToWishlist, removeFromWishlist } from "@/lib/wishlist";
+import { addToWishlist, getWishlist, removeFromWishlist } from "@/lib/wishlist";
 import { setIssueAck, setTriage } from "@/lib/triage";
 import { imageUrl } from "@/lib/image-url";
 import { getShow } from "@/lib/shows";
 import {
   clearSeasonDisc,
+  getSeasonDisc,
   searchSeasonReleases,
   setManualSeasonDisc,
 } from "@/lib/tv-disc";
 import { enrichShow, setManualShowMatch } from "@/lib/tv";
 import {
   getImages,
+  getMovie as getTmdbMovie,
   getTvImages,
   isTmdbImagePath,
   searchMovies,
@@ -303,12 +319,32 @@ export async function confirmMatch(
  * so the list keeps working with no network and no TMDb key.
  */
 export async function addWish(hit: SearchHit): Promise<void> {
+  // A search result carries no collection, so the film is fetched for it — the
+  // list groups by set, and a film that arrives ungrouped looks misfiled until
+  // the next backfill. A failed fetch is left unchecked to be picked up then.
+  let collection: { id: number; name: string } | undefined;
+  let checked = false;
+  try {
+    const movie = await getTmdbMovie(hit.id);
+    collection = movie.belongs_to_collection
+      ? {
+          id: movie.belongs_to_collection.id,
+          name: movie.belongs_to_collection.name,
+        }
+      : undefined;
+    checked = true;
+  } catch {
+    // Left for the backfill.
+  }
+
   addToWishlist({
     tmdbId: hit.id,
     title: hit.title,
     year: hit.year ? Number(hit.year) : undefined,
     posterPath: hit.posterPath,
     overview: hit.overview,
+    collection,
+    collectionChecked: checked,
   });
   refresh();
 }
@@ -316,6 +352,35 @@ export async function addWish(hit: SearchHit): Promise<void> {
 export async function removeWish(tmdbId: number): Promise<void> {
   removeFromWishlist(tmdbId);
   refresh();
+}
+
+/**
+ * Works out which TMDb image each file on the drive is, so the app has
+ * something to show when the drive is not connected.
+ *
+ * Deliberately not part of a scan: it reads every artwork file and asks TMDb
+ * about every title, and once an image is placed the answer never changes.
+ * Logos get a stand-in where the file is not a TMDb image at all — a poster or
+ * a backdrop already falls back to the record's own.
+ */
+export async function identifyArtworkSources(): Promise<
+  ({ ok: true } & IdentifyResult) | { ok: false; error: string }
+> {
+  try {
+    const result = await identifyArtwork([], ["logo"]);
+    refresh();
+    return { ok: true, ...result };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** How many images on the drive have no known source yet. */
+export async function unidentifiedArtwork(): Promise<number> {
+  return countUnidentifiedArtwork();
 }
 
 // ---------------------------------------------------------------------------
@@ -785,6 +850,7 @@ export async function chooseShowArtwork(
       imageUrl(tmdbFilePath, "original"),
     );
     await reindexDir(show.dir);
+    recordArtworkSource(show.dir, kind, tmdbFilePath);
     deriveAll();
     refresh();
     return { ok: true, saved };
@@ -821,6 +887,7 @@ export async function chooseArtwork(
       imageUrl(tmdbFilePath, "original"),
     );
     await reindexDir(dir);
+    recordArtworkSource(dir, kind, tmdbFilePath);
     deriveAll();
     refresh();
     return { ok: true, saved };
@@ -830,4 +897,278 @@ export async function chooseArtwork(
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Indexer search
+// ---------------------------------------------------------------------------
+
+/**
+ * What the settings page needs to know, which is never the key itself. An
+ * environment-supplied config is reported as managed so the UI can offer to
+ * show it rather than to edit something it cannot change.
+ */
+export async function getJackettStatus(): Promise<{
+  configured: boolean;
+  url?: string;
+  managed: boolean;
+}> {
+  const config = getJackettConfig();
+  return {
+    configured: Boolean(config),
+    url: config?.url,
+    managed: Boolean(process.env.JACKETT_URL && process.env.JACKETT_API_KEY),
+  };
+}
+
+/** Saves only after a live check, so a typo cannot be stored as working. */
+export async function saveJackett(
+  url: string,
+  apiKey: string,
+): Promise<{ ok: true; categories: number } | { ok: false; error: string }> {
+  if (!/^https?:\/\//i.test(url.trim())) {
+    return {
+      ok: false,
+      error: "Enter the full address, starting http:// or https://",
+    };
+  }
+
+  const previous = getJackettConfig();
+  setJackettConfig({ url, apiKey });
+
+  try {
+    const { categories } = await testJackett();
+    refresh();
+    return { ok: true, categories };
+  } catch (err) {
+    // Put back whatever worked before rather than leaving the app pointed at
+    // an address that does not answer.
+    if (previous) setJackettConfig(previous);
+    else clearJackettConfig();
+
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function disconnectJackett(): Promise<void> {
+  clearJackettConfig();
+  refresh();
+}
+
+/** Shared shape for every search below, so one component can render them all. */
+export type UpgradeResponse =
+  | { ok: true; search: UpgradeSearch; current?: number }
+  | { ok: false; error: string };
+
+const failed = (err: unknown): { ok: false; error: string } => ({
+  ok: false,
+  error: err instanceof Error ? err.message : String(err),
+});
+
+/**
+ * Releases for a film already in the library, ranked against the copy held.
+ *
+ * Compared against the *absolute* rubric score rather than the headline one:
+ * where a disc is known the headline score is a percentage of that disc, and a
+ * predicted score has no disc behind it — putting the two side by side would be
+ * comparing a proportion against a total.
+ */
+export async function findUpgradesForMovie(
+  moviePath: string,
+): Promise<UpgradeResponse> {
+  if (!knownMoviePath(moviePath)) return { ok: false, error: "Unknown film." };
+
+  const movie = getLibrary().find((m) => m.path === moviePath);
+  if (!movie) return { ok: false, error: "Unknown film." };
+
+  // Television is searched a season at a time — see findUpgradesForSeason.
+  if (movie.kind === "episode") {
+    return {
+      ok: false,
+      error: "Episodes are searched by season, from the show page.",
+    };
+  }
+
+  // The film's own disc, which the scan has usually linked already. Scoring
+  // results against it is what puts them on the same scale as the score shown
+  // on the film's page — comparing a rubric total against a disc-relative one
+  // would have the modal reporting an upgrade that is nothing of the sort.
+  const disc = movie.tmdb ? getDisc(movie.tmdb.id) : undefined;
+
+  // `scores.overall` rather than `breakdown.absolute`: where a disc is known
+  // that is already the disc-relative figure, which is what the results are
+  // now being measured on too.
+  const current = movie.scores.overall;
+
+  try {
+    const search = await findUpgrades({
+      kind: "movie",
+      title: movie.tmdb?.title ?? movie.title,
+      year: movie.tmdb?.year ?? movie.year,
+      imdbId: movie.imdbId,
+      runtimeMinutes:
+        movie.tmdb?.runtimeMinutes ??
+        (movie.durationSec ? Math.round(movie.durationSec / 60) : undefined),
+      currentScore: current,
+      disc,
+    });
+    return { ok: true, search, current };
+  } catch (err) {
+    return failed(err);
+  }
+}
+
+/** Releases for a film on the want list — nothing held, so nothing to beat. */
+export async function findUpgradesForWish(
+  tmdbId: number,
+): Promise<UpgradeResponse> {
+  const entry = getWishlist().find((w) => w.tmdbId === tmdbId);
+  if (!entry) return { ok: false, error: "Not on the wishlist." };
+
+  // The wishlist stores no runtime, and without one every encode scores as
+  // "bitrate unknown". The record is usually cached already, so this is free.
+  let runtimeMinutes: number | undefined;
+  let imdbId: string | undefined;
+  try {
+    const movie = await fetchAndCache(tmdbId);
+    runtimeMinutes = movie.runtime ?? undefined;
+    imdbId = movie.imdb_id ?? undefined;
+  } catch {
+    // Searchable without either; only the encode scores get vaguer.
+  }
+
+  // A wanted film has never been scanned, so nothing has ever looked its disc
+  // up. Done here, once, and cached exactly like a scanned film's — including
+  // the failure, so a film with no disc release is not re-scraped on every
+  // visit. Blu-ray.com pages are large and slow, which is why this is worth
+  // storing rather than repeating.
+  let disc = getDisc(tmdbId);
+  if (!disc) {
+    try {
+      disc = await fetchDisc(tmdbId, entry.title, entry.year);
+    } catch {
+      // Scored on the bare rubric instead; the search itself is unaffected.
+    }
+  }
+
+  try {
+    const search = await findUpgrades({
+      kind: "movie",
+      title: entry.title,
+      year: entry.year,
+      imdbId,
+      runtimeMinutes,
+      disc,
+    });
+    return { ok: true, search };
+  } catch (err) {
+    return failed(err);
+  }
+}
+
+/** Releases for one season — both season packs and individual episodes. */
+export async function findUpgradesForSeason(
+  showKey: string,
+  season: number,
+): Promise<UpgradeResponse> {
+  const show = getShow(showKey);
+  if (!show) return { ok: false, error: "Unknown show." };
+
+  const held = show.seasons.find((s) => s.number === season);
+
+  // Episode runtimes come from the files rather than from TMDb: they are on
+  // the drive already, and an average over the season is steadier than any
+  // single episode for judging a bitrate.
+  const durations = (held?.episodes ?? [])
+    .map((e) => e.item.durationSec)
+    .filter((d): d is number => Boolean(d));
+  const runtimeMinutes = durations.length
+    ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length / 60)
+    : undefined;
+
+  // The season's own disc set, already linked from the show page where it has
+  // been. A series is sold a season at a time, so the season is the only unit
+  // a disc set can be compared against.
+  const disc = getSeasonDisc(showKey, season);
+
+  // Averaged over the episodes held, on the same relative footing the results
+  // will be scored on.
+  const scores = (held?.episodes ?? []).map((e) => e.item.scores.overall);
+  const current = scores.length
+    ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+    : undefined;
+
+  try {
+    const search = await findUpgrades({
+      kind: "tv",
+      title: show.tmdb?.name ?? show.title,
+      season,
+      runtimeMinutes,
+      currentScore: current,
+      disc,
+    });
+    return { ok: true, search, current };
+  } catch (err) {
+    return failed(err);
+  }
+}
+
+export type SweepRow = {
+  path: string;
+  /** The best release found, or nothing when the search came back empty. */
+  best?: {
+    title: string;
+    score: number;
+    delta: number;
+    seeders?: number;
+    magnet?: string;
+  };
+  error?: string;
+};
+
+/**
+ * One search per film, for the sweep over everything flagged for attention.
+ *
+ * Serialised with a gap rather than fired in parallel: each search fans out to
+ * every tracker Jackett knows, and the trackers are the ones that would rate
+ * limit. The caller passes a handful of paths at a time and keeps its own
+ * progress, so a long sweep stays interruptible and no single request has to
+ * survive the whole run.
+ */
+export async function sweepUpgrades(paths: string[]): Promise<SweepRow[]> {
+  const BATCH_LIMIT = 5;
+  const GAP_MS = 700;
+
+  const rows: SweepRow[] = [];
+
+  for (const moviePath of paths.slice(0, BATCH_LIMIT)) {
+    if (rows.length > 0) await new Promise((r) => setTimeout(r, GAP_MS));
+
+    const response = await findUpgradesForMovie(moviePath);
+    if (!response.ok) {
+      rows.push({ path: moviePath, error: response.error });
+      continue;
+    }
+
+    const best = response.search.results[0];
+    rows.push({
+      path: moviePath,
+      best: best
+        ? {
+            title: best.title,
+            // The disc-relative score where a disc is known, matching what the
+            // film's own page reports — see findUpgradesForMovie.
+            score: best.score,
+            delta: best.delta ?? 0,
+            seeders: best.seeders,
+            magnet: best.magnet,
+          }
+        : undefined,
+    });
+  }
+
+  return rows;
 }

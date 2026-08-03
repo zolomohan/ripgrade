@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { Art } from "@/app/art";
 import { findDuplicateGroup, type LibraryItem } from "@/lib/library";
-import { artUrl, decodeId, movieId } from "@/lib/routes";
+import { decodeId, movieId } from "@/lib/routes";
 import { RevealButton } from "./reveal-button";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,8 @@ type Row = {
   best?: number[];
   /** True when every copy agrees — rendered quietly so differences stand out. */
   same: boolean;
+  /** A rubric score rather than a measurement, and set in the score face. */
+  scored?: boolean;
 };
 
 /** Marks the columns whose score is highest, unless everything ties. */
@@ -66,6 +69,7 @@ function buildRows(copies: LibraryItem[]): Row[] {
     label: string,
     render: (m: LibraryItem) => string,
     score?: (m: LibraryItem) => number | undefined,
+    scored?: boolean,
   ): Row => {
     const values = copies.map(render);
     return {
@@ -73,6 +77,7 @@ function buildRows(copies: LibraryItem[]): Row[] {
       values,
       best: score ? rank(copies.map(score)) : undefined,
       same: new Set(values).size === 1,
+      scored,
     };
   };
 
@@ -86,21 +91,25 @@ function buildRows(copies: LibraryItem[]): Row[] {
       "Overall score",
       (m) => String(m.scores.overall),
       (m) => m.scores.overall,
+      true,
     ),
     row(
       "Video score",
       (m) => String(m.scores.video),
       (m) => m.scores.video,
+      true,
     ),
     row(
       "Audio score",
       (m) => String(m.scores.audio),
       (m) => m.scores.audio,
+      true,
     ),
     row(
       "Release score",
       (m) => String(m.scores.release),
       (m) => m.scores.release,
+      true,
     ),
     row("Status", (m) => m.status),
     row(
@@ -249,11 +258,12 @@ export default async function ComparePage({
               {copies.map((copy, i) => (
                 <th key={copy.path} className="px-4 py-3 align-top">
                   <div className="flex items-start gap-3">
-                    {copy.poster ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={artUrl(copy.poster)}
-                        alt=""
+                    {copy.poster || copy.art.poster ? (
+                      <Art
+                        src={copy.poster}
+                        remote={copy.art.poster}
+                        version={copy.artAt}
+                        size="w92"
                         className="h-16 w-11 shrink-0 rounded-chip object-cover ring-1 ring-line"
                       />
                     ) : (
@@ -293,7 +303,7 @@ export default async function ComparePage({
                 {r.values.map((value, i) => (
                   <td
                     key={i}
-                    className={`px-4 py-2 ${
+                    className={`px-4 py-2 ${r.scored ? "font-score" : ""} ${
                       r.same
                         ? "opacity-45"
                         : r.best?.includes(i)

@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { artUrl, movieId, showId } from "@/lib/routes";
-import { imageUrl } from "@/lib/image-url";
+import { movieId, posterName, showId } from "@/lib/routes";
 import { getEpisodeContext, type ShowEpisode } from "@/lib/shows";
 import { groupIssues, type Status } from "@/lib/derive";
 import { backupBytes } from "@/lib/convert";
 import { getDisc } from "@/lib/disc";
+import { hasJackett } from "@/lib/jackett";
 import { getMovie, type LibraryItem } from "@/lib/library";
+import { Art } from "@/app/art";
 import { FormatBadges } from "@/app/format-badges";
+import { UpgradeButton } from "@/app/release-search";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { ArtworkEditor } from "./artwork-editor";
 import { BackButton } from "./back-button";
@@ -205,6 +207,7 @@ export default async function MoviePage({
   const { breakdown } = movie;
   // Full specs live in the disc table; the derived payload only carries the gaps.
   const disc = movie.tmdb ? getDisc(movie.tmdb.id) : undefined;
+  const jackettReady = hasJackett();
 
   // An episode is not identified on its own — everything TMDb knows about it
   // comes through its series, so the page looks the file up in its show and
@@ -215,24 +218,37 @@ export default async function MoviePage({
   // The still is of this episode; the show's backdrop is of the series. For a
   // page about one episode the still is the truer image, and it also stops
   // every episode of a show looking identical.
+  // An episode's still is served from TMDb already, so it has no local file;
+  // everything else prefers the drive and falls back to where it came from.
   const backdrop = tv?.episode.stillPath
-    ? imageUrl(tv.episode.stillPath, "original")
-    : (movie.fanart ?? tv?.show.fanart) &&
-      artUrl(movie.fanart ?? tv!.show.fanart!);
+    ? undefined
+    : (movie.fanart ?? tv?.show.fanart);
+  const backdropRemote =
+    tv?.episode.stillPath ?? movie.art.fanart ?? tv?.show.art.fanart;
   const poster = movie.poster ?? tv?.show.poster;
   const logo = movie.logo ?? tv?.show.logo;
+  // Each image above came from either the film's own folder or, for an episode
+  // falling back, the series' — and the version has to be the one belonging to
+  // whichever folder actually holds the file.
+  const artAt = (own?: string) => (own ? movie.artAt : tv?.show.artAt);
+  // The poster the shelf was showing is the one that should arrive here. An
+  // episode borrowing the series' poster is showing the same object the shows
+  // grid and the series page show, so it answers to that name instead of its
+  // own — which is also the only name anything else on screen knows it by.
+  const posterKey = tv && !movie.poster ? tv.show.key : movie.path;
 
   return (
     <main className="flex flex-col pb-16">
       {/* Hero */}
       <div className="relative h-96 w-full overflow-hidden sm:h-[32rem]">
-        {backdrop ? (
+        {backdrop || backdropRemote ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Art
               src={backdrop}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover"
+              remote={backdropRemote}
+              version={artAt(movie.fanart)}
+              size="original"
+              className="enter-veil absolute inset-0 h-full w-full object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
           </>
@@ -245,13 +261,13 @@ export default async function MoviePage({
             than faded into the page. Decorative: the real title is the h1
             below, and repeating it here would only make a screen reader say it
             twice. */}
-        {logo && (
-          <div className="pointer-events-none absolute top-6 right-6 z-[5] flex justify-end sm:top-8 sm:right-8">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={artUrl(logo)}
-              alt=""
-              aria-hidden
+        {(logo || movie.art.logo || tv?.show.art.logo) && (
+          <div className="enter-drop pointer-events-none absolute top-6 right-6 z-[5] flex justify-end sm:top-8 sm:right-8">
+            <Art
+              src={logo}
+              remote={movie.art.logo ?? tv?.show.art.logo}
+              version={artAt(movie.logo)}
+              size="original"
               className="max-h-20 w-auto max-w-[45vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:max-h-28 sm:max-w-sm"
             />
           </div>
@@ -266,16 +282,16 @@ export default async function MoviePage({
       <div className="relative z-10 mx-auto -mt-28 w-full max-w-5xl px-6 sm:px-8">
         {/* Title block */}
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end">
-          {poster && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={artUrl(poster)}
-              alt=""
-              className="h-60 w-40 shrink-0 rounded-card object-cover shadow-2xl ring-1 ring-line"
-            />
-          )}
+          <Art
+            src={poster}
+            remote={movie.art.poster ?? tv?.show.art.poster}
+            version={artAt(movie.poster)}
+            transitionName={posterName(posterKey)}
+            size="w780"
+            className="h-60 w-40 shrink-0 rounded-card object-cover shadow-2xl ring-1 ring-line"
+          />
 
-          <div className="flex flex-col gap-2 pb-1">
+          <div className="enter-rise flex flex-col gap-2 pb-1">
             {/* An episode is a part of something, so the series is named above
                 it and links back — the h1 is the episode, which is what this
                 page is actually about. */}
@@ -326,6 +342,26 @@ export default async function MoviePage({
               movie.tmdb && (
                 <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
               )
+            )}
+            {/* Last, so the primary action ends the row rather than leading it.
+                Films only: an episode is searched a season at a time, from the
+                show page, because that is how television is released — a button
+                here would open a dialog whose only answer is to go elsewhere.
+
+                And only where there is something to gain. A copy that already
+                matches the best disc released has nothing above it to find, so
+                offering to go looking is offering a wasted search. `priority`
+                is the app's own answer to "does this film want attention", so
+                the button appears exactly where the rest of the app already
+                says it should — which keeps the two from drifting apart if the
+                bands are ever retuned. */}
+            {movie.kind === "movie" && movie.priority !== "None" && (
+              <UpgradeButton
+                subject={{ kind: "movie", path: movie.path }}
+                title={movie.title}
+                subtitle={movie.year ? String(movie.year) : undefined}
+                configured={jackettReady}
+              />
             )}
           </div>
         </div>

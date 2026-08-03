@@ -292,6 +292,15 @@ export type AudioTrack = {
 };
 
 /**
+ * Everything the rubric actually reads. A file supplies these by being probed;
+ * anything else that can be described in the same terms can be scored beside it.
+ */
+export type ScorableFacts = Pick<
+  Derived,
+  "resolution" | "hdr" | "bitDepth" | "bpp" | "releaseType" | "dvProfile"
+> & { audio: AudioTrack[] };
+
+/**
  * Facts supplied by TMDb. Identity only — nothing here influences the quality
  * scores, which stay derived purely from the file.
  */
@@ -305,6 +314,8 @@ export type TmdbFacts = {
   collectionId?: number;
   genres?: string[];
   posterPath?: string;
+  /** The film's own backdrop, which stands in for a fanart file we cannot read. */
+  backdropPath?: string;
   overview?: string;
   /** Only "high" is trusted enough to raise runtime issues. */
   confidence: "high" | "medium" | "low";
@@ -819,7 +830,7 @@ function detectIssues(
  * This is what makes a perfect copy of a modest disc score 100: the ceiling is
  * the disc, not an abstract ideal no release for this film ever reached.
  */
-function scoreDisc(best: NonNullable<DiscInput["best"]>): {
+export function scoreDisc(best: NonNullable<DiscInput["best"]>): {
   video: number;
   audio: number;
   release: number;
@@ -884,6 +895,35 @@ function scoreDisc(best: NonNullable<DiscInput["best"]>): {
 
 /** How far below the disc's bitrate a file has to sit before it is worth saying. */
 export const BITRATE_SHORTFALL = 0.6;
+
+/**
+ * A set of sub-scores as a percentage of the disc's own, which is what turns a
+ * rubric score into "how close is this to the best copy that exists".
+ *
+ * Compared dimension by dimension, each capped at parity, rather than as one
+ * ratio of totals: otherwise a surplus in one dimension silently pays for a
+ * deficit in another. A file with better audio than its disc but only HDR10
+ * against the disc's Dolby Vision was scoring 100 while still listing that
+ * gap — beating the disc on sound does not make you Dolby Vision.
+ *
+ * Exported because an indexer result deserves the same treatment: a release
+ * name describes a would-be copy of the same disc, and scoring it any other way
+ * would put it on a different scale from the film it is meant to replace.
+ */
+export function relativeToDisc(
+  mine: { video: number; audio: number; release: number },
+  disc: { video: number; audio: number; release: number },
+): number {
+  const share = (ours: number, theirs: number) =>
+    theirs > 0 ? Math.min(1, ours / theirs) : 1;
+
+  return Math.round(
+    100 *
+      (share(mine.video, disc.video) * WEIGHTS.video +
+        share(mine.audio, disc.audio) * WEIGHTS.audio +
+        share(mine.release, disc.release) * WEIGHTS.release),
+  );
+}
 
 type DiscInput = {
   uhdExists: boolean;
@@ -1349,6 +1389,49 @@ function releaseLines(type: ReleaseType, bpp?: number): ScoreLine[] {
   ];
 }
 
+/**
+ * The three sub-scores and the absolute overall, from facts alone.
+ *
+ * Split out of `derive` so that something which is not a file on disk can be
+ * scored on the same scale — an indexer result is a release name and a byte
+ * count, and the point of scoring one is to compare it against a film you
+ * already own. Everything a file has beyond this (a disc to be measured
+ * against, issues, a verdict) is added by the caller.
+ */
+export function scoreFacts(facts: ScorableFacts): {
+  lines: { video: ScoreLine[]; audio: ScoreLine[]; release: ScoreLine[] };
+  scores: Derived["scores"];
+  /** The weighted total before the video ceiling is applied. */
+  weighted: number;
+  /** video score + VIDEO_CEILING_BONUS. */
+  ceiling: number;
+} {
+  const lines = {
+    video: videoLines(facts),
+    audio: audioLines(facts.audio),
+    release: releaseLines(facts.releaseType, facts.bpp),
+  };
+
+  const scores = {
+    video: total(lines.video),
+    audio: total(lines.audio),
+    release: total(lines.release),
+    overall: 0,
+  };
+
+  const weighted =
+    scores.video * WEIGHTS.video +
+    scores.audio * WEIGHTS.audio +
+    scores.release * WEIGHTS.release;
+
+  // Perfect audio in a perfect container cannot rescue a weak picture: a 1080p
+  // SDR remux with TrueHD Atmos would otherwise outscore a good 4K HDR encode.
+  const ceiling = scores.video + VIDEO_CEILING_BONUS;
+  scores.overall = Math.round(Math.min(weighted, ceiling));
+
+  return { lines, scores, weighted, ceiling };
+}
+
 function verdict(
   overall: number,
   issues: Issue[],
@@ -1635,28 +1718,13 @@ export function derive(
     }
   }
 
-  const lines = {
-    video: videoLines(base),
-    audio: audioLines(audioTracks),
-    release: releaseLines(releaseType, bpp),
-  };
+  const { lines, scores, weighted, ceiling } = scoreFacts({
+    ...base,
+    audio: audioTracks,
+  });
 
-  const scores = {
-    video: total(lines.video),
-    audio: total(lines.audio),
-    release: total(lines.release),
-    overall: 0,
-  };
-
-  const weighted =
-    scores.video * WEIGHTS.video +
-    scores.audio * WEIGHTS.audio +
-    scores.release * WEIGHTS.release;
-  const ceiling = scores.video + VIDEO_CEILING_BONUS;
-
-  // Perfect audio in a perfect container cannot rescue a weak picture: a 1080p
-  // SDR remux with TrueHD Atmos would otherwise outscore a good 4K HDR encode.
-  const absolute = Math.round(Math.min(weighted, ceiling));
+  // Kept before the disc comparison below can overwrite `scores.overall`.
+  const absolute = scores.overall;
 
   // Where a disc is known, the score becomes how close this file gets to it.
   // A flawless copy of a modest disc is a 100 — there is nothing better to own.
@@ -1669,19 +1737,10 @@ export function derive(
   const discParts = disc?.best ? scoreDisc(disc.best) : undefined;
   const discScore = discFacts?.discScore;
 
-  if (discParts && discScore && discScore > 0) {
-    const share = (mine: number, theirs: number) =>
-      theirs > 0 ? Math.min(1, mine / theirs) : 1;
-
-    scores.overall = Math.round(
-      100 *
-        (share(scores.video, discParts.video) * WEIGHTS.video +
-          share(scores.audio, discParts.audio) * WEIGHTS.audio +
-          share(scores.release, discParts.release) * WEIGHTS.release),
-    );
-  } else {
-    scores.overall = absolute;
-  }
+  scores.overall =
+    discParts && discScore && discScore > 0
+      ? relativeToDisc(scores, discParts)
+      : absolute;
 
   const breakdown: Breakdown = {
     ...lines,

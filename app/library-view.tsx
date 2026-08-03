@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { ViewTransition } from "react";
 
 import { openIssues, titleKey } from "@/lib/derive";
 import type { LibraryItem } from "@/lib/library";
+import { Art } from "./art";
 import { HelpTip, ICONS, MenuItem, Popover } from "./controls";
 import { ScoreCircle, STATUS_THEME } from "./score-circle";
-import { artUrl, movieId } from "@/lib/routes";
+import { useEntrance } from "./return-to";
+import { stagger } from "./stagger";
+import { movieId, posterName } from "@/lib/routes";
 
 /**
  * Duplicate detection needs to compare films against each other, which a
@@ -343,7 +347,8 @@ function Chip({
   );
 }
 
-function Row({ movie }: { movie: LibraryItem }) {
+function Row({ movie, index }: { movie: LibraryItem; index: number }) {
+  const entrance = useEntrance();
   const object = movie.audio.find((a) => a.atmos || a.dtsx);
   const lossless = movie.audio.find((a) => a.lossless);
   const open = openIssues(movie);
@@ -352,13 +357,16 @@ function Row({ movie }: { movie: LibraryItem }) {
   return (
     <Link
       href={`/movie/${movieId(movie.path)}`}
-      className="row-enter group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-surface-strong"
+      style={stagger(index)}
+      className={`${entrance} group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-surface-strong`}
     >
-      {movie.poster ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={artUrl(movie.poster)}
-          alt=""
+      {movie.poster || movie.art.poster ? (
+        <Art
+          src={movie.poster}
+          remote={movie.art.poster}
+          version={movie.artAt}
+          transitionName={posterName(movie.path)}
+          size="w92"
           loading="lazy"
           className="h-[72px] w-12 shrink-0 rounded-chip object-cover ring-1 ring-line"
         />
@@ -428,39 +436,44 @@ function Row({ movie }: { movie: LibraryItem }) {
  * recognising, so it carries the two things you scan a shelf for: the artwork,
  * and whether this one is a problem. Everything else is a click away.
  */
-function Card({ movie }: { movie: LibraryItem }) {
+function Card({ movie, index }: { movie: LibraryItem; index: number }) {
+  const entrance = useEntrance();
   const theme = STATUS_THEME[movie.status];
   const open = openIssues(movie);
 
   return (
     <Link
       href={`/movie/${movieId(movie.path)}`}
-      className="row-enter group flex flex-col gap-2"
+      style={stagger(index)}
+      className={`${entrance} group flex flex-col gap-2`}
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
-        {movie.poster && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={artUrl(movie.poster)}
-            alt=""
+      {/* The whole tile is the thing that travels — its frame, the score on
+          it and the issue count with it. Naming the image inside instead left
+          the badge and the ring behind while the picture flew off alone. */}
+      <ViewTransition name={posterName(movie.path)} share="morph">
+        <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+          <Art
+            src={movie.poster}
+            remote={movie.art.poster}
+            version={movie.artAt}
             loading="lazy"
             className="h-full w-full object-cover motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.04]"
           />
-        )}
 
-        <span
-          className={`absolute top-2 right-2 rounded-full bg-background/85 px-1.5 py-0.5 font-display text-[11px] font-semibold tabular-nums backdrop-blur ${theme.text}`}
-          title={`${movie.status} · ${movie.scores.overall} of 100`}
-        >
-          {movie.scores.overall}
-        </span>
-
-        {open.length > 0 && (
-          <span className="absolute bottom-2 left-2 rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
-            {open.length} {open.length === 1 ? "issue" : "issues"}
+          <span
+            className={`absolute top-2 right-2 rounded-full bg-background/85 px-1.5 py-0.5 font-score text-[11px] font-semibold tabular-nums backdrop-blur ${theme.text}`}
+            title={`${movie.status} · ${movie.scores.overall} of 100`}
+          >
+            {movie.scores.overall}
           </span>
-        )}
-      </div>
+
+          {open.length > 0 && (
+            <span className="absolute bottom-2 left-2 rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
+              {open.length} {open.length === 1 ? "issue" : "issues"}
+            </span>
+          )}
+        </div>
+      </ViewTransition>
 
       <div className="min-w-0">
         <p className="truncate text-sm font-medium" title={movie.title}>
@@ -480,14 +493,14 @@ function Card({ movie }: { movie: LibraryItem }) {
 function Films({ films, view }: { films: LibraryItem[]; view: string }) {
   return view === "grid" ? (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-      {films.map((movie) => (
-        <Card key={movie.path} movie={movie} />
+      {films.map((movie, i) => (
+        <Card key={movie.path} movie={movie} index={i} />
       ))}
     </div>
   ) : (
     <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-      {films.map((movie) => (
-        <Row key={movie.path} movie={movie} />
+      {films.map((movie, i) => (
+        <Row key={movie.path} movie={movie} index={i} />
       ))}
     </div>
   );

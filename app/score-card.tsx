@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 /** One size for both rings — the two scores are peers, not headline and aside. */
 const RING_BOX = "h-28 w-28";
 
@@ -47,6 +49,10 @@ export function ScoreRing({
             className="stroke-foreground/20"
           />
         )}
+        {/* The arc is drawn from empty to the score rather than appearing at
+            it: `--ring` is the whole circumference, which is what an empty ring
+            offsets by, and the stylesheet animates from there down to the
+            offset set here. */}
         <circle
           cx="60"
           cy="60"
@@ -56,20 +62,28 @@ export function ScoreRing({
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={arc(score)}
-          className={
+          style={{ "--ring": circumference } as CSSProperties}
+          className={`score-arc ${
             ceiling === undefined
               ? ring
               : short
                 ? "stroke-amber-500/80"
                 : "stroke-emerald-500/80"
-          }
+          }`}
         />
       </svg>
       <div className="absolute text-center">
-        <span className="font-display text-3xl font-semibold tabular-nums">
-          {score}
-        </span>
-        <span className="block text-[10px] tracking-widest uppercase opacity-50">
+        {/* The figure counts up with the arc. It is drawn by a CSS counter, so
+            the thing being animated is a number rather than a string — which
+            means it is generated content, and no use to a screen reader. The
+            real score sits beside it, read rather than watched. */}
+        <span
+          aria-hidden
+          style={{ "--count": score } as CSSProperties}
+          className="score-count inline-block min-w-[2ch] font-score text-3xl font-semibold tabular-nums"
+        />
+        <span className="sr-only">{score}</span>
+        <span className="block text-[8px] tracking-widest uppercase opacity-50">
           {caption}
         </span>
       </div>
@@ -112,7 +126,7 @@ export function SubScore({
 
       <span className="relative h-1.5 flex-1 rounded-full bg-surface-strong">
         <span
-          className={`absolute inset-y-0 left-0 rounded-full ${
+          className={`score-bar absolute inset-y-0 left-0 rounded-full ${
             ceiling === undefined
               ? "bg-foreground/55"
               : severe
@@ -135,7 +149,7 @@ export function SubScore({
         )}
       </span>
 
-      <span className="w-14 shrink-0 text-right font-display text-sm font-semibold tabular-nums">
+      <span className="w-14 shrink-0 text-right font-score text-sm font-semibold tabular-nums">
         {value}
         {short && (
           <span className="font-sans text-xs font-normal opacity-40">

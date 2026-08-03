@@ -88,13 +88,18 @@ async function findMatch(movie: Derived): Promise<Match> {
 // ---------------------------------------------------------------------------
 
 function cachedMovie(id: number): TmdbMovie | undefined {
-  const row = db.prepare("SELECT json FROM tmdb_movies WHERE tmdb_id = ?").get(id) as
-    | { json: string }
-    | undefined;
+  const row = db
+    .prepare("SELECT json FROM tmdb_movies WHERE tmdb_id = ?")
+    .get(id) as { json: string } | undefined;
   return row ? (JSON.parse(row.json) as TmdbMovie) : undefined;
 }
 
-async function fetchAndCache(id: number): Promise<TmdbMovie> {
+/**
+ * The full TMDb record, from the cache when it is there. Exported because a
+ * film's runtime is what lets an indexer result's bitrate be inferred, and the
+ * wishlist stores no runtime of its own.
+ */
+export async function fetchAndCache(id: number): Promise<TmdbMovie> {
   const cached = cachedMovie(id);
   if (cached) return cached;
 
@@ -108,10 +113,17 @@ async function fetchAndCache(id: number): Promise<TmdbMovie> {
 
 export function getMatches(): Map<
   string,
-  { tmdbId: number | null; method: MatchMethod; confidence: Confidence; manual: boolean }
+  {
+    tmdbId: number | null;
+    method: MatchMethod;
+    confidence: Confidence;
+    manual: boolean;
+  }
 > {
   const rows = db
-    .prepare("SELECT path, tmdb_id, method, confidence, manual FROM tmdb_matches")
+    .prepare(
+      "SELECT path, tmdb_id, method, confidence, manual FROM tmdb_matches",
+    )
     .all() as {
     path: string;
     tmdb_id: number | null;
@@ -142,7 +154,10 @@ export function getTmdbMovies(): Map<number, TmdbMovie> {
 }
 
 /** Records a correction. Manual matches survive later automatic runs. */
-export async function setManualMatch(path: string, tmdbId: number): Promise<void> {
+export async function setManualMatch(
+  path: string,
+  tmdbId: number,
+): Promise<void> {
   await fetchAndCache(tmdbId);
   db.prepare(
     `INSERT INTO tmdb_matches (path, tmdb_id, method, confidence, manual, matched_at)
@@ -228,7 +243,8 @@ export async function runEnrich(
     progress.done += 1;
     if (match.tmdbId) progress.matched += 1;
     else progress.unmatched += 1;
-    if (confidence === "medium" || confidence === "low") progress.needsReview += 1;
+    if (confidence === "medium" || confidence === "low")
+      progress.needsReview += 1;
     options.onProgress?.({ ...progress });
   }
 

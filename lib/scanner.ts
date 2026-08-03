@@ -33,6 +33,8 @@ export type ScanState = {
   needsReview: number;
   /** Files that vanished from disk since the last scan. */
   removed: number;
+  /** Roots that could not be read — an unplugged drive, most likely. */
+  skipped?: string[];
   /** Dolby Vision RPU head scans, one per DV film we have not read yet. */
   doviTotal: number;
   doviDone: number;
@@ -94,12 +96,33 @@ const SAMPLE_OR_TRAILER =
 
 export type FoundFile = { path: string; size: number; mtimeMs: number };
 
-async function* walk(dir: string): AsyncGenerator<FoundFile> {
+/**
+ * Whether a root is there to be walked.
+ *
+ * The difference between "this folder is empty" and "this folder is not
+ * mounted" is the difference between pruning nothing and pruning everything,
+ * and `readdir` reports both as a failure to produce files.
+ */
+async function reachable(root: string): Promise<boolean> {
+  try {
+    return (await stat(root)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function* walk(
+  dir: string,
+  /** Folders that could not be read, collected as the walk goes. */
+  failed: string[] = [],
+): AsyncGenerator<FoundFile> {
   let dirents;
   try {
     dirents = await readdir(dir, { withFileTypes: true });
   } catch {
-    // Unreadable folder — skip it rather than abandoning the whole scan.
+    // Unreadable folder — skip it rather than abandoning the whole scan, but
+    // remember it: everything under it is unknown, not gone.
+    failed.push(dir);
     return;
   }
 
@@ -112,7 +135,7 @@ async function* walk(dir: string): AsyncGenerator<FoundFile> {
     const full = path.join(dir, dirent.name);
 
     if (dirent.isDirectory()) {
-      yield* walk(full);
+      yield* walk(full, failed);
       continue;
     }
     if (!dirent.isFile()) continue;
@@ -228,15 +251,35 @@ async function indexArtwork(files: FoundFile[]) {
  * keyed by path, cost nothing, and preserve any manual correction should the
  * file come back.
  */
-function pruneMissing(root: string, files: FoundFile[]): number {
+/** How many files the library already believes are under a root. */
+function knownUnder(root: string): number {
+  const prefix = root.endsWith("/") ? root : `${root}/`;
+  const row = db
+    .prepare("SELECT COUNT(*) AS n FROM probes WHERE path LIKE ?")
+    .get(`${prefix}%`) as { n: number };
+  return row.n;
+}
+
+function pruneMissing(
+  root: string,
+  files: FoundFile[],
+  /** Folders the walk could not read; their contents are unknown, not gone. */
+  unread: string[] = [],
+): number {
   const found = new Set(files.map((f) => f.path));
   const prefix = root.endsWith("/") ? root : `${root}/`;
+  const blind = unread.map((d) => (d.endsWith("/") ? d : `${d}/`));
 
   const stale = (
     db.prepare("SELECT path FROM probes").all() as { path: string }[]
   )
     .map((r) => r.path)
-    .filter((p) => p.startsWith(prefix) && !found.has(p));
+    .filter(
+      (p) =>
+        p.startsWith(prefix) &&
+        !found.has(p) &&
+        !blind.some((d) => p.startsWith(d)),
+    );
 
   if (stale.length === 0) return 0;
 
@@ -316,21 +359,64 @@ export function startScan(roots: string[]): ScanState {
       // Every folder into one list: the probe cache is keyed by path, so the
       // scan does not care which root a file came from — only pruning does.
       const files: FoundFile[] = [];
+      const walked: string[] = [];
+      const unreachable: { root: string; why: string }[] = [];
+      const unread: string[] = [];
+
       for (const root of roots) {
         setState({ ...current(), root });
-        for await (const file of walk(root)) {
+
+        // A root that cannot be read is not an empty root. With the drive
+        // unplugged every folder under it simply is not there, and walking it
+        // returns nothing — which the prune below would read as "every file
+        // you own has been deleted". It wiped a 416-file library once; the
+        // whole probe cache went with it.
+        if (!(await reachable(root))) {
+          unreachable.push({ root, why: "not reachable" });
+          continue;
+        }
+
+        const before = files.length;
+        for await (const file of walk(root, unread)) {
           files.push(file);
           setState({ ...current(), discovered: files.length });
         }
+
+        // A root that is mounted but yields nothing is the same signal as one
+        // that is missing: a drive that mounts empty, the wrong volume at the
+        // same path, permissions gone. A library folder that is genuinely
+        // empty loses nothing by being left alone — remove it in Settings.
+        if (files.length === before && knownUnder(root) > 0) {
+          unreachable.push({ root, why: "readable but empty" });
+          continue;
+        }
+
+        walked.push(root);
+      }
+
+      // Nothing was walked, so nothing can be trusted to be missing. Failing
+      // loudly is the whole point: the alternative is a scan that reports
+      // success having deleted the library.
+      if (walked.length === 0) {
+        throw new Error(
+          `Nothing was scanned — the library is untouched. ${unreachable
+            .map((u) => `${u.root} (${u.why})`)
+            .join(", ")}`,
+        );
       }
 
       // Pruned per root against the whole set, so a file is only dropped when
-      // the folder it lives under was walked and did not turn it up.
-      const removed = roots.reduce(
-        (n, root) => n + pruneMissing(root, files),
+      // the folder it lives under was walked and did not turn it up — and only
+      // for the roots that were actually walked.
+      const removed = walked.reduce(
+        (n, root) => n + pruneMissing(root, files, unread),
         0,
       );
-      setState({ ...current(), removed });
+      setState({
+        ...current(),
+        removed,
+        skipped: unreachable.map((u) => `${u.root} (${u.why})`),
+      });
 
       await probeAll(files);
       await indexArtwork(files);
@@ -496,6 +582,9 @@ export function startScan(roots: string[]): ScanState {
           `${current().probed} probed`,
           `${current().cached} unchanged`,
           ...(current().removed ? [`${current().removed} removed`] : []),
+          ...(current().skipped?.length
+            ? [`${current().skipped!.length} folder(s) unreachable`]
+            : []),
           ...(current().failed ? [`${current().failed} failed`] : []),
           ...(current().doviTotal
             ? [`${current().doviTotal} DV streams read`]

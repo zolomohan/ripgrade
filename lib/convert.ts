@@ -194,8 +194,9 @@ async function refreshFileFacts(filePath: string): Promise<void> {
 /** Seconds, read the same way for both files so the comparison is like for like. */
 async function durationOf(filePath: string): Promise<number | undefined> {
   const { mediainfo } = await probe(filePath);
-  const tracks = (mediainfo as { media?: { track?: Record<string, unknown>[] } })
-    ?.media?.track;
+  const tracks = (
+    mediainfo as { media?: { track?: Record<string, unknown>[] } }
+  )?.media?.track;
   const general = tracks?.find((t) => t["@type"] === "General");
   const value = Number.parseFloat(String(general?.["Duration"] ?? ""));
   return Number.isFinite(value) && value > 0 ? value : undefined;

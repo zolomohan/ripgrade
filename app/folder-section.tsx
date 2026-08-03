@@ -2,11 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 
-import {
-  addLibraryFolder,
-  browse,
-  removeLibraryFolder,
-} from "./actions";
+import { addLibraryFolder, browse, removeLibraryFolder } from "./actions";
 import { FolderPicker } from "./folder-picker";
 import type { DirListing } from "@/lib/browse";
 
@@ -103,7 +99,9 @@ export function FolderSection({
           className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm hover:bg-surface-strong"
         >
           <span className="opacity-70">
-            {roots.length === 0 ? "Select a library folder" : "Add another folder"}
+            {roots.length === 0
+              ? "Select a library folder"
+              : "Add another folder"}
           </span>
           <span className="shrink-0 opacity-40">{open ? "Cancel" : "+"}</span>
         </button>

@@ -170,7 +170,11 @@ function Columns({
  * The 2px gaps are surface showing through — that is what separates touching
  * segments, rather than a stroke drawn around each one.
  */
-function Coverage({ segments }: { segments: { label: string; count: number }[] }) {
+function Coverage({
+  segments,
+}: {
+  segments: { label: string; count: number }[];
+}) {
   const total = segments.reduce((n, s) => n + s.count, 0) || 1;
   const inks = ["bg-foreground/70", "bg-foreground/30", "bg-foreground/[0.12]"];
   const present = segments.filter((s) => s.count > 0);
@@ -242,9 +246,10 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
           // different scale — so they are stated rather than drawn alongside.
           <p className="border-t border-line pt-3 text-xs opacity-45">
             {count(stats.uncompared.total)}{" "}
-            {stats.uncompared.total === 1 ? "film has" : "films have"} no disc to
-            compare against, so {stats.uncompared.total === 1 ? "it is" : "they are"}{" "}
-            scored on the rubric alone —{" "}
+            {stats.uncompared.total === 1 ? "film has" : "films have"} no disc
+            to compare against, so{" "}
+            {stats.uncompared.total === 1 ? "it is" : "they are"} scored on the
+            rubric alone —{" "}
             {stats.uncompared.byStatus
               .map((b) => `${b.count} ${b.status}`)
               .join(", ")}
@@ -283,13 +288,21 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
 
       <Card title="By decade">
         {stats.decades.length > 0 ? (
-          <Columns bars={stats.decades.map((d) => ({ label: d.label, count: d.count }))} />
+          <Columns
+            bars={stats.decades.map((d) => ({
+              label: d.label,
+              count: d.count,
+            }))}
+          />
         ) : (
           <p className="text-sm opacity-45">No years known yet.</p>
         )}
       </Card>
 
-      <Card title="Biggest collections" hint={`top ${stats.collections.length}`}>
+      <Card
+        title="Biggest collections"
+        hint={`top ${stats.collections.length}`}
+      >
         <div className="flex flex-col gap-4">
           <div className="flex gap-1 text-xs">
             {[

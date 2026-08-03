@@ -1,12 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { lastListing, markReturning } from "@/app/return-to";
 import { HERO_BUTTON } from "./hero-button";
 
 /**
- * Goes back through history rather than linking to "/", so the library's
- * filters, search and sort — which live in the URL — are still there on return.
- * Falls back to the library when this page was opened directly.
+ * Returns to the listing this page was opened from, filters and all — see
+ * app/return-to.tsx for why that is a navigation rather than `history.back()`.
+ *
+ * `replace` rather than `push`: the film is dropped from history on the way
+ * out, so this leaves the same stack a real back would and the browser's own
+ * back button does not walk into the film again.
  */
 export function BackButton() {
   const router = useRouter();
@@ -15,8 +19,8 @@ export function BackButton() {
     <button
       type="button"
       onClick={() => {
-        if (window.history.length > 1) router.back();
-        else router.push("/");
+        markReturning();
+        router.replace(lastListing());
       }}
       aria-label="Back to library"
       title="Back to library"

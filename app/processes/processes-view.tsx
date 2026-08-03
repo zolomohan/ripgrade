@@ -119,7 +119,10 @@ const STATUS_STYLE: Record<JobRun["status"], string> = {
 
 /** Rounded to whatever unit makes the number small. */
 function took(run: JobRun) {
-  const seconds = Math.max(1, Math.round((run.finishedAt - run.startedAt) / 1000));
+  const seconds = Math.max(
+    1,
+    Math.round((run.finishedAt - run.startedAt) / 1000),
+  );
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.round(seconds / 60);
   return minutes < 60 ? `${minutes}m` : `${Math.round(minutes / 60)}h`;

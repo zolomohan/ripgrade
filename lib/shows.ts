@@ -69,6 +69,10 @@ export type Show = {
   poster?: string;
   fanart?: string;
   logo?: string;
+  /** The TMDb path behind each image, for when the drive is not connected. */
+  art: { poster?: string; fanart?: string; logo?: string };
+  /** When the folder's artwork was last read; see `artAt` on a film. */
+  artAt?: number;
   tmdb?: {
     id: number;
     name: string;
@@ -133,12 +137,18 @@ export function getShows(): Show[] {
   // Artwork is a fact about a folder, so it is joined on here the same way the
   // film library joins it — the show's own folder rather than the episode's.
   const artRows = db
-    .prepare("SELECT dir, poster, fanart, logo FROM artwork")
+    .prepare(
+      "SELECT dir, poster, fanart, logo, poster_src, fanart_src, logo_src, found_at FROM artwork",
+    )
     .all() as {
     dir: string;
     poster: string | null;
     fanart: string | null;
     logo: string | null;
+    poster_src: string | null;
+    fanart_src: string | null;
+    logo_src: string | null;
+    found_at: number;
   }[];
   const art = new Map(artRows.map((a) => [a.dir, a]));
 
@@ -211,6 +221,14 @@ export function getShows(): Show[] {
       poster: found?.poster ?? undefined,
       fanart: found?.fanart ?? undefined,
       logo: found?.logo ?? undefined,
+      // The series' own images stand in for a poster nobody downloaded, which
+      // is also what shows when the drive is not connected.
+      art: {
+        poster: found?.poster_src ?? record?.poster_path ?? undefined,
+        fanart: found?.fanart_src ?? record?.backdrop_path ?? undefined,
+        logo: found?.logo_src ?? undefined,
+      },
+      artAt: found?.found_at,
       tmdb: record
         ? {
             id: record.id,

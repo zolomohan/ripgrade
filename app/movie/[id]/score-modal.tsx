@@ -55,7 +55,9 @@ function Component({
             {Math.round(weight * 100)}% of overall
           </span>
         </h3>
-        <span className="text-lg font-semibold tabular-nums">{score}</span>
+        <span className="font-score text-lg font-semibold tabular-nums">
+          {score}
+        </span>
       </div>
 
       <div className="mt-3">
@@ -205,7 +207,7 @@ export function ScoreModal({
                           {breakdown.absolute} ÷ {breakdown.discScore} of the
                           disc
                         </span>
-                        <span className="text-base font-semibold tabular-nums">
+                        <span className="font-score text-base font-semibold tabular-nums">
                           {scores.overall}
                         </span>
                       </div>
@@ -213,7 +215,7 @@ export function ScoreModal({
                   ) : (
                     <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-line pt-2">
                       <span>no disc data — scored on the rubric alone</span>
-                      <span className="text-base font-semibold tabular-nums">
+                      <span className="font-score text-base font-semibold tabular-nums">
                         {scores.overall}
                       </span>
                     </div>

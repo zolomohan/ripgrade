@@ -3,9 +3,28 @@
  * of `server-only` imports and Node built-ins.
  */
 
-/** Streams artwork off the external drive; see app/api/art/route.ts. */
-export const artUrl = (filePath: string) =>
-  `/api/art?p=${encodeURIComponent(filePath)}`;
+/**
+ * Streams artwork off the external drive; see app/api/art/route.ts.
+ *
+ * `version` is when the folder was last re-indexed. Replacing a poster writes
+ * over `poster.jpg`, so without it the URL after the swap is the one the
+ * browser already has: React sees an unchanged `src` and leaves the `<img>`
+ * alone, and even a reload is answered from the disk cache. Changing the URL is
+ * what makes the new picture appear. The route ignores the parameter.
+ */
+export const artUrl = (filePath: string, version?: number) =>
+  `/api/art?p=${encodeURIComponent(filePath)}${version ? `&v=${version}` : ""}`;
+
+/**
+ * Names a poster so the browser can recognise it on both sides of a
+ * navigation: the tile in a listing and the poster on the page it opens are
+ * one object, and this is what says so.
+ *
+ * Takes the same key the route does — a film's path, a show's key — so the two
+ * cannot drift apart. Prefixed because the encoding can begin with a digit, and
+ * a CSS identifier cannot.
+ */
+export const posterName = (key: string) => `poster-${encodeId(key)}`;
 
 /**
  * Route id for a film. The absolute path is the natural key but contains
@@ -19,7 +38,10 @@ export function encodeId(value: string): string {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 export function decodeId(id: string): string {

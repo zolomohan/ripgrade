@@ -8,5 +8,10 @@
     "jsx": "preserve",
     "types": ["node"]
   },
-  "include": ["test/**/*.ts", "lib/derive.ts"]
+  "include": [
+    "test/**/*.ts",
+    "lib/derive.ts",
+    "lib/release-title.ts",
+    "lib/torznab.ts"
+  ]
 }

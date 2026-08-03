@@ -28,7 +28,9 @@ export function TempFolder({
 
   useEffect(() => {
     if (!open || listing) return;
-    startTransition(async () => setListing(await browse(current ?? defaultPath)));
+    startTransition(async () =>
+      setListing(await browse(current ?? defaultPath)),
+    );
   }, [open, listing, current, defaultPath]);
 
   return (
@@ -36,7 +38,9 @@ export function TempFolder({
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
           <p className="text-sm">
-            {current ? "Working files go to" : "Working files stay beside the film"}
+            {current
+              ? "Working files go to"
+              : "Working files stay beside the film"}
           </p>
           {current && (
             <p className="truncate font-mono text-xs opacity-45">{current}</p>

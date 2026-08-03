@@ -41,13 +41,16 @@ export function Sidebar() {
     // One element, two shapes: a rail on a wide screen, a bar across the top
     // when there is no room for one.
     <aside className="sticky top-0 z-30 flex items-center gap-4 border-b border-line bg-background/85 px-4 py-3 backdrop-blur md:fixed md:inset-y-0 md:left-0 md:w-56 md:flex-col md:items-stretch md:gap-8 md:border-r md:border-b-0 md:px-4 md:py-6">
-      {/* px-3 rather than none, so the wordmark starts on the same vertical
-          line as the labels below it rather than hanging left of them. */}
-      <Link
-        href="/"
-        className="font-logo px-3 mt-2 text-2xl leading-none font-semibold lowercase"
-      >
-        ripgrade
+      {/* px-3 rather than none, so the mark starts on the same vertical line as
+          the labels below it rather than hanging left of them. */}
+      <Link href="/" className="mt-2 flex items-center gap-2 px-3">
+        {/* Decorative: the wordmark next to it already names the app. */}
+        <span aria-hidden className="mark-skull h-7 w-[1.35rem] shrink-0" />
+        {/* No weight class: the face has one weight, and asking for bold would
+            only get a synthetic one. */}
+        <span className="font-logo text-3xl leading-none lowercase">
+          ripgrade
+        </span>
       </Link>
 
       <nav className="flex flex-1 items-center gap-1 md:flex-col md:items-stretch md:gap-0.5">

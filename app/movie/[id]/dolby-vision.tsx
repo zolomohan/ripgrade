@@ -321,7 +321,9 @@ function groupsFor(scan: DoviScan, hdr10?: Hdr10Static) {
         ? `${hdr10.masteringMin ?? 0} – ${nits(hdr10.masteringMax)} nits`
         : null,
       hdr10.maxCll !== undefined ? `MaxCLL ${nits(hdr10.maxCll)} nits` : null,
-      hdr10.maxFall !== undefined ? `MaxFALL ${nits(hdr10.maxFall)} nits` : null,
+      hdr10.maxFall !== undefined
+        ? `MaxFALL ${nits(hdr10.maxFall)} nits`
+        : null,
     ].filter(Boolean);
     if (parts.length) {
       brightness.push({ label: "Base layer", value: parts.join(" · ") });
@@ -645,7 +647,9 @@ export function DolbyVision({
       <div className="flex flex-col gap-5 rounded-card border border-line bg-surface p-5">
         {verdict && (
           <div className="flex flex-col gap-4">
-            <div className={`rounded-control border p-4 ${TONES[verdict.tone]}`}>
+            <div
+              className={`rounded-control border p-4 ${TONES[verdict.tone]}`}
+            >
               <p className="text-sm font-medium">{verdict.headline}</p>
               <p className="mt-1 text-sm opacity-80">{verdict.body}</p>
             </div>
@@ -734,120 +738,123 @@ export function DolbyVision({
           </div>
         )}
 
-        {dvProfile === 7 && el?.kind !== "complex-fel" && backupBytes === undefined && (
-          <div className="flex flex-col gap-3 rounded-control border border-line p-4">
-            {converting ? (
-              <>
-                <div className="flex items-baseline justify-between gap-3">
-                  <p className="text-sm font-medium">
-                    Converting to Profile 8.1…
-                  </p>
-                  <div className="flex items-baseline gap-3">
-                    <p className="text-xs tabular-nums opacity-45">
-                      {convert?.percent !== undefined &&
-                        `${Math.round(convert.percent)}% · `}
-                      step {convert?.step ?? 1} of {convert?.steps ?? 4}
+        {dvProfile === 7 &&
+          el?.kind !== "complex-fel" &&
+          backupBytes === undefined && (
+            <div className="flex flex-col gap-3 rounded-control border border-line p-4">
+              {converting ? (
+                <>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="text-sm font-medium">
+                      Converting to Profile 8.1…
                     </p>
-                    <button
-                      type="button"
-                      onClick={async () => setConvert(await stopConvert())}
-                      className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
-                    >
-                      Cancel
-                    </button>
+                    <div className="flex items-baseline gap-3">
+                      <p className="text-xs tabular-nums opacity-45">
+                        {convert?.percent !== undefined &&
+                          `${Math.round(convert.percent)}% · `}
+                        step {convert?.step ?? 1} of {convert?.steps ?? 4}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={async () => setConvert(await stopConvert())}
+                        className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
+                  <p className="text-xs opacity-45">
+                    {convert?.label ?? "Working"} — this rewrites the whole
+                    file, so it takes a while. Leaving this page will not stop
+                    it.
+                  </p>
+                  <div className="h-1 overflow-hidden rounded-full bg-surface-strong">
+                    <div
+                      className="h-full rounded-full bg-foreground/70 transition-[width] duration-500"
+                      style={{
+                        // Bytes written when they can be counted; otherwise the
+                        // step is the only thing there is to show.
+                        width: `${
+                          convert?.percent ??
+                          ((convert?.step ?? 1) / (convert?.steps ?? 3)) * 100
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </>
+              ) : convert?.status === "done" && convert.path === moviePath ? (
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm text-emerald-600 dark:text-emerald-400">
+                    Converted to Profile 8.1
+                    {convert.summary &&
+                      ` — ${convert.summary} of enhancement layer discarded`}
+                    {convert.check && `, ${convert.check}`}.
+                  </p>
+                  <p className="text-xs opacity-45">
+                    The original is beside it as{" "}
+                    <code className="font-mono">
+                      {fileName}
+                      {BACKUP_SUFFIX}
+                    </code>
+                    .
+                  </p>
                 </div>
-                <p className="text-xs opacity-45">
-                  {convert?.label ?? "Working"} — this rewrites the whole file,
-                  so it takes a while. Leaving this page will not stop it.
-                </p>
-                <div className="h-1 overflow-hidden rounded-full bg-surface-strong">
-                  <div
-                    className="h-full rounded-full bg-foreground/70 transition-[width] duration-500"
-                    style={{
-                      // Bytes written when they can be counted; otherwise the
-                      // step is the only thing there is to show.
-                      width: `${
-                        convert?.percent ??
-                        ((convert?.step ?? 1) / (convert?.steps ?? 3)) * 100
-                      }%`,
-                    }}
-                  />
-                </div>
-              </>
-            ) : convert?.status === "done" && convert.path === moviePath ? (
-              <div className="flex flex-col gap-1">
-                <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                  Converted to Profile 8.1
-                  {convert.summary &&
-                    ` — ${convert.summary} of enhancement layer discarded`}
-                  {convert.check && `, ${convert.check}`}.
-                </p>
-                <p className="text-xs opacity-45">
-                  The original is beside it as{" "}
-                  <code className="font-mono">
-                    {fileName}
-                    {BACKUP_SUFFIX}
-                  </code>
-                  .
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs opacity-45">
-                  {el?.provisional
-                    ? "Read every frame before converting — a sample cannot rule out brightness expansion later in the film."
-                    : "Hand this to dovi_convert, which keeps the original and verifies the result."}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setConfirming(true)}
-                  // A full enhancement layer has to be read in full first: the
-                  // verdict that makes it safe rests on frames nobody has read.
-                  disabled={running || el?.provisional}
-                  title={
-                    el?.provisional
-                      ? "Needs a full pass first"
-                      : "Convert to Profile 8.1"
-                  }
-                  className="shrink-0 rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40"
-                >
-                  Convert to Profile 8.1
-                </button>
-
-                {confirming && (
-                  <ConfirmModal
-                    title="Rewrite this file as Profile 8.1?"
-                    confirmLabel="Convert"
-                    onConfirm={runConvert}
-                    onCancel={() => setConfirming(false)}
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs opacity-45">
+                    {el?.provisional
+                      ? "Read every frame before converting — a sample cannot rule out brightness expansion later in the film."
+                      : "Hand this to dovi_convert, which keeps the original and verifies the result."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(true)}
+                    // A full enhancement layer has to be read in full first: the
+                    // verdict that makes it safe rests on frames nobody has read.
+                    disabled={running || el?.provisional}
+                    title={
+                      el?.provisional
+                        ? "Needs a full pass first"
+                        : "Convert to Profile 8.1"
+                    }
+                    className="shrink-0 rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40"
                   >
-                    <ul className="list-disc space-y-1.5 pl-5">
-                      <li>
-                        The converted file takes this one&rsquo;s place; the
-                        original is renamed to{" "}
-                        <code className="font-mono text-xs">
-                          {fileName}
-                          {BACKUP_SUFFIX}
-                        </code>{" "}
-                        and left beside it, so it needs room for both.
-                      </li>
-                      <li>
-                        Any secondary video track — picture-in-picture
-                        commentary, multi-angle — is dropped. Audio and
-                        subtitles are kept.
-                      </li>
-                      <li>
-                        It rewrites the whole file, so it takes a while. You can
-                        cancel at any point without touching the original.
-                      </li>
-                    </ul>
-                  </ConfirmModal>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+                    Convert to Profile 8.1
+                  </button>
+
+                  {confirming && (
+                    <ConfirmModal
+                      title="Rewrite this file as Profile 8.1?"
+                      confirmLabel="Convert"
+                      onConfirm={runConvert}
+                      onCancel={() => setConfirming(false)}
+                    >
+                      <ul className="list-disc space-y-1.5 pl-5">
+                        <li>
+                          The converted file takes this one&rsquo;s place; the
+                          original is renamed to{" "}
+                          <code className="font-mono text-xs">
+                            {fileName}
+                            {BACKUP_SUFFIX}
+                          </code>{" "}
+                          and left beside it, so it needs room for both.
+                        </li>
+                        <li>
+                          Any secondary video track — picture-in-picture
+                          commentary, multi-angle — is dropped. Audio and
+                          subtitles are kept.
+                        </li>
+                        <li>
+                          It rewrites the whole file, so it takes a while. You
+                          can cancel at any point without touching the original.
+                        </li>
+                      </ul>
+                    </ConfirmModal>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
         {dvProfile === 7 && (
           <details className="group rounded-control border border-line">

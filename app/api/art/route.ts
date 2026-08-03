@@ -22,11 +22,10 @@ export async function GET(request: Request) {
   // the table but not to this check is served as a 404, which is exactly how
   // logos arrived broken.
   const known = db
-    .prepare(
-      "SELECT 1 FROM artwork WHERE poster = ? OR fanart = ? OR logo = ?",
-    )
+    .prepare("SELECT 1 FROM artwork WHERE poster = ? OR fanart = ? OR logo = ?")
     .get(target, target, target);
-  if (!known) return new Response(`Not a known artwork path: ${target}`, { status: 404 });
+  if (!known)
+    return new Response(`Not a known artwork path: ${target}`, { status: 404 });
 
   const type = MIME_TYPES[path.extname(target).toLowerCase()];
   if (!type) return new Response("Unsupported image type", { status: 415 });
@@ -38,12 +37,28 @@ export async function GET(request: Request) {
     size = stats.size;
     mtimeMs = stats.mtimeMs;
   } catch (err) {
-    return new Response(err instanceof Error ? err.message : String(err), { status: 404 });
+    return new Response(err instanceof Error ? err.message : String(err), {
+      status: 404,
+    });
   }
+
+  // A versioned URL is a new URL every time the folder is re-indexed, so it can
+  // be held without asking. An unversioned one is the same URL before and after
+  // a poster is replaced, so it has to be revalidated — cheap, since the ETag
+  // below turns an unchanged file into a 304.
+  const versioned = new URL(request.url).searchParams.has("v");
+  const cacheControl = versioned
+    ? "public, max-age=3600, must-revalidate"
+    : "no-cache";
 
   const etag = `"${size}-${Math.floor(mtimeMs)}"`;
   if (request.headers.get("if-none-match") === etag) {
-    return new Response(null, { status: 304 });
+    // Repeated on the 304 as well: it is what tells the browser how long the
+    // copy it already has stays good for.
+    return new Response(null, {
+      status: 304,
+      headers: { "Cache-Control": cacheControl, ETag: etag },
+    });
   }
 
   const stream = Readable.toWeb(createReadStream(target)) as ReadableStream;
@@ -52,8 +67,7 @@ export async function GET(request: Request) {
     headers: {
       "Content-Type": type,
       "Content-Length": String(size),
-      // Posters change only when the file on disk does, and the ETag catches that.
-      "Cache-Control": "public, max-age=3600, must-revalidate",
+      "Cache-Control": cacheControl,
       ETag: etag,
     },
   });

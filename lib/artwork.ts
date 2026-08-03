@@ -7,6 +7,13 @@ import { db } from "./db";
 
 export type Artwork = { poster?: string; fanart?: string; logo?: string };
 
+/** Where each image came from on TMDb, for when the drive is not there. */
+export type ArtworkSources = {
+  poster?: string;
+  fanart?: string;
+  logo?: string;
+};
+
 /**
  * Checked in this order, so the result never depends on readdir ordering. It
  * also means a newly saved `poster.jpeg` takes precedence over an older
@@ -98,6 +105,8 @@ export async function findArtwork(dir: string): Promise<Artwork> {
 export async function reindexDir(dir: string): Promise<Artwork> {
   const art = await findArtwork(dir);
 
+  // The source columns are left alone: they say where a file came from, which
+  // re-reading the folder cannot know and must not erase.
   db.prepare(
     `INSERT INTO artwork (dir, poster, fanart, logo, found_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(dir) DO UPDATE SET
@@ -105,9 +114,35 @@ export async function reindexDir(dir: string): Promise<Artwork> {
        fanart = excluded.fanart,
        logo = excluded.logo,
        found_at = excluded.found_at`,
-  ).run(dir, art.poster ?? null, art.fanart ?? null, art.logo ?? null, Date.now());
+  ).run(
+    dir,
+    art.poster ?? null,
+    art.fanart ?? null,
+    art.logo ?? null,
+    Date.now(),
+  );
 
   return art;
+}
+
+/**
+ * Remembers the TMDb path an image was taken from.
+ *
+ * The file on the drive stays the artwork — full resolution, yours, and there
+ * whether or not the internet is. This is only so the app has something to show
+ * when the drive is unplugged, which is the one case where a local file is
+ * worse than a URL.
+ */
+export function recordArtworkSource(
+  dir: string,
+  kind: keyof typeof SAVED_NAMES,
+  tmdbPath: string,
+): void {
+  const column = `${kind}_src`;
+  db.prepare(
+    `INSERT INTO artwork (dir, found_at, ${column}) VALUES (?, ?, ?)
+     ON CONFLICT(dir) DO UPDATE SET ${column} = excluded.${column}`,
+  ).run(dir, Date.now(), tmdbPath);
 }
 
 /**

@@ -115,7 +115,13 @@ CREATE TABLE IF NOT EXISTS wishlist (
   title       TEXT NOT NULL,
   year        INTEGER,
   poster_path TEXT,
-  overview    TEXT
+  overview    TEXT,
+  -- The set the film belongs to, so the list can be read a franchise at a
+  -- time. The checked flag separates "asked TMDb, it has none" from "never
+  -- asked", which is what stops a standalone film being looked up for ever.
+  collection_id      INTEGER,
+  collection_name    TEXT,
+  collection_checked INTEGER NOT NULL DEFAULT 0
 );
 
 -- Shows and their seasons, cached exactly like the film records: expensive to
@@ -174,7 +180,13 @@ CREATE TABLE IF NOT EXISTS artwork (
   poster      TEXT,
   fanart      TEXT,
   logo        TEXT,
-  found_at    INTEGER NOT NULL
+  found_at    INTEGER NOT NULL,
+  -- Where each image was downloaded from, as a TMDb path. The file on the
+  -- drive is the real artwork; this is what the app can still show when the
+  -- drive is not plugged in.
+  poster_src  TEXT,
+  fanart_src  TEXT,
+  logo_src    TEXT
 );
 `;
 
@@ -216,6 +228,30 @@ const artworkColumns = (
 
 if (!artworkColumns.includes("logo")) {
   db.exec("ALTER TABLE artwork ADD COLUMN logo TEXT");
+}
+
+if (!artworkColumns.includes("poster_src")) {
+  db.exec("ALTER TABLE artwork ADD COLUMN poster_src TEXT");
+  db.exec("ALTER TABLE artwork ADD COLUMN fanart_src TEXT");
+  db.exec("ALTER TABLE artwork ADD COLUMN logo_src TEXT");
+}
+
+/**
+ * The same exception, for the same reason. The wishlist is not derived from
+ * anything — it is a list you wrote — so it cannot be rebuilt by rescanning,
+ * which makes adding the columns in place the only option rather than the
+ * convenient one.
+ */
+const wishlistColumns = (
+  db.prepare("PRAGMA table_info(wishlist)").all() as { name: string }[]
+).map((c) => c.name);
+
+if (!wishlistColumns.includes("collection_id")) {
+  db.exec("ALTER TABLE wishlist ADD COLUMN collection_id INTEGER");
+  db.exec("ALTER TABLE wishlist ADD COLUMN collection_name TEXT");
+  db.exec(
+    "ALTER TABLE wishlist ADD COLUMN collection_checked INTEGER NOT NULL DEFAULT 0",
+  );
 }
 
 /**

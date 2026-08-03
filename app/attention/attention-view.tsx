@@ -6,9 +6,12 @@ import { useState, useTransition } from "react";
 
 import { beginConvert, resolveIssue } from "@/app/actions";
 import { PillCount } from "@/app/controls";
+import { Art } from "@/app/art";
 import { ArtworkEditor } from "@/app/movie/[id]/artwork-editor";
+import { stagger } from "@/app/stagger";
 import { groupIssues, type Issue, type Status } from "@/lib/derive";
-import { artUrl, compareId, movieId } from "@/lib/routes";
+import { compareId, movieId } from "@/lib/routes";
+import { UpgradeSweep, type SweepTarget } from "./upgrade-sweep";
 
 /**
  * Everything outstanding, in one place, resolvable where it is listed.
@@ -25,14 +28,20 @@ export type AttentionData = {
     title: string;
     year?: number;
     poster?: string;
+    /** TMDb path behind it, shown when the drive is not connected. */
+    posterSrc?: string;
     status: Status;
     issues: Issue[];
   }[];
+  /** Films whose verdict says a better copy is worth looking for. */
+  upgrades: SweepTarget[];
   profile7: {
     path: string;
     title: string;
     year?: number;
     poster?: string;
+    /** TMDb path behind it, shown when the drive is not connected. */
+    posterSrc?: string;
     kind?: "mel" | "simple-fel" | "complex-fel" | "unknown";
     provisional: boolean;
     read?: "head" | "full";
@@ -54,6 +63,8 @@ export type AttentionData = {
     title: string;
     year?: number;
     poster?: string;
+    /** TMDb path behind it, shown when the drive is not connected. */
+    posterSrc?: string;
     tmdbId?: number;
     missing: ("poster" | "fanart" | "logo")[];
   }[];
@@ -62,6 +73,8 @@ export type AttentionData = {
     title: string;
     year?: number;
     poster?: string;
+    /** TMDb path behind it, shown when the drive is not connected. */
+    posterSrc?: string;
     fileName: string;
     confidence: string;
   }[];
@@ -84,12 +97,12 @@ const size = (bytes: number) =>
     ? `${(bytes / 1e12).toFixed(2)} TB`
     : `${(bytes / 1e9).toFixed(1)} GB`;
 
-function Poster({ src }: { src?: string }) {
-  return src ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={artUrl(src)}
-      alt=""
+function Poster({ src, remote }: { src?: string; remote?: string }) {
+  return src || remote ? (
+    <Art
+      src={src}
+      remote={remote}
+      size="w92"
       loading="lazy"
       className="h-[72px] w-12 shrink-0 rounded-chip object-cover ring-1 ring-line"
     />
@@ -145,7 +158,8 @@ function Section({
   return <section className="flex flex-col gap-2">{children}</section>;
 }
 
-type Category = "issues" | "profile7" | "duplicates" | "matches" | "artwork";
+type Category =
+  "issues" | "upgrades" | "profile7" | "duplicates" | "matches" | "artwork";
 
 /** What each enhancement layer means for converting, in a few words. */
 const EL_VERDICT: Record<string, { text: string; tone: string }> = {
@@ -164,9 +178,16 @@ const EL_VERDICT: Record<string, { text: string; tone: string }> = {
   unknown: { text: "Enhancement layer unknown", tone: "opacity-50" },
 };
 
-export function AttentionView({ data }: { data: AttentionData }) {
+export function AttentionView({
+  data,
+  jackettReady,
+}: {
+  data: AttentionData;
+  jackettReady: boolean;
+}) {
   const categories: { key: Category; label: string; count: number }[] = [
     { key: "issues", label: "Open issues", count: data.issues.length },
+    { key: "upgrades", label: "Better releases", count: data.upgrades.length },
     { key: "profile7", label: "Profile 7", count: data.profile7.length },
     { key: "duplicates", label: "Duplicates", count: data.duplicates.length },
     {
@@ -217,8 +238,12 @@ export function AttentionView({ data }: { data: AttentionData }) {
     });
   }
 
+  // Upgrades count here too, or a library whose only outstanding work is a
+  // shelf of films worth replacing would render an all-clear over a tab that
+  // has something in it.
   const nothing =
     data.issues.length === 0 &&
+    data.upgrades.length === 0 &&
     data.duplicates.length === 0 &&
     data.artwork.length === 0 &&
     data.matches.length === 0;
@@ -228,7 +253,8 @@ export function AttentionView({ data }: { data: AttentionData }) {
       <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
         <p className="text-sm opacity-50">
           Nothing outstanding. Every issue is resolved, every film is matched
-          and has artwork, and there are no duplicates.
+          and has artwork, there are no duplicates, and nothing is flagged for
+          an upgrade.
         </p>
       </div>
     );
@@ -257,15 +283,22 @@ export function AttentionView({ data }: { data: AttentionData }) {
         ))}
       </div>
 
+      {tab === "upgrades" && (
+        <Section title="Better releases" count={data.upgrades.length}>
+          <UpgradeSweep targets={data.upgrades} configured={jackettReady} />
+        </Section>
+      )}
+
       {tab === "issues" && (
         <Section title="Open issues" count={data.issues.length}>
           <div className="flex flex-col gap-4">
-            {data.issues.map((film) => (
+            {data.issues.map((film, i) => (
               <div
                 key={film.path}
-                className="flex gap-4 rounded-card border border-line bg-surface p-4"
+                style={stagger(i)}
+                className="row-enter flex gap-4 rounded-card border border-line bg-surface p-4"
               >
-                <Poster src={film.poster} />
+                <Poster src={film.poster} remote={film.posterSrc} />
 
                 <div className="flex min-w-0 flex-1 flex-col gap-3">
                   <Title path={film.path} title={film.title} year={film.year} />
@@ -342,12 +375,13 @@ export function AttentionView({ data }: { data: AttentionData }) {
       {tab === "profile7" && (
         <Section title="Profile 7" count={data.profile7.length}>
           <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-            {data.profile7.map((film) => (
+            {data.profile7.map((film, i) => (
               <div
                 key={film.path}
-                className="flex items-center gap-4 px-4 py-3"
+                style={stagger(i)}
+                className="row-enter flex items-center gap-4 px-4 py-3"
               >
-                <Poster src={film.poster} />
+                <Poster src={film.poster} remote={film.posterSrc} />
                 <div className="min-w-0 flex-1">
                   <Title path={film.path} title={film.title} year={film.year} />
                   <p
@@ -431,10 +465,11 @@ export function AttentionView({ data }: { data: AttentionData }) {
       {tab === "duplicates" && (
         <Section title="Duplicates" count={data.duplicates.length}>
           <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-            {data.duplicates.map((group) => (
+            {data.duplicates.map((group, i) => (
               <div
                 key={group.key}
-                className="flex items-center gap-4 px-4 py-3"
+                style={stagger(i)}
+                className="row-enter flex items-center gap-4 px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">
@@ -469,12 +504,13 @@ export function AttentionView({ data }: { data: AttentionData }) {
       {tab === "matches" && (
         <Section title="Matches to review" count={data.matches.length}>
           <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-            {data.matches.map((film) => (
+            {data.matches.map((film, i) => (
               <div
                 key={film.path}
-                className="flex items-center gap-4 px-4 py-3"
+                style={stagger(i)}
+                className="row-enter flex items-center gap-4 px-4 py-3"
               >
-                <Poster src={film.poster} />
+                <Poster src={film.poster} remote={film.posterSrc} />
                 <div className="min-w-0 flex-1">
                   <Title path={film.path} title={film.title} year={film.year} />
                   <p className="mt-0.5 truncate font-mono text-xs opacity-40">
@@ -493,12 +529,13 @@ export function AttentionView({ data }: { data: AttentionData }) {
       {tab === "artwork" && (
         <Section title="Missing artwork" count={data.artwork.length}>
           <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-            {data.artwork.map((film) => (
+            {data.artwork.map((film, i) => (
               <div
                 key={film.path}
-                className="flex items-center gap-4 px-4 py-3"
+                style={stagger(i)}
+                className="row-enter flex items-center gap-4 px-4 py-3"
               >
-                <Poster src={film.poster} />
+                <Poster src={film.poster} remote={film.posterSrc} />
                 <div className="min-w-0 flex-1">
                   <Title path={film.path} title={film.title} year={film.year} />
                   <p className="mt-0.5 text-xs opacity-50">

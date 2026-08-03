@@ -162,15 +162,15 @@ export default function HowItWorks() {
         lede="MediaInfo reads the profile out of the container's configuration record and stops there. Everything that decides what can be done with the file is inside the RPU, and the only way to see it is to demux the stream."
       >
         <p className="text-sm opacity-70">
-          So every scan does. The video stream of each Dolby Vision film is piped
-          through <code className="font-mono text-xs">dovi_tool</code>, which
-          parses the first {HEAD_FRAMES} frames — enough to be past the studio
-          logos and into the film itself. Nothing the size of the film is ever
-          written to disk, and because the read stops at the head of the file it
-          takes well under a second whether the film is 5 GB or 90 GB. What comes
-          back is authored once and fixed for the whole stream: the profile, the
-          enhancement layer type, the content mapping version, the L5 active
-          area, and the static L6 fallback metadata.
+          So every scan does. The video stream of each Dolby Vision film is
+          piped through <code className="font-mono text-xs">dovi_tool</code>,
+          which parses the first {HEAD_FRAMES} frames — enough to be past the
+          studio logos and into the film itself. Nothing the size of the film is
+          ever written to disk, and because the read stops at the head of the
+          file it takes well under a second whether the film is 5 GB or 90 GB.
+          What comes back is authored once and fixed for the whole stream: the
+          profile, the enhancement layer type, the content mapping version, the
+          L5 active area, and the static L6 fallback metadata.
         </p>
         <p className="text-sm opacity-70">
           The enhancement layer is the reason this stage exists. Profile 7 is a
@@ -200,8 +200,7 @@ export default function HowItWorks() {
               name: "Complex FEL — brightness expansion",
               doing:
                 "Reconstructing brightness the base layer does not hold. The classic case is a film mastered at 4000 nits whose HDR10 base was trimmed to 1000 — the missing highlights live in the enhancement layer.",
-              cost:
-                "Those highlights clip, and the tone mapping below them was authored for the two layers combined, so the result is wrong rather than merely poorer.",
+              cost: "Those highlights clip, and the tone mapping below them was authored for the two layers combined, so the result is wrong rather than merely poorer.",
               verdict: "Keep Profile 7",
               tone: "text-red-600 dark:text-red-400",
             },
@@ -228,10 +227,10 @@ export default function HowItWorks() {
           ))}
         </div>
         <p className="text-sm opacity-70">
-          Telling the last two apart is a brightness comparison. The Dolby Vision
-          grade&rsquo;s measured peak — MaxCLL across the frames read — is set
-          against the peak the base layer declares for itself. Clearing it by
-          more than {EL_BRIGHTNESS_MARGIN} nits means the layer is adding
+          Telling the last two apart is a brightness comparison. The Dolby
+          Vision grade&rsquo;s measured peak — MaxCLL across the frames read —
+          is set against the peak the base layer declares for itself. Clearing
+          it by more than {EL_BRIGHTNESS_MARGIN} nits means the layer is adding
           brightness rather than refining it. Files that declare no MaxCLL are
           judged against {ASSUMED_BL_PEAK} nits, which is what a UHD disc base
           layer is trimmed to far more often than not. These are{" "}
@@ -262,8 +261,8 @@ export default function HowItWorks() {
             Reading every frame
           </h3>
           <p className="text-sm opacity-70">
-            The scan reads a sample, and two things a sample cannot establish are
-            offered on demand from each film&rsquo;s page. It takes minutes
+            The scan reads a sample, and two things a sample cannot establish
+            are offered on demand from each film&rsquo;s page. It takes minutes
             rather than milliseconds, because it reads the entire file.
           </p>
           <ul className="list-disc space-y-2 pl-5 text-sm opacity-70">
@@ -272,12 +271,13 @@ export default function HowItWorks() {
                 What the film actually peaks at.
               </span>{" "}
               The measured L1 light levels describe only the frames parsed, and
-              the opening of a film is logos and titles rather than its brightest
-              moment. Sampling Skyfall&rsquo;s first frames reports MaxCLL near
-              200 nits; across the whole film it is over 700. Since that peak is
-              what separates a simple FEL from a complex one, a sample can only
-              settle the question one way: finding expansion proves it is there,
-              while not finding it proves only that the opening was clean.
+              the opening of a film is logos and titles rather than its
+              brightest moment. Sampling Skyfall&rsquo;s first frames reports
+              MaxCLL near 200 nits; across the whole film it is over 700. Since
+              that peak is what separates a simple FEL from a complex one, a
+              sample can only settle the question one way: finding expansion
+              proves it is there, while not finding it proves only that the
+              opening was clean.
             </li>
             <li>
               <span className="font-medium opacity-100">

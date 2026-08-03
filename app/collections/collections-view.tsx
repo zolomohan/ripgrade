@@ -6,8 +6,9 @@ import { Fragment, useState, useTransition } from "react";
 
 import { addWish } from "@/app/actions";
 import type { CollectionFilm, CollectionSet } from "@/lib/collections";
-import { imageUrl } from "@/lib/image-url";
-import { artUrl, movieId } from "@/lib/routes";
+import { Art } from "@/app/art";
+import { stagger } from "@/app/stagger";
+import { movieId } from "@/lib/routes";
 
 /**
  * A collection is only interesting for the gap between what it contains and
@@ -32,19 +33,13 @@ function Poster({
   action?: React.ReactNode;
 }) {
   const local = film.owned?.poster;
-  const src = local
-    ? artUrl(local)
-    : film.posterPath
-      ? imageUrl(film.posterPath, "w342")
-      : undefined;
 
   return (
     <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
-      {src && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={src}
-          alt=""
+      {(local || film.posterPath) && (
+        <Art
+          src={local}
+          remote={film.posterPath}
           loading="lazy"
           // The dimming belongs to the artwork, not to the tile: on the tile it
           // also faded the heart sitting on top of it.
@@ -61,11 +56,13 @@ function Film({
   onWish,
   wishlisted,
   busy,
+  index,
 }: {
   film: CollectionFilm;
   onWish?: () => void;
   wishlisted?: boolean;
   busy?: boolean;
+  index: number;
 }) {
   const heart = film.owned ? undefined : (
     // On the poster rather than under it: it belongs to the film, and a row of
@@ -76,7 +73,9 @@ function Film({
       onClick={onWish}
       disabled={busy || wishlisted}
       aria-label={
-        wishlisted ? `${film.title} is on your wishlist` : `Add ${film.title} to wishlist`
+        wishlisted
+          ? `${film.title} is on your wishlist`
+          : `Add ${film.title} to wishlist`
       }
       aria-pressed={wishlisted}
       title={wishlisted ? "On your wishlist" : "Add to wishlist"}
@@ -120,6 +119,7 @@ function Film({
     return (
       <Link
         href={`/movie/${movieId(film.owned.path)}`}
+        style={stagger(index)}
         className="row-enter flex flex-col gap-2"
       >
         {body}
@@ -127,7 +127,11 @@ function Film({
     );
   }
 
-  return <div className="row-enter flex flex-col gap-2">{body}</div>;
+  return (
+    <div style={stagger(index)} className="row-enter flex flex-col gap-2">
+      {body}
+    </div>
+  );
 }
 
 export function CollectionsView({
@@ -235,31 +239,34 @@ export function CollectionsView({
           )}
 
           <section className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="font-display text-lg font-semibold tracking-tight">
-              {set.name}
-            </h2>
-            <span className="shrink-0 text-xs opacity-45">
-              {set.missing
-                ? `${set.owned.length} of ${set.owned.length + set.missing.length}`
-                : `${set.owned.length} held`}
-            </span>
-          </div>
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="font-display text-lg font-semibold tracking-tight">
+                {set.name}
+              </h2>
+              <span className="shrink-0 text-xs opacity-45">
+                {set.missing
+                  ? `${set.owned.length} of ${set.owned.length + set.missing.length}`
+                  : `${set.owned.length} held`}
+              </span>
+            </div>
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
-            {set.owned.map((film) => (
-              <Film key={film.tmdbId} film={film} />
-            ))}
-            {set.missing?.map((film) => (
-              <Film
-                key={film.tmdbId}
-                film={film}
-                busy={pending}
-                wishlisted={onList.has(film.tmdbId)}
-                onWish={() => wish(film)}
-              />
-            ))}
-          </div>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
+              {set.owned.map((film, i) => (
+                <Film key={film.tmdbId} film={film} index={i} />
+              ))}
+              {/* The missing carry on counting from the held, so one wave
+                  crosses the whole set rather than two starting together. */}
+              {set.missing?.map((film, i) => (
+                <Film
+                  key={film.tmdbId}
+                  film={film}
+                  index={set.owned.length + i}
+                  busy={pending}
+                  wishlisted={onList.has(film.tmdbId)}
+                  onWish={() => wish(film)}
+                />
+              ))}
+            </div>
           </section>
         </Fragment>
       ))}

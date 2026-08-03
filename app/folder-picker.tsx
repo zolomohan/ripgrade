@@ -48,7 +48,9 @@ export function FolderPicker({
 }: {
   initialListing: DirListing;
   /** What the chosen folder is for — the picker itself does not care. */
-  onSave: (path: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onSave: (
+    path: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   saveLabel?: string;
 }) {
   const [listing, setListing] = useState<DirListing>(initialListing);

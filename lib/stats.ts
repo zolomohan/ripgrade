@@ -181,7 +181,8 @@ export function computeStats(items: LibraryItem[]): LibraryStats {
       "Profile 5",
     ],
     (m) => {
-      if (m.hdr !== "Dolby Vision" || m.dvProfile === undefined) return undefined;
+      if (m.hdr !== "Dolby Vision" || m.dvProfile === undefined)
+        return undefined;
       if (m.dvProfile !== 7) return `Profile ${m.dvProfile}`;
 
       const el = classifyEnhancementLayer(m.dovi, m.hdr10);

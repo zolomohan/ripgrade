@@ -70,6 +70,7 @@ export function deriveAll(): number {
       collectionId: movie.belongs_to_collection?.id,
       genres: movie.genres?.map((g) => g.name),
       posterPath: movie.poster_path ?? undefined,
+      backdropPath: movie.backdrop_path ?? undefined,
       overview: movie.overview,
       // A manual correction is authoritative; otherwise trust the match method.
       confidence: match.manual
@@ -128,6 +129,17 @@ export type LibraryItem = Derived & {
   fanart?: string;
   /** Title treatment, when one has been downloaded or was already there. */
   logo?: string;
+  /**
+   * The TMDb path behind each image, where one is known — what the pages fall
+   * back to when the drive is unplugged and the local file cannot be read.
+   */
+  art: { poster?: string; fanart?: string; logo?: string };
+  /**
+   * When the folder's artwork was last read from disk. The images above keep
+   * their names when they are replaced, so this is what tells a browser holding
+   * the old `poster.jpg` that it is looking at a different picture now.
+   */
+  artAt?: number;
   /** You have looked at this one and accepted it as-is, issues and all. */
   acknowledged: boolean;
   note?: string;
@@ -150,12 +162,18 @@ export function getLibrary(): LibraryItem[] {
     .all() as { derived: string; first_seen: number }[];
 
   const artRows = db
-    .prepare("SELECT dir, poster, fanart, logo FROM artwork")
+    .prepare(
+      "SELECT dir, poster, fanart, logo, poster_src, fanart_src, logo_src, found_at FROM artwork",
+    )
     .all() as {
     dir: string;
     poster: string | null;
     fanart: string | null;
     logo: string | null;
+    poster_src: string | null;
+    fanart_src: string | null;
+    logo_src: string | null;
+    found_at: number;
   }[];
   const art = new Map(artRows.map((a) => [a.dir, a]));
   const triage = getTriage();
@@ -170,6 +188,14 @@ export function getLibrary(): LibraryItem[] {
       poster: found?.poster ?? undefined,
       fanart: found?.fanart ?? undefined,
       logo: found?.logo ?? undefined,
+      // Where each came from, so a page still has something to show when the
+      // drive holding the file is not connected.
+      art: {
+        poster: found?.poster_src ?? derived.tmdb?.posterPath,
+        fanart: found?.fanart_src ?? derived.tmdb?.backdropPath,
+        logo: found?.logo_src ?? undefined,
+      },
+      artAt: found?.found_at,
       acknowledged: decided?.acknowledged ?? false,
       note: decided?.note,
       resolved: acks.get(derived.path) ?? [],

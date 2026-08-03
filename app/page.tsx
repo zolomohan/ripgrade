@@ -4,6 +4,7 @@ import { getLibraryFolders } from "./actions";
 import { getMovies } from "@/lib/library";
 import { getShows } from "@/lib/shows";
 import { LibraryTabs } from "./library-tabs";
+import { ScanButton } from "./scan-button";
 
 // Every render reads the local database, so there is nothing worth prerendering.
 export const dynamic = "force-dynamic";
@@ -19,16 +20,21 @@ export default async function Page() {
         <LibraryTabs movies={movies} shows={shows} hasRoot={roots.length > 0} />
       ) : (
         // The folder picker lives in Settings now, so an empty library has to
-        // say where to go rather than simply being blank.
-        <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
+        // say where to go rather than simply being blank. The scan button lives
+        // with the tabs, which are not rendered here — so an empty library gets
+        // one of its own, or the only thing it can do is nothing.
+        <div className="flex flex-col items-center gap-3 rounded-card border border-line bg-surface px-4 py-12 text-center">
           <p className="text-sm opacity-60">
             {roots.length > 0
-              ? "Nothing scanned yet — choose a folder and scan."
+              ? "Nothing scanned yet — scan to fill the library."
               : "No library folder chosen yet."}
           </p>
+
+          {roots.length > 0 && <ScanButton />}
+
           <Link
             href="/settings"
-            className="mt-2 inline-block text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+            className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
           >
             {roots.length > 0
               ? "Manage folders in Settings"

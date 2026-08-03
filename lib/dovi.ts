@@ -60,9 +60,9 @@ export function getDoviScans(): Map<string, DoviScan> {
 }
 
 export function getDoviScan(filePath: string): DoviScan | undefined {
-  const row = db.prepare("SELECT dovi FROM probes WHERE path = ?").get(filePath) as
-    | { dovi: string | null }
-    | undefined;
+  const row = db
+    .prepare("SELECT dovi FROM probes WHERE path = ?")
+    .get(filePath) as { dovi: string | null } | undefined;
   if (!row?.dovi) return undefined;
   try {
     return JSON.parse(row.dovi) as DoviScan;
@@ -215,8 +215,7 @@ function extractRpu(
       if (doviCode === 0) return resolve({ ok: true });
       resolve({
         ok: false,
-        error:
-          doviErr.trim() || ffErr.trim() || `dovi_tool exited ${doviCode}`,
+        error: doviErr.trim() || ffErr.trim() || `dovi_tool exited ${doviCode}`,
       });
     };
 

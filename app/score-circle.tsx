@@ -44,20 +44,40 @@ export const scoreTheme = (score: number) =>
   ];
 
 /**
- * The ring is the score and its colour is the verdict — a film can be red at 66
- * and green at 66, and the arc shows how far round it has actually got.
+ * A score as a ring: the number in the middle, the arc showing how far round it
+ * got, and the colour carrying the verdict — a film can be red at 66 and green
+ * at 66 depending on what it is being measured against.
+ *
+ * Takes a bare number rather than a film, so anything scored on the rubric can
+ * be drawn the same way. An indexer result has no status of its own, and a
+ * predicted 94 should look exactly like a measured one.
  */
-export function ScoreCircle({ movie }: { movie: LibraryItem }) {
-  const theme = STATUS_THEME[movie.status];
+export function ScoreDial({
+  score,
+  theme = scoreTheme(score),
+  title,
+  srLabel,
+  size = 44,
+}: {
+  score: number;
+  /** Overridden where a status, not the number, decides the colour. */
+  theme?: { stroke: string; text: string };
+  title?: string;
+  srLabel?: string;
+  size?: number;
+}) {
+  // Drawn in the viewBox's own units and scaled by the box, so one geometry
+  // serves every size the app asks for.
   const radius = 18;
   const circumference = 2 * Math.PI * radius;
 
   return (
     <div
-      className="relative grid h-11 w-11 shrink-0 place-items-center"
-      title={`${movie.status} · ${movie.scores.overall} of 100`}
+      className="relative grid shrink-0 place-items-center"
+      style={{ width: size, height: size }}
+      title={title ?? `${score} of 100`}
     >
-      <svg viewBox="0 0 44 44" className="absolute h-11 w-11 -rotate-90">
+      <svg viewBox="0 0 44 44" className="absolute h-full w-full -rotate-90">
         <circle
           cx="22"
           cy="22"
@@ -74,19 +94,32 @@ export function ScoreCircle({ movie }: { movie: LibraryItem }) {
           strokeWidth="3"
           strokeLinecap="round"
           strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - movie.scores.overall / 100)}
+          strokeDashoffset={
+            circumference * (1 - Math.max(0, Math.min(100, score)) / 100)
+          }
           className={theme.stroke}
         />
       </svg>
       <span
         aria-hidden
-        className={`relative font-display text-sm font-semibold tabular-nums ${theme.text}`}
+        className={`relative font-score font-semibold tabular-nums ${theme.text}`}
+        style={{ fontSize: size * 0.32 }}
       >
-        {movie.scores.overall}
+        {score}
       </span>
-      <span className="sr-only">
-        {movie.status}, score {movie.scores.overall} of 100
-      </span>
+      <span className="sr-only">{srLabel ?? `Score ${score} of 100`}</span>
     </div>
+  );
+}
+
+/** The same ring for a film, where the verdict rather than the number colours it. */
+export function ScoreCircle({ movie }: { movie: LibraryItem }) {
+  return (
+    <ScoreDial
+      score={movie.scores.overall}
+      theme={STATUS_THEME[movie.status]}
+      title={`${movie.status} · ${movie.scores.overall} of 100`}
+      srLabel={`${movie.status}, score ${movie.scores.overall} of 100`}
+    />
   );
 }

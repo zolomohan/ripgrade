@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { hasJackett } from "@/lib/jackett";
 import { decodeShowId } from "@/lib/routes";
 import { getShow } from "@/lib/shows";
 import { ShowView } from "./show-view";
@@ -25,7 +26,7 @@ export default async function ShowPage({
 
   return (
     <main className="flex flex-col pb-16">
-      <ShowView show={show} />
+      <ShowView show={show} jackettReady={hasJackett()} />
     </main>
   );
 }

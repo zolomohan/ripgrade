@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import {
-  Afacad,
   Inter,
   Instrument_Sans,
   JetBrains_Mono,
+  Jim_Nightshade,
+  Orbitron,
 } from "next/font/google";
 import "./globals.css";
 import { scanStatus } from "./actions";
 import { ScanProvider } from "./scan-provider";
+import { RememberListing } from "./return-to";
 import { Sidebar } from "./sidebar";
+import { Splash } from "./splash";
 
 // Inter for the interface: it holds up at 11px, which this app leans on, and
 // its tabular figures keep the score columns from jittering.
@@ -26,11 +29,21 @@ const display = Instrument_Sans({
   display: "swap",
 });
 
-// The wordmark only. One weight, because the logo is the only thing set in it
-// and a second would just be an invitation to use this face elsewhere.
-const logo = Afacad({
+// The wordmark only — a script face that belongs next to the skull and nowhere
+// else in the interface. Jim Nightshade ships one weight, so nothing sets a
+// heavier one: asking for bold here only gets the browser's synthetic smear.
+const logo = Jim_Nightshade({
   variable: "--font-logo-face",
-  weight: "600",
+  weight: "400",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+// Scores, and only scores. Every number this app exists to produce is set in
+// it, so a figure in Orbitron is a verdict and a figure in anything else is a
+// measurement — the two stop having to be told apart by their surroundings.
+const score = Orbitron({
+  variable: "--font-score-face",
   subsets: ["latin"],
   display: "swap",
 });
@@ -58,9 +71,15 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${display.variable} ${mono.variable} ${logo.variable} h-full antialiased`}
+      // Set on the document rather than passed down, because what it marks is
+      // the load itself: every list rendered under the splash reads it, and
+      // `SplashDone` clears it once the splash is gone. See globals.css.
+      data-splash=""
+      className={`${inter.variable} ${display.variable} ${mono.variable} ${logo.variable} ${score.variable} h-full antialiased`}
     >
       <body className="min-h-full">
+        <Splash />
+        <RememberListing />
         <ScanProvider initialState={scan}>
           <Sidebar />
           {/* Clears the rail once it is fixed; above that it is a top bar and

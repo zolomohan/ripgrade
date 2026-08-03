@@ -2,16 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 
-import {
-  addWish,
-  removeWish,
-  searchTmdb,
-  type SearchHit,
-} from "@/app/actions";
+import { addWish, removeWish, searchTmdb, type SearchHit } from "@/app/actions";
 import { imageUrl } from "@/lib/image-url";
 import { movieId } from "@/lib/routes";
+import { ReleaseSearchModal } from "@/app/release-search";
+import { stagger } from "@/app/stagger";
 import type { WishlistEntry } from "@/lib/wishlist";
 
 /**
@@ -46,14 +43,35 @@ function Poster({ path, alt }: { path?: string; alt: string }) {
 function Entry({
   entry,
   onRemove,
+  onFind,
   busy,
+  index,
 }: {
   entry: WishlistEntry;
   onRemove: () => void;
+  onFind: () => void;
   busy: boolean;
+  index: number;
 }) {
   return (
-    <li className="row-enter flex items-start gap-4 px-4 py-3">
+    // The row itself is the trigger, so there is no separate button to find.
+    // A div with a button role rather than a real one: it holds a remove
+    // button and a link of its own, and nesting those inside a <button> is
+    // invalid and unreachable by keyboard.
+    <li
+      role="button"
+      tabIndex={0}
+      onClick={onFind}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onFind();
+        }
+      }}
+      aria-label={`Find releases for ${entry.title}`}
+      style={stagger(index)}
+      className="row-enter flex cursor-pointer items-start gap-4 px-4 py-3 transition-colors hover:bg-surface-strong"
+    >
       <Poster path={entry.posterPath} alt="" />
 
       <div className="min-w-0 flex-1">
@@ -68,6 +86,7 @@ function Entry({
           <p className="mt-1 text-xs">
             <Link
               href={`/movie/${movieId(entry.owned.path)}`}
+              onClick={(e) => e.stopPropagation()}
               className="text-emerald-600 underline underline-offset-4 dark:text-emerald-400"
             >
               In the library
@@ -85,7 +104,6 @@ function Entry({
             </p>
           )
         )}
-
       </div>
 
       {/* `self-center` rather than inheriting the row's `items-start`: the text
@@ -93,7 +111,10 @@ function Entry({
           sitting up there beside it just looks dropped. */}
       <button
         type="button"
-        onClick={onRemove}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
         disabled={busy}
         aria-label={`Remove ${entry.title}`}
         title="Remove from wishlist"
@@ -127,15 +148,38 @@ const VIEWS = [
 function Tile({
   entry,
   onRemove,
+  onFind,
   busy,
+  index,
 }: {
   entry: WishlistEntry;
   onRemove: () => void;
+  onFind: () => void;
   busy: boolean;
+  index: number;
 }) {
   return (
-    <div className="row-enter group relative flex flex-col gap-2">
-      <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+    <div
+      style={stagger(index)}
+      className="row-enter group relative flex flex-col gap-2"
+    >
+      {/* The poster is the trigger — a grid of films you want is a grid of
+          things to go and find, so there is nothing else the tile would do.
+          A div with a button role because it holds a link and a button of its
+          own; nesting those inside a <button> is invalid. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onFind}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onFind();
+          }
+        }}
+        aria-label={`Find releases for ${entry.title}`}
+        className="relative aspect-[2/3] cursor-pointer overflow-hidden rounded-card bg-surface-strong ring-1 ring-line transition-shadow hover:ring-2 hover:ring-line-strong"
+      >
         {entry.posterPath && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -149,6 +193,7 @@ function Tile({
         {entry.owned && (
           <Link
             href={`/movie/${movieId(entry.owned.path)}`}
+            onClick={(e) => e.stopPropagation()}
             className="absolute inset-x-2 bottom-2 rounded-chip bg-background/85 px-1.5 text-center text-[10px] leading-[18px] font-medium text-emerald-600 backdrop-blur dark:text-emerald-400"
           >
             In the library
@@ -159,7 +204,10 @@ function Tile({
             reach for one. */}
         <button
           type="button"
-          onClick={onRemove}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
           disabled={busy}
           aria-label={`Remove ${entry.title}`}
           title="Remove from wishlist"
@@ -182,9 +230,7 @@ function Tile({
         <p className="truncate text-sm font-medium" title={entry.title}>
           {entry.title}
         </p>
-        {entry.year && (
-          <p className="text-[11px] opacity-45">{entry.year}</p>
-        )}
+        {entry.year && <p className="text-[11px] opacity-45">{entry.year}</p>}
       </div>
     </div>
   );
@@ -193,11 +239,17 @@ function Tile({
 export function WishlistView({
   entries,
   canSearch,
+  jackettReady,
 }: {
   entries: WishlistEntry[];
   canSearch: boolean;
+  jackettReady: boolean;
 }) {
   const [view, setView] = useState("grid");
+  // Which entry has its release search open. Held here rather than in the row
+  // because the dialog belongs to the page, not to the tile that opened it —
+  // and clicking a second tile should swap the film rather than stack another.
+  const [finding, setFinding] = useState<WishlistEntry | null>(null);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -245,6 +297,39 @@ export function WishlistView({
 
   const listed = new Set(entries.map((e) => e.tmdbId));
   const owned = entries.filter((e) => e.owned).length;
+
+  /**
+   * Grouped by set, but only where a set is more than one film: a heading over
+   * a single poster fragments the page without telling you anything the poster
+   * did not. Sets come first, alphabetically; everything else falls into one
+   * unheaded group at the end, in the order it was added.
+   */
+  const groups = (() => {
+    const bySet = new Map<string, WishlistEntry[]>();
+    const loose: WishlistEntry[] = [];
+
+    for (const entry of entries) {
+      if (!entry.collection) {
+        loose.push(entry);
+        continue;
+      }
+      const bucket = bySet.get(entry.collection.name);
+      if (bucket) bucket.push(entry);
+      else bySet.set(entry.collection.name, [entry]);
+    }
+
+    const sets: { name?: string; entries: WishlistEntry[] }[] = [];
+    for (const [name, list] of bySet) {
+      if (list.length > 1) sets.push({ name, entries: list });
+      else loose.push(...list);
+    }
+
+    sets.sort((a, b) => a.name!.localeCompare(b.name!));
+    // Newest first within the loose group, which is how the list read before.
+    loose.sort((a, b) => b.addedAt - a.addedAt);
+
+    return loose.length ? [...sets, { entries: loose }] : sets;
+  })();
 
   function search() {
     setError(null);
@@ -304,6 +389,41 @@ export function WishlistView({
             >
               {pending ? "…" : "Search"}
             </button>
+
+            {/* On the same line as the search rather than over the list: it is
+                a control, and the list below it has no header of its own to
+                hang controls from. */}
+            {entries.length > 0 && (
+              <div className="flex shrink-0 items-center gap-0.5 rounded-control border border-line p-0.5">
+                {VIEWS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setView(option.key)}
+                    aria-label={`${option.label} view`}
+                    aria-pressed={view === option.key}
+                    title={`${option.label} view`}
+                    className={`grid h-8 w-8 place-items-center rounded-[6px] transition-colors ${
+                      view === option.key
+                        ? "bg-surface-strong"
+                        : "opacity-40 hover:opacity-100"
+                    }`}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path d={option.path} />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            )}
           </form>
 
           {hits && (
@@ -360,8 +480,8 @@ export function WishlistView({
 
         {!canSearch && (
           <p className="text-sm opacity-50">
-            Searching needs a TMDb key — set TMDB_READ_TOKEN and restart. Anything
-            already on the list below still works without one.
+            Searching needs a TMDb key — set TMDB_READ_TOKEN and restart.
+            Anything already on the list below still works without one.
           </p>
         )}
 
@@ -372,83 +492,93 @@ export function WishlistView({
         )}
       </section>
 
-      <section className="flex flex-col gap-2">
-        <div className="flex items-baseline justify-between gap-4">
-          <h2 className="font-display text-lg font-semibold tracking-tight">
-            Wishlist
-          </h2>
-          <div className="flex items-center gap-3">
-            {entries.length > 0 && (
-              <p className="text-xs opacity-45">
-                {entries.length} {entries.length === 1 ? "film" : "films"}
-                {owned > 0 && ` · ${owned} now in the library`}
-              </p>
-            )}
-            {entries.length > 0 && (
-              <div className="flex items-center gap-0.5 rounded-control border border-line p-0.5">
-                {VIEWS.map((option) => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    onClick={() => setView(option.key)}
-                    aria-label={`${option.label} view`}
-                    aria-pressed={view === option.key}
-                    title={`${option.label} view`}
-                    className={`grid h-7 w-7 place-items-center rounded-[6px] transition-colors ${
-                      view === option.key
-                        ? "bg-surface-strong"
-                        : "opacity-40 hover:opacity-100"
-                    }`}
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-3.5 w-3.5"
-                    >
-                      <path d={option.path} />
-                    </svg>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+      {entries.length === 0 ? (
+        <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
+          <p className="text-sm opacity-50">
+            Nothing on the list yet. Search above to add the films you are
+            hunting for.
+          </p>
         </div>
+      ) : (
+        <>
+          {groups.map((group, i) => (
+            <Fragment key={group.name ?? "loose"}>
+              {/* The same fading rule the collections page uses: the groups are
+                  already separated by space, and this only marks where one ends
+                  without drawing a box around it. */}
+              {i > 0 && (
+                <div
+                  aria-hidden
+                  className="h-px bg-gradient-to-r from-transparent via-line-strong to-transparent"
+                />
+              )}
 
-        {entries.length === 0 ? (
-          <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
-            <p className="text-sm opacity-50">
-              Nothing on the list yet. Search above to add the films you are
-              hunting for.
+              <section className="flex flex-col gap-3">
+                {group.name && (
+                  <div className="flex items-baseline justify-between gap-4">
+                    <h2 className="font-display text-lg font-semibold tracking-tight">
+                      {group.name}
+                    </h2>
+                    <span className="shrink-0 text-xs opacity-45">
+                      {group.entries.length} wanted
+                    </span>
+                  </div>
+                )}
+
+                {view === "grid" ? (
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                    {group.entries.map((entry, n) => (
+                      <Tile
+                        key={entry.tmdbId}
+                        entry={entry}
+                        index={n}
+                        busy={pending}
+                        onFind={() => setFinding(entry)}
+                        onRemove={() => run(() => removeWish(entry.tmdbId))}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {view !== "grid" ? (
+                  <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+                    {group.entries.map((entry, n) => (
+                      <Entry
+                        key={entry.tmdbId}
+                        entry={entry}
+                        index={n}
+                        busy={pending}
+                        onFind={() => setFinding(entry)}
+                        onRemove={() => run(() => removeWish(entry.tmdbId))}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+            </Fragment>
+          ))}
+
+          <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-4 text-xs opacity-45">
+            <p>
+              {entries.length} {entries.length === 1 ? "film" : "films"}
             </p>
+            {owned > 0 && <p>{owned} now in the library</p>}
           </div>
-        ) : view === "grid" ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-            {entries.map((entry) => (
-              <Tile
-                key={entry.tmdbId}
-                entry={entry}
-                busy={pending}
-                onRemove={() => run(() => removeWish(entry.tmdbId))}
-              />
-            ))}
-          </div>
-        ) : (
-          <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-            {entries.map((entry) => (
-              <Entry
-                key={entry.tmdbId}
-                entry={entry}
-                busy={pending}
-                onRemove={() => run(() => removeWish(entry.tmdbId))}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
+        </>
+      )}
+
+      {/* One dialog for the page, whichever tile or row opened it. A wanted
+          film has no copy to improve on, so this is the acquire case: the same
+          search, only without a score to beat. */}
+      {finding && (
+        <ReleaseSearchModal
+          subject={{ kind: "wish", tmdbId: finding.tmdbId }}
+          title={finding.title}
+          subtitle={finding.year ? String(finding.year) : undefined}
+          configured={jackettReady}
+          onClose={() => setFinding(null)}
+        />
+      )}
     </div>
   );
 }

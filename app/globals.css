@@ -15,6 +15,37 @@
 
   --line: rgba(0, 0, 0, 0.1);
   --line-strong: rgba(0, 0, 0, 0.2);
+
+  /*
+   * One clock for the opening. The splash starts leaving at `--splash-exit`,
+   * and a list that mounted underneath it waits until `--splash-hold` to begin
+   * arriving — a little before the overlay is fully clear, so the cascade is
+   * already in motion as it lifts rather than starting into an empty page.
+   * `app/splash-done.tsx` clears the marker a beat after both have finished.
+   */
+  --splash-exit: 1500ms;
+  --splash-hold: 1750ms;
+
+  /*
+   * The other opening: a poster leaving a shelf for the page it belongs to.
+   * The morph is the slowest thing on screen because it is the thing being
+   * followed — everything else on the arriving page is timed against it, and
+   * comes in behind it rather than with it.
+   */
+  --morph: 620ms;
+  --morph-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  /* Long enough that a two-digit count reads as counting rather than flicking
+     through numbers, and that the arc can be watched being drawn. */
+  --score-fill: 1400ms;
+
+  /*
+   * Gentler than `--morph-ease`, which front-loads hard: on that curve the
+   * count reached three quarters of the score in the first third of its time
+   * and then crawled, which is what made it feel hurried however long it ran.
+   * This keeps the pace near even and only eases at the finish.
+   */
+  --score-ease: cubic-bezier(0.25, 0.55, 0.35, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +72,7 @@
   --font-sans: var(--font-inter);
   --font-display: var(--font-display-face);
   --font-logo: var(--font-logo-face);
+  --font-score: var(--font-score-face);
   --font-mono: var(--font-mono-face);
 
   /* Three steps, chosen by element size rather than by whim. */
@@ -69,17 +101,327 @@ body {
   border-radius: inherit;
 }
 
-/* Rows and cards ease rather than snap when filters change the list. */
+/*
+ * Rows and cards ease rather than snap when filters change the list.
+ *
+ * `--i` is the item's place in its list, set by `stagger()`. Each one waits its
+ * turn, which turns a shelf appearing all at once into a shelf filling in — the
+ * order it fills in is the order the sort just put it in, so the animation says
+ * something rather than only softening the edge. The wait is capped: past a
+ * dozen items the cascade has made its point, and a long shelf should not take
+ * two seconds to finish arriving.
+ *
+ * `backwards` is what holds an item invisible while it waits. Without it a
+ * delayed row paints at full opacity first and then drops back to start.
+ */
 @media (prefers-reduced-motion: no-preference) {
   .row-enter {
-    animation: row-enter 180ms ease-out;
+    animation: row-enter 200ms ease-out backwards;
+    animation-delay: calc(min(var(--i, 0), 12) * 26ms);
+  }
+
+  /*
+   * A list that mounts while the splash is still up is filling in behind an
+   * opaque screen — the shelf was already settled by the time anyone saw it.
+   * `data-splash` marks that window, so those items hold their first frame
+   * until the overlay starts lifting and then cascade into view.
+   *
+   * The marker is on <html> from the server and removed once, so this applies
+   * to the load that shows the splash and to nothing after it. If the removal
+   * never runs, every navigation is a full load with a splash — and the wait
+   * is right again for exactly that reason.
+   */
+  [data-splash] .row-enter {
+    animation-delay: calc(var(--splash-hold) + min(var(--i, 0), 12) * 26ms);
   }
 }
 
 @keyframes row-enter {
   from {
     opacity: 0;
-    transform: translateY(2px);
+    transform: translateY(4px);
+  }
+}
+
+/*
+ * The skull beside the wordmark. Drawn as a mask rather than an <img> so the one
+ * file in /public paints itself in the current foreground colour, instead of
+ * needing a light copy and a dark copy that can fall out of step.
+ */
+.mark-skull {
+  background-color: currentColor;
+  -webkit-mask: url("/skull.svg") no-repeat center / contain;
+  mask: url("/skull.svg") no-repeat center / contain;
+}
+
+/*
+ * The splash: two seconds of skull and wordmark over the page while it loads.
+ *
+ * All of it is one timeline written in delays rather than in state — the mark
+ * draws itself in, the name follows a beat later, and at 1.5s the whole thing
+ * lifts and fades, leaving the app already rendered underneath. `visibility`
+ * lands with the last frame so the overlay stops taking clicks for good; it
+ * animates discretely, which is exactly what is wanted at the end of a fade.
+ */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--background);
+  animation: splash-out 500ms ease-in var(--splash-exit) forwards;
+}
+
+.splash-mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  /* The lift is on the group so the mark and the name leave as one object. */
+  animation: splash-lift 500ms ease-in var(--splash-exit) forwards;
+}
+
+.splash-skull {
+  animation: splash-rise 700ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.splash-word {
+  animation: splash-rise 700ms cubic-bezier(0.2, 0.7, 0.3, 1) 200ms both;
+}
+
+@keyframes splash-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+  }
+}
+
+@keyframes splash-lift {
+  to {
+    opacity: 0;
+    transform: translateY(-14px) scale(1.06);
+  }
+}
+
+@keyframes splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/*
+ * Same two seconds, no movement: the mark and the name fade up in place and the
+ * overlay fades out. Skipping the splash entirely would be the other reading,
+ * but a screen going straight from nothing to a full library is its own jolt.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .splash-mark {
+    animation: none;
+  }
+
+  .splash-skull,
+  .splash-word {
+    animation: splash-appear 500ms ease both;
+  }
+
+  .splash-word {
+    animation-delay: 150ms;
+  }
+}
+
+@keyframes splash-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
+ * Navigation, as one object moving rather than two pages swapping.
+ *
+ * A poster carries its identity across the route change — the tile you clicked
+ * and the poster on the page it opens are the same picture, and the browser is
+ * told so by name (see `posterName` in lib/routes). Everything else on the two
+ * pages crossfades underneath it, which is the browser's default and the right
+ * default: the poster is the thing that moved, so it should be the only thing
+ * that appears to.
+ */
+::view-transition-group(.morph) {
+  animation-duration: var(--morph);
+  animation-timing-function: var(--morph-ease);
+}
+
+/*
+ * The two snapshots are a grid thumbnail and a hero-sized poster, and scaling
+ * one into the other cannot be pixel-exact. A touch of blur across the middle
+ * of the flight hides the interpolation without softening either end. Held to
+ * the same duration as the group, or the crossfade finishes early and the
+ * second half of the flight is the destination image being stretched.
+ */
+::view-transition-image-pair(.morph) {
+  animation-name: morph-blur;
+  animation-duration: var(--morph);
+}
+
+@keyframes morph-blur {
+  35% {
+    filter: blur(3px);
+  }
+}
+
+/*
+ * What the poster arrives into.
+ *
+ * The page it lands on is not a still to be revealed all at once: the backdrop
+ * is the ground the poster comes to rest on, so it settles first, and the text
+ * beside it follows a beat later — the same order the eye takes them in. Timed
+ * off `--morph` so the whole arrival stays one movement if that changes.
+ *
+ * Ordinary CSS on the page's own elements rather than transition pseudos,
+ * because a nested <ViewTransition> does not survive a route change: React
+ * activates a boundary that pairs across the two pages, which is what carries
+ * the poster, and leaves everything inside a wholly replaced page to the root
+ * crossfade. The browser paints that root snapshot live, so these run inside it
+ * and carry on afterwards — and they play on a direct load of the page too,
+ * where there is no transition at all and the arrival still wants shaping.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .enter-veil {
+    animation: veil-in calc(var(--morph) * 0.85) ease-out backwards;
+  }
+
+  .enter-rise {
+    animation: rise-in calc(var(--morph) * 0.6) var(--morph-ease)
+      calc(var(--morph) * 0.22) backwards;
+  }
+
+  /*
+   * The title treatment drops in from above the frame it belongs to. It is the
+   * one thing on the page drawn to sit on artwork rather than beside it, so it
+   * arrives like a title card does — after the picture it lands on, and from
+   * off the top of it.
+   */
+  .enter-drop {
+    animation: drop-in calc(var(--morph) * 0.7) var(--morph-ease)
+      calc(var(--morph) * 0.15) backwards;
+  }
+
+  /*
+   * The ring fills to the score and the figure counts to it, together and over
+   * the same span, because they are two readings of one number. Started as the
+   * poster lands: the score is what the page is for, and it should be the last
+   * thing to finish arriving.
+   */
+  .score-arc,
+  .score-count {
+    animation: var(--score-fill) var(--score-ease) calc(var(--morph) * 0.35)
+      backwards;
+  }
+
+  .score-arc {
+    animation-name: score-arc;
+  }
+
+  .score-count {
+    animation-name: score-count;
+  }
+
+  /*
+   * The meters fill on the same clock as the ring, so the card reads as one
+   * instrument settling rather than four things arriving separately. Their
+   * figures do not count: three numbers ticking beside the ring would be a
+   * scoreboard, and only the overall score is worth watching arrive.
+   */
+  .score-bar {
+    animation: score-bar var(--score-fill) var(--score-ease)
+      calc(var(--morph) * 0.35) backwards;
+  }
+
+  /*
+   * Coming back to a shelf is not the same as arriving at one. The tiles were
+   * already there; replaying their entrance makes the whole grid look like it
+   * is reloading, which is exactly what it should not look like.
+   */
+  [data-returning] .row-enter {
+    animation: none;
+  }
+}
+
+/*
+ * Registered so it can be animated at all: a plain custom property is a string
+ * to the browser and jumps from one value to the next, while an <integer> can
+ * be interpolated — which is the whole trick behind a counting number.
+ */
+@property --count {
+  syntax: "<integer>";
+  initial-value: 0;
+  inherits: false;
+}
+
+/*
+ * Outside the reduced-motion guard: this is what renders the figure at all, and
+ * without motion it simply renders the final one.
+ */
+.score-count {
+  counter-reset: score var(--count, 0);
+}
+
+.score-count::after {
+  content: counter(score);
+}
+
+@keyframes score-arc {
+  from {
+    stroke-dashoffset: var(--ring);
+  }
+}
+
+@keyframes score-count {
+  from {
+    --count: 0;
+  }
+}
+
+@keyframes score-bar {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+}
+
+@keyframes veil-in {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/*
+ * A morph is a small area moving between two points it is already anchored to,
+ * which is gentler than a slide across the viewport — but it is still motion,
+ * and asking for less of it should mean none. The pages then cut, which is what
+ * the browser does without any of this.
+ */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
   }
 }
 

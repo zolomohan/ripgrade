@@ -1,5 +1,12 @@
-import { getConvertTempDir, getLibraryFolders } from "../actions";
+import {
+  getConvertTempDir,
+  getJackettStatus,
+  getLibraryFolders,
+  unidentifiedArtwork,
+} from "../actions";
+import { IdentifyArtwork } from "./identify-artwork";
 import { FolderSection } from "../folder-section";
+import { Jackett } from "./jackett";
 import { TempFolder } from "./temp-folder";
 import { DEFAULT_ROOT } from "@/lib/browse";
 import { getLibrary } from "@/lib/library";
@@ -32,7 +39,9 @@ function Row({
 export default async function SettingsPage() {
   const roots = await getLibraryFolders();
   const tempDir = await getConvertTempDir();
+  const jackett = await getJackettStatus();
   const movies = getLibrary();
+  const unidentified = await unidentifiedArtwork();
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8 sm:px-8">
@@ -64,6 +73,39 @@ export default async function SettingsPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold tracking-tight">
+          Release search
+        </h2>
+        <p className="text-sm opacity-60">
+          Jackett holds your indexer logins and exposes them as one feed, so the
+          app talks to it and never to a tracker. With it connected, a film can
+          be searched for a better release than the one on the drive — every
+          result scored on the same rubric as the library, from its name alone.
+          Nothing is ever downloaded here: results are names, sizes and links.
+        </p>
+        <Jackett
+          configured={jackett.configured}
+          url={jackett.url}
+          managed={jackett.managed}
+        />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold tracking-tight">
+          Artwork sources
+        </h2>
+        <p className="text-sm opacity-60">
+          Posters, backdrops and logos are read from the drive, which means they
+          vanish with it. Anything downloaded here records where it came from
+          and is refetched from TMDb when the file cannot be read; this works
+          the same out for artwork that was already on the drive, by matching
+          each file against the images TMDb holds for that title. It only needs
+          running once.
+        </p>
+        <IdentifyArtwork pending={unidentified} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold tracking-tight">
           What is set up
         </h2>
         {/* Read-only: these are environment and disk facts, not preferences,
@@ -79,13 +121,26 @@ export default async function SettingsPage() {
                   ? roots[0]
                   : `${roots.length} folders`
             }
-            detail={roots.length === 0 ? "pick one above to get started" : undefined}
+            detail={
+              roots.length === 0 ? "pick one above to get started" : undefined
+            }
           />
           <Row label="Films scanned" value={`${movies.length}`} />
           <Row
             label="Convert scratch"
             value={tempDir ?? "Beside the film"}
-            detail={tempDir ? undefined : "set one above if the library is on a HDD"}
+            detail={
+              tempDir ? undefined : "set one above if the library is on a HDD"
+            }
+          />
+          <Row
+            label="Release search"
+            value={jackett.configured ? "Jackett connected" : "Not connected"}
+            detail={
+              jackett.configured
+                ? "search a film for a better release"
+                : "connect it above to search indexers"
+            }
           />
           <Row
             label="TMDb"

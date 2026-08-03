@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { ViewTransition } from "react";
 
 import { openIssues } from "@/lib/derive";
-import { artUrl, showId } from "@/lib/routes";
+import { posterName, showId } from "@/lib/routes";
 import type { Show } from "@/lib/shows";
+import { Art } from "./art";
 import { HelpTip, ICONS, MenuItem, Popover } from "./controls";
 import { scoreTheme } from "./score-circle";
+import { useEntrance } from "./return-to";
+import { stagger } from "./stagger";
 
 /**
  * The shelf of shows. A show is a poster and three numbers — how much of it
@@ -445,61 +449,8 @@ export function ShowsView({ shows }: { shows: Show[] }) {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {shown.map((show) => (
-            <Link
-              key={show.key}
-              href={`/show/${showId(show.key)}`}
-              className="row-enter group flex flex-col gap-2"
-            >
-              <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
-                {show.poster && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={artUrl(show.poster)}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.04]"
-                  />
-                )}
-                <span
-                  className={`absolute top-2 right-2 rounded-full bg-background/85 px-1.5 py-0.5 font-display text-[11px] font-semibold tabular-nums backdrop-blur ${scoreTheme(show.score).text}`}
-                  title={`${show.score} of 100 · average of ${show.episodeCount} episodes`}
-                >
-                  {show.score}
-                </span>
-
-                {/* What is wrong with the show, on the show: a gap in a season
-                    and a flawed file are both reasons to open it, and both
-                    belong where the eye already is. */}
-                <div className="absolute bottom-2 left-2 flex flex-wrap items-center gap-1">
-                  {/* Only once TMDb has told us how long each season runs —
-                      before that the count would be gaps in the numbering,
-                      which reads as a stronger claim than it is. */}
-                  {missing(show) > 0 && (
-                    <span className="rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
-                      {missing(show)} missing
-                    </span>
-                  )}
-                  {issuesOf(show) > 0 && (
-                    <span className="rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
-                      {issuesOf(show)}{" "}
-                      {issuesOf(show) === 1 ? "issue" : "issues"}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium" title={show.title}>
-                  {show.title}
-                </p>
-                <p className="truncate text-[11px] opacity-45">
-                  {show.seasons.length}{" "}
-                  {show.seasons.length === 1 ? "season" : "seasons"} ·{" "}
-                  {show.episodeCount} episodes
-                </p>
-              </div>
-            </Link>
+          {shown.map((show, i) => (
+            <ShowTile key={show.key} show={show} index={i} />
           ))}
         </div>
       )}
@@ -518,5 +469,65 @@ export function ShowsView({ shows }: { shows: Show[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** One show on the shelf. Split out so it can hold its own entrance decision. */
+function ShowTile({ show, index }: { show: Show; index: number }) {
+  const entrance = useEntrance();
+  return (
+    <Link
+      href={`/show/${showId(show.key)}`}
+      style={stagger(index)}
+      className={`${entrance} group flex flex-col gap-2`}
+    >
+      <ViewTransition name={posterName(show.key)} share="morph">
+        <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+          <Art
+            src={show.poster}
+            remote={show.art.poster}
+            version={show.artAt}
+            loading="lazy"
+            className="h-full w-full object-cover motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.04]"
+          />
+          <span
+            className={`absolute top-2 right-2 rounded-full bg-background/85 px-1.5 py-0.5 font-score text-[11px] font-semibold tabular-nums backdrop-blur ${scoreTheme(show.score).text}`}
+            title={`${show.score} of 100 · average of ${show.episodeCount} episodes`}
+          >
+            {show.score}
+          </span>
+
+          {/* What is wrong with the show, on the show: a gap in a season
+                    and a flawed file are both reasons to open it, and both
+                    belong where the eye already is. */}
+          <div className="absolute bottom-2 left-2 flex flex-wrap items-center gap-1">
+            {/* Only once TMDb has told us how long each season runs —
+                      before that the count would be gaps in the numbering,
+                      which reads as a stronger claim than it is. */}
+            {missing(show) > 0 && (
+              <span className="rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
+                {missing(show)} missing
+              </span>
+            )}
+            {issuesOf(show) > 0 && (
+              <span className="rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
+                {issuesOf(show)} {issuesOf(show) === 1 ? "issue" : "issues"}
+              </span>
+            )}
+          </div>
+        </div>
+      </ViewTransition>
+
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium" title={show.title}>
+          {show.title}
+        </p>
+        <p className="truncate text-[11px] opacity-45">
+          {show.seasons.length}{" "}
+          {show.seasons.length === 1 ? "season" : "seasons"} ·{" "}
+          {show.episodeCount} episodes
+        </p>
+      </div>
+    </Link>
   );
 }

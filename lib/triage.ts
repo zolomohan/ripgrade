@@ -38,9 +38,10 @@ export function setTriage(
 
 /** Issue codes resolved one at a time, keyed by film. */
 export function getIssueAcks(): Map<string, string[]> {
-  const rows = db
-    .prepare("SELECT path, code FROM issue_acks")
-    .all() as { path: string; code: string }[];
+  const rows = db.prepare("SELECT path, code FROM issue_acks").all() as {
+    path: string;
+    code: string;
+  }[];
 
   const map = new Map<string, string[]>();
   for (const row of rows) {
@@ -54,7 +55,11 @@ export function getIssueAcks(): Map<string, string[]> {
  * per-code: the same problem on another film is still open, and re-raising it
  * here is a matter of deleting one row.
  */
-export function setIssueAck(path: string, code: string, resolved: boolean): void {
+export function setIssueAck(
+  path: string,
+  code: string,
+  resolved: boolean,
+): void {
   if (resolved) {
     db.prepare(
       "INSERT INTO issue_acks (path, code, acked_at) VALUES (?, ?, ?) ON CONFLICT(path, code) DO NOTHING",

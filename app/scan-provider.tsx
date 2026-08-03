@@ -52,6 +52,18 @@ export function ScanProvider({
 
       if (next.status === "done") {
         router.refresh();
+
+        // A folder that could not be read is the one outcome worth colouring
+        // like a failure even though the scan finished: what it holds was left
+        // out of everything below, and silently.
+        if (next.skipped?.length) {
+          setResult({
+            kind: "error",
+            text: `Skipped and left untouched: ${next.skipped.join(", ")}`,
+          });
+          return;
+        }
+
         const parts = [
           `${next.probed} probed`,
           `${next.cached} unchanged`,

@@ -1,4 +1,5 @@
 import { classifyEnhancementLayer, openIssues } from "@/lib/derive";
+import { hasJackett } from "@/lib/jackett";
 import { duplicateGroups, getMovies, groupKeyOf } from "@/lib/library";
 import { AttentionView, type AttentionData } from "./attention-view";
 
@@ -16,6 +17,7 @@ export default async function AttentionPage() {
         title: m.title,
         year: m.year,
         poster: m.poster,
+        posterSrc: m.art.poster,
         status: m.status,
         issues: openIssues(m),
       }))
@@ -29,13 +31,29 @@ export default async function AttentionPage() {
           b.issues.length - a.issues.length,
       ),
 
+    // The films whose own verdict says a better copy is worth having. Ordered
+    // worst first, so a sweep that is stopped early has spent its searches on
+    // the films with the most to gain.
+    upgrades: movies
+      .filter(
+        (m) =>
+          m.status === "Must Upgrade" || m.status === "Upgrade Recommended",
+      )
+      .map((m) => ({
+        path: m.path,
+        title: m.title,
+        year: m.year,
+        // The absolute rubric score, because that is what a predicted score is
+        // measured on — see findUpgradesForMovie.
+        score: m.breakdown.absolute,
+      }))
+      .sort((a, b) => a.score - b.score),
+
     // A lens on the issues above rather than a separate pile: the same films
     // are in "Open issues", but converting a library is its own sitting, and
     // what decides each one is the enhancement layer rather than the message.
     profile7: movies
-      .filter((m) =>
-        openIssues(m).some((i) => i.code === "dv-profile-7"),
-      )
+      .filter((m) => openIssues(m).some((i) => i.code === "dv-profile-7"))
       .map((m) => {
         const el = classifyEnhancementLayer(m.dovi, m.hdr10);
         return {
@@ -43,6 +61,7 @@ export default async function AttentionPage() {
           title: m.title,
           year: m.year,
           poster: m.poster,
+          posterSrc: m.art.poster,
           kind: el?.kind,
           provisional: el?.provisional ?? false,
           read: m.dovi?.depth,
@@ -75,6 +94,7 @@ export default async function AttentionPage() {
         title: m.title,
         year: m.year,
         poster: m.poster,
+        posterSrc: m.art.poster,
         tmdbId: m.tmdb?.id,
         // Kept as the kinds themselves rather than as words, so the buttons
         // below can open the picker on the one that is missing.
@@ -92,6 +112,7 @@ export default async function AttentionPage() {
         title: m.title,
         year: m.year,
         poster: m.poster,
+        posterSrc: m.art.poster,
         fileName: m.fileName,
         confidence: m.tmdb!.confidence,
       })),
@@ -99,7 +120,7 @@ export default async function AttentionPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-8 sm:px-8">
-      <AttentionView data={data} />
+      <AttentionView data={data} jackettReady={hasJackett()} />
     </main>
   );
 }

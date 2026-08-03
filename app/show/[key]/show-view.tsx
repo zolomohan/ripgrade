@@ -8,12 +8,15 @@ import { BackButton } from "@/app/movie/[id]/back-button";
 import { MatchReview } from "@/app/movie/[id]/match-review";
 import { FormatBadges } from "@/app/format-badges";
 import { PillCount } from "@/app/controls";
+import { Art } from "@/app/art";
 import { DiscReview } from "@/app/movie/[id]/disc-review";
+import { ReleaseSearchButton } from "@/app/release-search";
+import { stagger } from "@/app/stagger";
 import { ScoreCircle } from "@/app/score-circle";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { openIssues } from "@/lib/derive";
 import { imageUrl } from "@/lib/image-url";
-import { artUrl, movieId } from "@/lib/routes";
+import { movieId, posterName } from "@/lib/routes";
 import type {
   MissingEpisode,
   Show,
@@ -105,12 +108,12 @@ function Fact({ label, value }: { label: string; value?: string }) {
  * definition of a control that should not exist. The card is what was inside
  * it, laid out so a season can be read straight down.
  */
-function Episode({ episode }: { episode: ShowEpisode }) {
+function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
   const item = episode.item;
   const issues = openIssues(item);
 
   return (
-    <li className="row-enter">
+    <li style={stagger(index)} className="row-enter">
       {/* The whole card is the link — everything on it is about one file, so
           anywhere on it is the same destination. */}
       <Link
@@ -214,7 +217,13 @@ function Episode({ episode }: { episode: ShowEpisode }) {
  * them was. A season is the unit you actually think in, so it gets a switcher,
  * a summary of its own, and a list that shows the gaps in place.
  */
-function Seasons({ show }: { show: Show }) {
+function Seasons({
+  show,
+  jackettReady,
+}: {
+  show: Show;
+  jackettReady: boolean;
+}) {
   const [selected, setSelected] = useState(show.seasons[0]?.number);
   const season =
     show.seasons.find((s) => s.number === selected) ?? show.seasons[0];
@@ -401,12 +410,28 @@ function Seasons({ show }: { show: Show }) {
 
       <SeasonDisc show={show} season={season} />
 
+      {/* Searched a season at a time: television is released that way, so a
+          season pack and its episodes are the same question asked once. */}
+      <ReleaseSearchButton
+        subject={{ kind: "season", showKey: show.key, season: season.number }}
+        title={show.tmdb?.name ?? show.title}
+        subtitle={`Season ${season.number}`}
+        configured={jackettReady}
+        label={`Search for better releases of season ${season.number}${
+          season.episodes.length ? ` (yours average ${absolute})` : ""
+        }`}
+      />
+
       <ul className="flex flex-col gap-5">
-        {rows.map((row) =>
+        {rows.map((row, i) =>
           row.episode ? (
-            <Episode key={row.episode.item.path} episode={row.episode} />
+            <Episode
+              key={row.episode.item.path}
+              episode={row.episode}
+              index={i}
+            />
           ) : (
-            <Gap key={`gap-${row.number}`} missing={row.gap!} />
+            <Gap key={`gap-${row.number}`} missing={row.gap!} index={i} />
           ),
         )}
       </ul>
@@ -552,9 +577,12 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
 }
 
 /** An episode the library does not have, in the place it would occupy. */
-function Gap({ missing }: { missing: MissingEpisode }) {
+function Gap({ missing, index }: { missing: MissingEpisode; index: number }) {
   return (
-    <li className="flex items-center gap-3 rounded-card border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
+    <li
+      style={stagger(index)}
+      className="row-enter flex items-center gap-3 rounded-card border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-4 py-3"
+    >
       <span className="shrink-0 font-mono text-xs opacity-30">
         E{String(missing.number).padStart(2, "0")}
       </span>
@@ -568,19 +596,26 @@ function Gap({ missing }: { missing: MissingEpisode }) {
   );
 }
 
-export function ShowView({ show }: { show: Show }) {
+export function ShowView({
+  show,
+  jackettReady,
+}: {
+  show: Show;
+  jackettReady: boolean;
+}) {
   return (
     <>
       {/* The same hero a film gets: a show earns it more, if anything, since
           this page stands in for every episode below it. */}
       <div className="relative h-72 w-full overflow-hidden sm:h-96">
-        {show.fanart ? (
+        {show.fanart || show.art.fanart ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={artUrl(show.fanart)}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover"
+            <Art
+              src={show.fanart}
+              remote={show.art.fanart}
+              version={show.artAt}
+              size="original"
+              className="enter-veil absolute inset-0 h-full w-full object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
           </>
@@ -589,13 +624,13 @@ export function ShowView({ show }: { show: Show }) {
         )}
 
         {/* Decorative — the h1 below is the real title. */}
-        {show.logo && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={artUrl(show.logo)}
-            alt=""
-            aria-hidden
-            className="pointer-events-none absolute top-6 right-6 z-[5] max-h-20 w-auto max-w-[45vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:top-8 sm:right-8 sm:max-h-24 sm:max-w-sm"
+        {(show.logo || show.art.logo) && (
+          <Art
+            src={show.logo}
+            remote={show.art.logo}
+            version={show.artAt}
+            size="original"
+            className="enter-drop pointer-events-none absolute top-6 right-6 z-[5] max-h-20 w-auto max-w-[45vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:top-8 sm:right-8 sm:max-h-24 sm:max-w-sm"
           />
         )}
 
@@ -604,18 +639,20 @@ export function ShowView({ show }: { show: Show }) {
 
       <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-5xl flex-col gap-8 px-6 sm:px-8">
         <header className="relative flex flex-col gap-5 sm:flex-row sm:items-end">
-          {show.poster ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={artUrl(show.poster)}
-              alt=""
+          {show.poster || show.art.poster ? (
+            <Art
+              src={show.poster}
+              remote={show.art.poster}
+              version={show.artAt}
+              transitionName={posterName(show.key)}
+              size="w780"
               className="h-52 w-36 shrink-0 rounded-card object-cover shadow-2xl ring-1 ring-line"
             />
           ) : (
             <div className="h-52 w-36 shrink-0 rounded-card bg-surface-strong shadow-2xl ring-1 ring-line" />
           )}
 
-          <div className="flex flex-col gap-2 pb-1">
+          <div className="enter-rise flex flex-col gap-2 pb-1">
             <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
               {show.title}
             </h1>
@@ -624,7 +661,9 @@ export function ShowView({ show }: { show: Show }) {
               {show.seasons.length}{" "}
               {show.seasons.length === 1 ? "season" : "seasons"} ·{" "}
               {show.episodeCount} episodes · {size(show.sizeBytes)} ·{" "}
-              <span className={SCORE_TONE(show.score)}>{show.score}/100</span>{" "}
+              <span className={`font-score ${SCORE_TONE(show.score)}`}>
+                {show.score}/100
+              </span>{" "}
               <span className="opacity-60">average</span>
             </p>
             {show.tmdb?.overview && (
@@ -670,7 +709,7 @@ export function ShowView({ show }: { show: Show }) {
           </section>
         )}
 
-        <Seasons show={show} />
+        <Seasons show={show} jackettReady={jackettReady} />
       </div>
     </>
   );
