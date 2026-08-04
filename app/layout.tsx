@@ -9,6 +9,7 @@ import {
 import "./globals.css";
 import { scanStatus } from "./actions";
 import { ScanProvider } from "./scan-provider";
+import { Glow } from "./glow";
 import { RememberListing } from "./return-to";
 import { Sidebar } from "./sidebar";
 import { Splash } from "./splash";
@@ -80,6 +81,7 @@ export default async function RootLayout({
       <body className="min-h-full">
         <Splash />
         <RememberListing />
+        <Glow />
         <ScanProvider initialState={scan}>
           <Sidebar />
           {/* Clears the rail once it is fixed; above that it is a top bar and

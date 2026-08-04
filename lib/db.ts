@@ -69,9 +69,9 @@ CREATE TABLE IF NOT EXISTS triage (
   updated_at    INTEGER NOT NULL
 );
 
--- Issues you have dealt with or decided to live with, one row each. Separate
--- from the triage table because that is a verdict on a whole film, and most
--- films that need attention need it for one reason out of several.
+-- Per-issue decisions, kept from an earlier version of the app that let you
+-- clear issues one at a time. Nothing reads or writes it now; the rows are left
+-- alone rather than dropped, so the decisions survive if it ever comes back.
 CREATE TABLE IF NOT EXISTS issue_acks (
   path      TEXT NOT NULL,
   code      TEXT NOT NULL,
@@ -157,20 +157,6 @@ CREATE TABLE IF NOT EXISTS tv_matches (
 CREATE TABLE IF NOT EXISTS library_roots (
   path      TEXT PRIMARY KEY,
   added_at  INTEGER NOT NULL
-);
-
--- What the long-running jobs have done. Everything else about a job lives in
--- memory and dies with the process; this is the only record that a scan ran at
--- all, which is the difference between "nothing is happening" and "nothing has
--- ever happened".
-CREATE TABLE IF NOT EXISTS job_runs (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind         TEXT NOT NULL,
-  label        TEXT,
-  started_at   INTEGER NOT NULL,
-  finished_at  INTEGER NOT NULL,
-  status       TEXT NOT NULL,
-  detail       TEXT
 );
 
 -- Poster/fanart live beside the movie file, so this is keyed by directory

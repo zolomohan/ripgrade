@@ -34,6 +34,8 @@ export type CollectionFilm = {
 export type CollectionSet = {
   id: number;
   name: string;
+  /** TMDb's own artwork for the set, once it has been asked about. */
+  backdropPath?: string;
   /** Films you hold, always. */
   owned: CollectionFilm[];
   /**
@@ -95,10 +97,11 @@ function released(date?: string): boolean {
  * `withMissing` is what costs something: one request per collection the first
  * time, nothing afterwards. Without it this is a pure read of what is on disk.
  */
-export async function getCollectionSets(
-  items: LibraryItem[],
-  withMissing: boolean,
-): Promise<CollectionSet[]> {
+/**
+ * The held half of every set, straight from the library and costing nothing.
+ * What is absent needs TMDb, and is filled in by the callers below.
+ */
+function ownedSets(items: LibraryItem[]): Map<number, CollectionSet> {
   const sets = new Map<number, CollectionSet>();
 
   for (const item of items) {
@@ -140,42 +143,85 @@ export async function getCollectionSets(
     sets.set(id, set);
   }
 
-  const all = [...sets.values()];
+  for (const set of sets.values()) {
+    set.owned.sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+  }
+
+  return sets;
+}
+
+/** What TMDb says the set contains, less what you hold. */
+async function fillMissing(set: CollectionSet): Promise<void> {
+  const collection = await fetchCollection(set.id);
+  if (!collection) return;
+
+  set.name = collection.name;
+  set.backdropPath = collection.backdrop_path ?? undefined;
+  const held = new Set(set.owned.map((f) => f.tmdbId));
+  set.missing = collection.parts
+    .filter((part) => !held.has(part.id) && released(part.release_date))
+    .map((part) => ({
+      tmdbId: part.id,
+      title: part.title,
+      year: year(part.release_date),
+      posterPath: part.poster_path ?? undefined,
+      overview: part.overview,
+    }))
+    .sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
+}
+
+/** One set, with everything it is missing — the collection's own page. */
+export async function getCollectionSet(
+  id: number,
+  items: LibraryItem[],
+): Promise<CollectionSet | undefined> {
+  const set = ownedSets(items).get(id);
+  if (!set) return undefined;
+
+  if (hasCredentials()) await fillMissing(set);
+  return set;
+}
+
+export async function getCollectionSets(
+  items: LibraryItem[],
+  withMissing: boolean,
+): Promise<CollectionSet[]> {
+  const all = [...ownedSets(items).values()];
 
   if (withMissing) {
     // In parallel: these are independent, cached after the first pass, and
     // doing them in turn is what would make the page feel broken.
+    await Promise.all(all.map(fillMissing));
+  } else if (hasCredentials()) {
+    /*
+     * Otherwise only the sets holding a single film, and only to find out
+     * whether they are sets at all. TMDb lists a collection the moment a sequel
+     * is announced, so a film whose follow-up does not exist yet arrives here
+     * as a "collection" of one — which is the film you already have, wearing a
+     * franchise name. Asking is cheap: it is one lookup per single-film set,
+     * cached for good, and nothing else on this page needs the network.
+     */
     await Promise.all(
-      all.map(async (set) => {
-        const collection = await fetchCollection(set.id);
-        if (!collection) return;
-
-        set.name = collection.name;
-        const held = new Set(set.owned.map((f) => f.tmdbId));
-        set.missing = collection.parts
-          .filter((part) => !held.has(part.id) && released(part.release_date))
-          .map((part) => ({
-            tmdbId: part.id,
-            title: part.title,
-            year: year(part.release_date),
-            posterPath: part.poster_path ?? undefined,
-            overview: part.overview,
-          }))
-          .sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
-      }),
+      all.filter((set) => set.owned.length === 1).map(fillMissing),
     );
-  }
-
-  for (const set of all) {
-    set.owned.sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
   }
 
   // Incomplete sets first when we know what complete looks like: that is the
   // question this page exists to answer.
-  return all.sort(
-    (a, b) =>
-      (b.missing?.length ?? 0) - (a.missing?.length ?? 0) ||
-      b.owned.length - a.owned.length ||
-      a.name.localeCompare(b.name),
-  );
+  return all
+    .filter(
+      // One film, and nothing else released to go and find. Where TMDb has not
+      // been asked, `missing` is undefined and the set stays: not knowing is
+      // not the same as knowing there is nothing.
+      (set) =>
+        set.owned.length > 1 ||
+        set.missing === undefined ||
+        set.missing.length > 0,
+    )
+    .sort(
+      (a, b) =>
+        (b.missing?.length ?? 0) - (a.missing?.length ?? 0) ||
+        b.owned.length - a.owned.length ||
+        a.name.localeCompare(b.name),
+    );
 }

@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 
 import type { LibraryItem } from "@/lib/library";
 import type { Show } from "@/lib/shows";
-import { PillCount } from "./controls";
+import { Switch } from "./controls";
 import { ScanButton } from "./scan-button";
 import { LibraryView } from "./library-view";
 import { ShowsView } from "./shows-view";
@@ -39,8 +39,8 @@ export function LibraryTabs({
   }
 
   const tabs = [
-    { key: "movies" as const, label: "Movies", count: movies.length },
-    { key: "tv" as const, label: "TV shows", count: shows.length },
+    { key: "movies" as const, label: "Movies" },
+    { key: "tv" as const, label: "TV shows" },
   ];
 
   return (
@@ -48,24 +48,11 @@ export function LibraryTabs({
       {/* Scanning is what fills this shelf, so its trigger sits at the head of
           the shelf rather than in the rail beside every other page. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1.5">
-          {tabs.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => select(option.key)}
-              aria-pressed={tab === option.key}
-              className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
-                tab === option.key
-                  ? "border-transparent bg-foreground text-background"
-                  : "border-line hover:bg-surface-strong"
-              }`}
-            >
-              {option.label}
-              <PillCount active={tab === option.key}>{option.count}</PillCount>
-            </button>
-          ))}
-        </div>
+        <Switch
+          value={tab}
+          onChange={(next) => select(next as "movies" | "tv")}
+          options={tabs}
+        />
 
         {hasRoot && <ScanButton />}
       </div>

@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 
 import { addWish, removeWish, searchTmdb, type SearchHit } from "@/app/actions";
+import { Bar, BarSearch, BarSegments } from "@/app/controls";
 import { imageUrl } from "@/lib/image-url";
 import { movieId } from "@/lib/routes";
 import { ReleaseSearchModal } from "@/app/release-search";
+import { useLingering } from "@/app/modal";
 import { stagger } from "@/app/stagger";
 import type { WishlistEntry } from "@/lib/wishlist";
 
@@ -46,92 +48,106 @@ function Entry({
   onFind,
   busy,
   index,
+  ruled,
 }: {
   entry: WishlistEntry;
   onRemove: () => void;
   onFind: () => void;
   busy: boolean;
   index: number;
+  /** False on the first row, which has nothing above it to be parted from. */
+  ruled?: boolean;
 }) {
   return (
-    // The row itself is the trigger, so there is no separate button to find.
-    // A div with a button role rather than a real one: it holds a remove
-    // button and a link of its own, and nesting those inside a <button> is
-    // invalid and unreachable by keyboard.
-    <li
-      role="button"
-      tabIndex={0}
-      onClick={onFind}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onFind();
-        }
-      }}
-      aria-label={`Find releases for ${entry.title}`}
-      style={stagger(index)}
-      className="row-enter flex cursor-pointer items-start gap-4 px-4 py-3 transition-colors hover:bg-surface-strong"
-    >
-      <Poster path={entry.posterPath} alt="" />
+    <>
+      {ruled && (
+        <li
+          aria-hidden
+          className="h-px bg-gradient-to-r from-transparent via-line to-transparent"
+        />
+      )}
 
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">
-          {entry.title}
-          {entry.year && (
-            <span className="ml-1.5 font-normal opacity-40">{entry.year}</span>
-          )}
-        </p>
+      {/* The row itself is the trigger, so there is no separate button to
+          find. A <li> with a button role rather than a real one: it holds a
+          remove button and a link of its own, and nesting those inside a
+          <button> is invalid and unreachable by keyboard. */}
+      <li
+        role="button"
+        tabIndex={0}
+        onClick={onFind}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onFind();
+          }
+        }}
+        aria-label={`Find releases for ${entry.title}`}
+        style={stagger(index)}
+        className="glow row-enter flex cursor-pointer items-start gap-4 rounded-card px-4 py-3 transition-colors hover:bg-surface-strong"
+      >
+        <Poster path={entry.posterPath} alt="" />
 
-        {entry.owned ? (
-          <p className="mt-1 text-xs">
-            <Link
-              href={`/movie/${movieId(entry.owned.path)}`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-emerald-600 underline underline-offset-4 dark:text-emerald-400"
-            >
-              In the library
-            </Link>
-            <span className="opacity-50">
-              {" "}
-              — {entry.owned.resolution} · {entry.owned.status} ·{" "}
-              {entry.owned.score}/100
-            </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">
+            {entry.title}
+            {entry.year && (
+              <span className="ml-1.5 font-normal opacity-40">
+                {entry.year}
+              </span>
+            )}
           </p>
-        ) : (
-          entry.overview && (
-            <p className="mt-1 line-clamp-2 text-xs opacity-50">
-              {entry.overview}
-            </p>
-          )
-        )}
-      </div>
 
-      {/* `self-center` rather than inheriting the row's `items-start`: the text
+          {entry.owned ? (
+            <p className="mt-1 text-xs">
+              <Link
+                href={`/movie/${movieId(entry.owned.path)}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-emerald-600 underline underline-offset-4 dark:text-emerald-400"
+              >
+                In the library
+              </Link>
+              <span className="opacity-50">
+                {" "}
+                — {entry.owned.resolution} · {entry.owned.status} ·{" "}
+                {entry.owned.score}/100
+              </span>
+            </p>
+          ) : (
+            entry.overview && (
+              <p className="mt-1 line-clamp-2 text-xs opacity-50">
+                {entry.overview}
+              </p>
+            )
+          )}
+        </div>
+
+        {/* `self-center` rather than inheriting the row's `items-start`: the text
           block has to begin level with the top of the poster, but a lone button
           sitting up there beside it just looks dropped. */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        disabled={busy}
-        aria-label={`Remove ${entry.title}`}
-        title="Remove from wishlist"
-        className="grid h-8 w-8 shrink-0 place-items-center self-center rounded-full border border-line opacity-40 transition-colors hover:border-red-500/40 hover:bg-red-500/[0.08] hover:text-red-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-red-300"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          className="h-3.5 w-3.5"
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          disabled={busy}
+          aria-label={`Remove ${entry.title}`}
+          title="Remove from wishlist"
+          className="grid h-8 w-8 shrink-0 place-items-center self-center rounded-full border border-line opacity-40 transition-colors hover:border-red-500/40 hover:bg-red-500/[0.08] hover:text-red-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-red-300"
         >
-          <path d="M6 6l12 12M18 6L6 18" />
-        </svg>
-      </button>
-    </li>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            className="h-3.5 w-3.5"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </li>
+    </>
   );
 }
 
@@ -178,7 +194,7 @@ function Tile({
           }
         }}
         aria-label={`Find releases for ${entry.title}`}
-        className="relative aspect-[2/3] cursor-pointer overflow-hidden rounded-card bg-surface-strong ring-1 ring-line transition-shadow hover:ring-2 hover:ring-line-strong"
+        className="glow glow-over tilt relative aspect-[2/3] cursor-pointer overflow-hidden rounded-card bg-surface-strong ring-1 ring-line"
       >
         {entry.posterPath && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -250,6 +266,7 @@ export function WishlistView({
   // because the dialog belongs to the page, not to the tile that opened it —
   // and clicking a second tile should swap the film rather than stack another.
   const [finding, setFinding] = useState<WishlistEntry | null>(null);
+  const shown = useLingering(finding);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -373,57 +390,37 @@ export function WishlistView({
               e.preventDefault();
               search();
             }}
-            className="flex gap-2"
           >
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search TMDb for a film to add…"
-              disabled={!canSearch}
-              className="flex-1 rounded-control border border-line bg-transparent px-3 py-2.5 text-sm outline-none focus:border-line-strong disabled:opacity-40"
-            />
-            <button
-              type="submit"
-              disabled={pending || !canSearch || !query.trim()}
-              className="rounded-control bg-foreground px-4 py-2.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              {pending ? "…" : "Search"}
-            </button>
+            {/* The same bar the library is narrowed with: one frame, its parts
+                ruled apart. A page that searches in a different-looking field
+                reads as a different app. */}
+            <Bar>
+              <BarSearch
+                value={query}
+                onChange={setQuery}
+                placeholder="Search TMDb for a film to add…"
+                disabled={!canSearch}
+              />
 
-            {/* On the same line as the search rather than over the list: it is
-                a control, and the list below it has no header of its own to
-                hang controls from. */}
-            {entries.length > 0 && (
-              <div className="flex shrink-0 items-center gap-0.5 rounded-control border border-line p-0.5">
-                {VIEWS.map((option) => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    onClick={() => setView(option.key)}
-                    aria-label={`${option.label} view`}
-                    aria-pressed={view === option.key}
-                    title={`${option.label} view`}
-                    className={`grid h-8 w-8 place-items-center rounded-[6px] transition-colors ${
-                      view === option.key
-                        ? "bg-surface-strong"
-                        : "opacity-40 hover:opacity-100"
-                    }`}
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-3.5 w-3.5"
-                    >
-                      <path d={option.path} />
-                    </svg>
-                  </button>
-                ))}
-              </div>
-            )}
+              <button
+                type="submit"
+                disabled={pending || !canSearch || !query.trim()}
+                className="flex items-center self-stretch px-4 text-sm transition-colors hover:bg-surface-strong disabled:opacity-30"
+              >
+                {pending ? "…" : "Search"}
+              </button>
+
+              {/* On the same line as the search rather than over the list: it
+                  is a control, and the list below it has no header of its own
+                  to hang controls from. */}
+              {entries.length > 0 && (
+                <BarSegments
+                  value={view}
+                  onChange={(next: string) => setView(next)}
+                  options={VIEWS}
+                />
+              )}
+            </Bar>
           </form>
 
           {hits && (
@@ -480,8 +477,8 @@ export function WishlistView({
 
         {!canSearch && (
           <p className="text-sm opacity-50">
-            Searching needs a TMDb key — set TMDB_READ_TOKEN and restart.
-            Anything already on the list below still works without one.
+            Searching needs TMDb — connect it in Settings. Anything already on
+            the list below still works without it.
           </p>
         )}
 
@@ -503,30 +500,28 @@ export function WishlistView({
         <>
           {groups.map((group, i) => (
             <Fragment key={group.name ?? "loose"}>
-              {/* The same fading rule the collections page uses: the groups are
-                  already separated by space, and this only marks where one ends
-                  without drawing a box around it. */}
-              {i > 0 && (
-                <div
-                  aria-hidden
-                  className="h-px bg-gradient-to-r from-transparent via-line-strong to-transparent"
-                />
-              )}
-
-              <section className="flex flex-col gap-3">
+              {/* Space alone between the groups: each already has a rule under
+                  its own name, and a second one at its foot fenced the films
+                  in rather than parting them from what follows. */}
+              <section
+                className={`flex flex-col gap-7 ${i > 0 ? "pt-14" : "pt-6"}`}
+              >
                 {group.name && (
-                  <div className="flex items-baseline justify-between gap-4">
-                    <h2 className="font-display text-lg font-semibold tracking-tight">
-                      {group.name}
-                    </h2>
-                    <span className="shrink-0 text-xs opacity-45">
-                      {group.entries.length} wanted
-                    </span>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <h2 className="font-display text-lg font-semibold tracking-tight">
+                        {group.name}
+                      </h2>
+                      <span className="shrink-0 text-xs opacity-45">
+                        {group.entries.length} wanted
+                      </span>
+                    </div>
+                    <div aria-hidden className="rule-head" />
                   </div>
                 )}
 
                 {view === "grid" ? (
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                  <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
                     {group.entries.map((entry, n) => (
                       <Tile
                         key={entry.tmdbId}
@@ -541,12 +536,13 @@ export function WishlistView({
                 ) : null}
 
                 {view !== "grid" ? (
-                  <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+                  <ul className="flex flex-col">
                     {group.entries.map((entry, n) => (
                       <Entry
                         key={entry.tmdbId}
                         entry={entry}
                         index={n}
+                        ruled={n > 0}
                         busy={pending}
                         onFind={() => setFinding(entry)}
                         onRemove={() => run(() => removeWish(entry.tmdbId))}
@@ -570,11 +566,12 @@ export function WishlistView({
       {/* One dialog for the page, whichever tile or row opened it. A wanted
           film has no copy to improve on, so this is the acquire case: the same
           search, only without a score to beat. */}
-      {finding && (
+      {shown && (
         <ReleaseSearchModal
-          subject={{ kind: "wish", tmdbId: finding.tmdbId }}
-          title={finding.title}
-          subtitle={finding.year ? String(finding.year) : undefined}
+          open={finding !== null}
+          subject={{ kind: "tmdb", tmdbId: shown.tmdbId }}
+          title={shown.title}
+          subtitle={shown.year ? String(shown.year) : undefined}
           configured={jackettReady}
           onClose={() => setFinding(null)}
         />

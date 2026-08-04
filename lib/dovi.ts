@@ -8,7 +8,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { db } from "./db";
-import { recordRun } from "./jobs";
 import type { DoviDepth, DoviScan } from "./derive";
 
 const execFileAsync = promisify(execFile);
@@ -435,7 +434,6 @@ export function startFullDoviScan(
   if (current().status === "running") return current();
 
   cancelled = false;
-  const startedAt = Date.now();
   setJob({ status: "running", path: filePath, percent: 0, frames: 0 });
 
   void (async () => {
@@ -462,27 +460,10 @@ export function startFullDoviScan(
     }
 
     if (cancelled) {
-      recordRun({
-        kind: "dovi",
-        label: filePath.split("/").pop(),
-        startedAt,
-        finishedAt: Date.now(),
-        status: "cancelled",
-        detail: `${current().frames.toLocaleString("en-GB")} frames read`,
-      });
       setJob({ ...current(), status: "cancelled", finishedAt: Date.now() });
       return;
     }
 
-    recordRun({
-      kind: "dovi",
-      label: filePath.split("/").pop(),
-      startedAt,
-      finishedAt: Date.now(),
-      status: scan.error ? "error" : "done",
-      detail:
-        scan.error ?? `${scan.frames.toLocaleString("en-GB")} frames read`,
-    });
 
     setJob({
       ...current(),

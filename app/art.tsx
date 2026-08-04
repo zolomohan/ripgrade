@@ -93,8 +93,14 @@ export function Art({
   // Wrapped rather than named unconditionally, so an image with nothing to
   // morph into is left as an ordinary <img>. `share="morph"` puts the pair in a
   // class the stylesheet can time; without it the browser picks its own.
+  //
+  // `default="none"` restricts it to that pairing. Every server action ends in a
+  // refresh, and a refresh is a React transition — so saving artwork or a note
+  // used to start a view transition on this poster with no second page
+  // involved. Its snapshot paints in the view-transition layer, which is above
+  // the whole document, so it flashed over any dialog that was open.
   return transitionName ? (
-    <ViewTransition name={transitionName} share="morph">
+    <ViewTransition name={transitionName} share="morph" default="none">
       {image}
     </ViewTransition>
   ) : (

@@ -8,7 +8,7 @@ import { openIssues } from "@/lib/derive";
 import { posterName, showId } from "@/lib/routes";
 import type { Show } from "@/lib/shows";
 import { Art } from "./art";
-import { HelpTip, ICONS, MenuItem, Popover } from "./controls";
+import { Bar, BarSearch, HelpTip, ICONS, MenuItem, Popover } from "./controls";
 import { scoreTheme } from "./score-circle";
 import { useEntrance } from "./return-to";
 import { stagger } from "./stagger";
@@ -285,35 +285,12 @@ export function ShowsView({ shows }: { shows: Show[] }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="relative flex-1">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 opacity-35"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" strokeLinecap="round" />
-          </svg>
-          <input
-            value={query}
-            onChange={(e) => update({ tq: e.target.value })}
-            placeholder="Search shows…"
-            className="w-full rounded-control border border-line bg-transparent py-2.5 pr-9 pl-9 text-sm outline-none focus:border-line-strong"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => update({ tq: "" })}
-              aria-label="Clear search"
-              className="absolute top-1/2 right-3 -translate-y-1/2 text-sm opacity-40 hover:opacity-80"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+      <Bar>
+        <BarSearch
+          value={query}
+          onChange={(next) => update({ tq: next })}
+          placeholder="Search shows…"
+        />
 
         <Popover
           icon={ICONS.filter}
@@ -402,7 +379,7 @@ export function ShowsView({ shows }: { shows: Show[] }) {
             </div>
           )}
         </Popover>
-      </div>
+      </Bar>
 
       {/* What is filtering the shelf, and a way to drop each one, out where it
           cannot hide behind a button. */}
@@ -448,7 +425,7 @@ export function ShowsView({ shows }: { shows: Show[] }) {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-6 pt-13 sm:grid-cols-3 lg:grid-cols-5">
           {shown.map((show, i) => (
             <ShowTile key={show.key} show={show} index={i} />
           ))}
@@ -481,14 +458,14 @@ function ShowTile({ show, index }: { show: Show; index: number }) {
       style={stagger(index)}
       className={`${entrance} group flex flex-col gap-2`}
     >
-      <ViewTransition name={posterName(show.key)} share="morph">
-        <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+      <ViewTransition name={posterName(show.key)} share="morph" default="none">
+        <div className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
           <Art
             src={show.poster}
             remote={show.art.poster}
             version={show.artAt}
             loading="lazy"
-            className="h-full w-full object-cover motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.04]"
+            className="h-full w-full object-cover"
           />
           <span
             className={`absolute top-2 right-2 rounded-full bg-background/85 px-1.5 py-0.5 font-score text-[11px] font-semibold tabular-nums backdrop-blur ${scoreTheme(show.score).text}`}

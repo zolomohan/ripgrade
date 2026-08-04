@@ -27,6 +27,15 @@ export const artUrl = (filePath: string, version?: number) =>
 export const posterName = (key: string) => `poster-${encodeId(key)}`;
 
 /**
+ * The same idea for a collection's name: the title in the list and the heading
+ * on the set's own page are one piece of text, and this is what says so.
+ */
+export const collectionTitleName = (id: number) => `collection-title-${id}`;
+
+/** And the line under it, which says the same thing in both places. */
+export const collectionMetaName = (id: number) => `collection-meta-${id}`;
+
+/**
  * Route id for a film. The absolute path is the natural key but contains
  * slashes, so it is base64url-encoded to survive a single URL segment.
  *

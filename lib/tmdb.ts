@@ -1,5 +1,7 @@
 import "server-only";
 
+import { db, getSetting, setSetting } from "./db";
+
 /**
  * Thin TMDb v3 client authenticated with a v4 read access token.
  *
@@ -8,6 +10,37 @@ import "server-only";
  */
 
 const BASE = "https://api.themoviedb.org/3";
+
+const TOKEN_KEY = "tmdbReadToken";
+
+/**
+ * Thrown when there is no token at all, as distinct from a call that failed.
+ *
+ * A class rather than a message: `enrich` aborts a whole run on this one and
+ * swallows every other error, and it used to tell them apart by matching the
+ * wording — which quietly stopped working the moment the wording changed.
+ */
+export class TmdbUnconfigured extends Error {}
+
+/**
+ * The read token, from the database and nowhere else.
+ *
+ * Deliberately not read from the environment: a token that lives in a file the
+ * app cannot write means the one setting standing between a fresh install and
+ * every title, poster and collection is the one setting it cannot ask you for.
+ * There is one place it comes from, and one place to change it.
+ */
+export function getTmdbToken(): string | undefined {
+  return getSetting(TOKEN_KEY);
+}
+
+export function setTmdbToken(token: string): void {
+  setSetting(TOKEN_KEY, token.trim());
+}
+
+export function clearTmdbToken(): void {
+  db.prepare("DELETE FROM settings WHERE key = ?").run(TOKEN_KEY);
+}
 
 export type TmdbMovie = {
   id: number;
@@ -34,18 +67,16 @@ export type TmdbSearchHit = {
 };
 
 export function hasCredentials(): boolean {
-  return Boolean(process.env.TMDB_READ_TOKEN);
+  return Boolean(getTmdbToken());
 }
 
 async function api<T>(
   path: string,
   params: Record<string, string | undefined> = {},
 ): Promise<T> {
-  const token = process.env.TMDB_READ_TOKEN;
+  const token = getTmdbToken();
   if (!token) {
-    throw new Error(
-      "TMDB_READ_TOKEN is not set. Add it to .env.local and restart the dev server.",
-    );
+    throw new TmdbUnconfigured("No TMDb token. Connect TMDb in Settings.");
   }
 
   const url = new URL(BASE + path);
@@ -108,6 +139,7 @@ export type TmdbCollection = {
   name: string;
   overview?: string;
   poster_path?: string | null;
+  backdrop_path?: string | null;
   parts: {
     id: number;
     title: string;

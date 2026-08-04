@@ -14,6 +14,7 @@ import {
   unlinkSeasonDisc,
   type DiscCandidate,
 } from "@/app/actions";
+import { Modal } from "@/app/modal";
 
 /**
  * Picking the disc by hand. A film often has a dozen editions — regions,
@@ -37,11 +38,14 @@ export function DiscReview({
   year,
   currentUrl,
   manual,
+  inline,
 }: Subject & {
   title: string;
   year?: number;
   currentUrl?: string;
   manual?: boolean;
+  /** Beside the text it answers rather than below it — see the empty state. */
+  inline?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<DiscCandidate[] | null>(null);
@@ -50,11 +54,9 @@ export function DiscReview({
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
-  function toggle() {
-    if (open) {
-      setOpen(false);
-      return;
-    }
+  /* Opening is the request: you already said which film this is, so the search
+     runs on the way in rather than waiting to be asked a second time. */
+  function begin() {
     setOpen(true);
     setError(null);
     if (results) return;
@@ -105,8 +107,12 @@ export function DiscReview({
         showKey === undefined
           ? await unlinkDisc(tmdbId!)
           : await unlinkSeasonDisc(showKey, season!);
-      if (result.ok) router.refresh();
-      else setError(result.error);
+      // The pick is gone, so what is on screen is stale — and the next search
+      // should be a fresh one rather than the list that produced the old pin.
+      if (result.ok) {
+        setResults(null);
+        router.refresh();
+      } else setError(result.error);
     });
   }
 
@@ -114,48 +120,87 @@ export function DiscReview({
     "rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40";
 
   return (
-    <div className="mt-4 border-t border-line pt-4">
+    <div className={inline ? "" : "mt-6"}>
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={toggle}
+          onClick={begin}
           disabled={pending}
           className={button}
         >
-          {open ? "Cancel" : currentUrl ? "Wrong edition?" : "Find the disc"}
+          {currentUrl ? "Wrong edition?" : "Find the disc"}
         </button>
 
-        <button
-          type="button"
-          onClick={unlink}
-          disabled={pending}
-          className={button}
-        >
-          {manual ? "Unpin and search again" : "Look up again"}
-        </button>
-
+        {/* Only where there is a hand-made pick to undo. Running the automatic
+            lookup again was offered next to it and answered nothing: the search
+            is deterministic, so a second run returns the release the first one
+            did — the way to a different one is to pick it. */}
         {manual && (
-          <span className="text-[11px] tracking-wide uppercase opacity-45">
-            pinned by hand
-          </span>
+          <>
+            <button
+              type="button"
+              onClick={unlink}
+              disabled={pending}
+              className={button}
+            >
+              Unpin
+            </button>
+            <span className="text-[11px] tracking-wide uppercase opacity-45">
+              pinned by hand
+            </span>
+          </>
         )}
-        {pending && <span className="text-xs opacity-50">working…</span>}
+        {pending && !open && (
+          <span className="text-xs opacity-50">working…</span>
+        )}
       </div>
 
-      {open && (
-        <div className="mt-3 flex flex-col gap-3">
+      {error && !open && (
+        <p className="mt-2 font-mono text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        dismissible={!pending}
+        label="Pick the disc to compare against"
+        panelClassName="flex h-[min(80vh,42rem)] w-full max-w-2xl flex-col overflow-hidden rounded-card border border-line bg-background shadow-2xl"
+      >
+        <>
+          <header className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6 pb-4">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold">
+                {currentUrl ? "Wrong edition?" : "Find the disc"}
+              </h2>
+              <p className="mt-1 text-sm opacity-60">
+                {showKey === undefined
+                  ? "This copy is scored against whichever release is picked here."
+                  : `Every episode of season ${season} is scored against whichever release is picked here.`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="shrink-0 text-sm opacity-50 hover:opacity-100"
+            >
+              Close
+            </button>
+          </header>
+
           {/* Pasting the exact release is often faster than picking through a
               dozen near-identical editions. */}
           <form
-            onSubmit={(e) => {
-              e.preventDefault();
+            onSubmit={(event) => {
+              event.preventDefault();
               linkUrl();
             }}
-            className="flex gap-2"
+            className="flex shrink-0 gap-2 px-6 pb-4"
           >
             <input
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(event) => setUrl(event.target.value)}
               spellCheck={false}
               placeholder="Paste a Blu-ray.com release URL…"
               className="flex-1 rounded-control border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-line-strong"
@@ -169,58 +214,90 @@ export function DiscReview({
             </button>
           </form>
 
-          {!results && !error && (
-            <p className="text-sm opacity-50">Searching Blu-ray.com…</p>
-          )}
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-6 pb-6">
+            {error && (
+              <p className="font-mono text-sm text-red-600 dark:text-red-400">
+                {error}
+              </p>
+            )}
 
-          {results?.length === 0 && (
-            <p className="text-sm opacity-50">
-              No releases found for this title.
-            </p>
-          )}
+            {!results && !error && (
+              <p className="text-sm opacity-50">Searching Blu-ray.com…</p>
+            )}
 
-          {results && results.length > 0 && (
-            <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto">
-              {results.map((r) => (
-                <li key={r.id}>
-                  <button
-                    type="button"
-                    onClick={() => choose(r)}
-                    disabled={pending}
-                    className={`flex w-full items-center gap-3 rounded-control px-2 py-2 text-left text-sm hover:bg-surface-strong disabled:opacity-40 ${
-                      r.url === currentUrl
-                        ? "ring-1 ring-line-strong ring-inset"
-                        : ""
-                    }`}
-                  >
-                    <span
-                      className={`shrink-0 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
-                        r.format === "4K"
-                          ? "text-emerald-700 ring-emerald-500/40 dark:text-emerald-300"
-                          : "ring-line-strong opacity-70"
+            {results?.length === 0 && (
+              <p className="text-sm opacity-50">
+                No releases found for this title.
+              </p>
+            )}
+
+            {results && results.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {results.map((candidate) => (
+                  <li key={candidate.id}>
+                    <button
+                      type="button"
+                      onClick={() => choose(candidate)}
+                      disabled={pending}
+                      className={`flex w-full items-center gap-3 rounded-control px-2 py-2 text-left text-sm hover:bg-surface-strong disabled:opacity-40 ${
+                        candidate.url === currentUrl
+                          ? "ring-1 ring-line-strong ring-inset"
+                          : ""
                       }`}
                     >
-                      {r.format}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{r.title}</span>
-                    {r.url === currentUrl && (
-                      <span className="shrink-0 text-[11px] opacity-50">
-                        current
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+                      {/* The cover, because a dozen editions of a film are
+                          called the same thing and drawn differently — often
+                          the artwork is the only thing you recognise. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={candidate.cover}
+                        alt=""
+                        loading="lazy"
+                        className="h-16 w-11 shrink-0 rounded-chip bg-surface-strong object-cover"
+                      />
 
-      {error && (
-        <p className="mt-2 font-mono text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline gap-2">
+                          <span
+                            className={`shrink-0 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
+                              candidate.format === "4K"
+                                ? "text-emerald-700 ring-emerald-500/40 dark:text-emerald-300"
+                                : "ring-line-strong opacity-70"
+                            }`}
+                          >
+                            {candidate.format}
+                          </span>
+                          <span className="min-w-0 truncate">
+                            {candidate.title}
+                          </span>
+                        </span>
+
+                        {/* What actually tells this pressing from the next
+                            one: the packaging, where it came out, and when. */}
+                        <span className="mt-1 block truncate text-xs opacity-50">
+                          {[
+                            candidate.edition,
+                            candidate.country,
+                            candidate.released,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </span>
+                      </span>
+
+                      {candidate.url === currentUrl && (
+                        <span className="shrink-0 text-[11px] opacity-50">
+                          current
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      </Modal>
     </div>
   );
 }

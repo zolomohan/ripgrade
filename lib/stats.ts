@@ -1,4 +1,5 @@
 import type { LibraryItem } from "./library";
+import type { Show } from "./shows";
 import { classifyEnhancementLayer, openIssues, type Status } from "./derive";
 
 /**
@@ -70,6 +71,105 @@ export type LibraryStats = {
   dolbyVision: Slice[];
   collections: Slice[];
 };
+
+/**
+ * The same library, asked about television.
+ *
+ * Separate from the films rather than folded in: an episode is not a small
+ * film. It has no disc to be measured against, it arrives forty at a time, and
+ * the question you ask of a show — is it complete, and is it consistent — is
+ * not one you can ask of a single file. Sharing one set of totals would bury
+ * both answers.
+ */
+export type ShowStats = {
+  totals: {
+    shows: number;
+    episodes: number;
+    bytes: number;
+    runtimeHours: number;
+    /** Episodes TMDb lists for a season that is otherwise held. */
+    missing: number;
+    openIssues: number;
+    averageScore: number;
+  };
+  /** Complete against incomplete, which is the point of tracking a show. */
+  completeness: { label: string; count: number }[];
+  resolution: Slice[];
+  hdr: Slice[];
+  release: Slice[];
+  /** The largest shows, by episodes held. */
+  biggest: Slice[];
+};
+
+const SHOW_LIMIT = 8;
+
+export function computeShowStats(shows: Show[]): ShowStats {
+  const episodes = shows.flatMap((show) =>
+    show.seasons.flatMap((season) => season.episodes.map((e) => e.item)),
+  );
+
+  // Only where TMDb has told us how long a season runs. Before that, a gap in
+  // the numbering is a guess, and counting guesses as absences would report a
+  // library as incomplete for the crime of not being identified yet.
+  const missing = shows.reduce(
+    (n, show) =>
+      n +
+      show.seasons.reduce(
+        (m, season) => m + (season.total === undefined ? 0 : season.missing.length),
+        0,
+      ),
+    0,
+  );
+
+  const short = shows.filter((show) =>
+    show.seasons.some(
+      (season) => season.total !== undefined && season.missing.length > 0,
+    ),
+  ).length;
+
+  const totals = {
+    shows: shows.length,
+    episodes: episodes.length,
+    bytes: episodes.reduce((n, e) => n + e.sizeBytes, 0),
+    runtimeHours: Math.round(
+      episodes.reduce((n, e) => n + (e.durationSec ?? 0), 0) / 3600,
+    ),
+    missing,
+    openIssues: episodes.reduce((n, e) => n + openIssues(e).length, 0),
+    averageScore: episodes.length
+      ? Math.round(
+          episodes.reduce((n, e) => n + e.scores.overall, 0) / episodes.length,
+        )
+      : 0,
+  };
+
+  return {
+    totals,
+    completeness: [
+      { label: "Complete", count: shows.length - short },
+      { label: "Missing episodes", count: short },
+    ],
+    resolution: tally(
+      episodes,
+      ["2160p", "1080p", "720p", "SD", "unknown"],
+      (e) => e.resolution,
+    ),
+    hdr: tally(episodes, ["Dolby Vision", "HDR10+", "HDR10", "SDR"], (e) => e.hdr),
+    release: tally(
+      episodes,
+      ["REMUX", "WEB-DL", "ENCODE", "UNKNOWN"],
+      (e) => e.releaseType,
+    ),
+    biggest: shows
+      .map((show) => ({
+        label: show.title,
+        count: show.episodeCount,
+        bytes: show.sizeBytes,
+      }))
+      .sort((a, b) => b.count - a.count || b.bytes - a.bytes)
+      .slice(0, SHOW_LIMIT),
+  };
+}
 
 /** Counts and bytes per key, in a fixed order with empties dropped. */
 function tally(

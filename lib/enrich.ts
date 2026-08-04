@@ -2,7 +2,13 @@ import "server-only";
 
 import { db } from "./db";
 import { titleKey, type Derived } from "./derive";
-import { findByImdbId, getMovie, searchMovies, type TmdbMovie } from "./tmdb";
+import {
+  findByImdbId,
+  getMovie,
+  searchMovies,
+  TmdbUnconfigured,
+  type TmdbMovie,
+} from "./tmdb";
 
 export type MatchMethod =
   | "tmdb-embedded"
@@ -225,7 +231,7 @@ export async function runEnrich(
     } catch (err) {
       // One bad title should not abandon the whole run — but a missing token
       // means every call will fail, so that one propagates.
-      if (/TMDB_READ_TOKEN/.test(String(err))) throw err;
+      if (err instanceof TmdbUnconfigured) throw err;
       match = { method: "none" };
     }
 

@@ -6,7 +6,6 @@ import { rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { getSetting } from "./db";
-import { recordRun } from "./jobs";
 import { BACKUP_SUFFIX, RUNTIME_DRIFT, runtimeDrift } from "./derive";
 import { scanDovi } from "./dovi";
 import { probe } from "./media";
@@ -297,9 +296,6 @@ export function startConvert(
 ): ConvertJob {
   if (current().status === "running") return current();
 
-  const startedAt = Date.now();
-  const film = path.basename(filePath);
-
   setJob({
     status: "running",
     path: filePath,
@@ -365,27 +361,11 @@ export function startConvert(
       await Promise.all(
         workingFiles(filePath, tempDir).map((f) => rm(f, { force: true })),
       );
-      recordRun({
-        kind: "convert",
-        label: film,
-        startedAt,
-        finishedAt: Date.now(),
-        status: "cancelled",
-        detail: `stopped at step ${current().step} of ${current().steps}`,
-      });
       setJob({ ...current(), status: "cancelled", finishedAt: Date.now() });
       return;
     }
 
     if (code !== 0) {
-      recordRun({
-        kind: "convert",
-        label: film,
-        startedAt,
-        finishedAt: Date.now(),
-        status: "error",
-        detail: tail.trim().split("\n").filter(Boolean).slice(-1)[0],
-      });
       setJob({
         ...current(),
         status: "error",
@@ -421,14 +401,6 @@ export function startConvert(
       return;
     }
 
-    recordRun({
-      kind: "convert",
-      label: film,
-      startedAt,
-      finishedAt: Date.now(),
-      status: check.ok ? "done" : "error",
-      detail: check.message,
-    });
 
     setJob({
       ...current(),

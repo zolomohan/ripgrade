@@ -144,7 +144,8 @@
       "Bash(sips -c 240 720 --cropOffset 0 0 full3x.png --out word-crop.png)",
       "Bash(sips -g pixelWidth -g pixelHeight word-crop.png)",
       "Bash('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=2 --screenshot=mobile.png --window-size=420,320 --virtual-time-budget=4000 http://localhost:3000/)",
-      "Bash('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --screenshot=final.png --window-size=1000,700 --virtual-time-budget=4000 http://localhost:3000/)"
+      "Bash('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --screenshot=final.png --window-size=1000,700 --virtual-time-budget=4000 http://localhost:3000/)",
+      "Bash(grep -n \"^let \\\\|^const .*=.*{$\\\\|globalThis\" lib/scanner.ts lib/dovi.ts lib/convert.ts)"
     ],
     "additionalDirectories": [
       "/Users/mohanraj/Development/personal/medlib/app/movie/[id]",

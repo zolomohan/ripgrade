@@ -187,7 +187,8 @@ export type SearchQuery = {
   imdbId?: string;
   season?: number;
   episode?: number;
-  kind: "movie" | "tv";
+  /** "any" is a plain keyword search: no category, no film, whatever comes back. */
+  kind: "movie" | "tv" | "any";
 };
 
 /** "Show Name" + S02E05, for indexers with no season and episode parameters. */
@@ -217,6 +218,21 @@ export async function searchIndexers(
   query: SearchQuery,
 ): Promise<IndexerResult[]> {
   const caps = await fetchCaps();
+
+  /*
+   * A free search asks for nothing in particular, so it uses the basic mode and
+   * sends no category: narrowing to films would hide exactly the things this is
+   * for — a boxed set, a soundtrack, a documentary nobody has catalogued.
+   */
+  if (query.kind === "any") {
+    if (!caps.search.available) {
+      throw new JackettError(
+        "None of the indexers configured in Jackett offer a keyword search.",
+      );
+    }
+    return parseTorznab(await torznab({ t: "search", q: query.term }));
+  }
+
   const wanted = query.kind === "tv" ? caps.tv : caps.movie;
 
   const params: Record<string, string | undefined> = {

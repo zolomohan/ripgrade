@@ -44,6 +44,31 @@ async function fetchPage(url: string): Promise<string> {
   return response.text();
 }
 
+/** The same, for the one endpoint here that answers to a form post. */
+async function postPage(
+  url: string,
+  fields: Record<string, string>,
+): Promise<string> {
+  const wait = lastRequest + REQUEST_GAP_MS - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastRequest = Date.now();
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "User-Agent": UA,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "*/*",
+      "Accept-Language": "en-GB,en;q=0.9",
+      Referer: `${BASE}/search/`,
+    },
+    body: new URLSearchParams(fields),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`Blu-ray.com ${response.status} on ${url}`);
+  return response.text();
+}
+
 // ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------
@@ -54,7 +79,22 @@ export type Candidate = {
   title: string;
   year?: number;
   format: "4K" | "3D" | "BD";
+  /*
+   * What tells two releases of the same film apart. Blu-ray.com lists a dozen
+   * editions of a popular title, every one of them called "300 (2007)" — the
+   * packaging, the country and the date on it are the only things that say
+   * which is which, so they travel with the candidate rather than being read
+   * off the page after you have already had to choose.
+   */
+  edition?: string;
+  country?: string;
+  released?: string;
+  cover: string;
 };
+
+/** Every release's cover lives at a predictable address, keyed by its id. */
+const coverUrl = (id: string) =>
+  `https://images.static-bluray.com/movies/covers/${id}_medium.jpg`;
 
 const decode = (s: string) =>
   s
@@ -89,10 +129,88 @@ function parseSearch(html: string): Candidate[] {
         : url.includes("-3D-Blu-ray/")
           ? "3D"
           : "BD",
+      cover: coverUrl(id),
     });
   }
 
   return out;
+}
+
+/*
+ * The type-ahead behind the search box, which is a different answer to the same
+ * question: the grid of covers names every release "300 (2007)", while this
+ * endpoint names it "300 (Best Buy Exclusive) (SteelBook)" and says where and
+ * when it came out. It is a POST, it returns a fragment of HTML with the facts
+ * spread across parallel JavaScript arrays, and it truncates long titles — so
+ * it is used to describe the releases the grid found rather than to find them.
+ */
+type Detail = { edition?: string; country?: string; released?: string };
+
+/** `var name = new Array('a', 'b');` — the shape every list in the reply takes. */
+function jsArray(html: string, name: string): string[] {
+  const m = html.match(new RegExp(`var ${name} = new Array\\(([^)]*)\\)`));
+  return m
+    ? [...m[1].matchAll(/'((?:[^'\\]|\\.)*)'/g)].map((q) =>
+        decode(q[1].replace(/\\'/g, "'")),
+      )
+    : [];
+}
+
+/**
+ * The parenthesised qualifiers on a release title — "(SteelBook)", "(Best Buy
+ * Exclusive)" — which is the edition, stated the way the shop states it. The
+ * year is dropped: it belongs to the film, not to this pressing of it.
+ */
+function editionOf(title: string): string | undefined {
+  const parts = [...title.matchAll(/\(([^)]+)\)/g)]
+    .map((m) => m[1].trim())
+    .filter((part) => !/^\d{4}(?:-\d{4})?$/.test(part));
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+async function quickDetails(keyword: string): Promise<Map<string, Detail>> {
+  const found = new Map<string, Detail>();
+
+  let html: string;
+  try {
+    html = await postPage(`${BASE}/search/quicksearch.php`, {
+      section: "bluraymovies",
+      userid: "-1",
+      country: "all",
+      keyword,
+    });
+  } catch {
+    // Describing the releases is worth a request but not worth a failure: the
+    // list is still usable without it.
+    return found;
+  }
+
+  const urls = jsArray(html, "urls");
+  const countries = jsArray(html, "countrycodes");
+
+  // The rows carry the title and the date; everything else is by position.
+  const rows = [
+    ...html.matchAll(
+      /id="match(\d+)"[^>]*>(?:<span[^>]*>([^<]*)<\/span>)?[\s\S]*?&nbsp;([^<]*)</g,
+    ),
+  ];
+
+  for (const [, index, released, rawTitle] of rows) {
+    const at = Number(index);
+    const id = urls[at]?.match(/\/(\d+)\/?$/)?.[1];
+    if (!id) continue;
+
+    // Long titles come back cut off at a fixed width; a half-written edition is
+    // worse than none, so the truncated tail is dropped.
+    const title = decode(rawTitle).replace(/…$/, "");
+    found.set(id, {
+      edition: rawTitle.includes("&hellip;") ? undefined : editionOf(title),
+      country: countries[at] || undefined,
+      released: released?.trim() || undefined,
+    });
+  }
+
+  return found;
 }
 
 /** Strips the format suffix Blu-ray.com appends before comparing titles. */
@@ -113,12 +231,29 @@ export async function searchReleases(
   const all = parseSearch(await fetchPage(url));
   const wanted = titleKey(title);
 
-  return all.filter((c) => {
+  const mine = all.filter((c) => {
     if (titleKey(cleanTitle(c.title)) !== wanted) return false;
     // Remakes share a title, so the year is what separates them.
     if (year && c.year && Math.abs(c.year - year) > 1) return false;
     return true;
   });
+
+  return describe(mine, title);
+}
+
+/**
+ * Says which release is which. Costs one more request, so it is only made when
+ * there is a choice to be told apart — a single result needs no distinguishing,
+ * and the automatic lookup takes the first 4K release either way.
+ */
+async function describe(
+  candidates: Candidate[],
+  keyword: string,
+): Promise<Candidate[]> {
+  if (candidates.length < 2) return candidates;
+
+  const details = await quickDetails(keyword);
+  return candidates.map((c) => ({ ...c, ...details.get(c.id) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +363,7 @@ export async function searchSeasonReleases(
   const all = parseSearch(await fetchPage(url));
   const wanted = titleKey(show);
 
-  return all.filter((c) => {
+  const mine = all.filter((c) => {
     if (titleKey(stripSeason(c.title)) !== wanted) return false;
 
     const named = seasonOf(c.title);
@@ -242,6 +377,8 @@ export async function searchSeasonReleases(
       ? season === 1
       : Math.abs(c.year - year) <= 1;
   });
+
+  return describe(mine, show);
 }
 
 /**
@@ -331,6 +468,7 @@ export function candidateFromUrl(raw: string): Candidate | undefined {
     url: `${BASE}/movies/${slug}/${id}/`,
     // A placeholder: the real title is read off the page once fetched.
     title: decodeURIComponent(slug).replace(/-/g, " "),
+    cover: coverUrl(id),
     format: /-4K-Blu-ray$/i.test(slug)
       ? "4K"
       : /-3D-Blu-ray$/i.test(slug)

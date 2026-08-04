@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { ArtworkEditor } from "@/app/movie/[id]/artwork-editor";
 import { BackButton } from "@/app/movie/[id]/back-button";
 import { MatchReview } from "@/app/movie/[id]/match-review";
 import { FormatBadges } from "@/app/format-badges";
-import { PillCount } from "@/app/controls";
+import { useLingering } from "@/app/modal";
+import { NoDisc } from "@/app/no-disc";
+import { Panel } from "@/app/panel";
 import { Art } from "@/app/art";
 import { DiscReview } from "@/app/movie/[id]/disc-review";
-import { ReleaseSearchButton } from "@/app/release-search";
+import { ReleaseSearchModal } from "@/app/release-search";
 import { stagger } from "@/app/stagger";
-import { ScoreCircle } from "@/app/score-circle";
+import { ScoreCircle, ScoreDial } from "@/app/score-circle";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { openIssues } from "@/lib/derive";
 import { imageUrl } from "@/lib/image-url";
@@ -32,6 +34,10 @@ import type {
  * only means anything with its neighbours still on screen.
  */
 
+/** The collections list's rule: fades at both ends, marks where one thing stops. */
+const RULE =
+  "h-px shrink-0 bg-gradient-to-r from-transparent via-line-strong to-transparent";
+
 const size = (bytes: number) =>
   bytes >= 1e12
     ? `${(bytes / 1e12).toFixed(2)} TB`
@@ -50,6 +56,10 @@ const SCORE_TONE = (score: number) =>
     : score >= 62
       ? "text-amber-600 dark:text-amber-400"
       : "text-red-600 dark:text-red-400";
+
+/** What a season scores: its episodes' verdicts, averaged. */
+const seasonScore = (season: ShowSeason) =>
+  average(season.episodes.map((e) => e.item.scores.overall));
 
 /** Rounded, and 0 for an empty season rather than NaN. */
 const average = (values: number[]) =>
@@ -118,7 +128,7 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
           anywhere on it is the same destination. */}
       <Link
         href={`/movie/${movieId(item.path)}`}
-        className="group flex flex-col gap-5 rounded-card border border-line bg-surface p-5 transition-colors hover:bg-surface-strong sm:flex-row"
+        className="glow group -mx-5 flex flex-col gap-5 rounded-card px-5 py-5 transition-colors hover:bg-surface sm:flex-row"
       >
         {/* The still leads: a picture is how you recognise which episode this is,
           and the rest of the card is numbers. */}
@@ -217,13 +227,7 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
  * them was. A season is the unit you actually think in, so it gets a switcher,
  * a summary of its own, and a list that shows the gaps in place.
  */
-function Seasons({
-  show,
-  jackettReady,
-}: {
-  show: Show;
-  jackettReady: boolean;
-}) {
+function Seasons({ show }: { show: Show }) {
   const [selected, setSelected] = useState(show.seasons[0]?.number);
   const season =
     show.seasons.find((s) => s.number === selected) ?? show.seasons[0];
@@ -234,7 +238,7 @@ function Seasons({
   const bitrate = average(
     season.episodes.map((e) => e.item.videoBitrateKbps ?? 0),
   );
-  const score = average(season.episodes.map((e) => e.item.scores.overall));
+  const score = seasonScore(season);
   // Every episode of a season is compared against the same set, so the disc's
   // own score and its parts are one fact about the season, not one per file.
   const relative = season.episodes.some((e) => e.item.breakdown.relative);
@@ -270,7 +274,7 @@ function Seasons({
   ].sort((a, b) => a.number - b.number);
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col pt-6">
       {show.seasons.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
           {show.seasons.map((option) => {
@@ -288,7 +292,6 @@ function Seasons({
                 }`}
               >
                 Season {option.number}
-                <PillCount active={active}>{option.episodes.length}</PillCount>
                 {option.missing.length > 0 && (
                   <span
                     aria-label="incomplete"
@@ -304,7 +307,10 @@ function Seasons({
       {/* What the season is like to watch, not how much of it there is: the
           switcher already flags an incomplete season, and the gaps show
           themselves in the list below. The same card a film gets, averaged. */}
-      <section className="flex flex-col gap-6 rounded-card border border-line bg-surface p-6">
+      {/* Not keyed: the card stays mounted across a change of season so its
+          ring, figure and bars travel from the season you were on to the one
+          you picked. Redrawing from zero would say the page had reloaded. */}
+      <section className="flex flex-col gap-6 pt-12 pb-8">
         <div className="flex flex-col items-center gap-8 sm:flex-row sm:items-stretch">
           {/* Against the set the season was released as where there is one, on
               the rubric where there is not — the same two rings a film gets,
@@ -325,7 +331,10 @@ function Seasons({
             )}
           </div>
 
-          <div className="hidden w-px shrink-0 bg-line sm:block" />
+          <div
+            aria-hidden
+            className="hidden w-px shrink-0 bg-gradient-to-b from-transparent via-line-strong to-transparent sm:block"
+          />
 
           <div className="flex w-full flex-1 flex-col justify-center gap-3">
             <SubScore
@@ -347,8 +356,25 @@ function Seasons({
             />
           </div>
         </div>
+      </section>
 
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-5 sm:grid-cols-3">
+      <ShowIdentity show={show} />
+
+      {/* Everything past the verdict is folded, exactly as it is on a film's
+          page: what the season is scored at stays open, and the evidence for it
+          is asked for. The episodes below are the exception — they are the list
+          this page exists to show. */}
+      <Panel
+        title="Season details"
+        summary={[
+          `${held} ${held === 1 ? "episode" : "episodes"}`,
+          uniform(season.episodes.map((e) => e.item.resolution)),
+          size(bytes),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      >
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
           <Fact
             label="Video"
             value={uniform(
@@ -406,36 +432,240 @@ function Seasons({
             }`}
           />
         </dl>
-      </section>
+      </Panel>
 
       <SeasonDisc show={show} season={season} />
 
-      {/* Searched a season at a time: television is released that way, so a
-          season pack and its episodes are the same question asked once. */}
-      <ReleaseSearchButton
-        subject={{ kind: "season", showKey: show.key, season: season.number }}
-        title={show.tmdb?.name ?? show.title}
-        subtitle={`Season ${season.number}`}
-        configured={jackettReady}
-        label={`Search for better releases of season ${season.number}${
-          season.episodes.length ? ` (yours average ${absolute})` : ""
+      <Panel
+        title="Episodes"
+        summary={`${held}${
+          season.missing.length
+            ? ` held · ${season.missing.length} missing`
+            : ""
         }`}
-      />
-
-      <ul className="flex flex-col gap-5">
-        {rows.map((row, i) =>
-          row.episode ? (
-            <Episode
-              key={row.episode.item.path}
-              episode={row.episode}
-              index={i}
-            />
-          ) : (
-            <Gap key={`gap-${row.number}`} missing={row.gap!} index={i} />
-          ),
-        )}
-      </ul>
+        open
+      >
+        <ul className="flex flex-col">
+          {rows.map((row, i) =>
+            row.episode ? (
+              <Fragment key={row.episode.item.path}>
+                {i > 0 && <li aria-hidden className={`${RULE} my-1`} />}
+                <Episode episode={row.episode} index={i} />
+              </Fragment>
+            ) : (
+              <Fragment key={`gap-${row.number}`}>
+                {i > 0 && <li aria-hidden className={`${RULE} my-1`} />}
+                <Gap missing={row.gap!} index={i} />
+              </Fragment>
+            ),
+          )}
+        </ul>
+      </Panel>
     </section>
+  );
+}
+
+/**
+ * Going looking for better releases, for whichever season you name.
+ *
+ * A search belongs to a season — television is released that way — but the
+ * question "what could be better here" is asked of the show. So the button is
+ * the show's and the season is chosen in the menu, where each one carries the
+ * score it would be replacing: a season already matching the best disc released
+ * has nothing above it to find, and is shown saying so rather than hidden.
+ */
+function SeasonUpgrade({
+  show,
+  jackettReady,
+}: {
+  show: Show;
+  jackettReady: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [chosen, setChosen] = useState<ShowSeason | null>(null);
+  const shown = useLingering(chosen);
+  const wrap = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const away = (event: MouseEvent) => {
+      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    window.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      window.removeEventListener("keydown", key);
+    };
+  }, [open]);
+
+  const seasons = show.seasons.filter((season) => season.episodes.length > 0);
+  if (seasons.length === 0) return null;
+
+  return (
+    <div ref={wrap} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        // h-8 and rounded-chip to sit level with the icon buttons beside it,
+        // exactly as a film's own upgrade button does.
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-chip bg-foreground pr-2.5 pl-3.5 text-sm font-medium text-background transition-opacity duration-150 hover:opacity-90"
+      >
+        Upgrade
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+          className={`h-3 w-3 transition-transform duration-200 ${
+            open ? "rotate-180" : ""
+          }`}
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-64 overflow-hidden rounded-card border border-line bg-background py-1 shadow-2xl">
+          {seasons.map((season) => {
+            const score = seasonScore(season);
+            const best = score >= 100;
+
+            return (
+              <button
+                key={season.number}
+                type="button"
+                disabled={best || !jackettReady}
+                onClick={() => {
+                  setChosen(season);
+                  setOpen(false);
+                }}
+                title={
+                  best
+                    ? "Already matches the best disc released"
+                    : jackettReady
+                      ? undefined
+                      : "Connect Jackett on the Settings page to search"
+                }
+                className="glow flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-strong disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  Season {season.number}
+                  {best && (
+                    <span className="ml-2 text-[11px] opacity-60">
+                      nothing better
+                    </span>
+                  )}
+                </span>
+                <ScoreDial score={score} size={26} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {shown && (
+        <ReleaseSearchModal
+          open={chosen !== null}
+          subject={{
+            kind: "season",
+            showKey: show.key,
+            season: shown.number,
+          }}
+          title={show.tmdb?.name ?? show.title}
+          subtitle={`Season ${shown.number}`}
+          configured={jackettReady}
+          onClose={() => setChosen(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * What the show was matched to.
+ *
+ * Show-level, so it does not change as you move between seasons — it sits among
+ * the season's panels because that is where the folded facts are, not because
+ * it belongs to a season.
+ */
+function ShowIdentity({ show }: { show: Show }) {
+  return (
+    <Panel
+      title={show.tmdb ? "Identified as" : "Not identified"}
+      summary={
+        show.tmdb
+          ? [show.tmdb.name, show.tmdb.year].filter(Boolean).join(" · ")
+          : "No TMDb match"
+      }
+      open={!show.tmdb || show.tmdb.confidence !== "high"}
+    >
+      <div>
+        {show.tmdb ? (
+          <>
+            <p className="font-medium">{show.tmdb.name}</p>
+
+            {show.tmdb.overview && (
+              <p className="mt-2 text-sm opacity-70">{show.tmdb.overview}</p>
+            )}
+
+            <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2 text-sm">
+              <div className="contents">
+                <dt className="opacity-50">Seasons held</dt>
+                <dd>
+                  {show.seasons.length} ·{" "}
+                  {show.seasons.reduce(
+                    (n, season) => n + season.episodes.length,
+                    0,
+                  )}{" "}
+                  episodes
+                </dd>
+              </div>
+              <div className="contents">
+                <dt className="opacity-50">TMDb</dt>
+                <dd>
+                  <a
+                    href={`https://www.themoviedb.org/tv/${show.tmdb.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-4 opacity-70 hover:opacity-100"
+                  >
+                    {show.tmdb.id}
+                  </a>
+                </dd>
+              </div>
+            </dl>
+
+            {show.tmdb.confidence !== "high" && (
+              <p className="mt-4 text-xs opacity-50">
+                Matched by name, which was close but not exact. Confirm it and
+                later scans will leave it alone.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm">
+            No TMDb match, so there are no episode titles and no way to tell
+            which episodes are missing. Search below to link it by hand.
+          </p>
+        )}
+
+        <MatchReview
+          showKey={show.key}
+          currentId={show.tmdb?.id}
+          needsReview={Boolean(show.tmdb) && show.tmdb?.confidence !== "high"}
+          defaultQuery={show.title}
+        />
+      </div>
+    </Panel>
   );
 }
 
@@ -467,42 +697,49 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
   const gaps = discGaps(season);
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
-          Best disc available
-        </h2>
-        {disc?.best && gaps.length === 0 && (
-          <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium text-emerald-700 ring-1 ring-emerald-500/30 ring-inset dark:text-emerald-300">
-            your copy matches it
-          </span>
-        )}
-      </div>
-
-      <div className="rounded-card border border-line bg-surface p-5">
+    <Panel
+      title="Best disc available"
+      summary={
+        disc?.best
+          ? [disc.best.title, disc.best.format].filter(Boolean).join(" · ")
+          : "None found"
+      }
+    >
+      <div>
         {!disc || disc.error || !disc.best ? (
-          <p className="text-sm opacity-60">
-            {disc
-              ? `No disc release found on Blu-ray.com for this season${disc.error ? ` — ${disc.error}` : ""}.`
-              : "Not looked up yet — this happens automatically during a scan."}
-          </p>
+          <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
+            <NoDisc
+              scope="season"
+              lookedUp={Boolean(disc)}
+              error={disc?.error}
+            />
+            <DiscReview
+              showKey={show.key}
+              season={season.number}
+              title={show.tmdb?.name ?? show.title}
+              year={season.year}
+              currentUrl={disc?.best?.url}
+              manual={disc?.manual}
+              inline
+            />
+          </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-baseline justify-between gap-3">
-              <p className="font-medium">
-                {disc.best.title}
-                <span className="ml-2 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
-                  {disc.best.format}
-                </span>
-              </p>
+            <div className="flex flex-wrap items-baseline gap-2">
               <a
                 href={disc.best.url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+                className="font-medium underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
               >
-                View on Blu-ray.com ↗
+                {disc.best.title}
+                <span aria-hidden className="ml-1 opacity-40">
+                  ↗
+                </span>
               </a>
+              <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
+                {disc.best.format}
+              </span>
             </div>
 
             <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
@@ -538,7 +775,7 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
             </dl>
 
             {gaps.length > 0 && (
-              <div className="mt-4 border-t border-line pt-4">
+              <div className="mt-6">
                 <p className="text-xs tracking-wide uppercase opacity-45">
                   Where your copy falls short
                 </p>
@@ -563,16 +800,20 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
           </>
         )}
 
-        <DiscReview
-          showKey={show.key}
-          season={season.number}
-          title={show.tmdb?.name ?? show.title}
-          year={season.year}
-          currentUrl={disc?.best?.url}
-          manual={disc?.manual}
-        />
+        {/* Only where there is a release on screen to correct: with none, the
+            same button is already beside the sentence explaining why. */}
+        {disc?.best && !disc.error && (
+          <DiscReview
+            showKey={show.key}
+            season={season.number}
+            title={show.tmdb?.name ?? show.title}
+            year={season.year}
+            currentUrl={disc.best.url}
+            manual={disc.manual}
+          />
+        )}
       </div>
-    </section>
+    </Panel>
   );
 }
 
@@ -581,7 +822,7 @@ function Gap({ missing, index }: { missing: MissingEpisode; index: number }) {
   return (
     <li
       style={stagger(index)}
-      className="row-enter flex items-center gap-3 rounded-card border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-4 py-3"
+      className="row-enter -mx-5 flex items-center gap-3 rounded-card px-5 py-4"
     >
       <span className="shrink-0 font-mono text-xs opacity-30">
         E{String(missing.number).padStart(2, "0")}
@@ -637,8 +878,8 @@ export function ShowView({
         <BackButton />
       </div>
 
-      <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-5xl flex-col gap-8 px-6 sm:px-8">
-        <header className="relative flex flex-col gap-5 sm:flex-row sm:items-end">
+      <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-5xl flex-col px-6 sm:px-8">
+        <header className="relative mb-10 flex flex-col gap-5 sm:flex-row sm:items-end">
           {show.poster || show.art.poster ? (
             <Art
               src={show.poster}
@@ -676,40 +917,18 @@ export function ShowView({
             )}
           </div>
 
-          {show.tmdb && (
-            <div className="mt-2 flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:bottom-1 sm:mt-0">
+          <div className="mt-2 flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:bottom-1 sm:mt-0">
+            {show.tmdb && (
               <ArtworkEditor showKey={show.key} tmdbId={show.tmdb.id} />
-            </div>
-          )}
+            )}
+            <SeasonUpgrade show={show} jackettReady={jackettReady} />
+          </div>
         </header>
 
         {/* A wrong series poisons every episode title and every missing-episode
             count below, so the way to correct it sits at the top rather than
             buried at the bottom of the page. */}
-        {(!show.tmdb || show.tmdb.confidence !== "high") && (
-          <section
-            className={`rounded-card border p-5 ${
-              show.tmdb
-                ? "border-line bg-surface"
-                : "border-amber-500/30 bg-amber-500/[0.06]"
-            }`}
-          >
-            <p className="text-sm">
-              {show.tmdb
-                ? `Matched to “${show.tmdb.name}” by name, which was close but not exact. Confirm it and later scans will leave it alone.`
-                : "No TMDb match, so there are no episode titles and no way to tell which episodes are missing. Search below to link it by hand."}
-            </p>
-
-            <MatchReview
-              showKey={show.key}
-              currentId={show.tmdb?.id}
-              needsReview={Boolean(show.tmdb)}
-              defaultQuery={show.title}
-            />
-          </section>
-        )}
-
-        <Seasons show={show} jackettReady={jackettReady} />
+        <Seasons show={show} />
       </div>
     </>
   );

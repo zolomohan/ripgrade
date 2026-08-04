@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 /**
  * Where "back" goes, and why it is not `history.back()`.
@@ -17,8 +17,49 @@ import { useEffect, useState } from "react";
  * back. The filters survive because the whole query string does.
  */
 const KEY = "ripgrade:listing";
+const SCROLL_KEY = "ripgrade:listingScroll";
 
-const LISTINGS = ["/", "/collections", "/wishlist", "/attention"];
+/**
+ * A page you can arrive at something *from*.
+ *
+ * The shelves, and also the two pages that are themselves lists of pages: a
+ * show lists its episodes, a collection lists its films. Back from an episode
+ * means back to the show, not back to the library it was three clicks ago.
+ */
+const LISTINGS = ["/", "/collections", "/wishlist"];
+
+const isListing = (path: string) =>
+  LISTINGS.includes(path) ||
+  path.startsWith("/show/") ||
+  path.startsWith("/collections/");
+
+/** Where you were, and how far down it you had got. */
+type Crumb = { url: string; scroll: number };
+
+/*
+ * A trail rather than a single address, because these nest: library → show →
+ * episode. One slot would have the show overwrite the library on the way in,
+ * and then send the show's own back button to the show.
+ */
+function readTrail(): Crumb[] {
+  try {
+    const raw = sessionStorage.getItem(KEY);
+    const trail = raw ? (JSON.parse(raw) as Crumb[]) : [];
+    return Array.isArray(trail) ? trail : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeTrail(trail: Crumb[]) {
+  try {
+    // Ten is far past any real path through this app; the cap is only there so
+    // a loop of clicks cannot grow the entry without bound.
+    sessionStorage.setItem(KEY, JSON.stringify(trail.slice(-10)));
+  } catch {
+    // A private window with no storage: back still works, it just goes home.
+  }
+}
 
 /**
  * Catches the click that leaves a listing, in the capture phase so it runs
@@ -32,9 +73,24 @@ export function RememberListing() {
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
-      const link = target?.closest?.("a[href^='/movie/'], a[href^='/show/']");
-      if (!link || !LISTINGS.includes(location.pathname)) return;
-      sessionStorage.setItem(KEY, location.pathname + location.search);
+      const link = target?.closest?.(
+        "a[href^='/movie/'], a[href^='/show/'], a[href^='/collections/']",
+      );
+      if (!link || !isListing(location.pathname)) return;
+
+      // The offset as well as the address: returning to the top of a shelf you
+      // were halfway down is a different place, and it takes the tile you came
+      // from off the screen — so the poster has nowhere to travel back to.
+      const crumb = {
+        url: location.pathname + location.search,
+        scroll: Math.round(window.scrollY),
+      };
+
+      const trail = readTrail();
+      // Clicking a second tile on the same shelf is not a step deeper; it is
+      // the same step, taken from a different scroll offset.
+      if (trail[trail.length - 1]?.url === crumb.url) trail.pop();
+      writeTrail([...trail, crumb]);
     };
 
     document.addEventListener("click", onClick, true);
@@ -54,16 +110,45 @@ export function RememberListing() {
     return () => cancelAnimationFrame(frame);
   }, [pathname]);
 
+  /*
+   * Restores the scroll offset the shelf was left at.
+   *
+   * A layout effect rather than an effect: this runs inside the commit that
+   * mounted the shelf, which is the state the view transition captures. Put it
+   * a frame later and the poster has already been told to land at the top of
+   * an unscrolled page, and it flies to the wrong place — or off it.
+   */
+  useLayoutEffect(() => {
+    if (!isReturning()) return;
+    const saved = Number(sessionStorage.getItem(SCROLL_KEY) ?? "");
+    if (Number.isFinite(saved) && saved > 0) window.scrollTo(0, saved);
+  }, [pathname]);
+
   return null;
 }
 
+/** Whether a return is in progress; see `markReturning`. */
+export const isReturning = () => returning;
+
 /** The listing last left, or the library when this page was opened directly. */
-export const lastListing = () => {
+export const lastListing = () => readTrail().at(-1)?.url ?? "/";
+
+/**
+ * The same, and steps off it: going back is leaving this page, so the page it
+ * returns to is no longer the one behind you.
+ */
+export const popListing = () => {
+  const trail = readTrail();
+  const crumb = trail.pop();
+  writeTrail(trail);
+
   try {
-    return sessionStorage.getItem(KEY) ?? "/";
+    sessionStorage.setItem(SCROLL_KEY, String(crumb?.scroll ?? 0));
   } catch {
-    return "/";
+    // See writeTrail.
   }
+
+  return crumb?.url ?? "/";
 };
 
 /**

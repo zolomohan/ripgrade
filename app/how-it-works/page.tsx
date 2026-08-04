@@ -21,6 +21,16 @@ const SEVERITY_STYLE: Record<string, string> = {
   info: "opacity-60",
 };
 
+/**
+ * One part of the rubric, closed until asked for.
+ *
+ * The page is a specification, and eleven of them in a row is a document you
+ * scroll rather than read. Shut, it is a contents page in the shape of the
+ * collections list — a title, a line about it, and the same rule between rows.
+ *
+ * A native <details>: it needs no JavaScript to open, it is open to a screen
+ * reader and to the browser's own find-in-page, and printing shows everything.
+ */
 function Section({
   title,
   lede,
@@ -31,11 +41,38 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="font-display text-lg font-semibold">{title}</h2>
-      {lede && <p className="text-sm opacity-70">{lede}</p>}
-      {children}
-    </section>
+    <details className="doc-section group">
+      <summary className="glow -mx-3 flex cursor-pointer list-none items-center gap-4 rounded-control px-3 py-3 transition-colors hover:bg-surface [&::-webkit-details-marker]:hidden">
+        <div className="min-w-0 flex-1">
+          <h2 className="font-display text-lg font-semibold tracking-tight">
+            {title}
+          </h2>
+          {lede && <p className="mt-0.5 text-sm opacity-45">{lede}</p>}
+        </div>
+
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+          className="h-4 w-4 shrink-0 opacity-40 transition-transform duration-200 group-open:rotate-180"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </summary>
+
+      {/* The type is set once here rather than on every paragraph: the body of
+          a section is prose, and prose that has to declare its own size and
+          weight line by line drifts the moment one line is edited. `strong`
+          and `code` are lifted back to full strength — they are the words you
+          are meant to find when skimming. */}
+      <div className="flex flex-col gap-4 pt-1 pb-6 text-sm leading-relaxed opacity-75 [&_code]:rounded-chip [&_code]:bg-surface-strong [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_code]:opacity-100 [&_em]:opacity-100 [&_strong]:font-medium [&_strong]:opacity-100">
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -47,28 +84,32 @@ function Table({
   rows: (string | number)[][];
 }) {
   return (
-    <div className="overflow-x-auto rounded-control border border-line">
+    <div className="overflow-x-auto rounded-card border border-line bg-surface">
       <table className="w-full text-left text-sm">
-        <thead className="border-b border-line text-xs uppercase tracking-wide opacity-60">
+        <thead>
           <tr>
             {head.map((h, i) => (
               <th
                 key={h}
-                className={`px-3 py-2 font-medium ${i > 0 ? "text-right" : ""}`}
+                className={`px-4 pt-3 pb-2 text-[10px] font-medium tracking-[0.12em] uppercase opacity-40 ${
+                  i > 0 ? "text-right" : ""
+                }`}
               >
                 {h}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-line">
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-line last:border-0">
+            <tr key={i}>
               {row.map((cell, j) => (
                 <td
                   key={j}
-                  className={`px-3 py-2 ${j > 0 ? "text-right tabular-nums" : ""} ${
-                    j === 0 ? "" : "opacity-80"
+                  className={`px-4 py-2.5 ${
+                    j === 0
+                      ? "font-medium opacity-100"
+                      : "text-right font-score tabular-nums opacity-70"
                   }`}
                 >
                   {cell}
@@ -84,12 +125,12 @@ function Table({
 
 export default function HowItWorks() {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 p-8">
+    <main className="mx-auto flex w-full max-w-3xl flex-col p-8">
       <Section
         title="The pipeline"
         lede="Six stages. Only the first four touch your drive."
       >
-        <ol className="flex flex-col gap-2 text-sm">
+        <ol className="flex flex-col gap-2.5">
           {[
             [
               "Scan",
@@ -117,12 +158,12 @@ export default function HowItWorks() {
             ],
           ].map(([name, text], i) => (
             <li key={name} className="flex gap-3">
-              <span className="shrink-0 font-mono text-xs opacity-40">
+              <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-line font-score text-[10px] opacity-50">
                 {i + 1}
               </span>
-              <span>
-                <span className="font-medium">{name}</span>
-                <span className="opacity-70"> — {text}</span>
+              <span className="min-w-0">
+                <span className="font-medium opacity-100">{name}</span>
+                <span> — {text}</span>
               </span>
             </li>
           ))}
@@ -133,13 +174,13 @@ export default function HowItWorks() {
         title="Identification"
         lede="Films are matched against TMDb to establish what they are — never to judge how good they are."
       >
-        <p className="text-sm opacity-70">
+        <p>
           Matching walks from strongest evidence to weakest and stops at the
           first hit: a TMDb id embedded in the container, then an embedded IMDb
           id, then title with an exact year, then title with a year within one,
           and finally title alone.
         </p>
-        <p className="text-sm opacity-70">
+        <p>
           Only the first three count as <strong>high confidence</strong>.
           Everything below that is applied as a best guess and marked
           &ldquo;match?&rdquo; in the library, because a wrong match is worse
@@ -147,7 +188,7 @@ export default function HowItWorks() {
           nothing. For that reason the runtime checks below only run on
           high-confidence matches.
         </p>
-        <p className="text-sm opacity-70">
+        <p>
           <strong>TMDb never changes a score.</strong> It supplies the canonical
           title, year, runtime and collection, and it enables the runtime
           checks. Quality remains derived entirely from the file itself — TMDb
@@ -161,18 +202,18 @@ export default function HowItWorks() {
         title="Dolby Vision"
         lede="MediaInfo reads the profile out of the container's configuration record and stops there. Everything that decides what can be done with the file is inside the RPU, and the only way to see it is to demux the stream."
       >
-        <p className="text-sm opacity-70">
+        <p>
           So every scan does. The video stream of each Dolby Vision film is
-          piped through <code className="font-mono text-xs">dovi_tool</code>,
-          which parses the first {HEAD_FRAMES} frames — enough to be past the
-          studio logos and into the film itself. Nothing the size of the film is
-          ever written to disk, and because the read stops at the head of the
-          file it takes well under a second whether the film is 5 GB or 90 GB.
-          What comes back is authored once and fixed for the whole stream: the
-          profile, the enhancement layer type, the content mapping version, the
-          L5 active area, and the static L6 fallback metadata.
+          piped through <code>dovi_tool</code>, which parses the first{" "}
+          {HEAD_FRAMES} frames — enough to be past the studio logos and into the
+          film itself. Nothing the size of the film is ever written to disk, and
+          because the read stops at the head of the file it takes well under a
+          second whether the film is 5 GB or 90 GB. What comes back is authored
+          once and fixed for the whole stream: the profile, the enhancement
+          layer type, the content mapping version, the L5 active area, and the
+          static L6 fallback metadata.
         </p>
-        <p className="text-sm opacity-70">
+        <p>
           The enhancement layer is the reason this stage exists. Profile 7 is a
           disc format that many players refuse, and flattening it to Profile 8.1
           means discarding that layer — so what the layer is <em>doing</em> is
@@ -226,7 +267,7 @@ export default function HowItWorks() {
             </div>
           ))}
         </div>
-        <p className="text-sm opacity-70">
+        <p>
           Telling the last two apart is a brightness comparison. The Dolby
           Vision grade&rsquo;s measured peak — MaxCLL across the frames read —
           is set against the peak the base layer declares for itself. Clearing
@@ -243,15 +284,14 @@ export default function HowItWorks() {
           &rsquo;s thresholds, so the two tools reach the same verdict on the
           same film.
         </p>
-        <p className="text-sm opacity-70">
+        <p>
           A Profile 7 film&rsquo;s page states which it is in words rather than
           leaving you to interpret a three-letter field, and prints the exact{" "}
-          <code className="font-mono text-xs">dovi_tool</code> command the
-          conversion would take. It never runs it — rewriting a 90 GB file, and
-          deciding where it lands, is not a call an audit tool should make for
-          you.
+          <code>dovi_tool</code> command the conversion would take. It never
+          runs it — rewriting a 90 GB file, and deciding where it lands, is not
+          a call an audit tool should make for you.
         </p>
-        <p className="text-sm opacity-70">
+        <p>
           Readings are cached against the file, and thrown away the moment its
           size or modification time changes, so a rescan costs nothing and a
           replaced file is never described by the old file&rsquo;s metadata.
@@ -260,12 +300,12 @@ export default function HowItWorks() {
           <h3 className="text-sm font-medium tracking-wide uppercase opacity-50">
             Reading every frame
           </h3>
-          <p className="text-sm opacity-70">
+          <p>
             The scan reads a sample, and two things a sample cannot establish
             are offered on demand from each film&rsquo;s page. It takes minutes
             rather than milliseconds, because it reads the entire file.
           </p>
-          <ul className="list-disc space-y-2 pl-5 text-sm opacity-70">
+          <ul className="flex flex-col gap-2 pl-5 [&>li]:list-disc">
             <li>
               <span className="font-medium opacity-100">
                 What the film actually peaks at.
@@ -300,7 +340,7 @@ export default function HowItWorks() {
         <p className="rounded-control border border-line px-4 py-3 font-mono text-sm">
           bpp = video bitrate ÷ (width × height × frame rate)
         </p>
-        <p className="text-sm opacity-70">
+        <p>
           Raw bitrate is misleading: 15 Mbps is generous at 1080p and starved at
           2160p. Dividing by the number of pixels encoded per second normalises
           that away, so one scale works everywhere.
@@ -314,7 +354,7 @@ export default function HowItWorks() {
             ["Poor", `< ${BPP.fair}`, "Banding and motion smear"],
           ]}
         />
-        <p className="text-sm opacity-70">
+        <p>
           Remuxes are exempt: they carry the disc bitrate by definition, so bpp
           only discriminates between encodes.
         </p>
@@ -348,7 +388,7 @@ export default function HowItWorks() {
             [`Encode at bpp ≥ ${BPP.fair}`, `+${VIDEO_POINTS.bppFair}`],
           ]}
         />
-        <p className="text-sm opacity-70">
+        <p>
           Resolution is judged on frame <em>width</em>, not height. A 2.40:1
           scope transfer is 3840×1600 — reading the height alone would misfile
           it as 1080p.
@@ -372,7 +412,7 @@ export default function HowItWorks() {
             ["6 to 7 channels", `+${AUDIO_POINTS.channels6}`],
           ]}
         />
-        <p className="text-sm opacity-70">
+        <p>
           &quot;Best&quot; is chosen by ranking lossless above object audio
           above channel count, so a 7.1 TrueHD Atmos track always wins over a
           5.1 Dolby Digital one.
@@ -396,14 +436,14 @@ export default function HowItWorks() {
             ["Unrecognised encoder", RELEASE_POINTS.UNKNOWN],
           ]}
         />
-        <p className="text-sm opacity-70">
+        <p>
           Release type is decided from the video stream itself, not the
           filename. A stream with no encoder library was copied rather than
           re-compressed — that is what makes it a remux. Filenames are used only
           to break ties, and lose: a file claiming REMUX over an x265 stream is
           classified as an encode.
         </p>
-        <p className="text-sm opacity-70">
+        <p>
           One subtlety worth knowing: studios cut UHD discs on professional
           encoders like ATEME, and a remux inherits that string from the master.
           So a professional encoder alone cannot separate a disc remux from a
@@ -425,7 +465,7 @@ export default function HowItWorks() {
           &nbsp;&nbsp;video + {VIDEO_CEILING_BONUS}
           <br />)
         </p>
-        <p className="text-sm opacity-70">
+        <p>
           The cap is the important half. Without it, a 1080p SDR remux carrying
           TrueHD Atmos scores in the high seventies purely on perfect audio and
           a perfect container — outranking a genuinely better 4K HDR encode.
@@ -446,7 +486,7 @@ export default function HowItWorks() {
             return [`${b.min}–${upper}`, b.status];
           })}
         />
-        <p className="text-sm opacity-70">
+        <p>
           Any <span className={SEVERITY_STYLE.critical}>critical</span> issue
           overrides the bands outright and forces{" "}
           <span className="font-medium">Must Upgrade</span>. A fake 4K upscale
@@ -465,7 +505,7 @@ export default function HowItWorks() {
               className="rounded-control border border-line px-4 py-3"
             >
               <div className="flex items-baseline justify-between gap-3">
-                <code className="font-mono text-sm">{code}</code>
+                <code>{code}</code>
                 <span
                   className={`text-xs font-medium uppercase ${SEVERITY_STYLE[meta.severity]}`}
                 >
@@ -476,14 +516,14 @@ export default function HowItWorks() {
                 <span className="opacity-60">Triggers when: </span>
                 {meta.trigger}
               </p>
-              <p className="mt-1 text-sm opacity-70">{meta.why}</p>
+              <p className="mt-1">{meta.why}</p>
             </div>
           ))}
         </div>
       </Section>
 
       <Section title="What this cannot tell you">
-        <ul className="list-disc space-y-2 pl-5 text-sm opacity-70">
+        <ul className="flex flex-col gap-2 pl-5 [&>li]:list-disc">
           <li>
             <span className="font-medium opacity-100">
               Whether a better release exists.

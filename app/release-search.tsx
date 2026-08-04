@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
 
 import {
   findUpgradesForMovie,
   findUpgradesForSeason,
-  findUpgradesForWish,
+  findReleasesFor,
   type UpgradeResponse,
 } from "@/app/actions";
 import { ScoreDial } from "@/app/score-circle";
 import type { DiscSummary, ScoredRelease, Standing } from "@/lib/upgrades";
+import { Modal, useClosing } from "@/app/modal";
 
 /**
  * What the indexers have, read through the same rubric as the drive.
@@ -31,7 +31,7 @@ import type { DiscSummary, ScoredRelease, Standing } from "@/lib/upgrades";
 
 export type Subject =
   | { kind: "movie"; path: string }
-  | { kind: "wish"; tmdbId: number }
+  | { kind: "tmdb"; tmdbId: number }
   | { kind: "season"; showKey: string; season: number };
 
 /**
@@ -39,9 +39,16 @@ export type Subject =
  * Seeders answer the other one — the best release on a dead tracker is not a
  * copy you are going to end up with.
  */
-type Sort = "score" | "seeders";
+/** Both row actions are the same circle; only what is inside them differs. */
+const ROW_ACTION =
+  "grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong";
 
-const SORTS: Record<Sort, (a: ScoredRelease, b: ScoredRelease) => number> = {
+export type Sort = "score" | "seeders";
+
+export const SORTS: Record<
+  Sort,
+  (a: ScoredRelease, b: ScoredRelease) => number
+> = {
   score: (a, b) => b.score - a.score || (b.seeders ?? 0) - (a.seeders ?? 0),
   seeders: (a, b) => (b.seeders ?? 0) - (a.seeders ?? 0) || b.score - a.score,
 };
@@ -184,7 +191,7 @@ function NoDiscPanel() {
   );
 }
 
-function Result({
+export function Result({
   release,
   referenceKind,
 }: {
@@ -194,22 +201,29 @@ function Result({
   const { facts, tags, confidence } = release.guess;
   const best = facts.audio[0];
 
-  // A name that states two dimensions out of four has been scored partly on
-  // defaults, and saying so is the difference between a guess and a claim.
+  /*
+   * A name that states two dimensions out of four has been scored mostly on
+   * defaults. Such a release shows no chips at all rather than a warning: the
+   * chips are what the name actually said, and a name that said almost nothing
+   * has nothing to put in them. The bare title underneath is the honest thing
+   * to read in that case, and its score already carries the doubt.
+   */
   const thin = confidence < 0.5;
 
-  const pills = [
-    facts.resolution !== "unknown" ? facts.resolution : undefined,
-    facts.hdr !== "SDR" ? facts.hdr : undefined,
-    facts.releaseType !== "UNKNOWN" ? facts.releaseType : undefined,
-    best?.atmos ? "Atmos" : best?.dtsx ? "DTS:X" : undefined,
-    best && best.label !== "Assumed 5.1" ? best.label : undefined,
-    tags.edition,
-    tags.repack ? "REPACK" : undefined,
-  ].filter(Boolean) as string[];
+  const pills = thin
+    ? []
+    : ([
+        facts.resolution !== "unknown" ? facts.resolution : undefined,
+        facts.hdr !== "SDR" ? facts.hdr : undefined,
+        facts.releaseType !== "UNKNOWN" ? facts.releaseType : undefined,
+        best?.atmos ? "Atmos" : best?.dtsx ? "DTS:X" : undefined,
+        best && best.label !== "Assumed 5.1" ? best.label : undefined,
+        tags.edition,
+        tags.repack ? "REPACK" : undefined,
+      ].filter(Boolean) as string[]);
 
   return (
-    <li className="group flex items-center gap-4 px-5 py-3 transition-colors hover:bg-surface">
+    <li className="glow group flex items-center gap-4 px-5 py-3 transition-colors hover:bg-surface">
       <div className="flex w-11 shrink-0 flex-col items-center gap-0.5">
         <ScoreDial
           score={release.score}
@@ -234,21 +248,10 @@ function Result({
         )}
       </div>
 
+      {/* The name leads. It is what you are actually scanning for, and the
+          chips beneath it are a reading of that name — put above, they were
+          answering a question the row had not asked yet. */}
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {pills.map((pill) => (
-            <Chip key={pill}>{pill}</Chip>
-          ))}
-          {thin && (
-            <span
-              className="text-[10px] font-semibold tracking-[0.08em] text-amber-600 dark:text-amber-400"
-              title="The name states little, so most of this score is assumed rather than read."
-            >
-              THIN NAME
-            </span>
-          )}
-        </div>
-
         <p
           className="truncate font-mono text-[11px] opacity-55"
           title={release.title}
@@ -265,22 +268,50 @@ function Result({
           {release.indexer && <span>{release.indexer}</span>}
           {release.sources > 1 && <span>on {release.sources} indexers</span>}
         </p>
+
+        {pills.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {pills.map((pill) => (
+              <Chip key={pill}>{pill}</Chip>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Held at full opacity for the row under the pointer and dimmed
           otherwise, so twenty-five rows of buttons do not compete with the
-          scores for attention. */}
-      <div className="flex shrink-0 items-center gap-2 opacity-60 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          scores for attention. Icons rather than words: the pair repeats down
+          every row, and at that count a label is read once and skipped
+          thereafter while the shape is recognised every time. */}
+      <div className="flex shrink-0 items-center gap-1.5 opacity-60 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         {release.detailsUrl && (
           <a
             href={release.detailsUrl}
             target="_blank"
             rel="noreferrer noopener"
-            className="rounded-control px-2 py-1 text-xs opacity-60 hover:bg-surface-strong hover:opacity-100"
+            aria-label="Open the indexer's page for this release"
+            title="Details on the indexer"
+            className={ROW_ACTION}
           >
-            Details
+            {/* The arrow leaving the frame is the web's own mark for a link
+                that takes you off the page, which this one does. */}
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              className="h-3.5 w-3.5"
+            >
+              <path d="M14 5h5v5" />
+              <path d="M19 5l-7.5 7.5" />
+              <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+            </svg>
           </a>
         )}
+
         {release.magnet ? (
           // A plain link rather than a button: `magnet:` is a scheme the
           // browser hands straight to whatever the system has registered for
@@ -289,17 +320,31 @@ function Result({
           // empty tab behind.
           <a
             href={release.magnet}
+            aria-label="Download"
             title={release.magnet}
-            className="rounded-control border border-line px-2.5 py-1 text-xs whitespace-nowrap transition-colors hover:bg-surface-strong"
+            className={`${ROW_ACTION} border-line-strong`}
           >
-            Download
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              className="h-3.5 w-3.5"
+            >
+              <path d="M12 4v11" />
+              <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+              <path d="M5 19h14" />
+            </svg>
           </a>
         ) : (
           <span
-            className="text-xs opacity-30"
+            className="grid h-8 w-8 place-items-center rounded-full text-[10px] opacity-25"
             title="This indexer publishes no magnet — open the details page for it."
           >
-            No magnet
+            —
           </span>
         )}
       </div>
@@ -307,27 +352,7 @@ function Result({
   );
 }
 
-/**
- * Who actually answered.
- *
- * An indexer that failed inside Jackett is simply absent from the feed — no
- * error, no mention — so a search can quietly become a search of half your
- * trackers. Naming the ones that replied is the only honest signal available,
- * and it is the difference between "this release does not exist" and "the
- * tracker holding it never answered".
- */
-function Answered({ indexers }: { indexers: string[] }) {
-  if (indexers.length === 0) return null;
-
-  return (
-    <p className="text-[11px] opacity-40">
-      Answered: {indexers.join(", ")}. An indexer that failed inside Jackett
-      does not appear here.
-    </p>
-  );
-}
-
-function NotConfigured() {
+export function NotConfigured() {
   return (
     <p className="px-5 py-10 text-center text-sm opacity-55">
       Connect Jackett on the{" "}
@@ -347,12 +372,14 @@ function NotConfigured() {
  * wishlist. Searching happens on mount — being rendered *is* the request.
  */
 export function ReleaseSearchModal({
+  open,
   subject,
   title,
   subtitle,
   configured,
   onClose,
 }: {
+  open: boolean;
   subject: Subject;
   title: string;
   subtitle?: string;
@@ -362,12 +389,6 @@ export function ReleaseSearchModal({
   const [response, setResponse] = useState<UpgradeResponse | null>(null);
   const [sort, setSort] = useState<Sort>("score");
   const [pending, startTransition] = useTransition();
-  const [target, setTarget] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTarget(document.body);
-  }, []);
 
   // Escape closes the modal, as expected of a dialog.
   useEffect(() => {
@@ -383,8 +404,8 @@ export function ReleaseSearchModal({
       setResponse(
         subject.kind === "movie"
           ? await findUpgradesForMovie(subject.path)
-          : subject.kind === "wish"
-            ? await findUpgradesForWish(subject.tmdbId)
+          : subject.kind === "tmdb"
+            ? await findReleasesFor(subject.tmdbId)
             : await findUpgradesForSeason(subject.showKey, subject.season),
       );
     });
@@ -409,27 +430,21 @@ export function ReleaseSearchModal({
     ? [...response.search.results].sort(SORTS[sort])
     : [];
 
-  if (!target) return null;
-
   const search = response?.ok ? response.search : undefined;
   const showing = results.slice(0, 25);
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm"
-      onClick={onClose}
+  return (
+    /* A fixed height rather than one that follows the contents: a search
+       returns anything from nothing to twenty-five rows, and a dialog that
+       resizes as results land moves the close button out from under the
+       pointer. The results scroll inside instead. */
+    <Modal
+      open={open}
+      onClose={onClose}
+      label={`Releases for ${title}`}
+      panelClassName="flex h-[min(85vh,46rem)] w-full max-w-4xl flex-col overflow-hidden rounded-card border border-line bg-background shadow-2xl"
     >
-      {/* A fixed height rather than one that follows the contents: a search
-          returns anything from nothing to twenty-five rows, and a dialog that
-          resizes as results land moves the close button out from under the
-          pointer. The results scroll inside instead. */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Releases for ${title}`}
-        onClick={(e) => e.stopPropagation()}
-        className="flex h-[min(85vh,46rem)] w-full max-w-4xl flex-col overflow-hidden rounded-card border border-line bg-background shadow-2xl"
-      >
+      <>
         <header className="flex shrink-0 items-start gap-4 px-5 pt-5 pb-4">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold tracking-tight">
@@ -501,19 +516,10 @@ export function ReleaseSearchModal({
             <div className="flex-1" />
 
             {search && results.length > showing.length && (
-              <span className="text-[11px] opacity-40">
+              <span className="shrink-0 text-[11px] opacity-40">
                 top {showing.length} of {results.length}
               </span>
             )}
-
-            <button
-              type="button"
-              onClick={run}
-              disabled={pending}
-              className="rounded-control border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong disabled:opacity-30"
-            >
-              {pending ? "Searching…" : "Search again"}
-            </button>
           </div>
         )}
 
@@ -545,7 +551,6 @@ export function ReleaseSearchModal({
                         search.discarded === 1 ? " was" : "s were"
                       } for a different film.`}
                   </p>
-                  <Answered indexers={search.indexers} />
                 </div>
               ) : (
                 <>
@@ -558,17 +563,13 @@ export function ReleaseSearchModal({
                       />
                     ))}
                   </ul>
-                  <div className="px-5 py-3">
-                    <Answered indexers={search.indexers} />
-                  </div>
                 </>
               )}
             </>
           )}
         </div>
-      </div>
-    </div>,
-    target,
+      </>
+    </Modal>
   );
 }
 
@@ -595,6 +596,7 @@ export function UpgradeButton({
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const mounted = useClosing(open);
 
   return (
     <>
@@ -607,8 +609,9 @@ export function UpgradeButton({
         {label}
       </button>
 
-      {open && (
+      {mounted && (
         <ReleaseSearchModal
+          open={open}
           subject={subject}
           title={title}
           subtitle={subtitle}
@@ -638,6 +641,7 @@ export function ReleaseSearchButton({
   label: string;
 }) {
   const [open, setOpen] = useState(false);
+  const mounted = useClosing(open);
 
   return (
     <>
@@ -660,8 +664,9 @@ export function ReleaseSearchButton({
         </button>
       </div>
 
-      {open && (
+      {mounted && (
         <ReleaseSearchModal
+          open={open}
           subject={subject}
           title={title}
           subtitle={subtitle}

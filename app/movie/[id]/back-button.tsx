@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { lastListing, markReturning } from "@/app/return-to";
+import { markReturning, popListing } from "@/app/return-to";
 import { HERO_BUTTON } from "./hero-button";
 
 /**
@@ -12,7 +12,7 @@ import { HERO_BUTTON } from "./hero-button";
  * out, so this leaves the same stack a real back would and the browser's own
  * back button does not walk into the film again.
  */
-export function BackButton() {
+export function BackButton({ label = "Back to library" }: { label?: string }) {
   const router = useRouter();
 
   return (
@@ -20,10 +20,18 @@ export function BackButton() {
       type="button"
       onClick={() => {
         markReturning();
-        router.replace(lastListing());
+        // `scroll: false` because the shelf restores its own offset — see
+        // RememberListing. Letting the router reset it to the top first would
+        // undo that inside the same commit.
+        // The type is what lets the posters run their ladder backwards on the
+        // way out; see the `share` maps in the collection views.
+        router.replace(popListing(), {
+          scroll: false,
+          transitionTypes: ["nav-back"],
+        });
       }}
-      aria-label="Back to library"
-      title="Back to library"
+      aria-label={label}
+      title={label}
       className={`absolute top-6 left-6 ${HERO_BUTTON}`}
     >
       {/* A drawn arrow rather than the "←" character: it matches the stroke

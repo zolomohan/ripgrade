@@ -6,7 +6,6 @@ import path from "node:path";
 import { findArtwork, type Artwork } from "./artwork";
 import { db } from "./db";
 import { getDoviScans, scanDovi } from "./dovi";
-import { recordRun } from "./jobs";
 import { getShows, seasonYear } from "./shows";
 import { enrichShow } from "./tv";
 import { runEnrich } from "./enrich";
@@ -572,25 +571,6 @@ export function startScan(roots: string[]): ScanState {
         if (pending.length > 0) deriveAll();
       }
 
-      recordRun({
-        kind: "scan",
-        label: roots.length === 1 ? roots[0] : `${roots.length} folders`,
-        startedAt: current().startedAt ?? Date.now(),
-        finishedAt: Date.now(),
-        status: "done",
-        detail: [
-          `${current().probed} probed`,
-          `${current().cached} unchanged`,
-          ...(current().removed ? [`${current().removed} removed`] : []),
-          ...(current().skipped?.length
-            ? [`${current().skipped!.length} folder(s) unreachable`]
-            : []),
-          ...(current().failed ? [`${current().failed} failed`] : []),
-          ...(current().doviTotal
-            ? [`${current().doviTotal} DV streams read`]
-            : []),
-        ].join(" · "),
-      });
 
       setState({
         ...current(),
@@ -600,14 +580,6 @@ export function startScan(roots: string[]): ScanState {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      recordRun({
-        kind: "scan",
-        label: roots.length === 1 ? roots[0] : `${roots.length} folders`,
-        startedAt: current().startedAt ?? Date.now(),
-        finishedAt: Date.now(),
-        status: "error",
-        detail: message,
-      });
       setState({
         ...current(),
         status: "error",

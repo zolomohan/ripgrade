@@ -39,6 +39,20 @@
      through numbers, and that the arc can be watched being drawn. */
   --score-fill: 1400ms;
 
+  /* The pointer's own light. Barely there by design: it says where you are on
+     a row, and a row that lights up brighter than its text is a distraction. */
+  --glow: rgba(0, 0, 0, 0.055);
+  /* Fainter still, for the light that falls on artwork rather than behind it. */
+  --glow-over: rgba(255, 255, 255, 0.05);
+
+  /*
+   * A panel opening. Out is quicker than in, as everywhere else here: opening
+   * is something you asked to watch, shutting is something you asked to be
+   * over.
+   */
+  --panel-in: 340ms;
+  --panel-out: 220ms;
+
   /*
    * Gentler than `--morph-ease`, which front-loads hard: on that curve the
    * count reached three quarters of the score in the first third of its time
@@ -58,6 +72,9 @@
 
     --line: rgba(255, 255, 255, 0.1);
     --line-strong: rgba(255, 255, 255, 0.22);
+
+    --glow: rgba(255, 255, 255, 0.07);
+    --glow-over: rgba(255, 255, 255, 0.06);
   }
 }
 
@@ -94,11 +111,17 @@ body {
  * A single visible focus treatment for every interactive element. Inputs set
  * `outline-none` for their own border-colour focus style, so without this
  * keyboard focus was invisible across the whole app.
+ *
+ * The outline traces the element's own corners, which every browser does by
+ * itself — nothing here has to ask for it. What did have to go was a
+ * `border-radius: inherit` on this rule: `border-radius` is not an inherited
+ * property, so `inherit` does not mean "keep your own", it means "take your
+ * parent's". A pill button inside a plain row was handed 0 the moment it took
+ * focus, and squared off along with its outline.
  */
 :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--foreground) 55%, transparent);
   outline-offset: 2px;
-  border-radius: inherit;
 }
 
 /*
@@ -133,6 +156,40 @@ body {
    */
   [data-splash] .row-enter {
     animation-delay: calc(var(--splash-hold) + min(var(--i, 0), 12) * 26ms);
+  }
+
+  /*
+   * A bar drawn as it is read.
+   *
+   * Scaled rather than sized: a width transition from nothing is a layout the
+   * browser recomputes sixty times a second, and every chart on the stats page
+   * would do it at once. The transform is composited, so the same drawing costs
+   * nothing. Staggered off `--i`, like every other list here, so a chart fills
+   * bar by bar rather than all at once.
+   */
+  .bar-grow {
+    animation: bar-grow 620ms var(--score-ease) backwards;
+    animation-delay: calc(min(var(--i, 0), 12) * 45ms);
+    transform-origin: left center;
+  }
+
+  .col-grow {
+    animation: bar-grow 620ms var(--score-ease) backwards;
+    animation-delay: calc(min(var(--i, 0), 12) * 45ms);
+    transform-origin: center bottom;
+  }
+
+  /* Same reasoning as the rows above: a chart that drew itself behind the
+     splash was finished before anyone saw it. */
+  [data-splash] .bar-grow,
+  [data-splash] .col-grow {
+    animation-delay: calc(var(--splash-hold) + min(var(--i, 0), 12) * 45ms);
+  }
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scale(0);
   }
 }
 
@@ -271,6 +328,141 @@ body {
 }
 
 /*
+ * Text that travels between two sizes.
+ *
+ * `contain` is what makes this work: both snapshots are scaled uniformly into
+ * the group's box, so at every instant the two are the same size as each other
+ * and neither is stretched. Left to itself the browser fills the box, which
+ * distorts words whose two boxes differ in shape; at natural size they do not
+ * distort but plainly disagree, and the crossfade reads as two titles.
+ *
+ * Both are kept on screen and allowed to fade. Hiding one and scaling the other
+ * looked exact on paper and left a hole in practice: the surviving snapshot is
+ * not painted until partway through, so the title appeared mid-flight rather
+ * than where it was clicked.
+ */
+::view-transition-group(.title) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--morph-ease);
+}
+
+::view-transition-old(.title),
+::view-transition-new(.title) {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+  object-position: left center;
+}
+
+/*
+ * A fan of posters, each travelling at its own pace.
+ *
+ * They all leave together and arrive apart: the first is quickest and each one
+ * behind it takes longer, so a stack that overlaps into a single shape on the
+ * list unfolds into a grid rather than sliding across as one object. The ladder
+ * is short and repeats — past six the difference stops reading as order and
+ * starts reading as lag.
+ *
+ * Two ladders, because the two directions want different things. Going in is
+ * the arrival and can afford to be watched, so it is slower and its steps are
+ * further apart. Coming out is a dismissal: quicker, and tighter, because a
+ * long unfolding on the way back is the app taking its time about a decision
+ * you have already made. `pace()` picks the ladder from the transition type.
+ *
+ * Everything but the duration is the ordinary morph, so a poster that pairs
+ * with a film's own page carries the same blur and the same curve.
+ */
+::view-transition-group(.morph-in-0),
+::view-transition-group(.morph-in-1),
+::view-transition-group(.morph-in-2),
+::view-transition-group(.morph-in-3),
+::view-transition-group(.morph-in-4),
+::view-transition-group(.morph-in-5),
+::view-transition-group(.morph-out-0),
+::view-transition-group(.morph-out-1),
+::view-transition-group(.morph-out-2),
+::view-transition-group(.morph-out-3),
+::view-transition-group(.morph-out-4),
+::view-transition-group(.morph-out-5) {
+  animation-timing-function: var(--morph-ease);
+}
+
+::view-transition-image-pair(.morph-in-0),
+::view-transition-image-pair(.morph-in-1),
+::view-transition-image-pair(.morph-in-2),
+::view-transition-image-pair(.morph-in-3),
+::view-transition-image-pair(.morph-in-4),
+::view-transition-image-pair(.morph-in-5),
+::view-transition-image-pair(.morph-out-0),
+::view-transition-image-pair(.morph-out-1),
+::view-transition-image-pair(.morph-out-2),
+::view-transition-image-pair(.morph-out-3),
+::view-transition-image-pair(.morph-out-4),
+::view-transition-image-pair(.morph-out-5) {
+  animation-name: morph-blur;
+}
+
+::view-transition-group(.morph-in-0),
+::view-transition-image-pair(.morph-in-0) {
+  animation-duration: 520ms;
+}
+
+::view-transition-group(.morph-in-1),
+::view-transition-image-pair(.morph-in-1) {
+  animation-duration: 600ms;
+}
+
+::view-transition-group(.morph-in-2),
+::view-transition-image-pair(.morph-in-2) {
+  animation-duration: 680ms;
+}
+
+::view-transition-group(.morph-in-3),
+::view-transition-image-pair(.morph-in-3) {
+  animation-duration: 760ms;
+}
+
+::view-transition-group(.morph-in-4),
+::view-transition-image-pair(.morph-in-4) {
+  animation-duration: 840ms;
+}
+
+::view-transition-group(.morph-in-5),
+::view-transition-image-pair(.morph-in-5) {
+  animation-duration: 920ms;
+}
+
+::view-transition-group(.morph-out-0),
+::view-transition-image-pair(.morph-out-0) {
+  animation-duration: 460ms;
+}
+
+::view-transition-group(.morph-out-1),
+::view-transition-image-pair(.morph-out-1) {
+  animation-duration: 520ms;
+}
+
+::view-transition-group(.morph-out-2),
+::view-transition-image-pair(.morph-out-2) {
+  animation-duration: 580ms;
+}
+
+::view-transition-group(.morph-out-3),
+::view-transition-image-pair(.morph-out-3) {
+  animation-duration: 640ms;
+}
+
+::view-transition-group(.morph-out-4),
+::view-transition-image-pair(.morph-out-4) {
+  animation-duration: 700ms;
+}
+
+::view-transition-group(.morph-out-5),
+::view-transition-image-pair(.morph-out-5) {
+  animation-duration: 760ms;
+}
+
+/*
  * What the poster arrives into.
  *
  * The page it lands on is not a still to be revealed all at once: the backdrop
@@ -317,6 +509,30 @@ body {
   .score-count {
     animation: var(--score-fill) var(--score-ease) calc(var(--morph) * 0.35)
       backwards;
+  }
+
+  /*
+   * And afterwards, a change is travelled rather than replayed.
+   *
+   * Arriving at the page, the ring is drawn from empty and the figure counts up
+   * from nothing — the score is what the page is for, and it should be watched
+   * arriving. Changing seasons is a different event: the card is already
+   * showing a number, and starting it again from zero says the whole thing has
+   * just loaded. So the same properties also carry a transition, which the
+   * mount animation overrides while it runs and which takes over once it has
+   * finished. `--count` is transitionable for the same reason it is animatable
+   * — it is a registered <integer>.
+   */
+  .score-arc {
+    transition: stroke-dashoffset var(--score-fill) var(--score-ease);
+  }
+
+  .score-count {
+    transition: --count var(--score-fill) var(--score-ease);
+  }
+
+  .score-bar {
+    transition: width var(--score-fill) var(--score-ease);
   }
 
   .score-arc {
@@ -423,6 +639,341 @@ body {
     animation-duration: 0s !important;
     animation-delay: 0s !important;
   }
+}
+
+/*
+ * Dialogs arrive and leave rather than appearing and vanishing.
+ *
+ * Two parts, because they are two things: the veil darkens and blurs the page,
+ * and the panel comes up out of it. The movement is deliberately larger than a
+ * nudge — 20px and a tenth of scale — because a dialog that only fades reads as
+ * a repaint, and the eye needs somewhere to have come from.
+ *
+ * Going out is quicker than coming in, and pulls back the way it came. `Modal`
+ * in app/modal.tsx holds the panel on screen for exactly `--modal-out` after it
+ * closes, which is the only reason there is anything left to animate.
+ */
+:root {
+  --modal-in: 320ms;
+  --modal-out: 220ms;
+}
+
+/*
+ * The page does not just darken behind a dialog, it goes out of focus — which
+ * is what makes the dialog read as being in front of it rather than on it. The
+ * dim alone left the library legible enough to keep competing for attention.
+ */
+.modal-veil {
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .modal-veil {
+    animation: veil-fade var(--modal-in) ease-out;
+  }
+
+  .modal-panel {
+    animation: modal-panel-in var(--modal-in) cubic-bezier(0.16, 0.84, 0.28, 1)
+      backwards;
+  }
+
+  .modal-veil.is-leaving {
+    animation: veil-fade var(--modal-out) ease-in reverse forwards;
+  }
+
+  .modal-panel.is-leaving {
+    animation: modal-panel-in var(--modal-out) ease-in reverse forwards;
+  }
+}
+
+@keyframes veil-fade {
+  from {
+    opacity: 0;
+    -webkit-backdrop-filter: blur(0);
+    backdrop-filter: blur(0);
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.9);
+  }
+}
+
+/*
+ * Scrollbars in the app's own colours.
+ *
+ * The default pair is a light grey trough and a dark thumb, which on a near
+ * black page is the brightest thing on screen — every scrolling panel drew a
+ * bright stripe down its edge. This is the same treatment as the borders: the
+ * thumb is the line colour, the trough is nothing at all, and both track the
+ * light and dark themes because they are built from the same tokens.
+ *
+ * `scrollbar-width: thin` is the standard property and does the work in
+ * Firefox; the `::-webkit-` rules are what Chrome and Safari read. Both are
+ * declared because neither covers every browser this might be opened in.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/*
+ * The gutter is reserved whether or not a scrollbar is in it.
+ *
+ * A dialog locks the page behind it, which takes the scrollbar away, and a
+ * styled scrollbar occupies real width — so the whole page used to jump sideways
+ * on open and back on close. Holding the space means nothing moves. macOS hides
+ * its overlay scrollbars until you scroll, but styling them above opts this app
+ * into the classic kind that takes up room, so the gutter has to be kept.
+ */
+html {
+  scrollbar-gutter: stable;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--line-strong);
+  border-radius: 999px;
+  /* Drawn inside a transparent border so the thumb reads as a slim pill with
+     room around it, rather than a bar wedged against the content. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+/* The wedge where a vertical and horizontal bar meet, which defaults to grey. */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
+ * A row lit where the pointer is — see app/glow.tsx, which supplies the two
+ * coordinates and nothing else.
+ *
+ * Drawn on a pseudo-element at a negative z-index, which within the row's own
+ * stacking context paints above its background and below its text: the light
+ * washes the row without ever coming between you and the words. `isolation`
+ * keeps that negative layer from escaping behind the page itself.
+ *
+ * Centred until the pointer says otherwise, so a row lit by a keyboard focus or
+ * a stale hover glows from the middle rather than from a corner it was last
+ * left in.
+ */
+.glow {
+  position: relative;
+  isolation: isolate;
+}
+
+.glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  background: radial-gradient(
+    16rem circle at var(--gx, 50%) var(--gy, 50%),
+    var(--glow),
+    transparent 70%
+  );
+}
+
+.glow:hover::before {
+  opacity: 1;
+}
+
+/*
+ * The same light, laid over the top instead of underneath.
+ *
+ * A poster fills its frame and is opaque, so a glow painted behind it is a glow
+ * you never see. On a tile the light falls on the artwork — which is why it is
+ * fainter here, and reaches less far: enough to say which tile you are on, not
+ * enough to change the picture.
+ */
+/*
+ * And the tile turns to face you.
+ *
+ * Under two degrees at the corners: enough that the tile answers the pointer,
+ * not so much that a shelf of them reads as a fan of loose cards. The rotation is driven by
+ * the same two coordinates as the light, normalised in app/glow.tsx.
+ *
+ * Quick while you are on it so it tracks, slow on the way back so it settles
+ * rather than snapping flat the moment you leave.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .tilt {
+    /* Lifted as well as turned — the scale is what reads as "this one", the
+       tilt as which part of it you are on.
+     *
+     * The lift is the `scale` property rather than a scale() inside the
+     * transform, so the two can be timed apart: the turn has to keep up with
+     * the pointer, and the lift is better for not trying to. One transition on
+     * a combined transform could only ever have one speed. */
+    scale: 1;
+
+    transform: perspective(900px) rotateX(calc(var(--gny, 0) * -1.75deg))
+      rotateY(calc(var(--gnx, 0) * 1.75deg));
+    transition:
+      transform 420ms var(--morph-ease),
+      scale 460ms var(--morph-ease);
+  }
+
+  .tilt:hover {
+    scale: 1.045;
+
+    transition:
+      transform 90ms var(--morph-ease),
+      scale 400ms var(--morph-ease);
+  }
+}
+
+.glow-over::before {
+  z-index: 1;
+  background: radial-gradient(
+    11rem circle at var(--gx, 50%) var(--gy, 50%),
+    var(--glow-over),
+    transparent 70%
+  );
+}
+
+/*
+ * Sections ruled apart the way the collections list is: a hairline that fades
+ * at both ends rather than a border across the page, or a box drawn around
+ * every block. On the following sibling rather than a wrapper element, so a
+ * page stays a plain list of sections and nothing has to know which is first.
+ */
+/*
+ * A panel opens and shuts rather than snapping.
+ *
+ * `interpolate-size` is what lets a height of `auto` be animated at all: the
+ * open height of a panel is whatever its contents come to, and without this the
+ * browser has no number to travel to. `content-visibility` is transitioned with
+ * `allow-discrete` so the contents stay painted for the whole of the way out
+ * instead of vanishing the moment the panel is shut — otherwise the collapse
+ * plays against an empty box.
+ *
+ * The durations live on the closed state and the open one respectively, so
+ * shutting is quicker than opening without either needing its own rule.
+ */
+:root {
+  interpolate-size: allow-keywords;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  details.ruled::details-content,
+  details.doc-section::details-content {
+    block-size: 0;
+    /*
+     * `clip` with a margin rather than `hidden`: the rows inside a panel reach
+     * past the content column so their hover band has room either side, and
+     * `hidden` cut that bleed off square — a rounded band with its corners
+     * shaved. The margin is the bleed, 20px, and the body's own top padding is
+     * the same 20px, so what the extra room lets through while the panel is
+     * opening is padding rather than content.
+     */
+    overflow: clip;
+    overflow-clip-margin: 1.25rem;
+    opacity: 0;
+    transition:
+      block-size var(--panel-out) var(--morph-ease),
+      opacity calc(var(--panel-out) * 0.6) linear,
+      content-visibility var(--panel-out) allow-discrete;
+  }
+
+  details[open].ruled::details-content,
+  details[open].doc-section::details-content {
+    block-size: auto;
+    opacity: 1;
+    transition:
+      block-size var(--panel-in) var(--morph-ease),
+      /* Held back a little: the words arrive into a box that has already begun
+         to make room for them, rather than being what is stretching it. */
+      opacity calc(var(--panel-in) * 0.6) linear calc(var(--panel-in) * 0.25),
+      content-visibility var(--panel-in) allow-discrete;
+  }
+
+  /* And the contents settle down into place as the box makes room. */
+  .panel-body {
+    transform: translateY(-0.375rem);
+    transition: transform var(--panel-out) var(--morph-ease);
+  }
+
+  details[open] .panel-body {
+    transform: none;
+    transition: transform var(--panel-in) var(--morph-ease);
+  }
+}
+
+/*
+ * The rule under a section's name.
+ *
+ * Weighted at the left and trailing off to the right, unlike the rules that
+ * merely part one thing from the next: this one belongs to the heading above
+ * it, and a line that starts where the word starts reads as underlining it
+ * rather than as a border laid across the page. Everywhere else the hairline
+ * still fades at both ends.
+ */
+.rule-head {
+  height: 1px;
+  background: linear-gradient(to right, var(--line-strong), transparent);
+}
+
+/*
+ * The same rule stood on its end: a hairline that fades out at both ends rather
+ * than a border ruled the full height. As a pseudo-element because it has to be
+ * switchable per breakpoint — the figures on the stats page are ruled apart
+ * except at the start of a row, and which item starts a row changes with the
+ * column count.
+ */
+.rule-l {
+  position: relative;
+}
+
+.rule-l::before {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--line-strong),
+    transparent
+  );
+}
+
+.ruled + .ruled::before,
+.doc-section + .doc-section::before {
+  content: "";
+  display: block;
+  height: 1px;
+  margin: 0.5rem 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--line-strong),
+    transparent
+  );
 }
 
 /* Placeholder blocks that hold layout while something loads. */

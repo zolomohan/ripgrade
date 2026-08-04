@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+
+import { Panel } from "@/app/panel";
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 
 import {
   beginConvert,
@@ -25,6 +26,7 @@ import {
   type Hdr10Static,
 } from "@/lib/derive";
 import type { DoviJob } from "@/lib/dovi";
+import { Modal, useClosing } from "@/app/modal";
 
 /**
  * What is inside the Dolby Vision stream, and for a Profile 7 file the one
@@ -132,6 +134,7 @@ const TONES = {
  * behave alike: click outside or press Escape to dismiss.
  */
 function ConfirmModal({
+  open,
   title,
   confirmLabel,
   tone = "neutral",
@@ -140,6 +143,7 @@ function ConfirmModal({
   onCancel,
   children,
 }: {
+  open: boolean;
   title: string;
   confirmLabel: string;
   tone?: "neutral" | "danger";
@@ -148,12 +152,6 @@ function ConfirmModal({
   onCancel: () => void;
   children: React.ReactNode;
 }) {
-  const [target, setTarget] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTarget(document.body);
-  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -165,20 +163,15 @@ function ConfirmModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, onCancel]);
 
-  if (!target) return null;
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-6"
-      onClick={() => !busy && onCancel()}
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      dismissible={!busy}
+      label={title}
+      panelClassName="flex w-full max-w-md flex-col gap-3 rounded-card border border-line bg-background p-6 shadow-2xl"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onClick={(e) => e.stopPropagation()}
-        className="flex w-full max-w-md flex-col gap-3 rounded-card border border-line bg-background p-6 shadow-2xl"
-      >
+      <>
         <h2 className="text-base font-semibold">{title}</h2>
         <div className="text-sm opacity-70">{children}</div>
 
@@ -205,9 +198,8 @@ function ConfirmModal({
             {confirmLabel}
           </button>
         </div>
-      </div>
-    </div>,
-    target,
+      </>
+    </Modal>
   );
 }
 
@@ -471,6 +463,10 @@ export function DolbyVision({
   const [confirming, setConfirming] = useState(false);
   const [confirmingRestore, setConfirmingRestore] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Each confirm outlives its flag by the length of its exit animation.
+  const convertMounted = useClosing(confirming);
+  const restoreMounted = useClosing(confirmingRestore);
+  const deleteMounted = useClosing(confirmingDelete);
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -631,20 +627,22 @@ export function DolbyVision({
   }
 
   return (
-    <section className="mt-10 flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
-          Dolby Vision
-        </h2>
-        {scan?.profile && (
-          <span className="text-[11px] opacity-40">
-            Profile {scan.profile}
-            {scan.elType && ` · ${scan.elType}`}
-          </span>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-5 rounded-card border border-line bg-surface p-5">
+    // Open when there is something to answer — a verdict here is the reason
+    // the section exists, and a folded verdict is one nobody reads.
+    <Panel
+      title="Dolby Vision"
+      // What the stream is, not what to do about it: the verdict is a sentence,
+      // and a sentence on a shut row is a paragraph pretending to be a summary.
+      summary={
+        scan
+          ? [`Profile ${scan.profile ?? dvProfile ?? "?"}`, scan.elType]
+              .filter(Boolean)
+              .join(" · ")
+          : "Not read yet"
+      }
+      open={verdict?.tone === "danger"}
+    >
+      <div className="flex flex-col gap-5">
         {verdict && (
           <div className="flex flex-col gap-4">
             <div
@@ -701,8 +699,9 @@ export function DolbyVision({
               </button>
             </div>
 
-            {confirmingRestore && (
+            {restoreMounted && (
               <ConfirmModal
+                open={confirmingRestore}
                 title="Put the original Profile 7 file back?"
                 confirmLabel={restoring ? "Restoring…" : "Restore original"}
                 busy={restoring}
@@ -719,8 +718,9 @@ export function DolbyVision({
               </ConfirmModal>
             )}
 
-            {confirmingDelete && (
+            {deleteMounted && (
               <ConfirmModal
+                open={confirmingDelete}
                 title="Delete the original Profile 7 file?"
                 confirmLabel={
                   restoring ? "Deleting…" : `Delete ${size(backupBytes)}`
@@ -822,8 +822,9 @@ export function DolbyVision({
                     Convert to Profile 8.1
                   </button>
 
-                  {confirming && (
+                  {convertMounted && (
                     <ConfirmModal
+                      open={confirming}
                       title="Rewrite this file as Profile 8.1?"
                       confirmLabel="Convert"
                       onConfirm={runConvert}
@@ -897,7 +898,11 @@ export function DolbyVision({
 
         {/* How much of the film these numbers describe, next to the control
             that changes it. */}
-        <div className="flex flex-col gap-2 border-t border-line pt-4">
+        <div className="flex flex-col gap-2 pt-2">
+          <div
+            aria-hidden
+            className="mb-2 h-px bg-gradient-to-r from-transparent via-line-strong to-transparent"
+          />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs opacity-45">
               {running
@@ -957,6 +962,6 @@ export function DolbyVision({
           )}
         </div>
       </div>
-    </section>
+    </Panel>
   );
 }

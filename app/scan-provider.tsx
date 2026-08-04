@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { beginScan, scanStatus } from "./actions";
-import { Toast } from "./toast";
 import type { ScanState } from "@/lib/scanner";
 
 /**
@@ -12,12 +11,24 @@ import type { ScanState } from "@/lib/scanner";
  *
  * This lives in the root layout rather than in the header button, because a
  * layout survives navigation and a page does not: previously, opening a film
- * mid-scan unmounted the button and took the progress toast with it.
+ * mid-scan unmounted the button and took the progress with it.
+ *
+ * It reports nothing itself. `SidebarProcesses` reads this state and draws it
+ * at the foot of the rail, beside whatever else is running.
  */
 
 const BUSY = ["scanning", "dovi", "matching", "discs"];
 
-type ScanContext = { state: ScanState; start: () => void; busy: boolean };
+export type ScanResult = { kind: "ok" | "error"; text: string };
+
+type ScanContext = {
+  state: ScanState;
+  start: () => void;
+  busy: boolean;
+  /** What the last scan did, until it is dismissed or times out. */
+  result: ScanResult | null;
+  dismiss: () => void;
+};
 
 const Ctx = createContext<ScanContext | null>(null);
 
@@ -28,7 +39,7 @@ export function useScan(): ScanContext {
 }
 
 const RESULT_VISIBLE_MS = 8000;
-type Result = { kind: "ok" | "error"; text: string };
+type Result = ScanResult;
 
 export function ScanProvider({
   initialState,
@@ -98,72 +109,11 @@ export function ScanProvider({
     }
   }
 
-  const handled = state.probed + state.cached + state.failed;
-  const phase =
-    state.status === "scanning"
-      ? {
-          label: `Scanning — ${handled} of ${state.discovered} files`,
-          done: handled,
-          total: state.discovered,
-        }
-      : state.status === "dovi"
-        ? {
-            label: `Reading Dolby Vision metadata — ${state.doviDone} of ${state.doviTotal}`,
-            done: state.doviDone,
-            total: state.doviTotal,
-          }
-        : state.status === "matching"
-          ? {
-              label: `Matching against TMDb — ${state.matchDone} of ${state.matchTotal}`,
-              done: state.matchDone,
-              total: state.matchTotal,
-            }
-          : {
-              label: `Looking up discs — ${state.discDone} of ${state.discTotal}`,
-              done: state.discDone,
-              total: state.discTotal,
-            };
-
   return (
-    <Ctx.Provider value={{ state, start, busy }}>
+    <Ctx.Provider
+      value={{ state, start, busy, result, dismiss: () => setResult(null) }}
+    >
       {children}
-
-      {busy && (
-        <Toast tone="busy">
-          <p>{phase.label}</p>
-          {phase.total > 0 && (
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-strong">
-              <div
-                className="h-full rounded-full bg-foreground/70 transition-[width] duration-300"
-                style={{ width: `${(phase.done / phase.total) * 100}%` }}
-              />
-            </div>
-          )}
-          {state.current && (
-            <p className="mt-1.5 truncate text-xs opacity-45">
-              {state.status === "scanning"
-                ? state.current.split("/").pop()
-                : state.current}
-            </p>
-          )}
-        </Toast>
-      )}
-
-      {!busy && result && (
-        <Toast
-          tone={result.kind === "ok" ? "ok" : "error"}
-          onDismiss={() => setResult(null)}
-        >
-          <p
-            className={
-              result.kind === "error" ? "text-red-600 dark:text-red-400" : ""
-            }
-          >
-            {result.kind === "ok" ? "Scan complete" : "Scan failed"}
-          </p>
-          <p className="mt-0.5 text-xs opacity-60">{result.text}</p>
-        </Toast>
-      )}
     </Ctx.Provider>
   );
 }

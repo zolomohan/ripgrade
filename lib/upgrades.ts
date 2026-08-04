@@ -332,6 +332,52 @@ export async function findUpgrades(
 }
 
 /**
+ * A search for whatever you typed.
+ *
+ * The same pipeline as `findUpgrades` with the two film-shaped parts taken out:
+ * nothing is discarded for being "the wrong film" when there is no film, and
+ * the scores are the rubric's own rather than a fraction of a disc — there is
+ * no disc to be a fraction of, and no copy on the drive to beat.
+ */
+export async function searchAnything(term: string): Promise<UpgradeSearch> {
+  const raw = await searchIndexers({ term, kind: "any" });
+
+  const indexers = [
+    ...new Set(raw.map((r) => r.indexer).filter(Boolean) as string[]),
+  ].sort();
+
+  const scored: ScoredRelease[] = raw.map((result) => {
+    const guess = guessFromTitle(result.title, {
+      sizeBytes: result.sizeBytes,
+    });
+    return {
+      ...result,
+      guess,
+      score: guess.scores.overall,
+      relative: false,
+      delta: undefined,
+      standing: "unknown" as const,
+      sources: 1,
+    };
+  });
+
+  const results = dedupe(scored).sort(
+    (a, b) =>
+      b.score - a.score || (b.seeders ?? 0) - (a.seeders ?? 0),
+  );
+
+  return {
+    query: term,
+    results,
+    discarded: 0,
+    indexers,
+    reference: undefined,
+    relative: false,
+    disc: undefined,
+  };
+}
+
+/**
  * The single best release for a target, or nothing.
  *
  * The sweep over a whole library runs one of these per film and only needs to

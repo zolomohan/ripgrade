@@ -2,12 +2,20 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ViewTransition } from "react";
+import { Fragment, ViewTransition } from "react";
 
 import { openIssues, titleKey } from "@/lib/derive";
 import type { LibraryItem } from "@/lib/library";
 import { Art } from "./art";
-import { HelpTip, ICONS, MenuItem, Popover } from "./controls";
+import {
+  Bar,
+  BarSearch,
+  BarSegments,
+  HelpTip,
+  ICONS,
+  MenuItem,
+  Popover,
+} from "./controls";
 import { ScoreCircle, STATUS_THEME } from "./score-circle";
 import { useEntrance } from "./return-to";
 import { stagger } from "./stagger";
@@ -358,7 +366,7 @@ function Row({ movie, index }: { movie: LibraryItem; index: number }) {
     <Link
       href={`/movie/${movieId(movie.path)}`}
       style={stagger(index)}
-      className={`${entrance} group flex items-center gap-4 px-4 py-3 transition-colors hover:bg-surface-strong`}
+      className={`${entrance} glow group flex items-center gap-4 rounded-card px-4 py-3 transition-colors hover:bg-surface-strong`}
     >
       {movie.poster || movie.art.poster ? (
         <Art
@@ -450,14 +458,18 @@ function Card({ movie, index }: { movie: LibraryItem; index: number }) {
       {/* The whole tile is the thing that travels — its frame, the score on
           it and the issue count with it. Naming the image inside instead left
           the badge and the ring behind while the picture flew off alone. */}
-      <ViewTransition name={posterName(movie.path)} share="morph">
-        <div className="relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+      <ViewTransition
+        name={posterName(movie.path)}
+        share="morph"
+        default="none"
+      >
+        <div className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
           <Art
             src={movie.poster}
             remote={movie.art.poster}
             version={movie.artAt}
             loading="lazy"
-            className="h-full w-full object-cover motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-[1.04]"
+            className="h-full w-full object-cover"
           />
 
           <span
@@ -492,15 +504,27 @@ function Card({ movie, index }: { movie: LibraryItem; index: number }) {
 /** Whichever shape is selected, for the whole list or for one bucket of it. */
 function Films({ films, view }: { films: LibraryItem[]; view: string }) {
   return view === "grid" ? (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
       {films.map((movie, i) => (
         <Card key={movie.path} movie={movie} index={i} />
       ))}
     </div>
   ) : (
-    <div className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+    // Ruled apart rather than fenced in, like every other list here: the rows
+    // are already a column, and a box drawn round them says nothing the space
+    // does not. The rule fades at both ends so it marks where a row stops
+    // without ruling a line across the page.
+    <div className="flex flex-col">
       {films.map((movie, i) => (
-        <Row key={movie.path} movie={movie} index={i} />
+        <Fragment key={movie.path}>
+          {i > 0 && (
+            <div
+              aria-hidden
+              className="h-px bg-gradient-to-r from-transparent via-line to-transparent"
+            />
+          )}
+          <Row movie={movie} index={i} />
+        </Fragment>
       ))}
     </div>
   );
@@ -614,8 +638,8 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
       else groups.set(key, [movie]);
     }
 
-    // Only the paths: what the duplicates are and what deleting them would
-    // reclaim is the attention page's job now, not this list's.
+    // Only the paths: this filter answers "is this one of several copies",
+    // and the compare page is where the copies are weighed against each other.
     return new Set(
       [...groups.values()]
         .filter((g) => g.length > 1)
@@ -682,35 +706,12 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="relative flex-1">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 opacity-35"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" strokeLinecap="round" />
-          </svg>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search title or filename…"
-            className="w-full rounded-control border border-line bg-transparent py-2.5 pr-9 pl-9 text-sm outline-none focus:border-line-strong"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
-              className="absolute top-1/2 right-3 -translate-y-1/2 text-sm opacity-40 hover:opacity-80"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+      <Bar>
+        <BarSearch
+          value={query}
+          onChange={setQuery}
+          placeholder="Search title or filename…"
+        />
 
         <Popover
           icon={ICONS.filter}
@@ -827,36 +828,12 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
 
         {/* A segmented pair rather than a third dropdown: two options, and
             the icons say which is which faster than their names would. */}
-        <div className="flex shrink-0 items-center gap-0.5 rounded-control border border-line p-0.5">
-          {VIEWS.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => setView(option.key)}
-              aria-label={`${option.label} view`}
-              aria-pressed={view === option.key}
-              title={`${option.label} view`}
-              className={`grid h-8 w-8 place-items-center rounded-[6px] transition-colors ${
-                view === option.key
-                  ? "bg-surface-strong"
-                  : "opacity-40 hover:opacity-100"
-              }`}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-4 w-4"
-              >
-                <path d={option.path} />
-              </svg>
-            </button>
-          ))}
-        </div>
-      </div>
+        <BarSegments
+          value={view}
+          onChange={(next) => setView(next as (typeof VIEWS)[number]["key"])}
+          options={VIEWS}
+        />
+      </Bar>
 
       {/* The one thing that must not hide behind a button: what is currently
           filtering the list, and a way to drop each one. */}
@@ -906,22 +883,33 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
         </div>
       )}
 
+      {/* Ungrouped, there is no header to stand the shelf under — but the
+          films should still begin where they begin on every other shelf, so the
+          space a header and its rule would have taken is kept anyway. */}
       {shown.length > 0 && grouping.key === "none" && (
-        <Films films={shown} view={view} />
+        <div className="pt-13">
+          <Films films={shown} view={view} />
+        </div>
       )}
 
       {shown.length > 0 &&
         grouping.key !== "none" &&
         buckets.map(([name, films]) => (
-          <section key={name} className="flex flex-col gap-2">
-            <div className="flex items-baseline justify-between gap-4">
-              <h2 className="font-display text-lg font-semibold tracking-tight">
-                {name}
-              </h2>
-              <p className="text-[11px] opacity-40">
-                {films.length} ·{" "}
-                {size(films.reduce((n, m) => n + m.sizeBytes, 0))}
-              </p>
+          <section key={name} className="flex flex-col gap-7 pt-6 first:pt-0">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-baseline justify-between gap-4">
+                <h2 className="font-display text-lg font-semibold tracking-tight">
+                  {name}
+                </h2>
+                <p className="text-[11px] opacity-40">
+                  {films.length} ·{" "}
+                  {size(films.reduce((n, m) => n + m.sizeBytes, 0))}
+                </p>
+              </div>
+              {/* The same rule the collections list draws, under the name
+                  rather than between rows: it gives a shelf a floor to stand
+                  the films on, and the space that comes with it. */}
+              <div aria-hidden className="rule-head" />
             </div>
             <Films films={films} view={view} />
           </section>

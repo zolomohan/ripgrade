@@ -11,17 +11,24 @@ import { getMovie, type LibraryItem } from "@/lib/library";
 import { Art } from "@/app/art";
 import { FormatBadges } from "@/app/format-badges";
 import { UpgradeButton } from "@/app/release-search";
+import { NoDisc } from "@/app/no-disc";
+import { Panel } from "@/app/panel";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { ArtworkEditor } from "./artwork-editor";
 import { BackButton } from "./back-button";
 import { DiscReview } from "./disc-review";
 import { DolbyVision } from "./dolby-vision";
-import { FileActions } from "./file-actions";
 import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
-import { ScoreModal } from "./score-modal";
+import { ScoreBreakdown } from "./score-breakdown";
 
 export const dynamic = "force-dynamic";
+
+const SEVERITY_TONE: Record<string, string> = {
+  critical: "text-red-600 dark:text-red-400",
+  warning: "text-amber-600 dark:text-amber-400",
+  info: "opacity-60",
+};
 
 // Tailwind needs literal class names, so each status carries its own palette.
 const STATUS_THEME: Record<Status, { ring: string }> = {
@@ -31,12 +38,6 @@ const STATUS_THEME: Record<Status, { ring: string }> = {
   Good: { ring: "stroke-amber-500" },
   "Upgrade Recommended": { ring: "stroke-amber-500" },
   "Must Upgrade": { ring: "stroke-red-500" },
-};
-
-const SEVERITY_THEME: Record<string, { text: string }> = {
-  critical: { text: "text-red-600 dark:text-red-400" },
-  warning: { text: "text-amber-600 dark:text-amber-400" },
-  info: { text: "opacity-60" },
 };
 
 function bytes(n: number) {
@@ -127,7 +128,7 @@ function Spec({ movie }: { movie: LibraryItem }) {
   ];
 
   return (
-    <div className="rounded-card border border-line bg-surface p-5">
+    <div className="py-1">
       <dl className="grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
         {rows.map(([label, value]) => (
           <div key={label} className="contents">
@@ -208,6 +209,12 @@ export default async function MoviePage({
   // Full specs live in the disc table; the derived payload only carries the gaps.
   const disc = movie.tmdb ? getDisc(movie.tmdb.id) : undefined;
   const jackettReady = hasJackett();
+  // The track the audio summary names — the same one the spec grid calls the
+  // file's audio, so the shut panel and the open one cannot disagree.
+  const bestTrack =
+    movie.audio.find((track) => track.atmos || track.dtsx) ??
+    movie.audio.find((track) => track.lossless) ??
+    movie.audio[0];
 
   // An episode is not identified on its own — everything TMDb knows about it
   // comes through its series, so the page looks the file up in its show and
@@ -367,7 +374,7 @@ export default async function MoviePage({
         </div>
 
         {/* Scores */}
-        <section className="relative mt-10 flex flex-col items-center gap-8 rounded-card border border-line bg-surface p-6 sm:flex-row sm:items-stretch">
+        <section className="mt-10 flex flex-col items-center gap-8 py-2 sm:flex-row sm:items-stretch">
           <div className="flex shrink-0 flex-col items-center justify-center gap-3">
             <div className="flex items-center gap-5">
               <ScoreRing
@@ -393,7 +400,10 @@ export default async function MoviePage({
 
           {/* A vertical rule on wide screens keeps the ring and the breakdown
               reading as two halves of one card rather than a loose stack. */}
-          <div className="hidden w-px shrink-0 bg-line sm:block" />
+          <div
+            aria-hidden
+            className="hidden w-px shrink-0 bg-gradient-to-b from-transparent via-line-strong to-transparent sm:block"
+          />
 
           <div className="flex w-full flex-1 flex-col justify-center gap-3">
             <SubScore
@@ -413,20 +423,43 @@ export default async function MoviePage({
               value={movie.scores.release}
               ceiling={movie.disc?.discParts?.release}
             />
-
-            {movie.disc?.discParts && (
-              <p className="mt-1 border-t border-line pt-3 text-xs opacity-45">
-                The mark on each bar is the best disc available. Amber means
-                your copy falls short of it.
-              </p>
-            )}
           </div>
-
-          <ScoreModal scores={movie.scores} breakdown={breakdown} />
         </section>
 
-        {/* Summary */}
-        <ul className="mt-6 flex flex-col gap-1.5 text-sm opacity-80">
+        {/*
+          * What this copy is, and what is wrong with it — one list.
+          *
+          * They were two: a summary here and an Issues section below it. But
+          * both answer the same question in the same sentences, and reading the
+          * good news in one place and the bad in another, a fold apart, made a
+          * page you had to assemble. The flaws come first because they are what
+          * changes what you do next, tinted by severity rather than labelled —
+          * the same trick the score ring plays, with the words kept for anyone
+          * who cannot see the colour.
+          */}
+        <ul className="ruled mt-10 mb-10 flex flex-col gap-2 text-sm opacity-80">
+          {groupIssues(movie.issues).flatMap((group) =>
+            group.messages
+              // The rubric often gives its reason in the issue's own words;
+              // said once is enough.
+              .filter((message) => !movie.reasons.includes(message))
+              .map((message) => (
+                <li
+                  key={`${group.code}-${message}`}
+                  className={`flex gap-2 ${SEVERITY_TONE[group.severity]}`}
+                >
+                  <span className="opacity-30">—</span>
+                  <span>
+                    <span className="sr-only">{group.severity}: </span>
+                    {message}
+                    <code className="ml-2 font-mono text-xs opacity-40">
+                      {group.code}
+                    </code>
+                  </span>
+                </li>
+              )),
+          )}
+
           {movie.reasons.map((reason, i) => (
             <li key={i} className="flex gap-2">
               <span className="opacity-30">—</span>
@@ -434,54 +467,6 @@ export default async function MoviePage({
             </li>
           ))}
         </ul>
-
-        {/* Issues, and the actions that resolve them */}
-        <section className="mt-8 flex flex-col gap-3">
-          <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
-            Issues
-          </h2>
-
-          <div className="rounded-card border border-line bg-surface p-5">
-            {movie.issues.length === 0 ? (
-              <p className="text-sm opacity-50">
-                Nothing flagged on this file.
-              </p>
-            ) : (
-              // Rows rather than nested cards: the section border already frames
-              // them, and a border inside a border reads as clutter.
-              <div className="divide-y divide-line">
-                {groupIssues(movie.issues).map((group) => (
-                  <div key={group.code} className="py-3 first:pt-0 last:pb-0">
-                    <div className="flex items-baseline gap-2">
-                      <span
-                        className={`text-xs font-semibold uppercase ${SEVERITY_THEME[group.severity].text}`}
-                      >
-                        {group.severity}
-                      </span>
-                      <code className="font-mono text-xs opacity-40">
-                        {group.code}
-                      </code>
-                    </div>
-                    {group.messages.map((message) => (
-                      <p key={message} className="mt-1 text-sm">
-                        {message}
-                      </p>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-5 border-t border-line pt-4">
-              <FileActions
-                moviePath={movie.path}
-                acknowledged={movie.acknowledged}
-                note={movie.note}
-                hasIssues={movie.issues.length > 0}
-              />
-            </div>
-          </div>
-        </section>
 
         {/* What is actually inside the Dolby Vision stream */}
         {movie.hdr === "Dolby Vision" && (
@@ -499,23 +484,16 @@ export default async function MoviePage({
 
         {/* TMDb identity */}
         {movie.tmdb && (
-          <section className="mt-10 flex flex-col gap-3">
-            <div className="flex items-baseline justify-between gap-4">
-              <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
-                Identified as
-              </h2>
-              <span
-                className={`rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
-                  movie.tmdb.confidence === "high"
-                    ? "text-emerald-700 ring-emerald-500/30 dark:text-emerald-300"
-                    : "bg-amber-500/[0.08] text-amber-700 ring-amber-500/30 dark:text-amber-300"
-                }`}
-              >
-                {movie.tmdb.confidence} confidence
-              </span>
-            </div>
-
-            <div className="rounded-card border border-line bg-surface p-5">
+          <Panel
+            title="Identified as"
+            summary={[movie.tmdb.title, movie.tmdb.year]
+              .filter(Boolean)
+              .join(" · ")}
+            // A guess is worth seeing without being asked for: it is the one
+            // fact on this page that everything else is derived from.
+            open={movie.tmdb.confidence !== "high"}
+          >
+            <div>
               <p className="font-medium">
                 {movie.tmdb.title}
                 {movie.tmdb.year && (
@@ -586,29 +564,17 @@ export default async function MoviePage({
                 defaultQuery={movie.title}
               />
             </div>
-          </section>
+          </Panel>
         )}
 
         {tv && (
-          <section className="mt-10 flex flex-col gap-3">
-            <div className="flex items-baseline justify-between gap-4">
-              <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
-                Episode
-              </h2>
-              {tv.show.tmdb && (
-                <span
-                  className={`rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
-                    tv.show.tmdb.confidence === "high"
-                      ? "text-emerald-700 ring-emerald-500/30 dark:text-emerald-300"
-                      : "bg-amber-500/[0.08] text-amber-700 ring-amber-500/30 dark:text-amber-300"
-                  }`}
-                >
-                  {tv.show.tmdb.confidence} confidence
-                </span>
-              )}
-            </div>
-
-            <div className="rounded-card border border-line bg-surface p-5">
+          <Panel
+            title="Episode"
+            summary={`${tv.episode.title ?? "Untitled"} · S${String(
+              tv.season.number,
+            ).padStart(2, "0")}E${String(tv.episode.number).padStart(2, "0")}`}
+          >
+            <div>
               {tv.show.tmdb ? (
                 <>
                   <p className="font-medium">
@@ -695,20 +661,18 @@ export default async function MoviePage({
 
               {/* A season is read in order, so its neighbours are one click
                   away rather than two through the show page. */}
-              <div className="mt-5 grid grid-cols-2 gap-3 border-t border-line pt-4">
+              <div className="mt-6 grid grid-cols-2 gap-3">
                 <EpisodeLink episode={tv.prev} direction="prev" />
                 <EpisodeLink episode={tv.next} direction="next" />
               </div>
             </div>
-          </section>
+          </Panel>
         )}
 
+        {/* Open: this one is a thing to do, not a thing to read. */}
         {!movie.tmdb && !tv && (
-          <section className="mt-10 flex flex-col gap-3">
-            <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
-              Not identified
-            </h2>
-            <div className="rounded-card border border-amber-500/30 bg-amber-500/[0.06] p-5">
+          <Panel title="Not identified" summary="No TMDb match" open>
+            <div>
               <p className="text-sm">
                 No TMDb match was found for this file, so there is no canonical
                 title, runtime or artwork for it. Search below to link it by
@@ -726,47 +690,45 @@ export default async function MoviePage({
                 }
               />
             </div>
-          </section>
+          </Panel>
         )}
 
         {/* An episode is scored against its season's set, so the page says
             which set that is — the edition is chosen on the show page, where it
             applies to every episode at once. */}
         {tv && movie.disc?.url && (
-          <section className="mt-10 flex flex-col gap-3">
-            <div className="flex items-baseline justify-between gap-4">
-              <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
-                Best disc available
-              </h2>
-              {movie.disc.bestAvailable && (
-                <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium text-emerald-700 ring-1 ring-emerald-500/30 ring-inset dark:text-emerald-300">
-                  your copy matches it
-                </span>
-              )}
-            </div>
-
-            <div className="rounded-card border border-line bg-surface p-5">
-              <div className="flex flex-wrap items-baseline justify-between gap-3">
-                <p className="font-medium">
-                  {movie.disc.releaseTitle}
-                  {movie.disc.format && (
-                    <span className="ml-2 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
-                      {movie.disc.format}
-                    </span>
-                  )}
-                </p>
+          <Panel
+            title="Best disc available"
+            summary={[movie.disc.releaseTitle, movie.disc.format]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            <div>
+              {/* The title is the release, and the release has a page — so the
+                  words themselves link to it. A separate "View on Blu-ray.com"
+                  beside them was a second thing to read that pointed at the
+                  first. */}
+              <div className="flex flex-wrap items-baseline gap-2">
                 <a
                   href={movie.disc.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+                  className="font-medium underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
                 >
-                  View on Blu-ray.com ↗
+                  {movie.disc.releaseTitle}
+                  <span aria-hidden className="ml-1 opacity-40">
+                    ↗
+                  </span>
                 </a>
+                {movie.disc.format && (
+                  <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
+                    {movie.disc.format}
+                  </span>
+                )}
               </div>
 
               {movie.disc.gaps.length > 0 && (
-                <div className="mt-4 border-t border-line pt-4">
+                <div className="mt-6">
                   <p className="text-xs tracking-wide uppercase opacity-45">
                     Where this episode falls short
                   </p>
@@ -781,7 +743,7 @@ export default async function MoviePage({
                 </div>
               )}
 
-              <p className="mt-4 border-t border-line pt-4 text-xs opacity-50">
+              <p className="mt-6 text-xs opacity-50">
                 Every episode of season {tv.season.number} is compared against
                 this set.{" "}
                 <Link
@@ -793,47 +755,54 @@ export default async function MoviePage({
                 .
               </p>
             </div>
-          </section>
+          </Panel>
         )}
 
         {/* Best disc available */}
         {movie.tmdb && (
-          <section className="mt-10 flex flex-col gap-3">
-            <div className="flex items-baseline justify-between gap-4">
-              <h2 className="text-sm font-medium tracking-wide uppercase opacity-50">
-                Best disc available
-              </h2>
-              {disc?.best && movie.disc?.bestAvailable && (
-                <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium text-emerald-700 ring-1 ring-emerald-500/30 ring-inset dark:text-emerald-300">
-                  your copy matches it
-                </span>
-              )}
-            </div>
-
-            <div className="rounded-card border border-line bg-surface p-5">
+          <Panel
+            title="Best disc available"
+            summary={
+              disc?.best
+                ? [disc.best.title, disc.best.format].filter(Boolean).join(" · ")
+                : "None found"
+            }
+          >
+            <div>
               {!disc || disc.error || !disc.best ? (
-                <p className="text-sm opacity-60">
-                  {disc
-                    ? `No disc release found on Blu-ray.com${disc.error ? ` — ${disc.error}` : ""}.`
-                    : "Not looked up yet — this happens automatically during a scan."}
-                </p>
+                // The explanation and the way out of it on one line: a
+                // paragraph with a button dropped under its last word reads as
+                // two unrelated things.
+                <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
+                  <NoDisc
+                    scope="film"
+                    lookedUp={Boolean(disc)}
+                    error={disc?.error}
+                  />
+                  <DiscReview
+                    tmdbId={movie.tmdb.id}
+                    title={movie.tmdb.title}
+                    year={movie.tmdb.year}
+                    inline
+                  />
+                </div>
               ) : (
                 <>
-                  <div className="flex flex-wrap items-baseline justify-between gap-3">
-                    <p className="font-medium">
-                      {disc.best.title}
-                      <span className="ml-2 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
-                        {disc.best.format}
-                      </span>
-                    </p>
+                  <div className="flex flex-wrap items-baseline gap-2">
                     <a
                       href={disc.best.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+                      className="font-medium underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
                     >
-                      View on Blu-ray.com ↗
+                      {disc.best.title}
+                      <span aria-hidden className="ml-1 opacity-40">
+                        ↗
+                      </span>
                     </a>
+                    <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
+                      {disc.best.format}
+                    </span>
                   </div>
 
                   <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
@@ -872,7 +841,7 @@ export default async function MoviePage({
                   </dl>
 
                   {movie.disc && movie.disc.gaps.length > 0 && (
-                    <div className="mt-4 border-t border-line pt-4">
+                    <div className="mt-6">
                       <p className="text-xs tracking-wide uppercase opacity-45">
                         Where your copy falls short
                       </p>
@@ -889,33 +858,49 @@ export default async function MoviePage({
                 </>
               )}
 
-              <DiscReview
-                tmdbId={movie.tmdb.id}
-                title={movie.tmdb.title}
-                year={movie.tmdb.year}
-                currentUrl={disc?.best?.url}
-                manual={disc?.manual}
-              />
+              {disc?.best && !disc.error && (
+                <DiscReview
+                  tmdbId={movie.tmdb.id}
+                  title={movie.tmdb.title}
+                  year={movie.tmdb.year}
+                  currentUrl={disc.best.url}
+                  manual={disc.manual}
+                />
+              )}
             </div>
-          </section>
+          </Panel>
         )}
 
         {/* Technical */}
-        <section className="mt-10 flex flex-col gap-4">
-          <h2 className="text-sm font-medium uppercase tracking-wide opacity-50">
-            Technical details
-          </h2>
+        <Panel
+          title="Technical details"
+          summary={[
+            movie.width && movie.height
+              ? `${movie.width}×${movie.height}`
+              : movie.resolution,
+            movie.videoCodec,
+            bytes(movie.sizeBytes),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
           <Spec movie={movie} />
-        </section>
+        </Panel>
 
         {/* Audio tracks */}
-        <section className="mt-8 flex flex-col gap-3">
-          <h2 className="text-sm font-medium uppercase tracking-wide opacity-50">
-            Audio tracks ({movie.audio.length})
-          </h2>
-          <div className="overflow-x-auto rounded-card border border-line bg-surface">
+        <Panel
+          title="Audio tracks"
+          summary={[
+            `${movie.audio.length} track${movie.audio.length === 1 ? "" : "s"}`,
+            bestTrack?.label,
+            bestTrack?.channels ? `${bestTrack.channels}ch` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-line text-xs uppercase tracking-wide opacity-50">
+              <thead className="text-xs uppercase tracking-wide opacity-50">
                 <tr>
                   <th className="px-4 py-2 font-medium">Format</th>
                   <th className="px-4 py-2 font-medium">Channels</th>
@@ -925,7 +910,7 @@ export default async function MoviePage({
               </thead>
               <tbody>
                 {movie.audio.map((track, i) => (
-                  <tr key={i} className="border-b border-line last:border-0">
+                  <tr key={i}>
                     <td className="px-4 py-2">{track.label}</td>
                     <td className="px-4 py-2 opacity-70">
                       {track.channels || "—"}
@@ -943,7 +928,20 @@ export default async function MoviePage({
               </tbody>
             </table>
           </div>
-        </section>
+        </Panel>
+
+        {/* Last, because it explains what the top of the page already showed. */}
+        <Panel
+          title="Why this score"
+          // "vs disc", in the words the ring under the poster already uses.
+          summary={
+            breakdown.relative
+              ? `${movie.scores.overall} vs the best disc available`
+              : `${movie.scores.overall} on the rubric alone`
+          }
+        >
+          <ScoreBreakdown scores={movie.scores} breakdown={breakdown} />
+        </Panel>
       </div>
     </main>
   );

@@ -951,8 +951,8 @@ type DiscInput = {
  * Issues collapsed to one entry per check.
  *
  * A film can raise the same check more than once — three separate bitrate gaps
- * against one disc, say — so a list keyed by code has duplicate keys, and
- * resolving is per code anyway. One row, every message it raised.
+ * against one disc, say — so a list keyed by code has duplicate keys. One row,
+ * every message it raised.
  */
 export function groupIssues(issues: Issue[]): {
   code: string;
@@ -978,17 +978,16 @@ export function groupIssues(issues: Issue[]): {
 }
 
 /**
- * The issues still standing on a film: everything it raised, less the ones you
- * resolved individually, and none at all once the film is accepted wholesale.
+ * The issues standing on a film: everything it raised, and none at all for one
+ * accepted as-is. Kept as a function rather than read straight off the film so
+ * the acceptance is applied in one place — nothing sets it any more, but the
+ * films already carrying it still read the way they did.
  */
 export function openIssues(m: {
   issues: Issue[];
   acknowledged?: boolean;
-  resolved?: string[];
 }): Issue[] {
-  if (m.acknowledged) return [];
-  const resolved = m.resolved ?? [];
-  return m.issues.filter((i) => !resolved.includes(i.code));
+  return m.acknowledged ? [] : m.issues;
 }
 
 /** Nits, as MediaInfo reports them from the stream's SEI messages. */

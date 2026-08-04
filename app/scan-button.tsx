@@ -25,8 +25,21 @@ export function ScanButton() {
       type="button"
       onClick={start}
       disabled={busy}
-      className="shrink-0 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+      className="flex shrink-0 items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
     >
+      {/* The same glass as the search field: this is the other way of looking
+          for films, one that reads the drive rather than the shelf. */}
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden
+        className="h-3.5 w-3.5"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" strokeLinecap="round" />
+      </svg>
       {label}
     </button>
   );

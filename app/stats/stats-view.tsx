@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 
-import type { LibraryStats, Slice } from "@/lib/stats";
+import { Switch } from "@/app/controls";
+import { stagger } from "@/app/stagger";
+import type { LibraryStats, ShowStats, Slice } from "@/lib/stats";
 import type { Status } from "@/lib/derive";
 
 /**
@@ -43,31 +45,63 @@ const VERDICT: Record<Status, string> = {
   "Best Available": "bg-[#059669]",
 };
 
+/**
+ * One chart, under its name.
+ *
+ * Ruled apart rather than boxed, like every other list in this app: a page of
+ * cards is a page of frames competing with the bars inside them, and the bars
+ * are the only thing here worth drawing.
+ */
 function Card({
   title,
   hint,
+  index = 0,
   children,
 }: {
   title: string;
   hint?: string;
+  /** Its place in the page's arrival order. */
+  index?: number;
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-4 rounded-card border border-line bg-surface p-5">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="font-display text-lg font-semibold tracking-tight">
-          {title}
-        </h2>
-        {hint && <span className="text-[11px] opacity-35">{hint}</span>}
+    <section style={stagger(index)} className="row-enter flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="font-display text-lg font-semibold tracking-tight">
+            {title}
+          </h2>
+          {hint && <span className="text-[11px] opacity-35">{hint}</span>}
+        </div>
+        <div aria-hidden className="rule-head" />
       </div>
       {children}
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/**
+ * One headline figure.
+ *
+ * Ruled off rather than boxed: six figures in a row need to be told apart, and
+ * a hairline between them does that without drawing six frames. Every figure
+ * carries its own rule, the first included — the fade makes a leading one read
+ * as the edge of the row rather than as a border round it.
+ */
+function Stat({
+  label,
+  value,
+  index = 0,
+}: {
+  label: string;
+  value: string;
+  index?: number;
+}) {
   return (
-    <div className="rounded-card border border-line bg-surface px-4 py-3">
+    <div
+      style={stagger(index)}
+      className="rule-l row-enter pl-4"
+    >
       <p className="text-[11px] tracking-widest uppercase opacity-45">
         {label}
       </p>
@@ -93,9 +127,10 @@ function Bars({
 
   return (
     <div className="flex flex-col gap-2.5">
-      {slices.map((slice) => (
+      {slices.map((slice, i) => (
         <div
           key={slice.label}
+          style={stagger(i)}
           className="grid grid-cols-[9.5rem_1fr_auto] items-center gap-3"
           title={`${slice.label} — ${count(slice.count)} films, ${size(slice.bytes)}`}
         >
@@ -103,7 +138,7 @@ function Bars({
 
           <span className="h-2.5 rounded-[2px] bg-foreground/[0.06]">
             <span
-              className="block h-full rounded-r-[4px] bg-foreground/70 motion-safe:transition-[width] motion-safe:duration-500"
+              className="bar-grow block h-full rounded-r-[4px] bg-foreground/70 motion-safe:transition-[width] motion-safe:duration-500"
               style={{ width: `${(slice.count / max) * 100}%` }}
             />
           </span>
@@ -132,9 +167,10 @@ function Columns({
 
   return (
     <div className="flex items-end gap-1.5" style={{ height }}>
-      {bars.map((bar) => (
+      {bars.map((bar, i) => (
         <div
           key={bar.label}
+          style={stagger(i)}
           className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5"
           title={`${bar.label} — ${count(bar.count)} films`}
         >
@@ -144,7 +180,7 @@ function Columns({
             {bar.count}
           </span>
           <span
-            className={`w-full rounded-t-[4px] motion-safe:transition-[height] motion-safe:duration-500 ${
+            className={`col-grow w-full rounded-t-[4px] motion-safe:transition-[height] motion-safe:duration-500 ${
               bar.className ?? "bg-foreground/70"
             }`}
             style={{
@@ -181,7 +217,7 @@ function Coverage({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex h-2.5 gap-0.5">
+      <div className="bar-grow flex h-2.5 gap-0.5">
         {present.map((segment) => (
           <span
             key={segment.label}
@@ -211,9 +247,17 @@ function Coverage({
   );
 }
 
-export function StatsView({ stats }: { stats: LibraryStats }) {
+export function StatsView({
+  stats,
+  shows,
+}: {
+  stats: LibraryStats;
+  shows: ShowStats;
+}) {
   const [byBytes, setByBytes] = useState(false);
+  const [tab, setTab] = useState("movies");
   const { totals } = stats;
+  const hasShows = shows.totals.shows > 0;
 
   const share = (n: number) =>
     totals.films ? `${Math.round((n / totals.films) * 100)}%` : "0%";
@@ -222,18 +266,34 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
     ? [...stats.collections].sort((a, b) => b.bytes - a.bytes)
     : [...stats.collections].sort((a, b) => b.count - a.count);
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Films" value={count(totals.films)} />
-        <Stat label="Storage" value={size(totals.bytes)} />
-        <Stat label="Runtime" value={`${count(totals.runtimeHours)} h`} />
-        <Stat label="REMUX" value={share(totals.remux)} />
-        <Stat label="Dolby Vision" value={share(totals.dolbyVision)} />
-        <Stat label="Open issues" value={count(totals.openIssues)} />
+  /*
+   * Films and television, one at a time.
+   *
+   * They were one page, and the questions do not meet: an episode has no disc
+   * to be measured against, so nothing in the verdict charts can hold one, and
+   * "is this complete" is not a question about a file. Two answers stacked read
+   * as one long answer, so the switch says which is being asked.
+   */
+  const films = (
+    <>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+        <Stat label="Films" value={count(totals.films)} index={0} />
+        <Stat label="Storage" value={size(totals.bytes)} index={1} />
+        <Stat
+          label="Runtime"
+          value={`${count(totals.runtimeHours)} h`}
+          index={2}
+        />
+        <Stat label="REMUX" value={share(totals.remux)} index={3} />
+        <Stat
+          label="Dolby Vision"
+          value={share(totals.dolbyVision)}
+          index={4}
+        />
+        <Stat label="Open issues" value={count(totals.openIssues)} index={5} />
       </div>
 
-      <Card title="Verdicts" hint="against the best disc that exists">
+      <Card title="Verdicts" hint="against the best disc that exists" index={1}>
         <Columns
           bars={stats.scores.map((s) => ({
             label: s.status,
@@ -244,7 +304,7 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
         {stats.uncompared.total > 0 && (
           // These films are judged on the absolute rubric instead, which is a
           // different scale — so they are stated rather than drawn alongside.
-          <p className="border-t border-line pt-3 text-xs opacity-45">
+          <p className="text-xs opacity-45">
             {count(stats.uncompared.total)}{" "}
             {stats.uncompared.total === 1 ? "film has" : "films have"} no disc
             to compare against, so{" "}
@@ -258,24 +318,28 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
         )}
       </Card>
 
-      <Card title="Disc comparison" hint="what the verdicts rest on">
+      <Card title="Disc comparison" hint="what the verdicts rest on" index={2}>
         <Coverage segments={stats.discCoverage} />
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Resolution">
+      <div className="grid gap-10 lg:grid-cols-2">
+        <Card title="Resolution" index={3}>
           <Bars slices={stats.resolution} />
         </Card>
 
-        <Card title="Dynamic range">
+        <Card title="Dynamic range" index={4}>
           <Bars slices={stats.hdr} />
         </Card>
 
-        <Card title="Release type">
+        <Card title="Release type" index={5}>
           <Bars slices={stats.release} />
         </Card>
 
-        <Card title="Dolby Vision profiles" hint="Profile 7 split by layer">
+        <Card
+          title="Dolby Vision profiles"
+          hint="Profile 7 split by layer"
+          index={6}
+        >
           {stats.dolbyVision.length > 0 ? (
             <Bars slices={stats.dolbyVision} />
           ) : (
@@ -286,7 +350,7 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
         </Card>
       </div>
 
-      <Card title="By decade">
+      <Card title="By decade" index={7}>
         {stats.decades.length > 0 ? (
           <Columns
             bars={stats.decades.map((d) => ({
@@ -302,6 +366,7 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
       <Card
         title="Biggest collections"
         hint={`top ${stats.collections.length}`}
+        index={8}
       >
         <div className="flex flex-col gap-4">
           <div className="flex gap-1 text-xs">
@@ -313,7 +378,7 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
                 key={option.label}
                 type="button"
                 onClick={() => setByBytes(option.key)}
-                className={`rounded-control px-2.5 py-1 transition-colors ${
+                className={`glow rounded-full px-2.5 py-1 transition-colors ${
                   byBytes === option.key
                     ? "bg-surface-strong font-medium"
                     : "opacity-50 hover:opacity-100"
@@ -333,6 +398,82 @@ export function StatsView({ stats }: { stats: LibraryStats }) {
           )}
         </div>
       </Card>
+    </>
+  );
+
+  const television = (
+    <>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+        <Stat label="Shows" value={count(shows.totals.shows)} index={0} />
+        <Stat label="Episodes" value={count(shows.totals.episodes)} index={1} />
+        <Stat label="Storage" value={size(shows.totals.bytes)} index={2} />
+        <Stat
+          label="Runtime"
+          value={`${count(shows.totals.runtimeHours)} h`}
+          index={3}
+        />
+        <Stat
+          label="Average"
+          value={`${shows.totals.averageScore}`}
+          index={4}
+        />
+        <Stat label="Missing" value={count(shows.totals.missing)} index={5} />
+      </div>
+
+      <Card
+        title="Completeness"
+        hint="counted only where TMDb knows the season length"
+        index={1}
+      >
+        <Columns
+          bars={shows.completeness.map((c) => ({
+            label: c.label,
+            count: c.count,
+            className:
+              c.label === "Complete" ? "bg-emerald-500/70" : "bg-amber-500/70",
+          }))}
+        />
+      </Card>
+
+      <div className="grid gap-10 lg:grid-cols-2">
+        <Card title="Resolution" hint="per episode" index={2}>
+          <Bars slices={shows.resolution} />
+        </Card>
+
+        <Card title="Dynamic range" hint="per episode" index={3}>
+          <Bars slices={shows.hdr} />
+        </Card>
+
+        <Card title="Release type" hint="per episode" index={4}>
+          <Bars slices={shows.release} />
+        </Card>
+
+        <Card title="Largest shows" hint="by episodes held" index={5}>
+          <Bars slices={shows.biggest} />
+        </Card>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-10">
+      {hasShows && (
+        <Switch
+          value={tab}
+          onChange={setTab}
+          options={[
+            { key: "movies", label: "Movies" },
+            { key: "tv", label: "TV shows" },
+          ]}
+        />
+      )}
+
+      {/* Keyed, so switching remounts the charts and they draw themselves
+          again — the arrival is how a chart is read here, and a tab that
+          swapped in a finished one would be the only still thing on the page. */}
+      <div key={tab} className="flex flex-col gap-10">
+        {tab === "tv" && hasShows ? television : films}
+      </div>
     </div>
   );
 }

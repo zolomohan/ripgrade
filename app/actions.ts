@@ -7,11 +7,6 @@ import path from "node:path";
 import { listDirectory, type DirListing } from "@/lib/browse";
 import { getSetting, setSetting } from "@/lib/db";
 import { recordArtworkSource, reindexDir, saveArtwork } from "@/lib/artwork";
-import {
-  countUnidentifiedArtwork,
-  identifyArtwork,
-  type IdentifyResult,
-} from "@/lib/identify-art";
 import { db } from "@/lib/db";
 import {
   candidateFromUrl,
@@ -20,6 +15,7 @@ import {
   getDisc,
   searchReleases,
   setManualDisc,
+  type Candidate,
 } from "@/lib/disc";
 import {
   cancelConvert,
@@ -43,7 +39,11 @@ import {
   setJackettConfig,
   testJackett,
 } from "@/lib/jackett";
-import { findUpgrades, type UpgradeSearch } from "@/lib/upgrades";
+import {
+  findUpgrades,
+  searchAnything,
+  type UpgradeSearch,
+} from "@/lib/upgrades";
 import { deriveAll, getLibrary } from "@/lib/library";
 import { getScanState, startScan, type ScanState } from "@/lib/scanner";
 import {
@@ -53,7 +53,6 @@ import {
 } from "@/lib/roots";
 import { revealInFinder } from "@/lib/system";
 import { addToWishlist, getWishlist, removeFromWishlist } from "@/lib/wishlist";
-import { setIssueAck, setTriage } from "@/lib/triage";
 import { imageUrl } from "@/lib/image-url";
 import { getShow } from "@/lib/shows";
 import {
@@ -65,11 +64,15 @@ import {
 import { enrichShow, setManualShowMatch } from "@/lib/tv";
 import {
   getImages,
+  clearTmdbToken,
   getMovie as getTmdbMovie,
+  getTmdbToken,
   getTvImages,
+  hasCredentials,
   isTmdbImagePath,
   searchMovies,
   searchTv,
+  setTmdbToken,
   type TmdbImage,
 } from "@/lib/tmdb";
 
@@ -354,46 +357,13 @@ export async function removeWish(tmdbId: number): Promise<void> {
   refresh();
 }
 
-/**
- * Works out which TMDb image each file on the drive is, so the app has
- * something to show when the drive is not connected.
- *
- * Deliberately not part of a scan: it reads every artwork file and asks TMDb
- * about every title, and once an image is placed the answer never changes.
- * Logos get a stand-in where the file is not a TMDb image at all — a poster or
- * a backdrop already falls back to the record's own.
- */
-export async function identifyArtworkSources(): Promise<
-  ({ ok: true } & IdentifyResult) | { ok: false; error: string }
-> {
-  try {
-    const result = await identifyArtwork([], ["logo"]);
-    refresh();
-    return { ok: true, ...result };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-}
-
-/** How many images on the drive have no known source yet. */
-export async function unidentifiedArtwork(): Promise<number> {
-  return countUnidentifiedArtwork();
-}
-
 // ---------------------------------------------------------------------------
 // Discs
 // ---------------------------------------------------------------------------
 
-export type DiscCandidate = {
-  id: string;
-  url: string;
-  title: string;
-  year?: number;
-  format: "4K" | "3D" | "BD";
-};
+/* The candidate as the scraper reads it — including what tells one edition of a
+   film from another, which is the whole reason a list of them is shown. */
+export type DiscCandidate = Candidate;
 
 /** Every edition Blu-ray.com lists for a film, for you to choose between. */
 export async function searchDiscs(
@@ -714,59 +684,6 @@ export async function restoreOriginal(
 // Triage and shell
 // ---------------------------------------------------------------------------
 
-/** Accept a film as-is so it stops counting toward the attention totals. */
-export async function acknowledge(
-  moviePath: string,
-  value: boolean,
-  note?: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!knownMoviePath(moviePath)) {
-    return { ok: false, error: `Unknown file: ${moviePath}` };
-  }
-
-  // Reported rather than thrown: an uncaught error here surfaces as a blank
-  // failure in the browser console, which is how a missing table went unnoticed.
-  try {
-    setTriage(moviePath, value, note);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  refresh();
-  return { ok: true };
-}
-
-/**
- * Marks one issue on one film as dealt with, or reopens it. Separate from
- * accepting a film wholesale: most films that need attention need it for one
- * reason out of several, and clearing them one at a time is how the list
- * actually empties.
- */
-export async function resolveIssue(
-  moviePath: string,
-  code: string,
-  resolved: boolean,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!knownMoviePath(moviePath)) {
-    return { ok: false, error: `Unknown file: ${moviePath}` };
-  }
-
-  try {
-    setIssueAck(moviePath, code, resolved);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  refresh();
-  return { ok: true };
-}
-
 /** Selects the file in Finder — the step between "this copy is worse" and deleting it. */
 export async function reveal(
   moviePath: string,
@@ -908,6 +825,52 @@ export async function chooseArtwork(
  * environment-supplied config is reported as managed so the UI can offer to
  * show it rather than to edit something it cannot change.
  */
+/** Whether TMDb has been connected. */
+export async function getTmdbStatus(): Promise<{ configured: boolean }> {
+  return { configured: hasCredentials() };
+}
+
+/**
+ * Saves the read token, but only once TMDb has answered with it — a key that is
+ * one character short fails the same way as no key at all, and storing it would
+ * turn a typo into a feature that is quietly broken everywhere.
+ */
+export async function saveTmdbToken(
+  token: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const trimmed = token.trim();
+  if (!trimmed) return { ok: false, error: "Paste the read access token." };
+
+  const previous = getTmdbToken();
+  setTmdbToken(trimmed);
+
+  try {
+    await searchMovies("Blade Runner", 1982);
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    // Put back whatever worked before rather than leaving the app holding a
+    // token that does not.
+    if (previous && previous !== trimmed) setTmdbToken(previous);
+    else clearTmdbToken();
+
+    return {
+      ok: false,
+      error:
+        err instanceof Error && /401|unauthor/i.test(err.message)
+          ? "TMDb refused that token."
+          : err instanceof Error
+            ? err.message
+            : String(err),
+    };
+  }
+}
+
+export async function disconnectTmdb(): Promise<void> {
+  clearTmdbToken();
+  refresh();
+}
+
 export async function getJackettStatus(): Promise<{
   configured: boolean;
   url?: string;
@@ -1022,23 +985,58 @@ export async function findUpgradesForMovie(
 }
 
 /** Releases for a film on the want list — nothing held, so nothing to beat. */
-export async function findUpgradesForWish(
+/**
+ * A keyword search against the indexers, with no film behind it.
+ *
+ * The other two searches start from something the library knows and score what
+ * comes back against it. This one starts from a line of text, so the results
+ * carry the rubric score their names imply and nothing else: there is no copy
+ * to be better than.
+ */
+export async function searchTorrents(term: string): Promise<UpgradeResponse> {
+  const query = term.trim();
+  if (!query) return { ok: false, error: "Type something to search for." };
+
+  try {
+    return { ok: true, search: await searchAnything(query) };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function findReleasesFor(
   tmdbId: number,
 ): Promise<UpgradeResponse> {
+  // The wishlist is consulted but not required: a film in a collection you do
+  // not own has never been wished for, and having to want it on a list first
+  // before you may look for it is a step that answers nothing.
   const entry = getWishlist().find((w) => w.tmdbId === tmdbId);
-  if (!entry) return { ok: false, error: "Not on the wishlist." };
 
-  // The wishlist stores no runtime, and without one every encode scores as
+  // Where the wishlist has nothing, TMDb is the title and year — and it is
+  // needed anyway for the runtime, without which every encode scores as
   // "bitrate unknown". The record is usually cached already, so this is free.
   let runtimeMinutes: number | undefined;
   let imdbId: string | undefined;
+  let title = entry?.title;
+  let year = entry?.year;
   try {
     const movie = await fetchAndCache(tmdbId);
     runtimeMinutes = movie.runtime ?? undefined;
     imdbId = movie.imdb_id ?? undefined;
+    title = title ?? movie.title;
+    year =
+      year ??
+      (movie.release_date
+        ? Number(movie.release_date.slice(0, 4))
+        : undefined);
   } catch {
     // Searchable without either; only the encode scores get vaguer.
   }
+
+  if (!title) return { ok: false, error: "Nothing known about this film." };
 
   // A wanted film has never been scanned, so nothing has ever looked its disc
   // up. Done here, once, and cached exactly like a scanned film's — including
@@ -1048,7 +1046,7 @@ export async function findUpgradesForWish(
   let disc = getDisc(tmdbId);
   if (!disc) {
     try {
-      disc = await fetchDisc(tmdbId, entry.title, entry.year);
+      disc = await fetchDisc(tmdbId, title, year);
     } catch {
       // Scored on the bare rubric instead; the search itself is unaffected.
     }
@@ -1057,8 +1055,8 @@ export async function findUpgradesForWish(
   try {
     const search = await findUpgrades({
       kind: "movie",
-      title: entry.title,
-      year: entry.year,
+      title,
+      year,
       imdbId,
       runtimeMinutes,
       disc,
@@ -1116,59 +1114,3 @@ export async function findUpgradesForSeason(
   }
 }
 
-export type SweepRow = {
-  path: string;
-  /** The best release found, or nothing when the search came back empty. */
-  best?: {
-    title: string;
-    score: number;
-    delta: number;
-    seeders?: number;
-    magnet?: string;
-  };
-  error?: string;
-};
-
-/**
- * One search per film, for the sweep over everything flagged for attention.
- *
- * Serialised with a gap rather than fired in parallel: each search fans out to
- * every tracker Jackett knows, and the trackers are the ones that would rate
- * limit. The caller passes a handful of paths at a time and keeps its own
- * progress, so a long sweep stays interruptible and no single request has to
- * survive the whole run.
- */
-export async function sweepUpgrades(paths: string[]): Promise<SweepRow[]> {
-  const BATCH_LIMIT = 5;
-  const GAP_MS = 700;
-
-  const rows: SweepRow[] = [];
-
-  for (const moviePath of paths.slice(0, BATCH_LIMIT)) {
-    if (rows.length > 0) await new Promise((r) => setTimeout(r, GAP_MS));
-
-    const response = await findUpgradesForMovie(moviePath);
-    if (!response.ok) {
-      rows.push({ path: moviePath, error: response.error });
-      continue;
-    }
-
-    const best = response.search.results[0];
-    rows.push({
-      path: moviePath,
-      best: best
-        ? {
-            title: best.title,
-            // The disc-relative score where a disc is known, matching what the
-            // film's own page reports — see findUpgradesForMovie.
-            score: best.score,
-            delta: best.delta ?? 0,
-            seeders: best.seeders,
-            magnet: best.magnet,
-          }
-        : undefined,
-    });
-  }
-
-  return rows;
-}
