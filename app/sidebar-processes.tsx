@@ -3,15 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import {
-  convertJobStatus,
-  doviJobStatus,
-  stopConvert,
-  stopFullDoviScan,
-} from "@/app/actions";
+import { stopConvert, stopFullDoviScan } from "@/app/actions";
+import { useJobs } from "@/app/jobs-provider";
 import { useScan } from "@/app/scan-provider";
-import type { ConvertJob } from "@/lib/convert";
-import type { DoviJob } from "@/lib/dovi";
 
 /**
  * What is happening right now, at the foot of the rail.
@@ -23,13 +17,12 @@ import type { DoviJob } from "@/lib/dovi";
  * unmounts, which makes it the one place that can answer the question at any
  * moment. Nothing shows when nothing is running.
  *
+ * Progress arrives over the job stream, including a job started from
+ * somewhere else — the old idle poll existed only to notice those.
+ *
  * There is no history here on purpose. A list of what finished told you what
  * you already watched finish.
  */
-const RUNNING_MS = 800;
-
-/** Idle polling still has to notice a job started from somewhere else. */
-const IDLE_MS = 3000;
 
 const count = (n: number) => n.toLocaleString("en-GB");
 
@@ -90,37 +83,14 @@ function Job({
 
 export function SidebarProcesses() {
   const { state: scan, busy: scanning, result, dismiss } = useScan();
-  const [dovi, setDovi] = useState<DoviJob | null>(null);
-  const [convert, setConvert] = useState<ConvertJob | null>(null);
+  const { jobs, apply } = useJobs();
+  const { dovi, convert } = jobs;
   const [stopping, setStopping] = useState(false);
   const router = useRouter();
 
-  const reading = dovi?.status === "running";
-  const converting = convert?.status === "running";
+  const reading = dovi.status === "running";
+  const converting = convert.status === "running";
   const anyRunning = scanning || reading || converting;
-
-  // Faster while something is moving, slow enough otherwise that an idle app is
-  // not asking the server a question every second for the sake of it.
-  useEffect(() => {
-    let cancelled = false;
-
-    const tick = async () => {
-      const [nextDovi, nextConvert] = await Promise.all([
-        doviJobStatus(),
-        convertJobStatus(),
-      ]);
-      if (cancelled) return;
-      setDovi(nextDovi);
-      setConvert(nextConvert);
-    };
-
-    void tick();
-    const id = setInterval(tick, anyRunning ? RUNNING_MS : IDLE_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [anyRunning]);
 
   // A job that finished changed the library underneath whatever is open.
   useEffect(() => {
@@ -151,11 +121,21 @@ export function SidebarProcesses() {
                 : 0,
               detail: scan.current,
             }
-          : {
-              name: `Discs · ${scan.discDone} of ${scan.discTotal}`,
-              percent: scan.discTotal ? (scan.discDone / scan.discTotal) * 100 : 0,
-              detail: scan.current,
-            };
+          : scan.status === "artwork"
+            ? {
+                name: `Artwork · ${scan.artDone} of ${scan.artTotal}`,
+                percent: scan.artTotal
+                  ? (scan.artDone / scan.artTotal) * 100
+                  : 0,
+                detail: scan.current,
+              }
+            : {
+                name: `Discs · ${scan.discDone} of ${scan.discTotal}`,
+                percent: scan.discTotal
+                  ? (scan.discDone / scan.discTotal) * 100
+                  : 0,
+                detail: scan.current,
+              };
 
   return (
     // Bare rather than boxed: it is part of the rail, not a panel visiting it.
@@ -169,7 +149,7 @@ export function SidebarProcesses() {
         />
       )}
 
-      {reading && dovi && (
+      {reading && (
         <Job
           name={`Reading DV · ${Math.round(dovi.percent)}%`}
           detail={fileOf(dovi.path)}
@@ -178,14 +158,14 @@ export function SidebarProcesses() {
           onCancel={() => {
             setStopping(true);
             void stopFullDoviScan().then((job) => {
-              setDovi(job);
+              apply({ dovi: job });
               setStopping(false);
             });
           }}
         />
       )}
 
-      {converting && convert && (
+      {converting && (
         <Job
           name={`Converting · step ${convert.step} of ${convert.steps}`}
           detail={convert.label ?? fileOf(convert.path)}
@@ -194,7 +174,7 @@ export function SidebarProcesses() {
           onCancel={() => {
             setStopping(true);
             void stopConvert().then((job) => {
-              setConvert(job);
+              apply({ convert: job });
               setStopping(false);
             });
           }}

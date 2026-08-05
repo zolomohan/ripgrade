@@ -45,7 +45,7 @@ import {
   type UpgradeSearch,
 } from "@/lib/upgrades";
 import { deriveAll, getLibrary } from "@/lib/library";
-import { getScanState, startScan, type ScanState } from "@/lib/scanner";
+import { startScan, type ScanState } from "@/lib/scanner";
 import {
   addLibraryRoot,
   getLibraryRoots,
@@ -201,16 +201,15 @@ export async function beginScan(): Promise<ScanState> {
       removed: 0,
       doviTotal: 0,
       doviDone: 0,
+      artTotal: 0,
+      artDone: 0,
+      artSaved: 0,
       discTotal: 0,
       discDone: 0,
       error: "No library folder selected.",
     };
   }
   return startScan(roots);
-}
-
-export async function scanStatus(): Promise<ScanState> {
-  return getScanState();
 }
 
 /** Re-derives from cached probes and TMDb records — no disk, no network. */
@@ -513,7 +512,7 @@ export async function unlinkSeasonDisc(
 
 /**
  * Reads every frame of one film's RPU. Minutes of disk, so it starts a job and
- * returns — `doviJobStatus` is how the page follows it.
+ * returns — the job stream (`/api/jobs`) is how the page follows it.
  */
 export async function beginFullDoviScan(
   moviePath: string,
@@ -534,10 +533,6 @@ export async function beginFullDoviScan(
   const movie = getLibrary().find((m) => m.path === moviePath);
   startFullDoviScan(moviePath, movie?.durationSec);
   return { ok: true };
-}
-
-export async function doviJobStatus(): Promise<DoviJob> {
-  return getDoviJob();
 }
 
 /** Stops a full pass. The film keeps the reading it already had. */
@@ -638,10 +633,6 @@ export async function discardBackup(
 
   refresh();
   return { ok: true };
-}
-
-export async function convertJobStatus(): Promise<ConvertJob> {
-  return getConvertJob();
 }
 
 /** Stops a conversion and sweeps up its partial output. */

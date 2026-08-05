@@ -3,21 +3,25 @@
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 
-import { beginScan, scanStatus } from "./actions";
+import { beginScan } from "./actions";
+import { useJobs } from "./jobs-provider";
 import type { ScanState } from "@/lib/scanner";
 
 /**
- * Owns the scan state for the whole app.
+ * Owns the scan for the whole app — starting one, and turning its end into
+ * the result banner and a repaint.
  *
  * This lives in the root layout rather than in the header button, because a
  * layout survives navigation and a page does not: previously, opening a film
  * mid-scan unmounted the button and took the progress with it.
  *
- * It reports nothing itself. `SidebarProcesses` reads this state and draws it
- * at the foot of the rail, beside whatever else is running.
+ * The state itself arrives over the job stream (`JobsProvider`); what is left
+ * here is reacting to its edges. It reports nothing itself. `SidebarProcesses`
+ * reads this state and draws it at the foot of the rail, beside whatever else
+ * is running.
  */
 
-const BUSY = ["scanning", "dovi", "matching", "discs"];
+const BUSY = ["scanning", "dovi", "matching", "artwork", "discs"];
 
 export type ScanResult = { kind: "ok" | "error"; text: string };
 
@@ -41,58 +45,54 @@ export function useScan(): ScanContext {
 const RESULT_VISIBLE_MS = 8000;
 type Result = ScanResult;
 
-export function ScanProvider({
-  initialState,
-  children,
-}: {
-  initialState: ScanState;
-  children: React.ReactNode;
-}) {
-  const [state, setState] = useState(initialState);
+export function ScanProvider({ children }: { children: React.ReactNode }) {
+  const { jobs, apply, subscribe } = useJobs();
+  const state = jobs.scan;
   const [result, setResult] = useState<Result | null>(null);
   const router = useRouter();
 
   const busy = BUSY.includes(state.status);
 
-  useEffect(() => {
-    if (!busy) return;
+  // Only the edge out of a scan we watched run counts — `subscribe` explains
+  // why the status alone cannot say "just completed".
+  useEffect(
+    () =>
+      subscribe((next, prev) => {
+        if (!BUSY.includes(prev.scan.status)) return;
+        const scan = next.scan;
 
-    const id = setInterval(async () => {
-      const next = await scanStatus();
-      setState(next);
+        if (scan.status === "done") {
+          router.refresh();
 
-      if (next.status === "done") {
-        router.refresh();
+          // A folder that could not be read is the one outcome worth colouring
+          // like a failure even though the scan finished: what it holds was
+          // left out of everything below, and silently.
+          if (scan.skipped?.length) {
+            setResult({
+              kind: "error",
+              text: `Skipped and left untouched: ${scan.skipped.join(", ")}`,
+            });
+            return;
+          }
 
-        // A folder that could not be read is the one outcome worth colouring
-        // like a failure even though the scan finished: what it holds was left
-        // out of everything below, and silently.
-        if (next.skipped?.length) {
-          setResult({
-            kind: "error",
-            text: `Skipped and left untouched: ${next.skipped.join(", ")}`,
-          });
-          return;
+          const parts = [
+            `${scan.probed} probed`,
+            `${scan.cached} unchanged`,
+            ...(scan.removed ? [`${scan.removed} removed`] : []),
+            ...(scan.failed ? [`${scan.failed} failed`] : []),
+            ...(scan.doviTotal ? [`${scan.doviTotal} DV streams read`] : []),
+            ...(scan.matchTotal ? [`${scan.matched} matched`] : []),
+            ...(scan.needsReview ? [`${scan.needsReview} need review`] : []),
+            ...(scan.artSaved ? [`${scan.artSaved} images downloaded`] : []),
+            ...(scan.discTotal ? [`${scan.discTotal} discs looked up`] : []),
+          ];
+          setResult({ kind: "ok", text: parts.join(" · ") });
+        } else if (scan.status === "error") {
+          setResult({ kind: "error", text: scan.error ?? "Scan failed" });
         }
-
-        const parts = [
-          `${next.probed} probed`,
-          `${next.cached} unchanged`,
-          ...(next.removed ? [`${next.removed} removed`] : []),
-          ...(next.failed ? [`${next.failed} failed`] : []),
-          ...(next.doviTotal ? [`${next.doviTotal} DV streams read`] : []),
-          ...(next.matchTotal ? [`${next.matched} matched`] : []),
-          ...(next.needsReview ? [`${next.needsReview} need review`] : []),
-          ...(next.discTotal ? [`${next.discTotal} discs looked up`] : []),
-        ];
-        setResult({ kind: "ok", text: parts.join(" · ") });
-      } else if (next.status === "error") {
-        setResult({ kind: "error", text: next.error ?? "Scan failed" });
-      }
-    }, 600);
-
-    return () => clearInterval(id);
-  }, [busy, router]);
+      }),
+    [subscribe, router],
+  );
 
   useEffect(() => {
     if (result?.kind !== "ok") return;
@@ -103,7 +103,7 @@ export function ScanProvider({
   async function start() {
     setResult(null);
     const next = await beginScan();
-    setState(next);
+    apply({ scan: next });
     if (next.status === "error") {
       setResult({ kind: "error", text: next.error ?? "Scan failed" });
     }

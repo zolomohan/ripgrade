@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import { db } from "./db";
 import type { DoviDepth, DoviScan } from "./derive";
+import { notifyJobs } from "./job-events";
 
 const execFileAsync = promisify(execFile);
 
@@ -417,6 +418,7 @@ const current = (): DoviJob => globalForJob.medlibDoviJob ?? IDLE_JOB;
 
 function setJob(next: DoviJob) {
   globalForJob.medlibDoviJob = next;
+  notifyJobs();
 }
 
 export function getDoviJob(): DoviJob {
@@ -425,7 +427,8 @@ export function getDoviJob(): DoviJob {
 
 /**
  * Reads every frame of one film. Minutes of disk, so it runs detached and the
- * page polls — the same shape as a library scan, for the same reason.
+ * page follows the job stream — the same shape as a library scan, for the
+ * same reason.
  */
 export function startFullDoviScan(
   filePath: string,

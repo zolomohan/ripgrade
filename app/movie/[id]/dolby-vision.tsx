@@ -8,15 +8,13 @@ import { useEffect, useState } from "react";
 import {
   beginConvert,
   beginFullDoviScan,
-  convertJobStatus,
-  doviJobStatus,
   refreshAfterDoviScan,
   discardBackup,
   restoreOriginal,
   stopConvert,
   stopFullDoviScan,
 } from "@/app/actions";
-import type { ConvertJob } from "@/lib/convert";
+import { useJobs } from "@/app/jobs-provider";
 import {
   BACKUP_SUFFIX,
   RPU_COVERAGE_TOLERANCE,
@@ -25,7 +23,6 @@ import {
   type ElVerdict,
   type Hdr10Static,
 } from "@/lib/derive";
-import type { DoviJob } from "@/lib/dovi";
 import { Modal, useClosing } from "@/app/modal";
 
 /**
@@ -458,8 +455,8 @@ export function DolbyVision({
   /** Size of the pre-conversion original, when one is still sitting beside it. */
   backupBytes?: number;
 }) {
-  const [job, setJob] = useState<DoviJob | null>(null);
-  const [convert, setConvert] = useState<ConvertJob | null>(null);
+  const { jobs, apply, subscribe } = useJobs();
+  const { dovi: job, convert } = jobs;
   const [confirming, setConfirming] = useState(false);
   const [confirmingRestore, setConfirmingRestore] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -472,64 +469,45 @@ export function DolbyVision({
   const [copied, setCopied] = useState<string | null>(null);
   const router = useRouter();
 
-  const running = job?.status === "running" && job.path === moviePath;
-  const converting =
-    convert?.status === "running" && convert.path === moviePath;
+  // Both jobs arrive over the job stream, which also covers a job that
+  // outlived the page that started it: the connect-time snapshot already
+  // carries anything running for this film.
+  const running = job.status === "running" && job.path === moviePath;
+  const converting = convert.status === "running" && convert.path === moviePath;
 
-  // Either job outlives the page that started it, so adopt one already running
-  // for this film rather than looking idle until it is clicked again.
-  useEffect(() => {
-    void doviJobStatus().then((current) => {
-      if (current.status === "running" && current.path === moviePath) {
-        setJob(current);
-      }
-    });
-    void convertJobStatus().then((current) => {
-      if (current.status === "running" && current.path === moviePath) {
-        setConvert(current);
-      }
-    });
-  }, [moviePath]);
+  // React only to the edge out of a run we saw on this film — `subscribe`
+  // explains why the status alone cannot mean "just finished". Without the
+  // edge, opening this page after an old failure would show its error as if
+  // it had just happened.
+  useEffect(
+    () =>
+      subscribe((next, prev) => {
+        const wasConverting =
+          prev.convert.status === "running" && prev.convert.path === moviePath;
+        if (wasConverting) {
+          if (next.convert.status === "done") {
+            // The job re-probes and re-derives the rewritten file itself, so
+            // the page only needs repainting.
+            void refreshAfterDoviScan().then(() => router.refresh());
+          } else if (next.convert.status === "error") {
+            setError(next.convert.error ?? "Conversion failed");
+          }
+        }
 
-  useEffect(() => {
-    if (!converting) return;
-
-    const id = setInterval(async () => {
-      const next = await convertJobStatus();
-      setConvert(next);
-
-      if (next.status === "done") {
-        // The job re-probes and re-derives the rewritten file itself, so the
-        // page only needs repainting.
-        await refreshAfterDoviScan();
-        router.refresh();
-      } else if (next.status === "error") {
-        setError(next.error ?? "Conversion failed");
-      }
-    }, 1000);
-
-    return () => clearInterval(id);
-  }, [converting, router]);
-
-  useEffect(() => {
-    if (!running) return;
-
-    const id = setInterval(async () => {
-      const next = await doviJobStatus();
-      setJob(next);
-
-      if (next.status === "done") {
-        // The reading is stored against the probe; this is what folds it into
-        // the derived row the page is rendered from.
-        await refreshAfterDoviScan();
-        router.refresh();
-      } else if (next.status === "error") {
-        setError(next.error ?? "Full pass failed");
-      }
-    }, 700);
-
-    return () => clearInterval(id);
-  }, [running, router]);
+        const wasReading =
+          prev.dovi.status === "running" && prev.dovi.path === moviePath;
+        if (wasReading) {
+          if (next.dovi.status === "done") {
+            // The reading is stored against the probe; this is what folds it
+            // into the derived row the page is rendered from.
+            void refreshAfterDoviScan().then(() => router.refresh());
+          } else if (next.dovi.status === "error") {
+            setError(next.dovi.error ?? "Full pass failed");
+          }
+        }
+      }),
+    [subscribe, moviePath, router],
+  );
 
   async function start() {
     setError(null);
@@ -538,7 +516,7 @@ export function DolbyVision({
       setError(result.error);
       return;
     }
-    setJob({ status: "running", path: moviePath, percent: 0, frames: 0 });
+    apply({ dovi: { status: "running", path: moviePath, percent: 0, frames: 0 } });
   }
 
   const el = classifyEnhancementLayer(scan, hdr10);
@@ -591,7 +569,7 @@ export function DolbyVision({
       setError(result.error);
       return;
     }
-    setConvert({ status: "running", path: moviePath, step: 1, steps: 3 });
+    apply({ convert: { status: "running", path: moviePath, step: 1, steps: 3 } });
   }
 
   async function runRestore() {
@@ -756,7 +734,7 @@ export function DolbyVision({
                       </p>
                       <button
                         type="button"
-                        onClick={async () => setConvert(await stopConvert())}
+                        onClick={async () => apply({ convert: await stopConvert() })}
                         className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
                       >
                         Cancel
@@ -919,7 +897,7 @@ export function DolbyVision({
               {running && (
                 <button
                   type="button"
-                  onClick={async () => setJob(await stopFullDoviScan())}
+                  onClick={async () => apply({ dovi: await stopFullDoviScan() })}
                   className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
                 >
                   Cancel

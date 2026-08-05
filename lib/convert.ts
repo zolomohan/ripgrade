@@ -8,6 +8,7 @@ import path from "node:path";
 import { getSetting } from "./db";
 import { BACKUP_SUFFIX, RUNTIME_DRIFT, runtimeDrift } from "./derive";
 import { scanDovi } from "./dovi";
+import { notifyJobs } from "./job-events";
 import { probe } from "./media";
 import { deriveAll } from "./library";
 import { reprobeFile } from "./scanner";
@@ -128,6 +129,7 @@ const current = (): ConvertJob => globalForConvert.medlibConvert ?? IDLE;
 
 function setJob(next: ConvertJob) {
   globalForConvert.medlibConvert = next;
+  notifyJobs();
 }
 
 export function getConvertJob(): ConvertJob {

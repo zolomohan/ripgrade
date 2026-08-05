@@ -4,7 +4,9 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { findArtwork, type Artwork } from "./artwork";
+import { downloadMissingArtwork } from "./auto-artwork";
 import { db } from "./db";
+import { notifyJobs } from "./job-events";
 import { getDoviScans, scanDovi } from "./dovi";
 import { getShows, seasonYear } from "./shows";
 import { enrichShow } from "./tv";
@@ -18,7 +20,14 @@ import { hasCredentials } from "./tmdb";
 export type ScanState = {
   /** "matching" is the TMDb phase that runs automatically after probing. */
   status:
-    "idle" | "scanning" | "dovi" | "matching" | "discs" | "done" | "error";
+    | "idle"
+    | "scanning"
+    | "dovi"
+    | "matching"
+    | "artwork"
+    | "discs"
+    | "done"
+    | "error";
   root?: string;
   discovered: number;
   probed: number;
@@ -37,6 +46,11 @@ export type ScanState = {
   /** Dolby Vision RPU head scans, one per DV film we have not read yet. */
   doviTotal: number;
   doviDone: number;
+  /** Artwork gaps being filled from TMDb — entries, not individual images. */
+  artTotal: number;
+  artDone: number;
+  /** Images actually downloaded, for the summary line. */
+  artSaved: number;
   /** Blu-ray.com lookups, the final phase. */
   discTotal: number;
   discDone: number;
@@ -58,6 +72,9 @@ const IDLE: ScanState = {
   removed: 0,
   doviTotal: 0,
   doviDone: 0,
+  artTotal: 0,
+  artDone: 0,
+  artSaved: 0,
   discTotal: 0,
   discDone: 0,
 };
@@ -73,6 +90,7 @@ const current = (): ScanState => globalForScan.medlibScan ?? IDLE;
 
 function setState(next: ScanState) {
   globalForScan.medlibScan = next;
+  notifyJobs();
 }
 
 export function getScanState(): ScanState {
@@ -211,11 +229,12 @@ async function indexArtwork(files: FoundFile[]) {
   ];
 
   const upsert = db.prepare(`
-    INSERT INTO artwork (dir, poster, fanart, found_at)
-    VALUES (@dir, @poster, @fanart, @found_at)
+    INSERT INTO artwork (dir, poster, fanart, logo, found_at)
+    VALUES (@dir, @poster, @fanart, @logo, @found_at)
     ON CONFLICT(dir) DO UPDATE SET
       poster = excluded.poster,
       fanart = excluded.fanart,
+      logo = excluded.logo,
       found_at = excluded.found_at
   `);
 
@@ -229,6 +248,7 @@ async function indexArtwork(files: FoundFile[]) {
         dir: row.dir,
         poster: row.poster ?? null,
         fanart: row.fanart ?? null,
+        logo: row.logo ?? null,
         found_at: Date.now(),
       });
     }
@@ -352,7 +372,8 @@ export function startScan(roots: string[]): ScanState {
     startedAt: Date.now(),
   });
 
-  // Deliberately not awaited: the caller returns immediately and the UI polls.
+  // Deliberately not awaited: the caller returns immediately and the UI
+  // follows the job stream.
   void (async () => {
     try {
       // Every folder into one list: the probe cache is keyed by path, so the
@@ -507,6 +528,24 @@ export function startScan(roots: string[]): ScanState {
           }
           deriveAll();
         }
+
+        // Anything matched but still bare on disk gets TMDb's top image for
+        // each missing kind — poster, fanart, logo — downloaded into its own
+        // folder as if picked by hand. Runs after matching for the same reason
+        // discs do: without a match there is nothing to fetch.
+        setState({ ...current(), status: "artwork", current: undefined });
+        const art = await downloadMissingArtwork({
+          onProgress: (p) =>
+            setState({
+              ...current(),
+              artTotal: p.total,
+              artDone: p.done,
+              artSaved: p.saved,
+              current: p.current,
+            }),
+        });
+        // Fold the new files into the stored rows.
+        if (art.saved > 0) deriveAll();
 
         // Disc lookups need a TMDb match to know what to search for, so this
         // runs last. Results are cached permanently, which is what keeps a

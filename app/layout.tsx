@@ -7,7 +7,10 @@ import {
   Orbitron,
 } from "next/font/google";
 import "./globals.css";
-import { scanStatus } from "./actions";
+import { getConvertJob } from "@/lib/convert";
+import { getDoviJob } from "@/lib/dovi";
+import { getScanState } from "@/lib/scanner";
+import { JobsProvider } from "./jobs-provider";
 import { ScanProvider } from "./scan-provider";
 import { Glow } from "./glow";
 import { RememberListing } from "./return-to";
@@ -62,13 +65,18 @@ export const metadata: Metadata = {
   description: "Audit the technical quality of a local movie library",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Seeded here so a reload mid-scan shows progress immediately.
-  const scan = await scanStatus();
+  // Seeded here so a reload mid-job shows progress immediately, before the
+  // job stream has connected.
+  const jobs = {
+    scan: getScanState(),
+    dovi: getDoviJob(),
+    convert: getConvertJob(),
+  };
   return (
     <html
       lang="en"
@@ -82,12 +90,14 @@ export default async function RootLayout({
         <Splash />
         <RememberListing />
         <Glow />
-        <ScanProvider initialState={scan}>
-          <Sidebar />
-          {/* Clears the rail once it is fixed; above that it is a top bar and
-              the content simply follows it. */}
-          <div className="flex min-h-full flex-col md:pl-56">{children}</div>
-        </ScanProvider>
+        <JobsProvider initial={jobs}>
+          <ScanProvider>
+            <Sidebar />
+            {/* Clears the rail once it is fixed; above that it is a top bar and
+                the content simply follows it. */}
+            <div className="flex min-h-full flex-col md:pl-56">{children}</div>
+          </ScanProvider>
+        </JobsProvider>
       </body>
     </html>
   );
