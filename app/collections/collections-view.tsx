@@ -51,7 +51,11 @@ function Fan({ films }: { films: CollectionFilm[] }) {
             <div className="-ml-4 h-14 w-[2.35rem] shrink-0 overflow-hidden rounded-chip bg-surface-strong ring-1 ring-line">
               <Art
                 src={film.owned?.poster}
-                remote={film.posterPath}
+                // The chosen artwork's own source before the record's default,
+                // exactly as the library tile falls back — the fan and the
+                // shelf must show the same picture.
+                remote={film.owned?.posterSrc ?? film.posterPath}
+                version={film.owned?.artAt}
                 size="w92"
                 loading="lazy"
                 className="h-full w-full object-cover"

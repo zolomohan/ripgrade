@@ -47,17 +47,19 @@ const TOOLS = [
 ];
 
 /**
- * A film, an episode, a show or a comparison is somewhere inside the library,
- * not a place of its own.
+ * A film, an episode or a show is somewhere inside the library, not a place
+ * of its own. A comparison is the upgrade queue's page: its rows are the one
+ * thing that opens it, and the question it answers is the queue's question.
  */
 const isActive = (href: string, pathname: string) =>
   href === "/"
     ? pathname === "/" ||
       pathname.startsWith("/film") ||
       pathname.startsWith("/episode") ||
-      pathname.startsWith("/show") ||
-      pathname.startsWith("/compare")
-    : pathname.startsWith(href);
+      pathname.startsWith("/show")
+    : href === "/upgrades"
+      ? pathname.startsWith("/upgrades") || pathname.startsWith("/compare")
+      : pathname.startsWith(href);
 
 export function Sidebar() {
   const pathname = usePathname();

@@ -347,16 +347,41 @@ export default async function ComparePage({
             </h1>
 
             {/* The show page's subtitle line, in this page's terms: what the
-                copy you would keep amounts to, before the table itemises it. */}
-            <p className="text-sm opacity-55">
-              {[keep.resolution, keep.releaseType, bytes(keep.sizeBytes)]
-                .filter(Boolean)
-                .join(" · ")}{" "}
-              ·{" "}
-              <span className={`font-score ${SCORE_TONE(keep.scores.overall)}`}>
-                {keep.scores.overall}/100
-              </span>
-            </p>
+                page is offering. With a queued release that is the candidate —
+                the reason you are here — with its gain in the queue's own
+                green; without one it is the copy you would keep. */}
+            {hit ? (
+              <p className="text-sm opacity-55">
+                {[
+                  hit.resolution,
+                  hit.releaseType,
+                  hit.sizeBytes !== undefined ? bytes(hit.sizeBytes) : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}{" "}
+                ·{" "}
+                <span className={`font-score ${SCORE_TONE(hit.score)}`}>
+                  {hit.score}/100
+                </span>
+                {hit.score > keep.scores.overall && (
+                  <span className="ml-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                    +{hit.score - keep.scores.overall}
+                  </span>
+                )}
+              </p>
+            ) : (
+              <p className="text-sm opacity-55">
+                {[keep.resolution, keep.releaseType, bytes(keep.sizeBytes)]
+                  .filter(Boolean)
+                  .join(" · ")}{" "}
+                ·{" "}
+                <span
+                  className={`font-score ${SCORE_TONE(keep.scores.overall)}`}
+                >
+                  {keep.scores.overall}/100
+                </span>
+              </p>
+            )}
 
             {keep.tmdb?.overview && (
               <p

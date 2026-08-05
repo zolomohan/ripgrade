@@ -28,6 +28,14 @@ export type CollectionFilm = {
     resolution: string;
     score: number;
     poster?: string;
+    /**
+     * The TMDb path behind the chosen artwork — the same fallback the library
+     * tile uses, so an unplugged drive shows the poster you picked rather
+     * than whatever TMDb's record leads with.
+     */
+    posterSrc?: string;
+    /** When the artwork folder was last re-indexed; busts the browser cache. */
+    artAt?: number;
   };
 };
 
@@ -123,6 +131,8 @@ function ownedSets(items: LibraryItem[]): Map<number, CollectionSet> {
           resolution: item.resolution,
           score: item.scores.overall,
           poster: item.poster,
+          posterSrc: item.art.poster,
+          artAt: item.artAt,
         };
       }
     } else {
@@ -136,6 +146,8 @@ function ownedSets(items: LibraryItem[]): Map<number, CollectionSet> {
           resolution: item.resolution,
           score: item.scores.overall,
           poster: item.poster,
+          posterSrc: item.art.poster,
+          artAt: item.artAt,
         },
       });
     }

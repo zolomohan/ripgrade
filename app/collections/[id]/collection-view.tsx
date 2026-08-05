@@ -68,7 +68,10 @@ function Held({
         <div className={FRAME}>
           <Art
             src={owned.poster}
-            remote={film.posterPath}
+            // The chosen artwork's own source before the record's default,
+            // exactly as the library tile falls back.
+            remote={owned.posterSrc ?? film.posterPath}
+            version={owned.artAt}
             loading="lazy"
             className={POSTER}
           />
