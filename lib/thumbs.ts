@@ -8,6 +8,7 @@ import path from "node:path";
 import sharp from "sharp";
 
 import { db } from "./db";
+import { notifyJobs } from "./job-events";
 
 /**
  * Downscaled artwork, cached on the internal disk.
@@ -24,6 +25,26 @@ import { db } from "./db";
  * versions for that path and width are removed as the new one lands. Nothing
  * here is precious: the whole directory can be deleted and it refills itself.
  */
+
+/**
+ * Never hold the drive open.
+ *
+ * libvips reads a source image by memory-mapping it, and its operation cache
+ * keeps that mapping alive after the call returns — a mapped file counts as in
+ * use, so macOS refuses to eject the drive it lives on. The cache is a plain
+ * LRU with no expiry: entries leave only when later work pushes them out, or
+ * when the process ends. An idle server is therefore the worst case, and the
+ * rebuild below is the very worst of it — the last posters it touches have
+ * nothing behind them to do the pushing, so they stay mapped indefinitely.
+ * That is the button you press *before* unplugging the drive.
+ *
+ * Turning it off costs nothing worth having. Every job here is a distinct
+ * source × width, so there is little for an operation cache to hit, and each
+ * result is already kept as a file — the second ask for a thumbnail never
+ * reaches sharp at all. Measured over a rebuild-shaped run, on and off are
+ * indistinguishable inside the run-to-run noise.
+ */
+sharp.cache(false);
 
 /**
  * The widths that may be asked for, so a malformed query cannot fill the
@@ -174,6 +195,54 @@ export async function clearThumbCache(): Promise<{
 const REBUILD_CONCURRENCY = 3;
 
 /**
+ * The rebuild, as a job the rail can draw.
+ *
+ * It reads every poster in the library off the external drive, which on a
+ * spinning disk is minutes rather than seconds — long enough that running it
+ * silently behind a button that says "Rebuilding…" left no way to tell a slow
+ * pass from a stuck one, and no way to stop it. Counted in thumbnails rather
+ * than posters, because that is the unit of work: three widths each.
+ */
+export type ThumbJob = {
+  status: "idle" | "running" | "done" | "cancelled" | "error";
+  total: number;
+  done: number;
+  /** Thumbnails now on disk, and sources sharp could not read. */
+  ready: number;
+  failed: number;
+  /** The folder being read — a film or show name, not `poster.jpeg`. */
+  current?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  error?: string;
+};
+
+const IDLE_JOB: ThumbJob = {
+  status: "idle",
+  total: 0,
+  done: 0,
+  ready: 0,
+  failed: 0,
+};
+
+/** On globalThis so a dev-reload mid-rebuild keeps reporting; see scanner.ts. */
+const globalForThumbs = globalThis as unknown as {
+  medlibThumbs?: ThumbJob;
+  medlibThumbsCancel?: boolean;
+};
+
+const currentJob = (): ThumbJob => globalForThumbs.medlibThumbs ?? IDLE_JOB;
+
+function setJob(next: ThumbJob) {
+  globalForThumbs.medlibThumbs = next;
+  notifyJobs();
+}
+
+export function getThumbJob(): ThumbJob {
+  return currentJob();
+}
+
+/**
  * Generates every thumbnail the app could ask for, ahead of being asked.
  *
  * The cache fills lazily as shelves are browsed, which is fine until the
@@ -182,34 +251,84 @@ const REBUILD_CONCURRENCY = 3;
  * app draws, so the whole grid works offline afterwards. Posters only:
  * backdrops and logos are drawn at full resolution, which is the drive's to
  * give.
+ *
+ * Returns as soon as the work is under way; the job stream carries the rest.
  */
-export async function rebuildThumbCache(): Promise<{
-  ready: number;
-  failed: number;
-}> {
-  const rows = db
-    .prepare("SELECT poster FROM artwork WHERE poster IS NOT NULL")
-    .all() as { poster: string }[];
+export function startThumbRebuild(): ThumbJob {
+  if (currentJob().status === "running") return currentJob();
 
-  const jobs = rows.flatMap((row) =>
-    [...THUMB_WIDTHS].map((width) => ({ source: row.poster, width })),
-  );
+  globalForThumbs.medlibThumbsCancel = false;
+  setJob({ ...IDLE_JOB, status: "running", startedAt: Date.now() });
 
-  let ready = 0;
-  let failed = 0;
-  let cursor = 0;
+  // Not awaited: the caller returns at once and the job stream reports.
+  void (async () => {
+    try {
+      const rows = db
+        .prepare("SELECT poster FROM artwork WHERE poster IS NOT NULL")
+        .all() as { poster: string }[];
 
-  async function worker() {
-    while (cursor < jobs.length) {
-      const job = jobs[cursor++];
-      if (await getThumb(job.source, job.width)) ready += 1;
-      else failed += 1;
+      const jobs = rows.flatMap((row) =>
+        [...THUMB_WIDTHS].map((width) => ({ source: row.poster, width })),
+      );
+
+      setJob({ ...currentJob(), total: jobs.length });
+
+      let cursor = 0;
+
+      async function worker() {
+        while (cursor < jobs.length) {
+          if (globalForThumbs.medlibThumbsCancel) return;
+
+          const job = jobs[cursor++];
+          // The folder, not the file: every source here is called
+          // `poster.jpeg`, so the name of the film is the only useful label.
+          setJob({
+            ...currentJob(),
+            current: path.basename(path.dirname(job.source)),
+          });
+
+          const made = await getThumb(job.source, job.width);
+          setJob({
+            ...currentJob(),
+            done: currentJob().done + 1,
+            ready: currentJob().ready + (made ? 1 : 0),
+            failed: currentJob().failed + (made ? 0 : 1),
+          });
+        }
+      }
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(REBUILD_CONCURRENCY, jobs.length) },
+          worker,
+        ),
+      );
+
+      // Cancelling stops the workers taking new jobs, so this is reached
+      // either way — what is already on disk stays, and a later run picks up
+      // from there rather than starting over.
+      setJob({
+        ...currentJob(),
+        status: globalForThumbs.medlibThumbsCancel ? "cancelled" : "done",
+        current: undefined,
+        finishedAt: Date.now(),
+      });
+    } catch (err) {
+      setJob({
+        ...currentJob(),
+        status: "error",
+        current: undefined,
+        error: err instanceof Error ? err.message : String(err),
+        finishedAt: Date.now(),
+      });
     }
-  }
+  })();
 
-  await Promise.all(
-    Array.from({ length: Math.min(REBUILD_CONCURRENCY, jobs.length) }, worker),
-  );
+  return currentJob();
+}
 
-  return { ready, failed };
+export function cancelThumbRebuild(): ThumbJob {
+  if (currentJob().status !== "running") return currentJob();
+  globalForThumbs.medlibThumbsCancel = true;
+  return currentJob();
 }

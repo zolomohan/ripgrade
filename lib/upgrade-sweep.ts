@@ -28,12 +28,22 @@ import { bestUpgrade, type ScoredRelease } from "./upgrades";
 
 export type SweepJob = {
   status: "idle" | "running" | "done" | "cancelled" | "error";
+  /**
+   * Which half is running. A sweep fills the whole queue — the films you have
+   * and then the films you want — and the two are counted separately because
+   * they are different questions asked of the same indexers.
+   */
+  phase: "films" | "wishlist";
   total: number;
   done: number;
   /** Films where something better turned up, so far. */
   found: number;
   /** Checked recently enough to skip — see FRESH_MS. */
   skipped: number;
+  /** The wishlist half's own counters, on the same terms. */
+  wishTotal: number;
+  wishDone: number;
+  wishFound: number;
   current?: string;
   startedAt?: number;
   finishedAt?: number;
@@ -42,10 +52,14 @@ export type SweepJob = {
 
 const IDLE: SweepJob = {
   status: "idle",
+  phase: "films",
   total: 0,
   done: 0,
   found: 0,
   skipped: 0,
+  wishTotal: 0,
+  wishDone: 0,
+  wishFound: 0,
 };
 
 /**
@@ -68,7 +82,12 @@ const globalForSweep = globalThis as unknown as {
   medlibSweepCancel?: boolean;
 };
 
-const current = (): SweepJob => globalForSweep.medlibSweep ?? IDLE;
+/**
+ * Laid over `IDLE`, so a counter added to this type reads as zero on a job
+ * written before it existed — the state outlives the code that shaped it, and
+ * the rail formats these numbers without asking whether they are there.
+ */
+const current = (): SweepJob => ({ ...IDLE, ...globalForSweep.medlibSweep });
 
 function setJob(next: SweepJob) {
   globalForSweep.medlibSweep = next;
@@ -103,7 +122,11 @@ export type StoredHit = {
   audio?: string;
 };
 
-function trim(release: ScoredRelease): StoredHit {
+/**
+ * Exported for the wishlist's own pass, which stores the same shape from the
+ * same search — a release is a release whether or not you own the film.
+ */
+export function trim(release: ScoredRelease): StoredHit {
   const { facts, scores } = release.guess;
   const bestAudio = facts.audio[0];
   return {
@@ -151,7 +174,12 @@ export function startSweep(): SweepJob {
   if (current().status === "running") return current();
 
   globalForSweep.medlibSweepCancel = false;
-  setJob({ ...IDLE, status: "running", startedAt: Date.now() });
+  setJob({
+    ...IDLE,
+    status: "running",
+    phase: "films",
+    startedAt: Date.now(),
+  });
 
   // Not awaited: the caller returns at once and the job stream reports.
   void (async () => {
@@ -254,9 +282,11 @@ export function startSweep(): SweepJob {
         }
       }
 
+      await sweepWishlist();
+
       setJob({
         ...current(),
-        status: "done",
+        status: globalForSweep.medlibSweepCancel ? "cancelled" : "done",
         current: undefined,
         finishedAt: Date.now(),
       });
@@ -271,6 +301,45 @@ export function startSweep(): SweepJob {
   })();
 
   return current();
+}
+
+/**
+ * The queue's other half: what the indexers have for the films you want.
+ *
+ * Part of a sweep because a sweep is what the queue's own button runs, and the
+ * queue has three sections — leaving one of them to be filled only by a scan
+ * of the drive made the button a half-answer to the question it appears to
+ * ask. A scan still runs the same pass; whichever you reach for, the whole
+ * queue is refreshed.
+ *
+ * Imported here rather than at the top of the file: wishlist-search reads this
+ * module for the stored-release shape, and statically it would be a cycle —
+ * the same reason dovi.ts reaches for library.ts this way.
+ */
+async function sweepWishlist(): Promise<void> {
+  setJob({ ...current(), phase: "wishlist", current: undefined });
+
+  const { searchWishlist } = await import("./wishlist-search");
+
+  const wishes = await searchWishlist({
+    shouldStop: () => Boolean(globalForSweep.medlibSweepCancel),
+    onProgress: (p) =>
+      setJob({
+        ...current(),
+        wishTotal: p.total,
+        wishDone: p.done,
+        wishFound: p.found,
+        current: p.current,
+      }),
+  });
+
+  setJob({
+    ...current(),
+    wishTotal: wishes.total,
+    wishDone: wishes.done,
+    wishFound: wishes.found,
+    current: undefined,
+  });
 }
 
 export function cancelSweep(): SweepJob {

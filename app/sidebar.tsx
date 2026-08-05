@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Fragment } from "react";
 
 import { SidebarProcesses } from "./sidebar-processes";
 
@@ -12,45 +13,51 @@ import { SidebarProcesses } from "./sidebar-processes";
  * to the others, which meant three headers to keep in step and a "back to
  * library" link on pages that were never below the library. One rail replaces
  * all of it.
+ *
+ * Three groups, ruled apart: what you have, what you are getting, and the two
+ * pages about the app itself.
+ */
+
+/**
+ * What you have: the collection as it stands — the films, how they are
+ * grouped, what is missing from it, and what it all adds up to.
+ *
+ * These were one undifferentiated list with everything below, which made
+ * "Stats" and "Downloads" look like the same kind of place.
  */
 const PAGES = [
   { href: "/", label: "Library" },
-  { href: "/upgrades", label: "Upgrades" },
-  { href: "/downloads", label: "Downloads" },
   { href: "/collections", label: "Collections" },
-  { href: "/stats", label: "Stats" },
   { href: "/wishlist", label: "Wishlist" },
+  { href: "/stats", label: "Stats" },
+];
+
+/** And what you are getting: finding it, queueing it, watching it land. */
+const ACQUIRING = [
   { href: "/search", label: "Search" },
+  // Everything there is to go and fetch, ranked: better copies of what you
+  // have, and the wants something has turned up for.
+  { href: "/upgrades", label: "Queue" },
+  { href: "/downloads", label: "Downloads" },
 ];
 
 /**
  * The two that are about the app rather than about the library.
  *
- * Held apart at the foot of the rail and reduced to their icons: they are
- * reached rarely, and a list where every entry looks equally likely says
- * nothing about which of them you actually want.
+ * Last, below a rule of their own: they are reached rarely, and what separates
+ * them from everything above is not what they are about but how often you want
+ * them. They were icons at the foot of the rail — legible enough once you knew
+ * which was which, and a guess until then.
  */
 const TOOLS = [
-  {
-    href: "/how-it-works",
-    label: "How it works",
-    // A question mark in a circle: this is the page that answers "why that
-    // score", which is the only question the app cannot answer in place.
-    path: "M12 17h.01M9.2 9a3 3 0 1 1 4 2.8c-.8.3-1.2 1-1.2 1.9",
-    circle: true,
-  },
-  {
-    href: "/settings",
-    label: "Settings",
-    path: "M10.3 4.3a1 1 0 0 1 1-.8h1.4a1 1 0 0 1 1 .8l.2 1.3 1.4.8 1.2-.5a1 1 0 0 1 1.2.4l.7 1.2a1 1 0 0 1-.2 1.3l-1 .9v1.6l1 .9a1 1 0 0 1 .2 1.3l-.7 1.2a1 1 0 0 1-1.2.4l-1.2-.5-1.4.8-.2 1.3a1 1 0 0 1-1 .8h-1.4a1 1 0 0 1-1-.8l-.2-1.3-1.4-.8-1.2.5a1 1 0 0 1-1.2-.4l-.7-1.2a1 1 0 0 1 .2-1.3l1-.9v-1.6l-1-.9a1 1 0 0 1-.2-1.3l.7-1.2a1 1 0 0 1 1.2-.4l1.2.5 1.4-.8z",
-    circle: false,
-  },
+  { href: "/how-it-works", label: "How it works" },
+  { href: "/settings", label: "Settings" },
 ];
 
 /**
  * A film, an episode or a show is somewhere inside the library, not a place
- * of its own. A comparison is the upgrade queue's page: its rows are the one
- * thing that opens it, and the question it answers is the queue's question.
+ * of its own. A comparison is the queue's page: its rows are the one thing
+ * that opens it, and the question it answers is the queue's question.
  */
 const isActive = (href: string, pathname: string) =>
   href === "/"
@@ -82,27 +89,45 @@ export function Sidebar() {
       </Link>
 
       <nav className="flex flex-1 items-center gap-1 md:flex-col md:items-stretch md:gap-0.5">
-        {PAGES.map((page) => {
-          const active = isActive(page.href, pathname);
-          return (
-            <Link
-              key={page.href}
-              href={page.href}
-              aria-current={active ? "page" : undefined}
-              className={`glow rounded-control px-3 py-1.5 text-sm transition-colors ${
-                active
-                  ? "bg-surface-strong font-medium"
-                  : "opacity-60 hover:bg-surface hover:opacity-100"
-              }`}
-            >
-              {page.label}
-            </Link>
-          );
-        })}
+        {[PAGES, ACQUIRING, TOOLS].map((group, g) => (
+          <Fragment key={g}>
+            {/* Weighted where the labels begin and trailing off away from
+                them — `.rule-head`'s hairline rather than the one that fades
+                at both ends, because this rule belongs to the group under it
+                the way that one belongs to its heading. It turns with the
+                rail: upright between two runs of links across the top of a
+                narrow screen, laid flat between two stacks in the column. */}
+            {g > 0 && (
+              <span
+                aria-hidden
+                className="mx-2 h-4 w-px shrink-0 bg-[linear-gradient(to_bottom,var(--line-strong),transparent)] md:mx-3 md:my-2.5 md:h-px md:w-auto md:bg-[linear-gradient(to_right,var(--line-strong),transparent)]"
+              />
+            )}
+
+            {group.map((page) => {
+              const active = isActive(page.href, pathname);
+              return (
+                <Link
+                  key={page.href}
+                  href={page.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`glow rounded-control px-3 py-1.5 text-sm transition-colors ${
+                    active
+                      ? "bg-surface-strong font-medium"
+                      : "opacity-60 hover:bg-surface hover:opacity-100"
+                  }`}
+                >
+                  {page.label}
+                </Link>
+              );
+            })}
+          </Fragment>
+        ))}
       </nav>
 
-      {/* Wraps onto its own line across the top of a narrow screen, and sits
-          above the two icons in the rail. Renders nothing when nothing runs.
+      {/* Wraps onto its own line across the top of a narrow screen, and holds
+          the foot of the rail in its column form. Renders nothing when nothing
+          runs.
 
           `w-full` at every width, never auto: the aside stays flex-wrap in
           its column form, and a wrapping column sizes each line to its widest
@@ -114,42 +139,6 @@ export function Sidebar() {
         <SidebarProcesses />
       </div>
 
-      {/* `mt-auto` only once the rail is a column — across the top they simply
-          end the row, which is the same place: last, and out of the way. */}
-      <div className="flex shrink-0 items-center gap-1.5 md:px-2">
-        {TOOLS.map((tool) => {
-          const active = pathname.startsWith(tool.href);
-          return (
-            <Link
-              key={tool.href}
-              href={tool.href}
-              aria-label={tool.label}
-              aria-current={active ? "page" : undefined}
-              title={tool.label}
-              className={`grid h-9 w-9 place-items-center rounded-full border transition-colors ${
-                active
-                  ? "border-line-strong bg-surface-strong"
-                  : "border-line opacity-50 hover:bg-surface hover:opacity-100"
-              }`}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-                className="h-4 w-4"
-              >
-                {tool.circle && <circle cx="12" cy="12" r="9" />}
-                {!tool.circle && <circle cx="12" cy="12" r="2.6" />}
-                <path d={tool.path} />
-              </svg>
-            </Link>
-          );
-        })}
-      </div>
     </aside>
   );
 }

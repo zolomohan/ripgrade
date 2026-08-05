@@ -54,9 +54,11 @@ import {
 } from "@/lib/roots";
 import { revealInFinder } from "@/lib/system";
 import {
+  cancelThumbRebuild,
   clearThumbCache,
-  rebuildThumbCache,
+  startThumbRebuild,
   thumbCacheStats,
+  type ThumbJob,
 } from "@/lib/thumbs";
 import {
   cancelSweep,
@@ -230,20 +232,18 @@ export async function clearThumbs(): Promise<{ files: number; bytes: number }> {
   return removed;
 }
 
-/** Walks every poster at every width — slow on purpose; see lib/thumbs.ts. */
-export async function rebuildThumbs(): Promise<
-  { ok: true; ready: number; failed: number } | { ok: false; error: string }
-> {
-  try {
-    const result = await rebuildThumbCache();
-    refresh();
-    return { ok: true, ...result };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
+/**
+ * Walks every poster at every width — slow on purpose; see lib/thumbs.ts.
+ *
+ * Returns the job rather than the outcome: the pass outlives the request, and
+ * the rail follows it from there.
+ */
+export async function rebuildThumbs(): Promise<ThumbJob> {
+  return startThumbRebuild();
+}
+
+export async function stopThumbRebuild(): Promise<ThumbJob> {
+  return cancelThumbRebuild();
 }
 
 export async function beginScan(): Promise<ScanState> {
@@ -267,6 +267,9 @@ export async function beginScan(): Promise<ScanState> {
       artSaved: 0,
       discTotal: 0,
       discDone: 0,
+      wishTotal: 0,
+      wishDone: 0,
+      wishFound: 0,
       error: "No library folder selected.",
     };
   }

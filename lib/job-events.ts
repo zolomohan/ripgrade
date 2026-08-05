@@ -3,24 +3,26 @@ import "server-only";
 import type { ConvertJob } from "./convert";
 import type { DoviJob } from "./dovi";
 import type { ScanState } from "./scanner";
+import type { ThumbJob } from "./thumbs";
 import type { SweepJob } from "./upgrade-sweep";
 
 /**
  * The change signal behind `/api/jobs`.
  *
- * The three job modules call `notifyJobs()` from their `setState`/`setJob`
- * choke points; the SSE route subscribes and pushes a fresh snapshot to every
- * open connection. Carrying no payload is deliberate: subscribers read the
- * jobs through their getters at send time, so a coalesced burst of changes
- * costs one read of the latest state, not a queue of stale ones.
+ * Every job module calls `notifyJobs()` from its `setState`/`setJob` choke
+ * point; the SSE route subscribes and pushes a fresh snapshot to every open
+ * connection. Carrying no payload is deliberate: subscribers read the jobs
+ * through their getters at send time, so a coalesced burst of changes costs
+ * one read of the latest state, not a queue of stale ones.
  */
 
-/** Everything the client needs to draw the rail — all four jobs, together. */
+/** Everything the client needs to draw the rail — every job, together. */
 export type JobsSnapshot = {
   scan: ScanState;
   dovi: DoviJob;
   convert: ConvertJob;
   sweep: SweepJob;
+  thumbs: ThumbJob;
 };
 
 /**

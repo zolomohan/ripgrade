@@ -11,6 +11,7 @@ import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
 import { hasQb } from "@/lib/qbittorrent";
 import { getScanState } from "@/lib/scanner";
+import { getThumbJob } from "@/lib/thumbs";
 import { getSweepJob } from "@/lib/upgrade-sweep";
 import { CapabilitiesProvider } from "./capabilities";
 import { JobsProvider } from "./jobs-provider";
@@ -80,6 +81,7 @@ export default function RootLayout({
     dovi: getDoviJob(),
     convert: getConvertJob(),
     sweep: getSweepJob(),
+    thumbs: getThumbJob(),
   };
   return (
     <html

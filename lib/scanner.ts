@@ -6,7 +6,9 @@ import path from "node:path";
 import { findArtwork, type Artwork } from "./artwork";
 import { downloadMissingArtwork } from "./auto-artwork";
 import { db } from "./db";
+import { hasJackett } from "./jackett";
 import { notifyJobs } from "./job-events";
+import { searchWishlist } from "./wishlist-search";
 import { getDoviScans, scanDovi } from "./dovi";
 import { getShows, seasonYear } from "./shows";
 import { enrichShow } from "./tv";
@@ -26,6 +28,7 @@ export type ScanState = {
     | "matching"
     | "artwork"
     | "discs"
+    | "wishlist"
     | "done"
     | "error";
   root?: string;
@@ -51,9 +54,14 @@ export type ScanState = {
   artDone: number;
   /** Images actually downloaded, for the summary line. */
   artSaved: number;
-  /** Blu-ray.com lookups, the final phase. */
+  /** Blu-ray.com lookups. */
   discTotal: number;
   discDone: number;
+  /** Indexer searches for the films on the wishlist — the final phase. */
+  wishTotal: number;
+  wishDone: number;
+  /** Wants something was actually found for, for the summary line. */
+  wishFound: number;
   startedAt?: number;
   finishedAt?: number;
   error?: string;
@@ -77,6 +85,9 @@ const IDLE: ScanState = {
   artSaved: 0,
   discTotal: 0,
   discDone: 0,
+  wishTotal: 0,
+  wishDone: 0,
+  wishFound: 0,
 };
 
 /**
@@ -86,7 +97,17 @@ const IDLE: ScanState = {
  */
 const globalForScan = globalThis as unknown as { medlibScan?: ScanState };
 
-const current = (): ScanState => globalForScan.medlibScan ?? IDLE;
+/**
+ * Laid over `IDLE` rather than returned bare, so a counter added to this type
+ * is zero on a state written before it existed.
+ *
+ * The state outlives the code: it sits on globalThis precisely so a save
+ * mid-scan does not lose it, which means a reload can hand the new build an
+ * object shaped by the old one. Reading `wishDone` off such a state gave
+ * `undefined`, and the rail formats its counters without asking — one added
+ * field took the whole layout down with it.
+ */
+const current = (): ScanState => ({ ...IDLE, ...globalForScan.medlibScan });
 
 function setState(next: ScanState) {
   globalForScan.medlibScan = next;
@@ -362,6 +383,43 @@ async function probeAll(files: FoundFile[]) {
   );
 }
 
+/**
+ * The wishlist pass: what the indexers have for the films you want.
+ *
+ * Its own function because it is reached from two places — the end of a good
+ * scan, and the point where a scan gives up because the drive is not there.
+ * Everything else in a scan is about the drive; this is about what is not on
+ * it, so it is the one phase an absent drive has no bearing on.
+ *
+ * Needs Jackett and nothing else. Its absence is no more a failed scan than a
+ * missing TMDb token is, and it needs nothing further from TMDb either — a
+ * want is already a TMDb film by the time it reaches the list.
+ */
+async function runWishlistPass(): Promise<void> {
+  if (!hasJackett()) return;
+
+  setState({ ...current(), status: "wishlist", current: undefined });
+
+  const wishes = await searchWishlist({
+    onProgress: (p) =>
+      setState({
+        ...current(),
+        wishTotal: p.total,
+        wishDone: p.done,
+        wishFound: p.found,
+        current: p.current,
+      }),
+  });
+
+  setState({
+    ...current(),
+    wishTotal: wishes.total,
+    wishDone: wishes.done,
+    wishFound: wishes.found,
+    current: undefined,
+  });
+}
+
 export function startScan(roots: string[]): ScanState {
   if (current().status === "scanning") return current();
 
@@ -417,12 +475,27 @@ export function startScan(roots: string[]): ScanState {
       // Nothing was walked, so nothing can be trusted to be missing. Failing
       // loudly is the whole point: the alternative is a scan that reports
       // success having deleted the library.
+      //
+      // The wishlist still runs. It is the one pass that never touches the
+      // drive — it asks indexers about films that are, by definition, not on
+      // it — so an unplugged drive is no reason to skip it, and is in fact
+      // when you are most likely to be looking for something to fetch. The
+      // failure is still reported exactly as loudly afterwards.
       if (walked.length === 0) {
-        throw new Error(
-          `Nothing was scanned — the library is untouched. ${unreachable
-            .map((u) => `${u.root} (${u.why})`)
-            .join(", ")}`,
-        );
+        const message = `Nothing was scanned — the library is untouched. ${unreachable
+          .map((u) => `${u.root} (${u.why})`)
+          .join(", ")}`;
+
+        await runWishlistPass();
+
+        setState({
+          ...current(),
+          status: "error",
+          current: undefined,
+          error: message,
+          finishedAt: Date.now(),
+        });
+        return;
       }
 
       // Pruned per root against the whole set, so a file is only dropped when
@@ -610,6 +683,7 @@ export function startScan(roots: string[]): ScanState {
         if (pending.length > 0) deriveAll();
       }
 
+      await runWishlistPass();
 
       setState({
         ...current(),

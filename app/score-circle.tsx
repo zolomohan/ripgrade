@@ -44,6 +44,21 @@ export const scoreTheme = (score: number) =>
   ];
 
 /**
+ * The queue's rule, which is not the library's.
+ *
+ * There the dial grades a film you own, so the number decides it and a 92 is
+ * green. On the queue it grades a job — a release to go and fetch — and one
+ * that would still leave the film short of its best is an open job however
+ * high it scores. Green is kept for the ones that close the question, so the
+ * finals can be picked out without reading a single number.
+ *
+ * Shared by both tabs: an upgrade and a want are read the same way when they
+ * are both things you might download tonight.
+ */
+export const queueTheme = (score: number) =>
+  score >= 100 ? STATUS_THEME.Reference : STATUS_THEME.Good;
+
+/**
  * A score as a ring: the number in the middle, the arc showing how far round it
  * got, and the colour carrying the verdict — a film can be red at 66 and green
  * at 66 depending on what it is being measured against.

@@ -171,6 +171,16 @@ CREATE TABLE IF NOT EXISTS upgrade_checks (
   best          TEXT
 );
 
+-- The same, for the films you want but do not have. Written by the scan's
+-- wishlist pass rather than by a sweep, and keyed by TMDb id because a wanted
+-- film has no path to be keyed by — that is the whole point of it.
+CREATE TABLE IF NOT EXISTS wishlist_checks (
+  tmdb_id    INTEGER PRIMARY KEY,
+  checked_at INTEGER NOT NULL,
+  -- The trimmed best release as JSON, or NULL for "looked, found nothing".
+  best       TEXT
+);
+
 -- Every release handed to qBittorrent, kept after qBittorrent forgets it.
 -- The client's own list is the present tense; this is the history the
 -- Downloads page shows once a torrent is removed or done.

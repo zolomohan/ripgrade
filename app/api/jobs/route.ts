@@ -2,10 +2,11 @@ import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
 import { subscribeJobs, type JobsSnapshot } from "@/lib/job-events";
 import { getScanState } from "@/lib/scanner";
+import { getThumbJob } from "@/lib/thumbs";
 import { getSweepJob } from "@/lib/upgrade-sweep";
 
 /**
- * One SSE stream carrying all three background jobs, instead of the four
+ * One SSE stream carrying every background job, instead of the four
  * polling intervals the client used to run. Each event is a full
  * `JobsSnapshot` rather than a delta, so a reconnect (dev reload, dropped
  * connection — EventSource retries by itself) needs no catch-up protocol:
@@ -29,6 +30,7 @@ export function GET(request: Request) {
     dovi: getDoviJob(),
     convert: getConvertJob(),
     sweep: getSweepJob(),
+    thumbs: getThumbJob(),
   });
 
   const stream = new ReadableStream({

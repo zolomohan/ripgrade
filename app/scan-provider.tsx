@@ -21,7 +21,7 @@ import type { ScanState } from "@/lib/scanner";
  * is running.
  */
 
-const BUSY = ["scanning", "dovi", "matching", "artwork", "discs"];
+const BUSY = ["scanning", "dovi", "matching", "artwork", "discs", "wishlist"];
 
 export type ScanResult = { kind: "ok" | "error"; text: string };
 
@@ -85,6 +85,9 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
             ...(scan.needsReview ? [`${scan.needsReview} need review`] : []),
             ...(scan.artSaved ? [`${scan.artSaved} images downloaded`] : []),
             ...(scan.discTotal ? [`${scan.discTotal} discs looked up`] : []),
+            ...(scan.wishTotal
+              ? [`${scan.wishFound} of ${scan.wishTotal} wants found`]
+              : []),
           ];
           setResult({ kind: "ok", text: parts.join(" · ") });
         } else if (scan.status === "error") {
