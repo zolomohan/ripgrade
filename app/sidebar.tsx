@@ -16,6 +16,7 @@ import { SidebarProcesses } from "./sidebar-processes";
 const PAGES = [
   { href: "/", label: "Library" },
   { href: "/upgrades", label: "Upgrades" },
+  { href: "/downloads", label: "Downloads" },
   { href: "/collections", label: "Collections" },
   { href: "/stats", label: "Stats" },
   { href: "/wishlist", label: "Wishlist" },

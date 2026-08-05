@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { Art } from "@/app/art";
+import { MagnetAction } from "@/app/magnet-action";
 import { findDuplicateGroup, type LibraryItem } from "@/lib/library";
 import { decodeId, posterName } from "@/lib/routes";
 import { storedHitFor, type StoredHit } from "@/lib/upgrade-sweep";
@@ -523,27 +524,13 @@ export default async function ComparePage({
                 ))}
                 <td className="px-3 py-3">
                   {hit.magnet ? (
-                    <a
-                      href={hit.magnet}
-                      title={hit.magnet}
-                      className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90"
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden
-                        className="h-3.5 w-3.5"
-                      >
-                        <path d="M12 4v11" />
-                        <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
-                        <path d="M5 19h14" />
-                      </svg>
-                      Download
-                    </a>
+                    // A handover when qBittorrent is connected, the plain
+                    // magnet link otherwise; see app/magnet-action.tsx.
+                    <MagnetAction
+                      magnet={hit.magnet}
+                      film={{ title: keep.title, posterPath: keep.art.poster }}
+                      pill
+                    />
                   ) : hit.detailsUrl ? (
                     <a
                       href={hit.detailsUrl}

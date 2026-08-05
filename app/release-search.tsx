@@ -9,6 +9,8 @@ import {
   findReleasesForEpisode,
   type UpgradeResponse,
 } from "@/app/actions";
+import { MagnetAction } from "@/app/magnet-action";
+import type { FilmContext } from "@/lib/qbittorrent";
 import { ScoreDial } from "@/app/score-circle";
 import type { DiscSummary, ScoredRelease, Standing } from "@/lib/upgrades";
 import { Modal, useClosing } from "@/app/modal";
@@ -80,6 +82,20 @@ const STANDING: Record<Standing, { stroke: string; text: string }> = {
   poor: { stroke: "stroke-red-500", text: "text-red-600 dark:text-red-400" },
   unknown: { stroke: "stroke-line-strong", text: "opacity-55" },
 };
+
+/**
+ * The colour when there is nothing to compare against — the search page, where
+ * a release is only what its own name claims.
+ *
+ * Grey said "not compared", which is true and useless: the number is the only
+ * verdict available there, so it may as well carry one. The bands are strict on
+ * purpose. A release scores 100 by claiming everything the rubric can pay for —
+ * a remux at the resolution, lossless object audio, an untouched stream — and
+ * anything short of that is something given up, which is worth seeing before
+ * you download it rather than after.
+ */
+const bare = (score: number) =>
+  score >= 100 ? STANDING.good : score >= 80 ? STANDING.fair : STANDING.poor;
 
 /** How far above or below the reference this release lands. */
 function Delta({
@@ -196,9 +212,12 @@ function NoDiscPanel() {
 export function Result({
   release,
   referenceKind,
+  film,
 }: {
   release: ScoredRelease;
   referenceKind?: "copy" | "disc";
+  /** Which film the search was for, riding into the download log. */
+  film?: FilmContext;
 }) {
   const { facts, tags, confidence } = release.guess;
   const best = facts.audio[0];
@@ -229,7 +248,11 @@ export function Result({
       <div className="flex w-11 shrink-0 flex-col items-center gap-0.5">
         <ScoreDial
           score={release.score}
-          theme={STANDING[release.standing]}
+          theme={
+            release.standing === "unknown"
+              ? bare(release.score)
+              : STANDING[release.standing]
+          }
           title={
             release.relative
               ? `Predicted ${release.score}% of the disc`
@@ -315,32 +338,9 @@ export function Result({
         )}
 
         {release.magnet ? (
-          // A plain link rather than a button: `magnet:` is a scheme the
-          // browser hands straight to whatever the system has registered for
-          // it, so there is nothing for the app to do beyond offering the href.
-          // No target — a new tab for a protocol handoff only ever leaves an
-          // empty tab behind.
-          <a
-            href={release.magnet}
-            aria-label="Download"
-            title={release.magnet}
-            className={`${ROW_ACTION} border-line-strong`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="h-3.5 w-3.5"
-            >
-              <path d="M12 4v11" />
-              <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
-              <path d="M5 19h14" />
-            </svg>
-          </a>
+          // The download control: a handover when qBittorrent is connected,
+          // the plain magnet link otherwise. See app/magnet-action.tsx.
+          <MagnetAction magnet={release.magnet} film={film} size="sm" />
         ) : (
           <span
             className="grid h-8 w-8 place-items-center rounded-full text-[10px] opacity-25"
@@ -378,6 +378,7 @@ export function ReleaseSearchModal({
   subject,
   title,
   subtitle,
+  posterPath,
   configured,
   onClose,
 }: {
@@ -385,6 +386,8 @@ export function ReleaseSearchModal({
   subject: Subject;
   title: string;
   subtitle?: string;
+  /** The film's TMDb poster path, for the download log. */
+  posterPath?: string;
   configured: boolean;
   onClose: () => void;
 }) {
@@ -585,6 +588,7 @@ export function ReleaseSearchModal({
                         key={`${release.title}-${release.infoHash ?? release.indexer}`}
                         release={release}
                         referenceKind={search.reference?.kind}
+                        film={{ title, posterPath }}
                       />
                     ))}
                   </ul>
@@ -683,12 +687,14 @@ export function UpgradeButton({
   subject,
   title,
   subtitle,
+  posterPath,
   configured,
   label = "Upgrade",
 }: {
   subject: Subject;
   title: string;
   subtitle?: string;
+  posterPath?: string;
   configured: boolean;
   label?: string;
 }) {
@@ -712,6 +718,7 @@ export function UpgradeButton({
           subject={subject}
           title={title}
           subtitle={subtitle}
+          posterPath={posterPath}
           configured={configured}
           onClose={() => setOpen(false)}
         />
@@ -728,12 +735,14 @@ export function ReleaseSearchButton({
   subject,
   title,
   subtitle,
+  posterPath,
   configured,
   label,
 }: {
   subject: Subject;
   title: string;
   subtitle?: string;
+  posterPath?: string;
   configured: boolean;
   label: string;
 }) {
@@ -767,6 +776,7 @@ export function ReleaseSearchButton({
           subject={subject}
           title={title}
           subtitle={subtitle}
+          posterPath={posterPath}
           configured={configured}
           onClose={() => setOpen(false)}
         />

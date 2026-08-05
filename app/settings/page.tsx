@@ -2,11 +2,13 @@ import {
   getConvertTempDir,
   getJackettStatus,
   getLibraryFolders,
+  getQbStatus,
   getThumbCache,
   getTmdbStatus,
 } from "../actions";
 import { FolderSection } from "../folder-section";
 import { Jackett } from "./jackett";
+import { Qbittorrent } from "./qbittorrent";
 import { TempFolder } from "./temp-folder";
 import { Thumbs } from "./thumbs";
 import { Tmdb } from "./tmdb";
@@ -49,6 +51,7 @@ export default async function SettingsPage() {
   const roots = await getLibraryFolders();
   const tempDir = await getConvertTempDir();
   const jackett = await getJackettStatus();
+  const qb = await getQbStatus();
   const tmdb = await getTmdbStatus();
   const thumbs = await getThumbCache();
 
@@ -90,6 +93,18 @@ export default async function SettingsPage() {
           configured={jackett.configured}
           url={jackett.url}
           managed={jackett.managed}
+        />
+      </Setting>
+
+      <Setting
+        title="Downloads"
+        hint="Connect qBittorrent and every download button hands the release to it directly, with progress shown on the Upgrades page. Without it, magnets open in whatever the system has registered."
+      >
+        <Qbittorrent
+          configured={qb.configured}
+          url={qb.url}
+          managed={qb.managed}
+          stopSeeding={qb.stopSeeding}
         />
       </Setting>
     </main>

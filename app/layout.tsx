@@ -9,8 +9,10 @@ import {
 import "./globals.css";
 import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
+import { hasQb } from "@/lib/qbittorrent";
 import { getScanState } from "@/lib/scanner";
 import { getSweepJob } from "@/lib/upgrade-sweep";
+import { CapabilitiesProvider } from "./capabilities";
 import { JobsProvider } from "./jobs-provider";
 import { ScanProvider } from "./scan-provider";
 import { Glow } from "./glow";
@@ -92,14 +94,16 @@ export default function RootLayout({
         <Splash />
         <RememberListing />
         <Glow />
-        <JobsProvider initial={jobs}>
-          <ScanProvider>
-            <Sidebar />
-            {/* Clears the rail once it is fixed; above that it is a top bar and
-                the content simply follows it. */}
-            <div className="flex min-h-full flex-col md:pl-56">{children}</div>
-          </ScanProvider>
-        </JobsProvider>
+        <CapabilitiesProvider qb={hasQb()}>
+          <JobsProvider initial={jobs}>
+            <ScanProvider>
+              <Sidebar />
+              {/* Clears the rail once it is fixed; above that it is a top bar
+                  and the content simply follows it. */}
+              <div className="flex min-h-full flex-col md:pl-56">{children}</div>
+            </ScanProvider>
+          </JobsProvider>
+        </CapabilitiesProvider>
       </body>
     </html>
   );

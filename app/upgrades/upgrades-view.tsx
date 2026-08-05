@@ -8,9 +8,11 @@ import { startUpgradeSweep } from "@/app/actions";
 import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
 import { useJobs } from "@/app/jobs-provider";
+import { MagnetAction } from "@/app/magnet-action";
 import { useLingering } from "@/app/modal";
 import { ReleaseSearchModal } from "@/app/release-search";
 import { rememberListing } from "@/app/return-to";
+import { ScoreDial } from "@/app/score-circle";
 import { stagger } from "@/app/stagger";
 import { compareId, movieId, posterName } from "@/lib/routes";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
@@ -39,6 +41,27 @@ function ago(then: number): string {
 
 const ROW_ACTION =
   "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong";
+
+/** The release-search modal's own chip, so a fact reads the same here. */
+function Chip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-70 ring-1 ring-line-strong ring-inset">
+      {children}
+    </span>
+  );
+}
+
+/** A shelf-style section head, for the two bands the sort already makes. */
+function SectionHead({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <h2 className="font-display text-lg font-semibold tracking-tight">
+        {label}
+      </h2>
+      <div aria-hidden className="rule-head" />
+    </div>
+  );
+}
 
 function Row({
   item,
@@ -122,26 +145,36 @@ function Row({
           {hit.title}
         </p>
 
-        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs opacity-40">
-          {pills.length > 0 && <span>{pills.join(" · ")}</span>}
-          {gigabytes(hit.sizeBytes) && <span>{gigabytes(hit.sizeBytes)}</span>}
-          {hit.seeders !== undefined && (
-            <span className="tabular-nums">{hit.seeders} seeders</span>
-          )}
-          {hit.indexer && <span>{hit.indexer}</span>}
-          <span>checked {ago(item.checkedAt)}</span>
-        </p>
+        {/* What the name claims, in the modal's own chips; the plainer facts
+            follow as text. */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          {pills.map((pill) => (
+            <Chip key={pill}>{pill}</Chip>
+          ))}
+          <span className="text-xs opacity-40">
+            {[
+              gigabytes(hit.sizeBytes),
+              hit.seeders !== undefined ? `${hit.seeders} seeders` : undefined,
+              hit.indexer,
+              `checked ${ago(item.checkedAt)}`,
+            ]
+              .filter(Boolean)
+              .join(" \u00b7 ")}
+          </span>
+        </div>
       </div>
 
-      {/* The point of the row: what you have, what you could have, and the
-          difference — which is what the list is ranked by. */}
-      <div className="flex shrink-0 items-baseline gap-2 font-score font-semibold tabular-nums">
-        <span className="text-base opacity-45">{item.currentScore}</span>
-        <span aria-hidden className="font-sans text-base font-normal opacity-30">
-          →
-        </span>
-        <span className="text-xl">{hit.score}</span>
-        <span className="text-sm text-emerald-600 dark:text-emerald-400">
+      {/* The verdict, in the release modal's own dial: the predicted score in
+          the library's verdict colours, the gain beneath it — which is what
+          the list is ranked by. */}
+      <div className="flex w-14 shrink-0 flex-col items-center gap-1">
+        <ScoreDial
+          score={hit.score}
+          size={48}
+          title={`Predicted ${hit.score}, from ${item.currentScore} now`}
+          srLabel={`Predicted score ${hit.score}, up from ${item.currentScore}`}
+        />
+        <span className="text-xs font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
           +{hit.delta}
         </span>
       </div>
@@ -199,34 +232,19 @@ function Row({
         )}
 
         {hit.magnet ? (
-          <a
-            href={hit.magnet}
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Download"
-            title={hit.magnet}
-            className={`${ROW_ACTION} border-line-strong`}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="h-4 w-4"
-            >
-              <path d="M12 4v11" />
-              <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
-              <path d="M5 19h14" />
-            </svg>
-          </a>
+          // A handover when qBittorrent is connected, the plain magnet link
+          // otherwise; it stops the row's own click itself.
+          <MagnetAction
+            magnet={hit.magnet}
+            film={{ title: item.title, posterPath: item.posterRemote }}
+            size="md"
+          />
         ) : (
           <span
             className="grid h-9 w-9 place-items-center rounded-full text-[10px] opacity-25"
-            title="This indexer publishes no magnet — open the details page for it."
+            title="This indexer publishes no magnet - open the details page for it."
           >
-            —
+            \u2014
           </span>
         )}
       </div>
@@ -234,8 +252,13 @@ function Row({
   );
 }
 
-/** The mirror of the download arrow on every release row: up, to the line. */
-function SweepButton({
+/**
+ * The sweep trigger, floating bottom-right — the one action this page is
+ * for, reachable from anywhere in a long queue. Its icon is the mirror of
+ * the download arrow on every release row: up, to the line. Progress lives
+ * in the rail, which is on every screen anyway.
+ */
+function SweepFab({
   sweeping,
   jackettReady,
   candidates,
@@ -251,12 +274,15 @@ function SweepButton({
       type="button"
       onClick={onRun}
       disabled={sweeping || !jackettReady}
+      aria-label={sweeping ? "Sweeping" : "Run sweep"}
       title={
-        jackettReady
-          ? `Search the ${candidates} films below their best, one by one`
-          : "Connect Jackett on the Settings page to search"
+        sweeping
+          ? "Sweeping - progress is in the rail"
+          : jackettReady
+            ? `Search the ${candidates} films below their best, one by one`
+            : "Connect Jackett on the Settings page to search"
       }
-      className="flex shrink-0 items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+      className="fixed right-6 bottom-6 z-40 grid h-14 w-14 place-items-center rounded-full bg-foreground text-background shadow-2xl transition-opacity hover:opacity-90 disabled:opacity-40"
     >
       <svg
         viewBox="0 0 24 24"
@@ -266,13 +292,12 @@ function SweepButton({
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden
-        className="h-3.5 w-3.5"
+        className="h-5 w-5"
       >
         <path d="M12 20V9" />
         <path d="m7.5 13.5 4.5-4.5 4.5 4.5" />
         <path d="M5 5h14" />
       </svg>
-      {sweeping ? "Sweeping…" : "Run sweep"}
     </button>
   );
 }
@@ -299,8 +324,11 @@ export function UpgradesView({
     void startUpgradeSweep().then((job) => apply({ sweep: job }));
   }
 
-  const button = (
-    <SweepButton
+  const finishers = queue.filter((item) => item.hit.score >= 100);
+  const improvements = queue.filter((item) => item.hit.score < 100);
+
+  const fab = (
+    <SweepFab
       sweeping={sweeping}
       jackettReady={jackettReady}
       candidates={candidates}
@@ -314,48 +342,51 @@ export function UpgradesView({
           count is the one fact worth stating, and the rail already says what
           page this is. Empty pages carry the button in their empty state,
           where the eye already is. */}
-      {queue.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-sm opacity-55">
-            {queue.length} {queue.length === 1 ? "film has" : "films have"} a
-            better release on the indexers, best gain first.
-          </p>
-
-          <div className="flex items-center gap-3">
-            {sweeping && (
-              <span className="text-xs opacity-50" role="status">
-                {sweep.done} of {sweep.total} checked
-              </span>
-            )}
-            {button}
-          </div>
-        </div>
-      )}
-
       {sweep.status === "error" && sweep.error && (
         <p className="font-mono text-sm text-red-600 dark:text-red-400">
           {sweep.error}
         </p>
       )}
 
+
       {queue.length > 0 ? (
         <>
-          <ul className="ruled flex flex-col">
-            {queue.map((item, i) => (
-              <Row
-                key={item.path}
-                item={item}
-                index={i}
-                onMore={() => setFinding(item)}
-              />
-            ))}
-          </ul>
+          {/* The sort's two bands, made visible: a release that reaches 100
+              takes the film off the hunt for good, which deserves more than
+              being first in an undifferentiated list. One flat run when
+              nothing finishes anything. */}
+          {finishers.length > 0 && (
+            <section className="flex flex-col gap-1">
+              <SectionHead label="Finishes the film" />
+              <ul className="ruled flex flex-col">
+                {finishers.map((item, i) => (
+                  <Row
+                    key={item.path}
+                    item={item}
+                    index={i}
+                    onMore={() => setFinding(item)}
+                  />
+                ))}
+              </ul>
+            </section>
+          )}
 
-          <p className="text-xs opacity-45">
-            Predicted from release names, not measured — the same reading the
-            release search gives. A film falls off this list when a rescan
-            shows its copy caught up.
-          </p>
+          {improvements.length > 0 && (
+            <section className="flex flex-col gap-1">
+              <SectionHead label="Improvements" />
+              <ul className="ruled flex flex-col">
+                {improvements.map((item, i) => (
+                  <Row
+                    key={item.path}
+                    item={item}
+                    index={finishers.length + i}
+                    onMore={() => setFinding(item)}
+                  />
+                ))}
+              </ul>
+            </section>
+          )}
+
         </>
       ) : sweeping ? (
         <EmptyState
@@ -381,7 +412,6 @@ export function UpgradesView({
             </>
           }
           title="Nothing swept yet"
-          action={button}
         >
           One sweep searches every film short of its best —{" "}
           {candidates.toLocaleString("en-GB")} right now — and queues whatever
@@ -396,7 +426,6 @@ export function UpgradesView({
             </>
           }
           title="Nothing beats what you have"
-          action={button}
         >
           Every film short of its best was checked against the indexers. Sweep
           again once the trackers have had time to change.
@@ -405,12 +434,15 @@ export function UpgradesView({
 
       {/* One dialog for the page: the row shows the sweep's single best find,
           and this is the way to the rest of the field. */}
+      {fab}
+
       {shown && (
         <ReleaseSearchModal
           open={finding !== null}
           subject={{ kind: "movie", path: shown.path }}
           title={shown.title}
           subtitle={shown.year ? String(shown.year) : undefined}
+          posterPath={shown.posterRemote}
           configured={jackettReady}
           onClose={() => setFinding(null)}
         />

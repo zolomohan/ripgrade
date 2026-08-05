@@ -373,6 +373,7 @@ export async function DetailPage({
                 subject={{ kind: "movie", path: movie.path }}
                 title={movie.title}
                 subtitle={movie.year ? String(movie.year) : undefined}
+                posterPath={movie.art.poster}
                 configured={jackettReady}
               />
             )}
@@ -394,6 +395,7 @@ export async function DetailPage({
                 ).padStart(2, "0")}${
                   tv.episode.title ? ` · ${tv.episode.title}` : ""
                 }`}
+                posterPath={movie.art.poster ?? tv.show.art.poster}
                 configured={jackettReady}
               />
             )}

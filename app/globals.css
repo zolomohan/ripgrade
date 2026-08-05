@@ -193,6 +193,35 @@ body {
   }
 }
 
+/*
+ * Two views trading places inside one dialog — the folder list and the
+ * browser. Directional, so going deeper slides in from the right and coming
+ * back slides in from the left: the motion says which way you moved.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .pane-forward {
+    animation: pane-forward 260ms var(--morph-ease) both;
+  }
+
+  .pane-back {
+    animation: pane-back 260ms var(--morph-ease) both;
+  }
+}
+
+@keyframes pane-forward {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+@keyframes pane-back {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+}
+
 @keyframes row-enter {
   from {
     opacity: 0;

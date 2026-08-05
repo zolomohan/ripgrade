@@ -76,32 +76,57 @@ export function FolderPicker({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Enter navigates; typing a path is its own request and needed no
+          button beside it. */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           navigate(pathInput);
         }}
-        className="flex gap-2"
       >
         <input
           value={pathInput}
           onChange={(e) => setPathInput(e.target.value)}
           spellCheck={false}
           placeholder="/Volumes/…"
-          className="flex-1 rounded-chip border border-line bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-line-strong"
+          aria-label="Path — press Enter to open"
+          className="w-full rounded-chip border border-line bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-line-strong"
         />
-        <button
-          type="submit"
-          className="rounded-chip border border-line px-3 py-2 text-sm hover:bg-surface-strong"
-        >
-          Go
-        </button>
       </form>
 
       <div className="rounded-control border border-line">
-        <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-2">
-          <Breadcrumb path={listing.path} onNavigate={navigate} />
-          {pending && <span className="text-xs opacity-60">working…</span>}
+        <div className="flex items-center gap-2.5 border-b border-line px-2.5 py-2">
+          {/* One step up the tree, as a control rather than a "../" row lost
+              among the folders. */}
+          <button
+            type="button"
+            onClick={() => listing.parent && navigate(listing.parent)}
+            disabled={pending || !listing.parent}
+            aria-label="Up one folder"
+            title="Up one folder"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line opacity-60 transition-opacity hover:opacity-100 disabled:opacity-25"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              className="h-3.5 w-3.5"
+            >
+              <path d="M12 18V6" />
+              <path d="m6 11 6-6 6 6" />
+            </svg>
+          </button>
+
+          <div className="min-w-0 flex-1">
+            <Breadcrumb path={listing.path} onNavigate={navigate} />
+          </div>
+          {pending && (
+            <span className="shrink-0 text-xs opacity-60">working…</span>
+          )}
         </div>
 
         <div className="max-h-96 overflow-y-auto">
@@ -115,16 +140,6 @@ export function FolderPicker({
             <p className="px-3 py-4 text-sm opacity-60">
               No sub-folders here. You can still select this folder.
             </p>
-          )}
-
-          {listing.parent && (
-            <button
-              type="button"
-              onClick={() => navigate(listing.parent!)}
-              className="block w-full px-3 py-2 text-left font-mono text-sm opacity-60 hover:bg-surface-strong"
-            >
-              ../
-            </button>
           )}
 
           {listing.entries.map((entry) => (

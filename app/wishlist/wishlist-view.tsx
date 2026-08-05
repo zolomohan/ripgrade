@@ -631,6 +631,7 @@ export function WishlistView({
           subject={{ kind: "tmdb", tmdbId: shown.tmdbId }}
           title={shown.title}
           subtitle={shown.year ? String(shown.year) : undefined}
+          posterPath={shown.posterPath}
           configured={jackettReady}
           onClose={() => setFinding(null)}
         />

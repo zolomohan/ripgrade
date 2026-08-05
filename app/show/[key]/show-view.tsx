@@ -593,6 +593,7 @@ function SeasonUpgrade({
             season: shown.number,
           }}
           title={show.tmdb?.name ?? show.title}
+          posterPath={show.art.poster}
           subtitle={`Season ${shown.number}`}
           configured={jackettReady}
           onClose={() => setChosen(null)}
@@ -888,6 +889,7 @@ function Gap({
             episode: missing.number,
           }}
           title={show.tmdb?.name ?? show.title}
+          posterPath={show.art.poster}
           subtitle={`${code}${missing.title ? ` · ${missing.title}` : ""}`}
           configured={jackettReady}
           onClose={() => setOpen(false)}

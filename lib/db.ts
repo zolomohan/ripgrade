@@ -171,6 +171,23 @@ CREATE TABLE IF NOT EXISTS upgrade_checks (
   best          TEXT
 );
 
+-- Every release handed to qBittorrent, kept after qBittorrent forgets it.
+-- The client's own list is the present tense; this is the history the
+-- Downloads page shows once a torrent is removed or done.
+CREATE TABLE IF NOT EXISTS downloads (
+  hash         TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  added_at     INTEGER NOT NULL,
+  completed_at INTEGER,
+  -- The last state qBittorrent reported, for rows it no longer lists.
+  last_state   TEXT,
+  -- Which film this was fetched for, recorded at send time — a magnet knows
+  -- its release name but not its film, and the Downloads page wants the
+  -- poster and the title the release was chosen for.
+  film_title   TEXT,
+  poster_path  TEXT
+);
+
 -- Poster/fanart live beside the movie file, so this is keyed by directory
 -- rather than by film. A separate table so adding it needed no rescan.
 CREATE TABLE IF NOT EXISTS artwork (
@@ -232,6 +249,16 @@ if (!artworkColumns.includes("poster_src")) {
   db.exec("ALTER TABLE artwork ADD COLUMN poster_src TEXT");
   db.exec("ALTER TABLE artwork ADD COLUMN fanart_src TEXT");
   db.exec("ALTER TABLE artwork ADD COLUMN logo_src TEXT");
+}
+
+// Same story for the download log's film identity, added after the table.
+const downloadColumns = (
+  db.prepare("PRAGMA table_info(downloads)").all() as { name: string }[]
+).map((c) => c.name);
+
+if (downloadColumns.length > 0 && !downloadColumns.includes("film_title")) {
+  db.exec("ALTER TABLE downloads ADD COLUMN film_title TEXT");
+  db.exec("ALTER TABLE downloads ADD COLUMN poster_path TEXT");
 }
 
 /**

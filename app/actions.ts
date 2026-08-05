@@ -64,6 +64,22 @@ import {
   startSweep,
   type SweepJob,
 } from "@/lib/upgrade-sweep";
+import {
+  addMagnet,
+  checkQb,
+  clearQbConfig,
+  forgetDownload,
+  getDownloadLog,
+  getQbConfig,
+  getStopSeeding,
+  pauseTorrent,
+  removeTorrent,
+  resumeTorrent,
+  setQbConfig,
+  setStopSeeding,
+  type DownloadEntry,
+  type FilmContext,
+} from "@/lib/qbittorrent";
 import { addToWishlist, getWishlist, removeFromWishlist } from "@/lib/wishlist";
 import { imageUrl } from "@/lib/image-url";
 import { getShow } from "@/lib/shows";
@@ -936,6 +952,129 @@ export async function saveTmdbToken(
 export async function disconnectTmdb(): Promise<void> {
   clearTmdbToken();
   refresh();
+}
+
+// ---------------------------------------------------------------------------
+// qBittorrent
+// ---------------------------------------------------------------------------
+
+export async function getQbStatus(): Promise<{
+  configured: boolean;
+  url?: string;
+  managed: boolean;
+  stopSeeding: boolean;
+}> {
+  const config = getQbConfig();
+  return {
+    configured: Boolean(config),
+    url: config?.url,
+    managed: Boolean(process.env.QBITTORRENT_URL),
+    stopSeeding: getStopSeeding(),
+  };
+}
+
+export async function setQbStopSeeding(enabled: boolean): Promise<void> {
+  setStopSeeding(enabled);
+  refresh();
+}
+
+/** Saves only after a live check, so a typo cannot be stored as working. */
+export async function saveQb(
+  url: string,
+  username: string,
+  password: string,
+): Promise<{ ok: true; version: string } | { ok: false; error: string }> {
+  if (!/^https?:\/\//i.test(url.trim())) {
+    return {
+      ok: false,
+      error: "Enter the full address, starting http:// or https://",
+    };
+  }
+
+  const previous = getQbConfig();
+  setQbConfig({
+    url,
+    username: username.trim() || undefined,
+    password: password || undefined,
+  });
+
+  try {
+    const version = await checkQb();
+    refresh();
+    return { ok: true, version };
+  } catch (err) {
+    // Put back whatever worked before rather than leaving the app pointed at
+    // an address that does not answer.
+    if (previous) setQbConfig(previous);
+    else clearQbConfig();
+
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function disconnectQb(): Promise<void> {
+  clearQbConfig();
+  refresh();
+}
+
+/**
+ * Hands a release to qBittorrent, with where to put it and which film it is
+ * for — the button that sends knows both, and nothing downstream can recover
+ * either from a bare magnet.
+ */
+export async function sendToQb(
+  magnet: string,
+  savePath?: string,
+  film?: FilmContext,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await addMagnet(magnet, { savePath, film });
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+const qbResult = async (
+  run: () => Promise<void>,
+): Promise<{ ok: true } | { ok: false; error: string }> => {
+  try {
+    await run();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+};
+
+export async function qbPause(hash: string) {
+  return qbResult(() => pauseTorrent(hash));
+}
+
+export async function qbResume(hash: string) {
+  return qbResult(() => resumeTorrent(hash));
+}
+
+/** `deleteFiles` follows the caller: junk for a cancel, kept for a finish. */
+export async function qbRemove(hash: string, deleteFiles: boolean) {
+  return qbResult(() => removeTorrent(hash, deleteFiles));
+}
+
+/** The Downloads page's poll: the log wearing qBittorrent's present tense. */
+export async function listDownloadLog(): Promise<DownloadEntry[]> {
+  return getDownloadLog();
+}
+
+export async function forgetDownloadEntry(hash: string): Promise<void> {
+  forgetDownload(hash);
 }
 
 export async function getJackettStatus(): Promise<{
