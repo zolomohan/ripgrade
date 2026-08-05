@@ -6,6 +6,7 @@ import {
   findUpgradesForMovie,
   findUpgradesForSeason,
   findReleasesFor,
+  findReleasesForEpisode,
   type UpgradeResponse,
 } from "@/app/actions";
 import { ScoreDial } from "@/app/score-circle";
@@ -32,7 +33,8 @@ import { Modal, useClosing } from "@/app/modal";
 export type Subject =
   | { kind: "movie"; path: string }
   | { kind: "tmdb"; tmdbId: number }
-  | { kind: "season"; showKey: string; season: number };
+  | { kind: "season"; showKey: string; season: number }
+  | { kind: "episode"; showKey: string; season: number; episode: number };
 
 /**
  * Score first, because the question being asked is "what is the best copy".
@@ -388,6 +390,8 @@ export function ReleaseSearchModal({
 }) {
   const [response, setResponse] = useState<UpgradeResponse | null>(null);
   const [sort, setSort] = useState<Sort>("score");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
   const [pending, startTransition] = useTransition();
 
   // Escape closes the modal, as expected of a dialog.
@@ -399,14 +403,25 @@ export function ReleaseSearchModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  function run() {
+  function run(term?: string) {
     startTransition(async () => {
       setResponse(
         subject.kind === "movie"
-          ? await findUpgradesForMovie(subject.path)
+          ? await findUpgradesForMovie(subject.path, term)
           : subject.kind === "tmdb"
-            ? await findReleasesFor(subject.tmdbId)
-            : await findUpgradesForSeason(subject.showKey, subject.season),
+            ? await findReleasesFor(subject.tmdbId, term)
+            : subject.kind === "season"
+              ? await findUpgradesForSeason(
+                  subject.showKey,
+                  subject.season,
+                  term,
+                )
+              : await findReleasesForEpisode(
+                  subject.showKey,
+                  subject.season,
+                  subject.episode,
+                  term,
+                ),
       );
     });
   }
@@ -418,6 +433,16 @@ export function ReleaseSearchModal({
   // long as the new search is running, so they are never on screen under the
   // wrong title.
   const subjectKey = JSON.stringify(subject);
+
+  // A phrase edited for the previous film belongs to it — a fresh subject
+  // starts from its own constructed query. Adjusted during render rather than
+  // in the effect, per React's own pattern for state that follows a prop.
+  const [lastSubject, setLastSubject] = useState(subjectKey);
+  if (lastSubject !== subjectKey) {
+    setLastSubject(subjectKey);
+    setEditing(false);
+  }
+
   useEffect(() => {
     if (configured) run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -568,6 +593,78 @@ export function ReleaseSearchModal({
             </>
           )}
         </div>
+
+        {/* The phrase the indexers were actually asked, offered for rewriting.
+            A search that misses is usually a wording problem — an alternate
+            title, a misparsed year — and the fix is to say it differently, not
+            to go and search somewhere else. An edited phrase is sent verbatim
+            and everything it returns is kept: the wording is now yours, so the
+            app stops second-guessing what it matches. */}
+        {configured && !pending && search && (
+          <footer className="shrink-0 border-t border-line bg-surface px-5 py-2.5">
+            {editing ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const term = draft.trim();
+                  if (!term) return;
+                  setEditing(false);
+                  run(term);
+                }}
+                className="flex items-center gap-2"
+              >
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Escape backs out of the edit; only a second one, with
+                    // the input gone, reaches the dialog and closes it.
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      setEditing(false);
+                    }
+                  }}
+                  aria-label="Search phrase"
+                  className="min-w-0 flex-1 rounded-control border border-line bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus:border-line-strong"
+                />
+                <button
+                  type="submit"
+                  className="shrink-0 rounded-chip border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
+                >
+                  Search
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="shrink-0 text-xs opacity-40 transition-opacity hover:opacity-100"
+                >
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <div className="flex items-center gap-3">
+                <p
+                  className="min-w-0 flex-1 truncate text-[11px] opacity-45"
+                  title={search.query}
+                >
+                  Searched for{" "}
+                  <span className="font-mono">“{search.query}”</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft(search.query);
+                    setEditing(true);
+                  }}
+                  className="shrink-0 text-xs underline decoration-line-strong underline-offset-4 opacity-50 transition-opacity hover:opacity-100"
+                >
+                  Edit
+                </button>
+              </div>
+            )}
+          </footer>
+        )}
       </>
     </Modal>
   );

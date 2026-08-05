@@ -54,7 +54,7 @@ function Held({
 
   return (
     <Link
-      href={`/movie/${movieId(owned.path)}`}
+      href={`/film/${movieId(owned.path)}`}
       style={stagger(index)}
       className="row-enter group flex flex-col gap-2"
     >

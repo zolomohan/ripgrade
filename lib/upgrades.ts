@@ -130,7 +130,11 @@ export type Reference = {
 };
 
 export type UpgradeSearch = {
-  /** The text actually sent, so a search that finds nothing can be understood. */
+  /**
+   * The phrase this search amounts to, so a search that finds nothing can be
+   * understood — and rewritten: the modal offers it for editing, and an edited
+   * phrase comes back through `findUpgrades` as the term itself.
+   */
   query: string;
   results: ScoredRelease[];
   /** Results dropped as being for some other film entirely. */
@@ -227,24 +231,48 @@ function dedupe(results: ScoredRelease[]): ScoredRelease[] {
 
 export async function findUpgrades(
   target: UpgradeTarget,
+  options: { term?: string } = {},
 ): Promise<UpgradeSearch> {
+  // A phrase the caller typed replaces the constructed one wholesale.
+  const custom = options.term?.trim() || undefined;
+
   // The year is sent as part of the term because indexers treat it as one
   // string; it is what separates a remake from the original when there is no
   // IMDb id to go on.
-  const query = [
+  const term = [
     target.title,
     target.kind === "movie" ? target.year : undefined,
   ]
     .filter(Boolean)
     .join(" ");
 
-  const raw = await searchIndexers({
-    term: query,
-    imdbId: target.imdbId,
-    season: target.season,
-    episode: target.episode,
-    kind: target.kind,
-  });
+  // What the search amounts to as one line of text. For television the season
+  // and episode ride alongside the term as parameters, so they are folded back
+  // in here — this is the phrase shown for editing, and sending it back as an
+  // edited term must reproduce the same search.
+  const sxxeyy =
+    target.season !== undefined
+      ? `S${String(target.season).padStart(2, "0")}${
+          target.episode !== undefined
+            ? `E${String(target.episode).padStart(2, "0")}`
+            : ""
+        }`
+      : undefined;
+  const query = custom ?? [term, sxxeyy].filter(Boolean).join(" ");
+
+  const raw = await searchIndexers(
+    custom
+      ? // An edited phrase is the whole search: nothing is sent beside it
+        // that could quietly override what was typed.
+        { term: custom, kind: target.kind }
+      : {
+          term,
+          imdbId: target.imdbId,
+          season: target.season,
+          episode: target.episode,
+          kind: target.kind,
+        },
+  );
 
   // Taken from the raw response, before the title filter below: an indexer
   // that answered with results for the wrong film still answered.
@@ -280,7 +308,10 @@ export async function findUpgrades(
       runtimeMinutes: target.runtimeMinutes,
     });
 
-    if (!matchesTarget(guess, target)) {
+    // A rewritten phrase defines its own relevance — the filter that protects
+    // an automatic search from loose indexer matching would here be
+    // second-guessing exactly the wording the user changed.
+    if (!custom && !matchesTarget(guess, target)) {
       discarded++;
       continue;
     }

@@ -12,7 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 /**
  * The count on a pill, as a badge rather than loose text.
  *
- * A number set in the label's own colour reads as part of the label — "Movies
+ * A number set in the label's own colour reads as part of the label — "Films
  * 74" as a phrase. Enclosing it says it is a quantity, and the selected pill
  * inverts to stay legible against the filled background.
  */

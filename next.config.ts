@@ -8,6 +8,13 @@ const nextConfig: NextConfig = {
     // trigger it. See app/art.tsx and the morph rules in app/globals.css.
     viewTransition: true,
   },
+  async redirects() {
+    return [
+      // The old address for every file's page. Bookmarks and history predate
+      // the film/episode split; /film sorts an episode id onward itself.
+      { source: "/movie/:id", destination: "/film/:id", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

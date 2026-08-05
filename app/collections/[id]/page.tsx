@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { ViewTransition } from "react";
 
 import { Art } from "@/app/art";
-import { BackButton } from "@/app/movie/[id]/back-button";
+import { BackButton } from "@/app/film/[id]/back-button";
 import { ScoreRing } from "@/app/score-card";
 import { scoreTheme } from "@/app/score-circle";
 import { getCollectionSet } from "@/lib/collections";

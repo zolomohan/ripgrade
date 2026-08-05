@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Switch } from "@/app/controls";
 import { stagger } from "@/app/stagger";
@@ -80,6 +80,64 @@ function Card({
   );
 }
 
+/** The rings' own clock, from globals.css: --score-fill and the mount delay. */
+const FILL_MS = 1400;
+const DELAY_MS = 217; // calc(var(--morph) * 0.35), the beat the rings wait
+
+/**
+ * cubic-bezier(0.25, 0.55, 0.35, 1) — the same curve `--score-ease` runs.
+ *
+ * Solved here rather than left to CSS because these figures carry commas,
+ * decimals and units, which `counter()` cannot draw: the number has to be
+ * formatted on every frame, so the frames have to be ours.
+ */
+function ease(x: number): number {
+  const cx = 3 * 0.25;
+  const bx = 3 * (0.35 - 0.25) - cx;
+  const ax = 1 - cx - bx;
+  const cy = 3 * 0.55;
+  const by = 3 * (1 - 0.55) - cy;
+  const ay = 1 - cy - by;
+
+  // Newton–Raphson on the curve's x(t), then y at that t.
+  let t = x;
+  for (let i = 0; i < 5; i++) {
+    const xt = ((ax * t + bx) * t + cx) * t - x;
+    const dx = (3 * ax * t + 2 * bx) * t + cx;
+    if (Math.abs(xt) < 1e-4 || dx === 0) break;
+    t -= xt / dx;
+  }
+  return ((ay * t + by) * t + cy) * t;
+}
+
+/** A figure counted up from nothing, exactly as a score ring's is. */
+function useCountUp(target: number): number {
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    // Without motion the figure simply is its value, as the rings' is.
+    const reduce = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    let frame: number;
+    const start = performance.now() + DELAY_MS;
+    const tick = (now: number) => {
+      const t = (now - start) / FILL_MS;
+      if (reduce || t >= 1) {
+        setShown(target);
+        return;
+      }
+      setShown(t <= 0 ? 0 : target * ease(t));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target]);
+
+  return shown;
+}
+
 /**
  * One headline figure.
  *
@@ -87,16 +145,24 @@ function Card({
  * a hairline between them does that without drawing six frames. Every figure
  * carries its own rule, the first included — the fade makes a leading one read
  * as the edge of the row rather than as a border round it.
+ *
+ * The magnitude and its wording arrive separately so the count-up can run
+ * through real values: every frame is the formatter's own output, commas,
+ * units and all — which the score rings' CSS counter cannot do.
  */
 function Stat({
   label,
   value,
+  format = count,
   index = 0,
 }: {
   label: string;
-  value: string;
+  value: number;
+  format?: (n: number) => string;
   index?: number;
 }) {
+  const shown = useCountUp(value);
+
   return (
     <div
       style={stagger(index)}
@@ -106,8 +172,13 @@ function Stat({
         {label}
       </p>
       {/* Proportional figures: tabular ones look loose at this size, and
-          nothing here has to line up in a column. */}
-      <p className="mt-1 font-display text-2xl font-semibold">{value}</p>
+          nothing here has to line up in a column. The animated frames are
+          decoration; the real figure is there for anything that reads rather
+          than watches. */}
+      <p aria-hidden className="mt-1 font-display text-2xl font-semibold">
+        {format(Math.round(shown))}
+      </p>
+      <span className="sr-only">{format(value)}</span>
     </div>
   );
 }
@@ -277,20 +348,22 @@ export function StatsView({
   const films = (
     <>
       <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Films" value={count(totals.films)} index={0} />
-        <Stat label="Storage" value={size(totals.bytes)} index={1} />
+        <Stat label="Films" value={totals.films} index={0} />
+        <Stat label="Storage" value={totals.bytes} format={size} index={1} />
         <Stat
           label="Runtime"
-          value={`${count(totals.runtimeHours)} h`}
+          value={totals.runtimeHours}
+          format={(n) => `${count(n)} h`}
           index={2}
         />
-        <Stat label="REMUX" value={share(totals.remux)} index={3} />
+        <Stat label="REMUX" value={totals.remux} format={share} index={3} />
         <Stat
           label="Dolby Vision"
-          value={share(totals.dolbyVision)}
+          value={totals.dolbyVision}
+          format={share}
           index={4}
         />
-        <Stat label="Open issues" value={count(totals.openIssues)} index={5} />
+        <Stat label="Open issues" value={totals.openIssues} index={5} />
       </div>
 
       <Card title="Verdicts" hint="against the best disc that exists" index={1}>
@@ -404,20 +477,27 @@ export function StatsView({
   const television = (
     <>
       <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Shows" value={count(shows.totals.shows)} index={0} />
-        <Stat label="Episodes" value={count(shows.totals.episodes)} index={1} />
-        <Stat label="Storage" value={size(shows.totals.bytes)} index={2} />
+        <Stat label="Shows" value={shows.totals.shows} index={0} />
+        <Stat label="Episodes" value={shows.totals.episodes} index={1} />
+        <Stat
+          label="Storage"
+          value={shows.totals.bytes}
+          format={size}
+          index={2}
+        />
         <Stat
           label="Runtime"
-          value={`${count(shows.totals.runtimeHours)} h`}
+          value={shows.totals.runtimeHours}
+          format={(n) => `${count(n)} h`}
           index={3}
         />
         <Stat
           label="Average"
-          value={`${shows.totals.averageScore}`}
+          value={shows.totals.averageScore}
+          format={String}
           index={4}
         />
-        <Stat label="Missing" value={count(shows.totals.missing)} index={5} />
+        <Stat label="Missing" value={shows.totals.missing} index={5} />
       </div>
 
       <Card
@@ -462,8 +542,8 @@ export function StatsView({
           value={tab}
           onChange={setTab}
           options={[
-            { key: "movies", label: "Movies" },
-            { key: "tv", label: "TV shows" },
+            { key: "movies", label: "Films" },
+            { key: "tv", label: "Shows" },
           ]}
         />
       )}

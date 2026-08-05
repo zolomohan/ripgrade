@@ -62,7 +62,7 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "RipGrade",
-  description: "Audit the technical quality of a local movie library",
+  description: "Audit the technical quality of a local film library",
 };
 
 export default function RootLayout({

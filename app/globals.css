@@ -227,7 +227,6 @@ body {
   display: grid;
   place-items: center;
   background: var(--background);
-  animation: splash-out 500ms ease-in var(--splash-exit) forwards;
 }
 
 .splash-mark {
@@ -235,8 +234,54 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 1.25rem;
-  /* The lift is on the group so the mark and the name leave as one object. */
-  animation: splash-lift 500ms ease-in var(--splash-exit) forwards;
+}
+
+/*
+ * The handover.
+ *
+ * The mark and the name in the middle of the screen and the ones in the rail
+ * are the same two things, so they travel between the two places rather than
+ * one fading out while the other is simply already there — the poster morph,
+ * applied to the app's own name. The names live on the splash while it is up
+ * and on the rail for the length of the transition that replaces it; see
+ * app/splash-done.tsx, which is what swaps them.
+ */
+.splash-skull {
+  view-transition-name: brand-mark;
+}
+
+.splash-word {
+  view-transition-name: brand-word;
+}
+
+[data-landed] .brand-mark {
+  view-transition-name: brand-mark;
+}
+
+[data-landed] .brand-word {
+  view-transition-name: brand-word;
+}
+
+::view-transition-group(brand-mark),
+::view-transition-group(brand-word),
+::view-transition-group(root) {
+  animation-duration: var(--morph);
+  animation-timing-function: var(--morph-ease);
+}
+
+/*
+ * Both snapshots are scaled to fit the box the group interpolates, so the
+ * wordmark travels as a shrinking line of type rather than a stretching one —
+ * the same rule the collection titles use. The skull is drawn at a different
+ * aspect in the two places, and `contain` is what keeps it a skull.
+ */
+::view-transition-old(brand-mark),
+::view-transition-new(brand-mark),
+::view-transition-old(brand-word),
+::view-transition-new(brand-word) {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
 }
 
 .splash-skull {
@@ -251,20 +296,6 @@ body {
   from {
     opacity: 0;
     transform: translateY(12px) scale(0.92);
-  }
-}
-
-@keyframes splash-lift {
-  to {
-    opacity: 0;
-    transform: translateY(-14px) scale(1.06);
-  }
-}
-
-@keyframes splash-out {
-  to {
-    opacity: 0;
-    visibility: hidden;
   }
 }
 
@@ -352,6 +383,165 @@ body {
   width: 100%;
   object-fit: contain;
   object-position: left center;
+}
+
+/*
+ * A wish being removed.
+ *
+ * Only transitions typed "wish-remove" involve these classes — the tiles opt
+ * in per type (see `wishMotion` in the wishlist view), so navigation and
+ * every other refresh leave the list unsnapshotted.
+ *
+ * The leaver shrinks a step and fades where it stands; the survivors carry
+ * their snapshots to their new places, which is the browser's own group
+ * animation once it is given a clock. The clocks are a ladder, as the
+ * collections fan's are: on one clock the grid slides as a single sheet,
+ * laddered it closes ranks tile by tile, quickest nearest the top. Short
+ * and repeating, because past six the difference stops reading as order.
+ */
+::view-transition-group(.wish-exit) {
+  animation-duration: 340ms;
+  animation-timing-function: var(--morph-ease);
+}
+
+::view-transition-old(.wish-exit) {
+  animation-name: wish-exit;
+  animation-duration: 340ms;
+  animation-timing-function: var(--morph-ease);
+}
+
+@keyframes wish-exit {
+  to {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+/*
+ * The search panel, held perfectly still while an add animates beneath it.
+ *
+ * Animations off, so the live frame simply sits there; the old snapshot is
+ * dropped rather than crossfaded, because fading between two frames of the
+ * same panel is a blink. The z-index is what keeps the pact: groups stack in
+ * capture order, which is not promised to put the panel above an entering
+ * poster's group — raised explicitly, nothing flashes over the bar. The add
+ * happens behind the open search rather than instead of it.
+ */
+::view-transition-group(.wish-still) {
+  z-index: 100;
+}
+
+/*
+ * An add's posters, wearing the veil's frost themselves.
+ *
+ * An add always runs behind the open search, whose veil dims and blurs the
+ * grid — but the overlay draws every travelling snapshot above that veil,
+ * out of its reach, which read as the backdrop switching off for the length
+ * of the animation. Extracting the veil to re-cover them flickered in its
+ * own ways (an isolated snapshot cannot backdrop-blur), so the muting is
+ * painted onto the posters instead: blurred by the veil's own 8px and faded
+ * toward the veiled page beneath, they look like what they are meant to be —
+ * things moving on the other side of frosted glass. The removal ladder
+ * (.wish-move) stays crisp; nothing veils a remove.
+ */
+::view-transition-group(.wish-part-0),
+::view-transition-group(.wish-part-1),
+::view-transition-group(.wish-part-2),
+::view-transition-group(.wish-part-3),
+::view-transition-group(.wish-part-4),
+::view-transition-group(.wish-part-5),
+::view-transition-group(.wish-enter) {
+  animation-timing-function: var(--morph-ease);
+  filter: blur(8px);
+  opacity: 0.6;
+}
+
+::view-transition-group(.wish-part-0) {
+  animation-duration: 300ms;
+}
+
+::view-transition-group(.wish-part-1) {
+  animation-duration: 360ms;
+}
+
+::view-transition-group(.wish-part-2) {
+  animation-duration: 420ms;
+}
+
+::view-transition-group(.wish-part-3) {
+  animation-duration: 480ms;
+}
+
+::view-transition-group(.wish-part-4) {
+  animation-duration: 540ms;
+}
+
+::view-transition-group(.wish-part-5) {
+  animation-duration: 600ms;
+}
+
+::view-transition-group(.wish-still),
+::view-transition-image-pair(.wish-still),
+::view-transition-old(.wish-still),
+::view-transition-new(.wish-still) {
+  animation: none;
+}
+
+::view-transition-old(.wish-still) {
+  display: none;
+}
+
+/* Arrival is the exit undone: the newcomer grows into the gap the others
+   part to make. */
+::view-transition-group(.wish-enter) {
+  animation-duration: 340ms;
+  animation-timing-function: var(--morph-ease);
+}
+
+::view-transition-new(.wish-enter) {
+  animation-name: wish-enter;
+  animation-duration: 340ms;
+  animation-timing-function: var(--morph-ease);
+}
+
+@keyframes wish-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+::view-transition-group(.wish-move-0),
+::view-transition-group(.wish-move-1),
+::view-transition-group(.wish-move-2),
+::view-transition-group(.wish-move-3),
+::view-transition-group(.wish-move-4),
+::view-transition-group(.wish-move-5) {
+  animation-timing-function: var(--morph-ease);
+}
+
+::view-transition-group(.wish-move-0) {
+  animation-duration: 300ms;
+}
+
+::view-transition-group(.wish-move-1) {
+  animation-duration: 360ms;
+}
+
+::view-transition-group(.wish-move-2) {
+  animation-duration: 420ms;
+}
+
+::view-transition-group(.wish-move-3) {
+  animation-duration: 480ms;
+}
+
+::view-transition-group(.wish-move-4) {
+  animation-duration: 540ms;
+}
+
+::view-transition-group(.wish-move-5) {
+  animation-duration: 600ms;
 }
 
 /*

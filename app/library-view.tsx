@@ -364,7 +364,7 @@ function Row({ movie, index }: { movie: LibraryItem; index: number }) {
 
   return (
     <Link
-      href={`/movie/${movieId(movie.path)}`}
+      href={`/film/${movieId(movie.path)}`}
       style={stagger(index)}
       className={`${entrance} glow group flex items-center gap-4 rounded-card px-4 py-3 transition-colors hover:bg-surface-strong`}
     >
@@ -451,7 +451,7 @@ function Card({ movie, index }: { movie: LibraryItem; index: number }) {
 
   return (
     <Link
-      href={`/movie/${movieId(movie.path)}`}
+      href={`/film/${movieId(movie.path)}`}
       style={stagger(index)}
       className={`${entrance} group flex flex-col gap-2`}
     >

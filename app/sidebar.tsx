@@ -52,7 +52,8 @@ const TOOLS = [
 const isActive = (href: string, pathname: string) =>
   href === "/"
     ? pathname === "/" ||
-      pathname.startsWith("/movie") ||
+      pathname.startsWith("/film") ||
+      pathname.startsWith("/episode") ||
       pathname.startsWith("/show") ||
       pathname.startsWith("/compare")
     : pathname.startsWith(href);
@@ -68,10 +69,10 @@ export function Sidebar() {
           the labels below it rather than hanging left of them. */}
       <Link href="/" className="mt-2 flex items-center gap-2 px-3">
         {/* Decorative: the wordmark next to it already names the app. */}
-        <span aria-hidden className="mark-skull h-7 w-[1.35rem] shrink-0" />
+        <span aria-hidden className="brand-mark mark-skull h-7 w-[1.35rem] shrink-0" />
         {/* No weight class: the face has one weight, and asking for bold would
             only get a synthetic one. */}
-        <span className="font-logo text-3xl leading-none lowercase">
+        <span className="brand-word font-logo text-3xl leading-none lowercase">
           ripgrade
         </span>
       </Link>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { movieId, posterName, showId } from "@/lib/routes";
 import { getEpisodeContext, type ShowEpisode } from "@/lib/shows";
@@ -21,8 +21,6 @@ import { DolbyVision } from "./dolby-vision";
 import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
 import { ScoreBreakdown } from "./score-breakdown";
-
-export const dynamic = "force-dynamic";
 
 const SEVERITY_TONE: Record<string, string> = {
   critical: "text-red-600 dark:text-red-400",
@@ -165,7 +163,7 @@ function EpisodeLink({
   const forward = direction === "next";
   return (
     <Link
-      href={`/movie/${movieId(episode.item.path)}`}
+      href={`/episode/${movieId(episode.item.path)}`}
       className={`group flex min-w-0 items-center gap-2 rounded-control border border-line px-3 py-2 transition-colors hover:bg-surface-strong ${
         forward ? "col-start-2 flex-row-reverse text-right" : ""
       }`}
@@ -195,14 +193,25 @@ function EpisodeLink({
   );
 }
 
-export default async function MoviePage({
-  params,
+/**
+ * One file's page — a film's or an episode's, which differ only in what they
+ * borrow from a series. Shared by the /film and /episode routes; a file that
+ * arrived under the wrong word is sent to the right one, so an old link keeps
+ * working and the address always says what the page is.
+ */
+export async function DetailPage({
+  id,
+  expected,
 }: {
-  params: Promise<{ id: string }>;
+  id: string;
+  expected: "movie" | "episode";
 }) {
-  const { id } = await params;
   const movie = getMovie(id);
   if (!movie) notFound();
+
+  if (movie.kind !== expected) {
+    redirect(`/${movie.kind === "episode" ? "episode" : "film"}/${id}`);
+  }
 
   const theme = STATUS_THEME[movie.status];
   const { breakdown } = movie;
@@ -351,14 +360,11 @@ export default async function MoviePage({
               )
             )}
             {/* Last, so the primary action ends the row rather than leading it.
-                Films only: an episode is searched a season at a time, from the
-                show page, because that is how television is released — a button
-                here would open a dialog whose only answer is to go elsewhere.
 
-                And only where there is something to gain. A copy that already
+                Only where there is something to gain. A copy that already
                 matches the best disc released has nothing above it to find, so
                 offering to go looking is offering a wasted search. `priority`
-                is the app's own answer to "does this film want attention", so
+                is the app's own answer to "does this file want attention", so
                 the button appears exactly where the rest of the app already
                 says it should — which keeps the two from drifting apart if the
                 bands are ever retuned. */}
@@ -367,6 +373,27 @@ export default async function MoviePage({
                 subject={{ kind: "movie", path: movie.path }}
                 title={movie.title}
                 subtitle={movie.year ? String(movie.year) : undefined}
+                configured={jackettReady}
+              />
+            )}
+            {/* An episode's search asks for this one episode by its numbers —
+                the season pack lives on the show page, but replacing the file
+                this page is about is this page's business. Results rank
+                against this copy's own score. */}
+            {tv && movie.priority !== "None" && (
+              <UpgradeButton
+                subject={{
+                  kind: "episode",
+                  showKey: tv.show.key,
+                  season: tv.season.number,
+                  episode: tv.episode.number,
+                }}
+                title={tv.show.tmdb?.name ?? tv.show.title}
+                subtitle={`S${String(tv.season.number).padStart(2, "0")}E${String(
+                  tv.episode.number,
+                ).padStart(2, "0")}${
+                  tv.episode.title ? ` · ${tv.episode.title}` : ""
+                }`}
                 configured={jackettReady}
               />
             )}

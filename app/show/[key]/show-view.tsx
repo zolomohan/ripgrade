@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
 
-import { ArtworkEditor } from "@/app/movie/[id]/artwork-editor";
-import { BackButton } from "@/app/movie/[id]/back-button";
-import { MatchReview } from "@/app/movie/[id]/match-review";
+import { ArtworkEditor } from "@/app/film/[id]/artwork-editor";
+import { BackButton } from "@/app/film/[id]/back-button";
+import { MatchReview } from "@/app/film/[id]/match-review";
 import { FormatBadges } from "@/app/format-badges";
-import { useLingering } from "@/app/modal";
+import { useClosing, useLingering } from "@/app/modal";
 import { NoDisc } from "@/app/no-disc";
 import { Panel } from "@/app/panel";
 import { Art } from "@/app/art";
-import { DiscReview } from "@/app/movie/[id]/disc-review";
+import { DiscReview } from "@/app/film/[id]/disc-review";
 import { ReleaseSearchModal } from "@/app/release-search";
 import { stagger } from "@/app/stagger";
 import { ScoreCircle, ScoreDial } from "@/app/score-circle";
@@ -127,7 +127,7 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
       {/* The whole card is the link — everything on it is about one file, so
           anywhere on it is the same destination. */}
       <Link
-        href={`/movie/${movieId(item.path)}`}
+        href={`/episode/${movieId(item.path)}`}
         className="glow group -mx-5 flex flex-col gap-5 rounded-card px-5 py-5 transition-colors hover:bg-surface sm:flex-row"
       >
         {/* The still leads: a picture is how you recognise which episode this is,
@@ -227,7 +227,13 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
  * them was. A season is the unit you actually think in, so it gets a switcher,
  * a summary of its own, and a list that shows the gaps in place.
  */
-function Seasons({ show }: { show: Show }) {
+function Seasons({
+  show,
+  jackettReady,
+}: {
+  show: Show;
+  jackettReady: boolean;
+}) {
   const [selected, setSelected] = useState(show.seasons[0]?.number);
   const season =
     show.seasons.find((s) => s.number === selected) ?? show.seasons[0];
@@ -455,7 +461,13 @@ function Seasons({ show }: { show: Show }) {
             ) : (
               <Fragment key={`gap-${row.number}`}>
                 {i > 0 && <li aria-hidden className={`${RULE} my-1`} />}
-                <Gap missing={row.gap!} index={i} />
+                <Gap
+                  missing={row.gap!}
+                  index={i}
+                  show={show}
+                  season={season.number}
+                  jackettReady={jackettReady}
+                />
               </Fragment>
             ),
           )}
@@ -817,8 +829,33 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
   );
 }
 
-/** An episode the library does not have, in the place it would occupy. */
-function Gap({ missing, index }: { missing: MissingEpisode; index: number }) {
+/**
+ * An episode the library does not have, in the place it would occupy.
+ *
+ * The one thing to do about a gap is fill it, so the row carries the search
+ * itself rather than sending you to the season's upgrade menu — that searches
+ * for the whole season, and a single missing episode is a smaller ask.
+ */
+function Gap({
+  missing,
+  index,
+  show,
+  season,
+  jackettReady,
+}: {
+  missing: MissingEpisode;
+  index: number;
+  show: Show;
+  season: number;
+  jackettReady: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const mounted = useClosing(open);
+
+  const code = `S${String(season).padStart(2, "0")}E${String(
+    missing.number,
+  ).padStart(2, "0")}`;
+
   return (
     <li
       style={stagger(index)}
@@ -833,6 +870,29 @@ function Gap({ missing, index }: { missing: MissingEpisode; index: number }) {
       <span className="shrink-0 text-xs text-amber-600 dark:text-amber-400">
         not in library
       </span>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="shrink-0 rounded-chip border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
+      >
+        Find
+      </button>
+
+      {mounted && (
+        <ReleaseSearchModal
+          open={open}
+          subject={{
+            kind: "episode",
+            showKey: show.key,
+            season,
+            episode: missing.number,
+          }}
+          title={show.tmdb?.name ?? show.title}
+          subtitle={`${code}${missing.title ? ` · ${missing.title}` : ""}`}
+          configured={jackettReady}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </li>
   );
 }
@@ -928,7 +988,7 @@ export function ShowView({
         {/* A wrong series poisons every episode title and every missing-episode
             count below, so the way to correct it sits at the top rather than
             buried at the bottom of the page. */}
-        <Seasons show={show} />
+        <Seasons show={show} jackettReady={jackettReady} />
       </div>
     </>
   );

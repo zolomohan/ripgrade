@@ -280,7 +280,7 @@ export default async function ComparePage({
                         {i === 0 ? "Keep" : "Drop"}
                       </span>
                       <Link
-                        href={`/movie/${movieId(copy.path)}`}
+                        href={`/film/${movieId(copy.path)}`}
                         className="mt-0.5 block text-xs font-normal break-all opacity-70 hover:opacity-100"
                       >
                         {copy.fileName}

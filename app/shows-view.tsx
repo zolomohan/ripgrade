@@ -274,7 +274,7 @@ export function ShowsView({ shows }: { shows: Show[] }) {
     return (
       <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
         <p className="text-sm opacity-50">
-          No TV shows found. Episodes are recognised by their filenames —
+          No shows found. Episodes are recognised by their filenames —
           S01E02, 1x02, or a Season folder.
         </p>
       </div>

@@ -74,7 +74,7 @@ export function RememberListing() {
     const onClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
       const link = target?.closest?.(
-        "a[href^='/movie/'], a[href^='/show/'], a[href^='/collections/']",
+        "a[href^='/film/'], a[href^='/episode/'], a[href^='/show/'], a[href^='/collections/']",
       );
       if (!link || !isListing(location.pathname)) return;
 

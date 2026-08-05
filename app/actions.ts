@@ -229,18 +229,30 @@ export type SearchHit = {
   year?: string;
   posterPath?: string;
   overview?: string;
+  /** Already on the drive — a want list has nothing to do with it. */
+  inLibrary?: boolean;
 };
 
 export async function searchTmdb(query: string): Promise<SearchHit[]> {
   if (!query.trim()) return [];
 
   const { results } = await searchMovies(query.trim());
+
+  // What the library already holds, by TMDb id, so the wishlist search can
+  // refuse to offer a film that is not missing.
+  const held = new Set(
+    getLibrary()
+      .map((m) => m.tmdb?.id)
+      .filter((id): id is number => id !== undefined),
+  );
+
   return results.slice(0, 12).map((r) => ({
     id: r.id,
     title: r.title,
     year: r.release_date?.slice(0, 4) || undefined,
     posterPath: (r as { poster_path?: string | null }).poster_path ?? undefined,
     overview: (r as { overview?: string }).overview,
+    inLibrary: held.has(r.id),
   }));
 }
 
@@ -932,6 +944,8 @@ const failed = (err: unknown): { ok: false; error: string } => ({
  */
 export async function findUpgradesForMovie(
   moviePath: string,
+  /** A hand-edited search phrase, replacing the constructed one. */
+  query?: string,
 ): Promise<UpgradeResponse> {
   if (!knownMoviePath(moviePath)) return { ok: false, error: "Unknown film." };
 
@@ -968,7 +982,7 @@ export async function findUpgradesForMovie(
         (movie.durationSec ? Math.round(movie.durationSec / 60) : undefined),
       currentScore: current,
       disc,
-    });
+    }, { term: query });
     return { ok: true, search, current };
   } catch (err) {
     return failed(err);
@@ -1000,6 +1014,8 @@ export async function searchTorrents(term: string): Promise<UpgradeResponse> {
 
 export async function findReleasesFor(
   tmdbId: number,
+  /** A hand-edited search phrase, replacing the constructed one. */
+  query?: string,
 ): Promise<UpgradeResponse> {
   // The wishlist is consulted but not required: a film in a collection you do
   // not own has never been wished for, and having to want it on a list first
@@ -1051,7 +1067,7 @@ export async function findReleasesFor(
       imdbId,
       runtimeMinutes,
       disc,
-    });
+    }, { term: query });
     return { ok: true, search };
   } catch (err) {
     return failed(err);
@@ -1062,6 +1078,8 @@ export async function findReleasesFor(
 export async function findUpgradesForSeason(
   showKey: string,
   season: number,
+  /** A hand-edited search phrase, replacing the constructed one. */
+  query?: string,
 ): Promise<UpgradeResponse> {
   const show = getShow(showKey);
   if (!show) return { ok: false, error: "Unknown show." };
@@ -1098,7 +1116,69 @@ export async function findUpgradesForSeason(
       runtimeMinutes,
       currentScore: current,
       disc,
-    });
+    }, { term: query });
+    return { ok: true, search, current };
+  } catch (err) {
+    return failed(err);
+  }
+}
+
+/**
+ * Releases for one episode: an upgrade search when the episode is held, a
+ * plain search when it is a gap.
+ *
+ * A held episode's own file is the thing to beat, so results are ranked
+ * against its score. A missing one has no copy, so they stand against the
+ * season's disc set where one is linked — the same yardstick the held
+ * episodes are scored on — and on the bare rubric where none is.
+ */
+export async function findReleasesForEpisode(
+  showKey: string,
+  season: number,
+  episode: number,
+  /** A hand-edited search phrase, replacing the constructed one. */
+  query?: string,
+): Promise<UpgradeResponse> {
+  const show = getShow(showKey);
+  if (!show) return { ok: false, error: "Unknown show." };
+
+  const held = show.seasons.find((s) => s.number === season);
+
+  // The copy of this episode, when there is one — including a double-episode
+  // file that covers the number asked for.
+  const have = held?.episodes.find(
+    (e) =>
+      e.number === episode ||
+      (e.numberEnd !== undefined &&
+        episode >= e.number &&
+        episode <= e.numberEnd),
+  );
+
+  // The episode's own file times itself; a gap borrows the held episodes'
+  // average — episodes of a season run close enough for a bitrate to be
+  // judged from it.
+  const durations = (held?.episodes ?? [])
+    .map((e) => e.item.durationSec)
+    .filter((d): d is number => Boolean(d));
+  const runtimeMinutes = have?.item.durationSec
+    ? Math.round(have.item.durationSec / 60)
+    : durations.length
+      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length / 60)
+      : undefined;
+
+  const disc = getSeasonDisc(showKey, season);
+  const current = have?.item.scores.overall;
+
+  try {
+    const search = await findUpgrades({
+      kind: "tv",
+      title: show.tmdb?.name ?? show.title,
+      season,
+      episode,
+      runtimeMinutes,
+      currentScore: current,
+      disc,
+    }, { term: query });
     return { ok: true, search, current };
   } catch (err) {
     return failed(err);

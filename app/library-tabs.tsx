@@ -39,8 +39,8 @@ export function LibraryTabs({
   }
 
   const tabs = [
-    { key: "movies" as const, label: "Movies" },
-    { key: "tv" as const, label: "TV shows" },
+    { key: "movies" as const, label: "Films" },
+    { key: "tv" as const, label: "Shows" },
   ];
 
   return (
