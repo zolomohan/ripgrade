@@ -2,11 +2,13 @@ import {
   getConvertTempDir,
   getJackettStatus,
   getLibraryFolders,
+  getThumbCache,
   getTmdbStatus,
 } from "../actions";
 import { FolderSection } from "../folder-section";
 import { Jackett } from "./jackett";
 import { TempFolder } from "./temp-folder";
+import { Thumbs } from "./thumbs";
 import { Tmdb } from "./tmdb";
 import { DEFAULT_ROOT } from "@/lib/browse";
 
@@ -48,6 +50,7 @@ export default async function SettingsPage() {
   const tempDir = await getConvertTempDir();
   const jackett = await getJackettStatus();
   const tmdb = await getTmdbStatus();
+  const thumbs = await getThumbCache();
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 py-8 sm:px-8">
@@ -70,6 +73,13 @@ export default async function SettingsPage() {
         hint="TMDb supplies every title, poster, backdrop and collection in the app. Without it a scan still reads your files, but they stay filenames."
       >
         <Tmdb configured={tmdb.configured} />
+      </Setting>
+
+      <Setting
+        title="Thumbnail cache"
+        hint="Downscaled copies of your artwork, kept on this machine so shelves load fast and still show with the drive unplugged. It fills itself as you browse; rebuild before taking the drive away, clear to reclaim the space."
+      >
+        <Thumbs files={thumbs.files} bytes={thumbs.bytes} />
       </Setting>
 
       <Setting

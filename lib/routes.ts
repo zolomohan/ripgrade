@@ -11,9 +11,15 @@
  * browser already has: React sees an unchanged `src` and leaves the `<img>`
  * alone, and even a reload is answered from the disk cache. Changing the URL is
  * what makes the new picture appear. The route ignores the parameter.
+ *
+ * `width` asks for the cached thumbnail instead of the full file — one of the
+ * widths lib/thumbs.ts allows. Omit it for the originals the detail heroes
+ * want.
  */
-export const artUrl = (filePath: string, version?: number) =>
-  `/api/art?p=${encodeURIComponent(filePath)}${version ? `&v=${version}` : ""}`;
+export const artUrl = (filePath: string, version?: number, width?: number) =>
+  `/api/art?p=${encodeURIComponent(filePath)}${version ? `&v=${version}` : ""}${
+    width ? `&w=${width}` : ""
+  }`;
 
 /**
  * Names a poster so the browser can recognise it on both sides of a

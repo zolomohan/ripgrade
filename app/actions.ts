@@ -52,6 +52,11 @@ import {
   removeLibraryRoot,
 } from "@/lib/roots";
 import { revealInFinder } from "@/lib/system";
+import {
+  clearThumbCache,
+  rebuildThumbCache,
+  thumbCacheStats,
+} from "@/lib/thumbs";
 import { addToWishlist, getWishlist, removeFromWishlist } from "@/lib/wishlist";
 import { imageUrl } from "@/lib/image-url";
 import { getShow } from "@/lib/shows";
@@ -183,6 +188,39 @@ export async function setConvertTempDir(
 export async function clearConvertTempDir(): Promise<void> {
   db.prepare("DELETE FROM settings WHERE key = ?").run(CONVERT_TEMP_KEY);
   refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Thumbnail cache
+// ---------------------------------------------------------------------------
+
+export async function getThumbCache(): Promise<{
+  files: number;
+  bytes: number;
+}> {
+  return thumbCacheStats();
+}
+
+export async function clearThumbs(): Promise<{ files: number; bytes: number }> {
+  const removed = await clearThumbCache();
+  refresh();
+  return removed;
+}
+
+/** Walks every poster at every width — slow on purpose; see lib/thumbs.ts. */
+export async function rebuildThumbs(): Promise<
+  { ok: true; ready: number; failed: number } | { ok: false; error: string }
+> {
+  try {
+    const result = await rebuildThumbCache();
+    refresh();
+    return { ok: true, ...result };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 export async function beginScan(): Promise<ScanState> {

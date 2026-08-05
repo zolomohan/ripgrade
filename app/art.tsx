@@ -62,7 +62,18 @@ export function Art({
 }) {
   const [failed, setFailed] = useState(false);
 
-  const local = src && !failed ? artUrl(src, version) : undefined;
+  /*
+   * The local width asked for, from the same bucket the TMDb fallback uses —
+   * a tile drawn at w342 wants the cached thumbnail, not a full scan of the
+   * original off the external drive. Roughly 2× the drawn size, which is what
+   * a retina screen samples. "original" maps to nothing: the heroes want the
+   * file itself, full resolution being the point of owning it.
+   */
+  const thumbWidth = { w92: 160, w342: 640, w780: 1280 }[
+    size as "w92" | "w342" | "w780"
+  ];
+
+  const local = src && !failed ? artUrl(src, version, thumbWidth) : undefined;
   const source = local ?? (remote ? imageUrl(remote, size) : undefined);
   if (!source) return null;
 
