@@ -2,9 +2,9 @@ import { notFound } from "next/navigation";
 
 import { Art } from "@/app/art";
 import { findDuplicateGroup, type LibraryItem } from "@/lib/library";
-import { decodeId } from "@/lib/routes";
+import { decodeId, posterName } from "@/lib/routes";
 import { storedHitFor, type StoredHit } from "@/lib/upgrade-sweep";
-import { RevealButton } from "./reveal-button";
+import { BackButton } from "./back-button";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +41,30 @@ const RELEASE_RANK: Record<string, number> = {
   "WEB-DL": 3,
   ENCODE: 2,
   UNKNOWN: 1,
+};
+
+/** The show page's verdict tones, for the score in the hero line. */
+const SCORE_TONE = (score: number) =>
+  score >= 78
+    ? "text-emerald-600 dark:text-emerald-400"
+    : score >= 62
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-red-600 dark:text-red-400";
+
+/**
+ * A synopsis cut to a length the hero can hold, exactly as the show page cuts
+ * its own — on a word, so it reads as a sentence that stops.
+ */
+const SYNOPSIS_WORDS = 34;
+
+const trimSynopsis = (text: string) => {
+  const words = text.split(/\s+/);
+  return words.length <= SYNOPSIS_WORDS
+    ? text
+    : `${words
+        .slice(0, SYNOPSIS_WORDS)
+        .join(" ")
+        .replace(/[,.;:]$/, "")}…`;
 };
 
 type Row = {
@@ -263,15 +287,13 @@ export default async function ComparePage({
   // as everything its name claims — beside copies that were measured.
   const hit = storedHitFor(copies.map((c) => c.path));
   const rows = buildRows(copies, hit);
-  const differences = rows.filter((r) => !r.same).length;
 
   return (
     <main className="flex flex-col pb-16">
-      {/* The same hero a film and a show get — the backdrop is what says
-          which film faster than any heading, and this page is about choosing
-          between its copies. Shorter than a detail page's: the table below is
-          the point, and it should be reachable without a scroll. */}
-      <div className="relative h-56 w-full overflow-hidden sm:h-72">
+      {/* The same hero a film and a show get, at the show page's own height —
+          the backdrop is what says which film faster than any heading, and
+          this page is about choosing between its copies. */}
+      <div className="relative h-72 w-full overflow-hidden sm:h-96">
         {keep.fanart || keep.art.fanart ? (
           <>
             <Art
@@ -297,15 +319,18 @@ export default async function ComparePage({
             className="enter-drop pointer-events-none absolute top-6 right-6 z-[5] max-h-16 w-auto max-w-[40vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:max-h-20 sm:max-w-sm"
           />
         )}
+
+        <BackButton />
       </div>
 
-      <div className="relative z-10 mx-auto -mt-20 flex w-full max-w-6xl flex-col gap-8 px-6 sm:px-8">
+      <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-6xl flex-col gap-8 px-6 sm:px-8">
         <header className="flex items-end gap-5">
           {keep.poster || keep.art.poster ? (
             <Art
               src={keep.poster}
               remote={keep.art.poster}
               version={keep.artAt}
+              transitionName={posterName(keep.path)}
               size="w342"
               className="h-44 w-[7.5rem] shrink-0 rounded-card object-cover shadow-2xl ring-1 ring-line"
             />
@@ -313,19 +338,34 @@ export default async function ComparePage({
             <div className="h-44 w-[7.5rem] shrink-0 rounded-card bg-surface-strong shadow-2xl ring-1 ring-line" />
           )}
 
-          <div className="enter-rise min-w-0 pb-1">
+          <div className="enter-rise flex min-w-0 flex-col gap-2 pb-1">
             <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
               {keep.title}
               {keep.year && (
                 <span className="ml-2 font-normal opacity-40">{keep.year}</span>
               )}
             </h1>
-            <p className="mt-1.5 text-sm opacity-55">
-              {copies.length === 1 ? "1 copy" : `${copies.length} copies`}
-              {copies.length > 1 &&
-                ` · ${differences} of ${rows.length} attributes differ`}
-              {hit && " · 1 predicted release"}
+
+            {/* The show page's subtitle line, in this page's terms: what the
+                copy you would keep amounts to, before the table itemises it. */}
+            <p className="text-sm opacity-55">
+              {[keep.resolution, keep.releaseType, bytes(keep.sizeBytes)]
+                .filter(Boolean)
+                .join(" · ")}{" "}
+              ·{" "}
+              <span className={`font-score ${SCORE_TONE(keep.scores.overall)}`}>
+                {keep.scores.overall}/100
+              </span>
             </p>
+
+            {keep.tmdb?.overview && (
+              <p
+                className="max-w-prose pt-1 text-sm leading-relaxed opacity-65"
+                title={keep.tmdb.overview}
+              >
+                {trimSynopsis(keep.tmdb.overview)}
+              </p>
+            )}
           </div>
         </header>
 
@@ -343,7 +383,9 @@ export default async function ComparePage({
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      {/* mt on top of the column's gap: the table is the page's second act,
+          and a touch more air under the hero says so. */}
+      <div className="mt-12 overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
             {/* Real column titles, in the display face like every section
@@ -446,24 +488,35 @@ export default async function ComparePage({
               </tr>
             ))}
 
-            {/* What to do about each column, once it has been read: the
-                copies open or get revealed for deleting, the candidate gets
-                fetched. Last, because acting comes after comparing. */}
-            <tr>
-              <td className="px-3 py-3" />
-              {copies.map((copy) => (
-                <td key={copy.path} className="px-3 py-3">
-                  <RevealButton moviePath={copy.path} />
-                </td>
-              ))}
-              {hit && (
+            {/* What to do once the table has been read: fetch the candidate.
+                Last, because acting comes after comparing. */}
+            {hit && (
+              <tr>
+                <td className="px-3 py-3" />
+                {copies.map((copy) => (
+                  <td key={copy.path} className="px-3 py-3" />
+                ))}
                 <td className="px-3 py-3">
                   {hit.magnet ? (
                     <a
                       href={hit.magnet}
                       title={hit.magnet}
-                      className="text-xs underline underline-offset-4 opacity-60 hover:opacity-100"
+                      className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90"
                     >
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                        className="h-3.5 w-3.5"
+                      >
+                        <path d="M12 4v11" />
+                        <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+                        <path d="M5 19h14" />
+                      </svg>
                       Download
                     </a>
                   ) : hit.detailsUrl ? (
@@ -471,14 +524,28 @@ export default async function ComparePage({
                       href={hit.detailsUrl}
                       target="_blank"
                       rel="noreferrer noopener"
-                      className="text-xs underline underline-offset-4 opacity-60 hover:opacity-100"
+                      className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90"
                     >
-                      Details on the indexer
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                        className="h-3.5 w-3.5"
+                      >
+                        <path d="M14 5h5v5" />
+                        <path d="M19 5l-7.5 7.5" />
+                        <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+                      </svg>
+                      Details
                     </a>
                   ) : null}
                 </td>
-              )}
-            </tr>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -10,8 +10,9 @@ import { EmptyState } from "@/app/empty-state";
 import { useJobs } from "@/app/jobs-provider";
 import { useLingering } from "@/app/modal";
 import { ReleaseSearchModal } from "@/app/release-search";
+import { rememberListing } from "@/app/return-to";
 import { stagger } from "@/app/stagger";
-import { compareId, movieId } from "@/lib/routes";
+import { compareId, movieId, posterName } from "@/lib/routes";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 
 /**
@@ -54,6 +55,14 @@ function Row({
     Boolean,
   ) as string[];
 
+  // Recorded by hand: the delegated listener in return-to.tsx only sees
+  // anchors, and this row navigates from a handler. Without the crumb the
+  // compare page's back button has nowhere to morph the poster home to.
+  function open() {
+    rememberListing();
+    router.push(`/compare/${compareId(item.compareKey)}`);
+  }
+
   return (
     /* The row itself opens the film's compare page — the copy's full attribute
        table now, and the moment a replacement lands and is scanned, old and
@@ -62,11 +71,11 @@ function Row({
     <li
       role="button"
       tabIndex={0}
-      onClick={() => router.push(`/compare/${compareId(item.compareKey)}`)}
+      onClick={open}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          router.push(`/compare/${compareId(item.compareKey)}`);
+          open();
         }
       }}
       aria-label={`Compare copies of ${item.title}`}
@@ -83,6 +92,9 @@ function Row({
           src={item.poster}
           remote={item.posterRemote}
           version={item.artAt}
+          // Named so it travels: the same poster stands in the compare hero
+          // this row opens, and on the film page behind the poster link.
+          transitionName={posterName(item.path)}
           size="w92"
           loading="lazy"
           className="h-24 w-16 rounded-control object-cover ring-1 ring-line"

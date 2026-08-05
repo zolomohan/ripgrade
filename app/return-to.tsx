@@ -26,7 +26,7 @@ const SCROLL_KEY = "ripgrade:listingScroll";
  * show lists its episodes, a collection lists its films. Back from an episode
  * means back to the show, not back to the library it was three clicks ago.
  */
-const LISTINGS = ["/", "/collections", "/wishlist"];
+const LISTINGS = ["/", "/collections", "/wishlist", "/upgrades"];
 
 const isListing = (path: string) =>
   LISTINGS.includes(path) ||
@@ -67,6 +67,30 @@ function writeTrail(trail: Crumb[]) {
  * every poster in the app: the tiles are in six different views, and a handler
  * missing from one of them would be a back button that quietly forgets.
  */
+/**
+ * Records the page being left as the place "back" returns to. Shared by the
+ * click capture below and by controls that navigate imperatively — the
+ * upgrade queue's rows push a route from a handler, which no delegated
+ * anchor listener can see.
+ */
+export function rememberListing() {
+  if (!isListing(location.pathname)) return;
+
+  // The offset as well as the address: returning to the top of a shelf you
+  // were halfway down is a different place, and it takes the tile you came
+  // from off the screen — so the poster has nowhere to travel back to.
+  const crumb = {
+    url: location.pathname + location.search,
+    scroll: Math.round(window.scrollY),
+  };
+
+  const trail = readTrail();
+  // Clicking a second tile on the same shelf is not a step deeper; it is
+  // the same step, taken from a different scroll offset.
+  if (trail[trail.length - 1]?.url === crumb.url) trail.pop();
+  writeTrail([...trail, crumb]);
+}
+
 export function RememberListing() {
   const pathname = usePathname();
 
@@ -76,21 +100,8 @@ export function RememberListing() {
       const link = target?.closest?.(
         "a[href^='/film/'], a[href^='/episode/'], a[href^='/show/'], a[href^='/collections/']",
       );
-      if (!link || !isListing(location.pathname)) return;
-
-      // The offset as well as the address: returning to the top of a shelf you
-      // were halfway down is a different place, and it takes the tile you came
-      // from off the screen — so the poster has nowhere to travel back to.
-      const crumb = {
-        url: location.pathname + location.search,
-        scroll: Math.round(window.scrollY),
-      };
-
-      const trail = readTrail();
-      // Clicking a second tile on the same shelf is not a step deeper; it is
-      // the same step, taken from a different scroll offset.
-      if (trail[trail.length - 1]?.url === crumb.url) trail.pop();
-      writeTrail([...trail, crumb]);
+      if (!link) return;
+      rememberListing();
     };
 
     document.addEventListener("click", onClick, true);
