@@ -222,10 +222,17 @@ export function getMovie(id: string): LibraryItem | undefined {
 export const groupKeyOf = (item: Derived) => titleKey(item.title, item.year);
 
 /** One duplicate group by its key, best copy first. Undefined if it is gone. */
+/**
+ * Every copy under a grouping key, best first — one copy included. A single
+ * copy is not a duplicate, but the compare page is still the place its full
+ * attribute table lives, and the second column appears by itself the moment
+ * a replacement lands and is scanned.
+ */
 export function findDuplicateGroup(key: string): LibraryItem[] | undefined {
-  return duplicateGroups(getLibrary()).find(
-    (group) => groupKeyOf(group[0]) === key,
-  );
+  const copies = getLibrary()
+    .filter((item) => duplicateKey(item) === key)
+    .sort((a, b) => b.scores.overall - a.scores.overall);
+  return copies.length > 0 ? copies : undefined;
 }
 
 /** Films appearing more than once, keyed by title + year. */

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { stopConvert, stopFullDoviScan } from "@/app/actions";
+import { stopConvert, stopFullDoviScan, stopUpgradeSweep } from "@/app/actions";
 import { useJobs } from "@/app/jobs-provider";
 import { useScan } from "@/app/scan-provider";
 
@@ -84,13 +84,14 @@ function Job({
 export function SidebarProcesses() {
   const { state: scan, busy: scanning, result, dismiss } = useScan();
   const { jobs, apply } = useJobs();
-  const { dovi, convert } = jobs;
+  const { dovi, convert, sweep } = jobs;
   const [stopping, setStopping] = useState(false);
   const router = useRouter();
 
   const reading = dovi.status === "running";
   const converting = convert.status === "running";
-  const anyRunning = scanning || reading || converting;
+  const sweeping = sweep.status === "running";
+  const anyRunning = scanning || reading || converting || sweeping;
 
   // A job that finished changed the library underneath whatever is open.
   useEffect(() => {
@@ -159,6 +160,22 @@ export function SidebarProcesses() {
             setStopping(true);
             void stopFullDoviScan().then((job) => {
               apply({ dovi: job });
+              setStopping(false);
+            });
+          }}
+        />
+      )}
+
+      {sweeping && (
+        <Job
+          name={`Upgrades · ${sweep.done} of ${sweep.total}`}
+          detail={sweep.current}
+          percent={sweep.total ? (sweep.done / sweep.total) * 100 : 0}
+          busy={stopping}
+          onCancel={() => {
+            setStopping(true);
+            void stopUpgradeSweep().then((job) => {
+              apply({ sweep: job });
               setStopping(false);
             });
           }}

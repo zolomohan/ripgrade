@@ -10,17 +10,9 @@ export const dynamic = "force-dynamic";
 export default function SearchPage() {
   return (
     <div className="flex flex-col">
-      <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-8 sm:px-8">
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Search
-          </h1>
-          <p className="mt-1 text-sm opacity-55">
-            Every indexer Jackett knows, asked whatever you like — not only what
-            is already in the library.
-          </p>
-        </div>
-
+      {/* min-h-dvh so the empty state below the field has a height to centre
+          itself in; see the upgrades page. */}
+      <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-6 py-8 sm:px-8">
         <SearchView configured={hasJackett()} />
       </main>
     </div>

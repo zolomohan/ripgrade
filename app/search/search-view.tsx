@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { searchTorrents, type UpgradeResponse } from "@/app/actions";
+import { EmptyState } from "@/app/empty-state";
 import { NotConfigured, Result, SORTS, type Sort } from "@/app/release-search";
 import { stagger } from "@/app/stagger";
 
@@ -41,7 +42,7 @@ export function SearchView({ configured }: { configured: boolean }) {
   if (!configured) return <NotConfigured />;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-1 flex-col gap-5">
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -103,39 +104,56 @@ export function SearchView({ configured }: { configured: boolean }) {
       )}
 
       {!pending && response && !response.ok && (
-        <p className="rounded-card border border-line bg-surface px-5 py-10 text-center text-sm text-red-600 dark:text-red-400">
+        <p className="px-6 py-16 text-center font-mono text-sm text-red-600 dark:text-red-400 sm:py-24">
           {response.error}
         </p>
       )}
 
       {!pending && !response && (
-        <p className="rounded-card border border-line bg-surface px-5 py-12 text-center text-sm opacity-50">
-          Every indexer Jackett knows, searched by keyword. Nothing here is
-          measured against your library — it is read off the release name.
-        </p>
+        <EmptyState
+          icon={
+            <>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </>
+          }
+          title="Search every indexer"
+        >
+          Everything Jackett knows, by keyword — a film, a box set, a name.
+          Results are read off the release name alone, not measured against
+          your library.
+        </EmptyState>
       )}
 
-      {!pending && search && (
+      {!pending && search && showing.length === 0 && (
+        <EmptyState
+          icon={
+            <>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+              <path d="m8.8 8.8 4.4 4.4M13.2 8.8l-4.4 4.4" />
+            </>
+          }
+          title={`Nothing came back for “${search.query}”`}
+        >
+          No indexer returned a thing. Try fewer words — indexers match
+          release names, and a name rarely says more than the title and year.
+        </EmptyState>
+      )}
+
+      {!pending && search && showing.length > 0 && (
         <div className="overflow-hidden rounded-card border border-line bg-surface">
-          {showing.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
-              <p className="text-sm opacity-55">
-                Nothing came back for “{search.query}”.
-              </p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-line">
-              {showing.map((release, i) => (
-                <li
-                  key={`${release.title}-${release.infoHash ?? release.indexer}`}
-                  style={stagger(i)}
-                  className="row-enter"
-                >
-                  <Result release={release} />
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="divide-y divide-line">
+            {showing.map((release, i) => (
+              <li
+                key={`${release.title}-${release.infoHash ?? release.indexer}`}
+                style={stagger(i)}
+                className="row-enter"
+              >
+                <Result release={release} />
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

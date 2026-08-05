@@ -2,6 +2,7 @@ import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
 import { subscribeJobs, type JobsSnapshot } from "@/lib/job-events";
 import { getScanState } from "@/lib/scanner";
+import { getSweepJob } from "@/lib/upgrade-sweep";
 
 /**
  * One SSE stream carrying all three background jobs, instead of the four
@@ -27,6 +28,7 @@ export function GET(request: Request) {
     scan: getScanState(),
     dovi: getDoviJob(),
     convert: getConvertJob(),
+    sweep: getSweepJob(),
   });
 
   const stream = new ReadableStream({

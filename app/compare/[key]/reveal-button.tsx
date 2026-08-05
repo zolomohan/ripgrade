@@ -20,7 +20,7 @@ export function RevealButton({ moviePath }: { moviePath: string }) {
             setError(result.ok ? null : result.error);
           })
         }
-        className="mt-1 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ring-line-strong hover:bg-surface-strong disabled:opacity-40"
+        className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ring-line-strong hover:bg-surface-strong disabled:opacity-40"
       >
         Reveal in Finder
       </button>

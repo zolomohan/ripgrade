@@ -10,6 +10,7 @@ import "./globals.css";
 import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
 import { getScanState } from "@/lib/scanner";
+import { getSweepJob } from "@/lib/upgrade-sweep";
 import { JobsProvider } from "./jobs-provider";
 import { ScanProvider } from "./scan-provider";
 import { Glow } from "./glow";
@@ -76,6 +77,7 @@ export default function RootLayout({
     scan: getScanState(),
     dovi: getDoviJob(),
     convert: getConvertJob(),
+    sweep: getSweepJob(),
   };
   return (
     <html

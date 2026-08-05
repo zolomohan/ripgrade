@@ -3,6 +3,7 @@ import "server-only";
 import type { ConvertJob } from "./convert";
 import type { DoviJob } from "./dovi";
 import type { ScanState } from "./scanner";
+import type { SweepJob } from "./upgrade-sweep";
 
 /**
  * The change signal behind `/api/jobs`.
@@ -14,11 +15,12 @@ import type { ScanState } from "./scanner";
  * costs one read of the latest state, not a queue of stale ones.
  */
 
-/** Everything the client needs to draw the rail — all three jobs, together. */
+/** Everything the client needs to draw the rail — all four jobs, together. */
 export type JobsSnapshot = {
   scan: ScanState;
   dovi: DoviJob;
   convert: ConvertJob;
+  sweep: SweepJob;
 };
 
 /**

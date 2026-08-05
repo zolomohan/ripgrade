@@ -159,6 +159,18 @@ CREATE TABLE IF NOT EXISTS library_roots (
   added_at  INTEGER NOT NULL
 );
 
+-- What the last upgrade sweep found for each film: the one best release, or
+-- nothing, with when it looked. A cache like everything else here — the
+-- queue page reads it instead of searching, and a fresh sweep overwrites it.
+CREATE TABLE IF NOT EXISTS upgrade_checks (
+  path          TEXT PRIMARY KEY,
+  checked_at    INTEGER NOT NULL,
+  -- The copy's score when checked, so a later rescore shows as staleness.
+  current_score INTEGER,
+  -- The trimmed best release as JSON, or NULL for "looked, found nothing".
+  best          TEXT
+);
+
 -- Poster/fanart live beside the movie file, so this is keyed by directory
 -- rather than by film. A separate table so adding it needed no rescan.
 CREATE TABLE IF NOT EXISTS artwork (

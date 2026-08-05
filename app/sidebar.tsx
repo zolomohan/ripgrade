@@ -15,6 +15,7 @@ import { SidebarProcesses } from "./sidebar-processes";
  */
 const PAGES = [
   { href: "/", label: "Library" },
+  { href: "/upgrades", label: "Upgrades" },
   { href: "/collections", label: "Collections" },
   { href: "/stats", label: "Stats" },
   { href: "/wishlist", label: "Wishlist" },
@@ -98,8 +99,15 @@ export function Sidebar() {
       </nav>
 
       {/* Wraps onto its own line across the top of a narrow screen, and sits
-          above the two icons in the rail. Renders nothing when nothing runs. */}
-      <div className="order-last w-full min-w-0 empty:hidden md:order-none md:mt-auto md:w-auto">
+          above the two icons in the rail. Renders nothing when nothing runs.
+
+          `w-full` at every width, never auto: the aside stays flex-wrap in
+          its column form, and a wrapping column sizes each line to its widest
+          item's own content — an auto-width job with a long subtitle would
+          take the whole rail with it. A definite width is what the truncation
+          inside actually truncates against; overflow-hidden is the backstop
+          for anything that forgets to. */}
+      <div className="order-last w-full min-w-0 overflow-hidden empty:hidden md:order-none md:mt-auto">
         <SidebarProcesses />
       </div>
 

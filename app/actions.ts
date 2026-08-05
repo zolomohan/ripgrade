@@ -36,6 +36,7 @@ import { fetchAndCache, setManualMatch } from "@/lib/enrich";
 import {
   clearJackettConfig,
   getJackettConfig,
+  hasJackett,
   setJackettConfig,
   testJackett,
 } from "@/lib/jackett";
@@ -57,6 +58,12 @@ import {
   rebuildThumbCache,
   thumbCacheStats,
 } from "@/lib/thumbs";
+import {
+  cancelSweep,
+  getSweepJob,
+  startSweep,
+  type SweepJob,
+} from "@/lib/upgrade-sweep";
 import { addToWishlist, getWishlist, removeFromWishlist } from "@/lib/wishlist";
 import { imageUrl } from "@/lib/image-url";
 import { getShow } from "@/lib/shows";
@@ -855,6 +862,25 @@ export async function chooseArtwork(
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Upgrade sweep
+// ---------------------------------------------------------------------------
+
+export async function startUpgradeSweep(): Promise<SweepJob> {
+  if (!hasJackett()) {
+    return {
+      ...getSweepJob(),
+      status: "error",
+      error: "Connect Jackett on the Settings page to search.",
+    };
+  }
+  return startSweep();
+}
+
+export async function stopUpgradeSweep(): Promise<SweepJob> {
+  return cancelSweep();
 }
 
 // ---------------------------------------------------------------------------
