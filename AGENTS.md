@@ -7,3 +7,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
 # Finding code
 
 For "where is X used", "what calls this", or "what breaks if I change Y", prefer the `codegraph_explore` MCP tool over grep — it answers from the indexed call graph in `.codegraph/`, with callers and impact radius grep can't see.
+
+The injected `<codegraph_context>` block is usually the whole answer. When it says sections were trimmed, the follow-up is another `codegraph_explore` naming the missing symbols — not grep.
