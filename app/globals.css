@@ -1000,9 +1000,10 @@ html {
 /*
  * And the tile turns to face you.
  *
- * Under two degrees at the corners: enough that the tile answers the pointer,
- * not so much that a shelf of them reads as a fan of loose cards. The rotation is driven by
- * the same two coordinates as the light, normalised in app/glow.tsx.
+ * Three degrees at the corners: enough that the tile visibly answers the
+ * pointer, still short of a shelf of them reading as a fan of loose cards.
+ * The rotation is driven by the same two coordinates as the light,
+ * normalised in app/glow.tsx.
  *
  * Quick while you are on it so it tracks, slow on the way back so it settles
  * rather than snapping flat the moment you leave.
@@ -1018,8 +1019,8 @@ html {
      * a combined transform could only ever have one speed. */
     scale: 1;
 
-    transform: perspective(900px) rotateX(calc(var(--gny, 0) * -1.75deg))
-      rotateY(calc(var(--gnx, 0) * 1.75deg));
+    transform: perspective(900px) rotateX(calc(var(--gny, 0) * -5deg))
+      rotateY(calc(var(--gnx, 0) * 5deg));
     transition:
       transform 420ms var(--morph-ease),
       scale 460ms var(--morph-ease);

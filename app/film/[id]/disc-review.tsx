@@ -119,14 +119,19 @@ export function DiscReview({
   const button =
     "rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40";
 
+  /* Underlined words rather than boxed buttons, matching the match-review
+     corrections: quiet, occasional actions carry no frame. */
+  const textButton =
+    "text-sm underline underline-offset-4 opacity-60 transition-opacity hover:opacity-100 disabled:opacity-30";
+
   return (
     <div className={inline ? "" : "mt-6"}>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={begin}
           disabled={pending}
-          className={button}
+          className={textButton}
         >
           {currentUrl ? "Wrong edition?" : "Find the disc"}
         </button>
@@ -141,7 +146,7 @@ export function DiscReview({
               type="button"
               onClick={unlink}
               disabled={pending}
-              className={button}
+              className={textButton}
             >
               Unpin
             </button>

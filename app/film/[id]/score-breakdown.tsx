@@ -16,6 +16,12 @@ import {
  * here: shut it is one line, open it is the arithmetic.
  *
  * No state and no dialog, so no "use client": it is the page's own markup now.
+ *
+ * Each criterion is a meter rather than a bare fraction: 20/25 has to be
+ * computed to be read, a bar four-fifths full is read at a glance — and a
+ * short bar is amber because a short bar is precisely what "upgrade
+ * recommended" means everywhere else in the app. The bars are static: this
+ * lives in a <details>, where a mount animation would have played while shut.
  */
 
 const RULE =
@@ -25,20 +31,33 @@ function LineRow({ line }: { line: ScoreLine }) {
   const full = line.points === line.max;
 
   return (
-    <div className="grid grid-cols-[10rem_1fr_auto] items-baseline gap-4 py-2">
-      <span className="text-sm opacity-60">{line.label}</span>
-      <span className="text-sm">
-        {line.detail}
-        {line.note && (
-          <span className="mt-0.5 block text-xs opacity-50">{line.note}</span>
-        )}
-      </span>
-      <span
-        className={`font-mono text-sm tabular-nums ${full ? "" : "opacity-50"}`}
-      >
-        {line.points}
-        <span className="opacity-40">/{line.max}</span>
-      </span>
+    <div className="py-2.5">
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="min-w-0 truncate text-sm">
+          <span className="opacity-50">{line.label}</span>
+          <span aria-hidden className="mx-2 opacity-30">
+            ·
+          </span>
+          {line.detail}
+        </span>
+        <span
+          className={`shrink-0 font-mono text-xs tabular-nums ${
+            full ? "" : "opacity-50"
+          }`}
+        >
+          {line.points}
+          <span className="opacity-40">/{line.max}</span>
+        </span>
+      </div>
+
+      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-strong">
+        <div
+          className={`h-full rounded-full ${
+            full ? "bg-foreground/45" : "bg-amber-500/70"
+          }`}
+          style={{ width: `${(line.points / line.max) * 100}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -56,12 +75,20 @@ function Component({
 }) {
   const lost = lines.reduce((sum, l) => sum + (l.max - l.points), 0);
 
+  /* The ways back to those points, gathered from the lines that carry one.
+     They used to sit as a subtitle under each row, which made every shortfall
+     twice the height of a full mark and scattered the same message down the
+     section — collected here, the total says how much and the list says how. */
+  const notes = lines
+    .map((line) => line.note)
+    .filter((note): note is string => Boolean(note));
+
   return (
-    <section className="flex flex-col gap-1">
+    <section className="flex flex-col">
       <div className="flex items-baseline justify-between gap-4">
         <h3 className="font-medium">
           {title}
-          <span className="ml-2 text-xs opacity-50">
+          <span className="ml-2 text-xs font-normal opacity-50">
             {Math.round(weight * 100)}% of overall
           </span>
         </h3>
@@ -70,18 +97,62 @@ function Component({
         </span>
       </div>
 
-      <div className="mt-1">
+      <div className="mt-2">
         {lines.map((line) => (
           <LineRow key={line.label} line={line} />
         ))}
       </div>
 
+      {/* On its own quiet surface, so the section ends with a verdict rather
+          than trailing off — how many points are missing, and the way to each
+          of them. */}
       {lost > 0 && (
-        <p className="text-xs opacity-50">
-          {lost} {lost === 1 ? "point" : "points"} left on the table.
-        </p>
+        <div className="mt-3 rounded-card bg-surface px-4 py-3 text-xs">
+          <p className="flex items-baseline justify-between gap-4">
+            <span className="tracking-wide uppercase opacity-45">
+              Left on the table
+            </span>
+            <span className="font-mono tabular-nums opacity-60">−{lost}</span>
+          </p>
+          {notes.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1 opacity-70">
+              {notes.map((note) => (
+                <li key={note} className="flex gap-2">
+                  <span className="opacity-40">—</span>
+                  <span>{note}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </section>
+  );
+}
+
+/** One step of the final arithmetic: what happened in words, the working in
+    mono underneath, the result on the right. */
+function Step({
+  label,
+  working,
+  value,
+}: {
+  label: string;
+  working?: string;
+  value: number;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5">
+      <span className="min-w-0">
+        <span className="block text-sm">{label}</span>
+        {working && (
+          <span className="mt-0.5 block font-mono text-xs opacity-45">
+            {working}
+          </span>
+        )}
+      </span>
+      <span className="shrink-0 font-mono text-sm tabular-nums">{value}</span>
+    </div>
   );
 }
 
@@ -96,8 +167,8 @@ export function ScoreBreakdown({
     <div className="flex flex-col gap-8">
       <p className="text-sm opacity-60">
         Each category is scored out of 100 from the criteria below, then
-        blended. The right-hand column shows points awarded against the most
-        that criterion can pay.
+        blended. A full bar is a criterion at its maximum; an amber one is
+        where the points went.
       </p>
 
       <Component
@@ -134,48 +205,55 @@ export function ScoreBreakdown({
           </p>
         )}
 
-        <div className="mt-3 flex flex-col gap-2 font-mono text-sm">
-          <div className="flex items-baseline justify-between gap-4">
-            <span className="opacity-70">
-              {scores.video} × {WEIGHTS.video} + {scores.audio} ×{" "}
-              {WEIGHTS.audio} + {scores.release} × {WEIGHTS.release}
-            </span>
-            <span className="tabular-nums">{breakdown.weighted}</span>
-          </div>
-          <div className="flex items-baseline justify-between gap-4">
-            <span className="opacity-70">
-              video ceiling ({scores.video} + {VIDEO_CEILING_BONUS})
-            </span>
-            <span className="tabular-nums">{breakdown.ceiling}</span>
-          </div>
-          <div className="flex items-baseline justify-between gap-4">
-            <span className="opacity-70">
-              {breakdown.cappedByVideo
-                ? "capped at the ceiling"
-                : "lower of the two"}
-            </span>
-            <span className="tabular-nums">{breakdown.absolute}</span>
-          </div>
+        {/* The same arithmetic that was one line of formula soup, told a step
+            at a time: what each number is in words, how it was made in mono
+            underneath, and the figure it produced on the right. */}
+        <div className="mt-2 flex flex-col divide-y divide-line">
+          <Step
+            label="The three, blended"
+            working={`${scores.video} × ${WEIGHTS.video} + ${scores.audio} × ${WEIGHTS.audio} + ${scores.release} × ${WEIGHTS.release}`}
+            value={breakdown.weighted}
+          />
+          <Step
+            label="Video ceiling"
+            working={`picture quality ${scores.video} + ${VIDEO_CEILING_BONUS}`}
+            value={breakdown.ceiling}
+          />
+          <Step
+            label={
+              breakdown.cappedByVideo
+                ? "Capped at the ceiling — sound cannot outscore the picture"
+                : "Lower of the two — the ceiling did not bind"
+            }
+            value={breakdown.absolute}
+          />
 
           {breakdown.relative && breakdown.discScore ? (
             <>
-              <div className="flex items-baseline justify-between gap-4">
-                <span className="opacity-70">the disc on the same rubric</span>
-                <span className="tabular-nums">{breakdown.discScore}</span>
-              </div>
-              <div className="mt-2 flex items-baseline justify-between gap-4">
-                <span>
-                  {breakdown.absolute} ÷ {breakdown.discScore} of the disc
+              <Step
+                label="The best disc, on the same rubric"
+                value={breakdown.discScore}
+              />
+              <div className="flex items-center justify-between gap-4 pt-3">
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">
+                    This copy, as a share of that disc
+                  </span>
+                  <span className="mt-0.5 block font-mono text-xs opacity-45">
+                    {breakdown.absolute} ÷ {breakdown.discScore}
+                  </span>
                 </span>
-                <span className="font-score text-base font-semibold tabular-nums">
+                <span className="shrink-0 font-score text-xl font-semibold tabular-nums">
                   {scores.overall}
                 </span>
               </div>
             </>
           ) : (
-            <div className="mt-2 flex items-baseline justify-between gap-4">
-              <span>no disc data — scored on the rubric alone</span>
-              <span className="font-score text-base font-semibold tabular-nums">
+            <div className="flex items-center justify-between gap-4 pt-3">
+              <span className="block text-sm font-medium">
+                No disc data — scored on the rubric alone
+              </span>
+              <span className="shrink-0 font-score text-xl font-semibold tabular-nums">
                 {scores.overall}
               </span>
             </div>

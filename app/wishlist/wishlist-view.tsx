@@ -13,14 +13,7 @@ import {
 } from "react";
 
 import { addWish, removeWish, searchTmdb, type SearchHit } from "@/app/actions";
-import {
-  Bar,
-  BarSearch,
-  BarSegments,
-  ICONS,
-  MenuItem,
-  Popover,
-} from "@/app/controls";
+import { Bar, BarSearch, ICONS, MenuItem, Popover } from "@/app/controls";
 import { imageUrl } from "@/lib/image-url";
 import { movieId } from "@/lib/routes";
 import { ReleaseSearchModal } from "@/app/release-search";
@@ -56,126 +49,6 @@ function Poster({ path, alt }: { path?: string; alt: string }) {
     <span className="h-[72px] w-12 shrink-0 rounded-chip bg-surface-strong" />
   );
 }
-
-function Entry({
-  entry,
-  onRemove,
-  onFind,
-  busy,
-  index,
-  ruled,
-}: {
-  entry: WishlistEntry;
-  onRemove: () => void;
-  onFind: () => void;
-  busy: boolean;
-  index: number;
-  /** False on the first row, which has nothing above it to be parted from. */
-  ruled?: boolean;
-}) {
-  return (
-    <>
-      {ruled && (
-        <li
-          aria-hidden
-          className="h-px bg-gradient-to-r from-transparent via-line to-transparent"
-        />
-      )}
-
-      {/* The row itself is the trigger, so there is no separate button to
-          find. A <li> with a button role rather than a real one: it holds a
-          remove button and a link of its own, and nesting those inside a
-          <button> is invalid and unreachable by keyboard. */}
-      <ViewTransition name={`wish-${entry.tmdbId}`} {...wishMotion(index)}>
-        <li
-          role="button"
-          tabIndex={0}
-          onClick={onFind}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onFind();
-            }
-          }}
-          aria-label={`Find releases for ${entry.title}`}
-          style={stagger(index)}
-          className="glow row-enter flex cursor-pointer items-start gap-4 rounded-card px-4 py-3 transition-colors hover:bg-surface-strong"
-        >
-          <Poster path={entry.posterPath} alt="" />
-
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">
-              {entry.title}
-              {entry.year && (
-                <span className="ml-1.5 font-normal opacity-40">
-                  {entry.year}
-                </span>
-              )}
-            </p>
-
-            {entry.owned ? (
-              <p className="mt-1 text-xs">
-                <Link
-                  href={`/film/${movieId(entry.owned.path)}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-emerald-600 underline underline-offset-4 dark:text-emerald-400"
-                >
-                  In the library
-                </Link>
-                <span className="opacity-50">
-                  {" "}
-                  — {entry.owned.resolution} · {entry.owned.status} ·{" "}
-                  {entry.owned.score}/100
-                </span>
-              </p>
-            ) : (
-              entry.overview && (
-                <p className="mt-1 line-clamp-2 text-xs opacity-50">
-                  {entry.overview}
-                </p>
-              )
-            )}
-          </div>
-
-          {/* `self-center` rather than inheriting the row's `items-start`: the
-            text block has to begin level with the top of the poster, but a lone
-            button sitting up there beside it just looks dropped. */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            disabled={busy}
-            aria-label={`Remove ${entry.title}`}
-            title="Remove from wishlist"
-            className="grid h-8 w-8 shrink-0 place-items-center self-center rounded-full border border-line opacity-40 transition-colors hover:border-red-500/40 hover:bg-red-500/[0.08] hover:text-red-700 hover:opacity-100 disabled:opacity-20 dark:hover:text-red-300"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className="h-3.5 w-3.5"
-            >
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-        </li>
-      </ViewTransition>
-    </>
-  );
-}
-
-const VIEWS = [
-  { key: "list", label: "List", path: "M4 6h16M4 12h16M4 18h16" },
-  {
-    key: "grid",
-    label: "Grid",
-    path: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
-  },
-];
 
 const GROUPINGS = [
   { key: "added", label: "None" },
@@ -337,7 +210,6 @@ export function WishlistView({
   canSearch: boolean;
   jackettReady: boolean;
 }) {
-  const [view, setView] = useState("grid");
   const [group, setGroup] = useState("added");
   // Which entry has its release search open. Held here rather than in the row
   // because the dialog belongs to the page, not to the tile that opened it —
@@ -560,39 +432,33 @@ export function WishlistView({
                     they are controls, and the list below has no header of its
                     own to hang controls from. */}
                 {entries.length > 0 && (
-                  <>
-                    <Popover
-                      icon={ICONS.group}
-                      label="Group by"
-                      value={
-                        (GROUPINGS.find((o) => o.key === group) ?? GROUPINGS[0])
-                          .label
-                      }
-                    >
-                      {(close) => (
-                        <div className="py-1">
-                          {GROUPINGS.map((option) => (
-                            <MenuItem
-                              key={option.key}
-                              active={option.key === group}
-                              onClick={() => {
-                                setGroup(option.key);
-                                close();
-                              }}
-                            >
-                              {option.label}
-                            </MenuItem>
-                          ))}
-                        </div>
-                      )}
-                    </Popover>
-
-                    <BarSegments
-                      value={view}
-                      onChange={(next: string) => setView(next)}
-                      options={VIEWS}
-                    />
-                  </>
+                  <Popover
+                    icon={ICONS.group}
+                    label="Group by"
+                    value={
+                      (GROUPINGS.find((o) => o.key === group) ?? GROUPINGS[0])
+                        .label
+                    }
+                    // The bar's last slot, so the fill follows its rounded end.
+                    buttonClassName="rounded-r-full"
+                  >
+                    {(close) => (
+                      <div className="py-1">
+                        {GROUPINGS.map((option) => (
+                          <MenuItem
+                            key={option.key}
+                            active={option.key === group}
+                            onClick={() => {
+                              setGroup(option.key);
+                              close();
+                            }}
+                          >
+                            {option.label}
+                          </MenuItem>
+                        ))}
+                      </div>
+                    )}
+                  </Popover>
                 )}
               </Bar>
             </form>
@@ -731,34 +597,18 @@ export function WishlistView({
                   </div>
                 )}
 
-                {view === "grid" ? (
-                  <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
-                    {section.entries.map((entry, n) => (
-                      <Tile
-                        key={entry.tmdbId}
-                        entry={entry}
-                        index={n}
-                        busy={pending}
-                        onFind={() => setFinding(entry)}
-                        onRemove={() => remove(entry.tmdbId)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <ul className="flex flex-col">
-                    {section.entries.map((entry, n) => (
-                      <Entry
-                        key={entry.tmdbId}
-                        entry={entry}
-                        index={n}
-                        ruled={n > 0}
-                        busy={pending}
-                        onFind={() => setFinding(entry)}
-                        onRemove={() => remove(entry.tmdbId)}
-                      />
-                    ))}
-                  </ul>
-                )}
+                <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
+                  {section.entries.map((entry, n) => (
+                    <Tile
+                      key={entry.tmdbId}
+                      entry={entry}
+                      index={n}
+                      busy={pending}
+                      onFind={() => setFinding(entry)}
+                      onRemove={() => remove(entry.tmdbId)}
+                    />
+                  ))}
+                </div>
               </section>
             </Fragment>
           ))}

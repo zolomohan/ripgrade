@@ -282,6 +282,7 @@ export function Popover({
   value,
   badge,
   width = "w-64",
+  buttonClassName = "",
   children,
 }: {
   icon: string;
@@ -289,6 +290,8 @@ export function Popover({
   value?: string;
   badge?: number;
   width?: string;
+  /** For the trigger — a control at the bar's end needs its rounded cap. */
+  buttonClassName?: string;
   children: (close: () => void) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -325,7 +328,7 @@ export function Popover({
         // The fill runs the bar's full depth, edge to edge of its own slot.
         className={`flex items-center gap-2 self-stretch px-3.5 text-sm transition-colors ${
           open || badge ? "bg-surface-strong" : "hover:bg-surface-strong"
-        }`}
+        } ${buttonClassName}`}
       >
         <svg
           viewBox="0 0 24 24"
