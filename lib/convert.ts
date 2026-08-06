@@ -45,6 +45,17 @@ export function backupBytes(filePath: string): number | undefined {
 }
 
 /**
+ * Whether the film is where the library says it is.
+ *
+ * `backupBytes` cannot tell "there is no backup beside it" from "the drive it
+ * lives on is not plugged in" — both are a stat that throws. This separates
+ * them, so a page can say the drive is away instead of quietly describing a
+ * converted film as one that was never converted and offering to read frames
+ * it cannot reach.
+ */
+export const filePresent = (filePath: string) => existsSync(filePath);
+
+/**
  * Throws away the pre-conversion original.
  *
  * The one genuinely irreversible action here. Everything else this module does
@@ -402,7 +413,6 @@ export function startConvert(
       });
       return;
     }
-
 
     setJob({
       ...current(),

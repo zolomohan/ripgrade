@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import { Panel } from "@/app/panel";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   beginConvert,
@@ -23,7 +23,7 @@ import {
   type ElVerdict,
   type Hdr10Static,
 } from "@/lib/derive";
-import { Modal, useClosing } from "@/app/modal";
+import { CloseButton, Modal, useClosing } from "@/app/modal";
 
 /**
  * What is inside the Dolby Vision stream, and for a Profile 7 file the one
@@ -56,23 +56,46 @@ const size = (bytes: number) =>
 // ---------------------------------------------------------------------------
 
 /**
+ * A headline, the reasoning kept for a tooltip, and a line under it only where
+ * one adds something. "Keep Profile 7" needs no elaborating: what it would cost
+ * to ignore it is measured on the meter directly below.
+ */
+type Verdict = {
+  tone: "ok" | "danger" | "neutral";
+  headline: string;
+  body?: React.ReactNode;
+  detail?: string;
+};
+
+/**
  * Stated in the same terms dovi_convert uses, so the two agree on a film. What
  * decides it for a FEL is whether the Dolby Vision grade peaks above what the
  * base layer holds — brightness the enhancement layer is reconstructing, and
  * that a conversion would therefore clip.
+ *
+ * A line to read and a paragraph to hover: the verdict is the answer, and the
+ * reasoning behind it is worth keeping but not worth reading twice.
  */
 function verdictFor(
   scan: DoviScan | undefined,
   el: ElVerdict | undefined,
   dvProfile?: number,
-) {
-  if (dvProfile !== 7) return undefined;
+): Verdict {
+  // Profile 8 is what a conversion produces, so on one of those the question
+  // this section exists to answer is already answered.
+  if (dvProfile !== 7) {
+    return {
+      tone: "neutral",
+      headline: "Nothing to convert",
+      body: "Only Profile 7 carries an enhancement layer to discard.",
+    };
+  }
 
   if (!scan || !el) {
     return {
       tone: "neutral" as const,
       headline: "Not read yet",
-      body: "Read this film's stream to find out whether its enhancement layer carries picture data.",
+      body: "Read the stream to see what its enhancement layer carries.",
     };
   }
 
@@ -80,15 +103,17 @@ function verdictFor(
     return {
       tone: "ok" as const,
       headline: "Safe to convert",
-      body: "This is a minimum enhancement layer — it carries no picture data. Discarding it loses nothing.",
+      detail:
+        "This is a minimum enhancement layer — it carries no picture data, so discarding it loses nothing.",
     };
   }
 
   if (el.kind === "complex-fel") {
     return {
       tone: "danger" as const,
-      headline: "Keep Profile 7 — converting would clip the highlights",
-      body: "The enhancement layer is reconstructing brightness the base layer does not hold. Discarding it clips those highlights, and the tone mapping below them was authored for the two layers combined.",
+      headline: "Keep Profile 7",
+      detail:
+        "The enhancement layer is reconstructing brightness the base layer does not hold. Discarding it clips those highlights, and the tone mapping below them was authored for the two layers combined.",
     };
   }
 
@@ -97,26 +122,41 @@ function verdictFor(
       ? {
           tone: "neutral" as const,
           headline: "No brightness expansion so far",
-          body: `The grade stays inside the base layer across the ${count(scan.frames)} frames read. A sample only proves what it saw, though — read every frame to settle it.`,
+          body: "Read every frame to settle it.",
+          detail: `The grade stays inside the base layer across the ${count(scan.frames)} frames read, but a sample only proves what it saw.`,
         }
       : {
           tone: "ok" as const,
           headline: "Safe to convert",
-          body: "The enhancement layer carries data, but the grade stays inside the base layer — it refines the picture rather than reconstructing brightness. Converting costs that refinement and nothing structural.",
+          detail:
+            "The enhancement layer carries data, but it refines the picture rather than reconstructing brightness. Converting costs that refinement and nothing structural.",
         };
   }
 
   return {
     tone: "neutral" as const,
     headline: "Enhancement layer type unknown",
-    body: "dovi_tool reported no EL type for this stream, so there is nothing to say about what a conversion would cost.",
+    body: "dovi_tool reported no EL type for this stream.",
+    detail:
+      "Without an EL type there is nothing to say about what a conversion would cost.",
   };
 }
 
-const TONES = {
-  ok: "border-emerald-500/40 bg-emerald-500/[0.06] text-emerald-700 dark:text-emerald-300",
-  danger: "border-red-500/40 bg-red-500/[0.06] text-red-700 dark:text-red-300",
-  neutral: "border-line bg-surface-strong",
+/** One shape for every button in the console, so a row of them lines up. */
+const BUTTON = {
+  primary:
+    "shrink-0 rounded-control bg-foreground px-3 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40",
+  secondary:
+    "shrink-0 rounded-control border border-line px-3 py-1.5 text-sm transition-colors hover:bg-surface-strong disabled:opacity-40",
+  // Its colour arrives on hover, when you are reaching for it: sitting in the
+  // row it is one button among several, and the dialog behind it is where the
+  // red belongs.
+  danger:
+    "shrink-0 rounded-control border border-line px-3 py-1.5 text-sm transition-colors hover:border-red-500/40 hover:bg-red-500/[0.08] hover:text-red-700 disabled:opacity-40 dark:hover:text-red-300",
+  // Words rather than a box: what it offers is an alternative to the button
+  // beside it, and a second bordered button would read as a second decision of
+  // equal weight. The app's own link treatment, underline arriving on hover.
+  text: "shrink-0 px-1 py-1.5 text-sm underline decoration-transparent underline-offset-4 opacity-60 transition hover:decoration-current hover:opacity-100 disabled:opacity-30",
 };
 
 /**
@@ -149,7 +189,6 @@ function ConfirmModal({
   onCancel: () => void;
   children: React.ReactNode;
 }) {
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Not while the work is already under way — there is nothing to take back
@@ -169,7 +208,13 @@ function ConfirmModal({
       panelClassName="flex w-full max-w-md flex-col gap-3 rounded-card border border-line bg-background p-6 shadow-2xl"
     >
       <>
-        <h2 className="text-base font-semibold">{title}</h2>
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="min-w-0 text-base font-semibold">{title}</h2>
+          {/* Cancel below says the same thing, but the circle is where the
+              hand goes on every other dialog here — and it goes grey with the
+              rest once there is nothing left to take back. */}
+          <CloseButton onClick={onCancel} disabled={busy} />
+        </div>
         <div className="text-sm opacity-70">{children}</div>
 
         <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
@@ -200,14 +245,103 @@ function ConfirmModal({
   );
 }
 
+type Recipe = {
+  id: string;
+  title: string;
+  blurb: string;
+  /** How to get the tool, where it is not something you would already have. */
+  install?: string;
+  command: string;
+};
+
+/**
+ * The same conversion, written out to run yourself.
+ *
+ * It was a fold at the foot of the card, which put a screen of shell script
+ * between the verdict and everything below it for anyone who opened it and
+ * left it open. As a dialog it is asked for and then put away, and the card
+ * keeps its height either way — and the commands get the width they want
+ * rather than the width the card had left over.
+ */
+function RecipesModal({
+  open,
+  onClose,
+  title,
+  lede,
+  recipes,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  lede: string;
+  recipes: Recipe[];
+}) {
+  // Which command was last copied, so the button can say so. Lives here
+  // because nothing outside this dialog has ever needed to know.
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function copy(recipe: Recipe) {
+    await navigator.clipboard.writeText(recipe.command);
+    setCopied(recipe.id);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      label={title}
+      panelClassName="flex max-h-[min(85vh,46rem)] w-full max-w-2xl flex-col overflow-hidden rounded-card border border-line bg-background shadow-2xl"
+    >
+      <>
+        <header className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6 pb-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <p className="mt-1 text-sm opacity-60">{lede}</p>
+          </div>
+          <CloseButton onClick={onClose} />
+        </header>
+
+        <div className="flex flex-col gap-6 overflow-y-auto px-6 pb-6">
+          {recipes.map((recipe) => (
+            <div key={recipe.id} className="flex flex-col gap-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-sm font-medium">{recipe.title}</h3>
+                <button
+                  type="button"
+                  onClick={() => copy(recipe)}
+                  className="shrink-0 rounded-control border border-line px-2.5 py-1 text-xs hover:bg-surface-strong"
+                >
+                  {copied === recipe.id ? "✓ Copied" : "Copy"}
+                </button>
+              </div>
+              <p className="text-xs opacity-45">{recipe.blurb}</p>
+              <pre className="overflow-x-auto rounded-control border border-line bg-surface-strong p-3 font-mono text-[11px] leading-relaxed">
+                {recipe.command}
+              </pre>
+              {recipe.install && (
+                <p className="text-xs opacity-40">
+                  Not installed?{" "}
+                  <code className="font-mono">{recipe.install}</code>
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </>
+    </Modal>
+  );
+}
+
 /**
  * One ratio against a limit, so a meter rather than a chart: the grade's peak
  * measured against the ceiling the base layer declares for itself. Everything
  * past the marker is brightness that only exists in the enhancement layer.
  *
- * Both fills clear contrast and the lightness band in light and dark alike, so
- * the mode does not change them. The state is never carried by colour alone —
- * the verdict above says it, and the caption below repeats it in nits.
+ * Red only when the grade overruns the base layer; the safe fill is plain ink,
+ * because a bar that clears its limit has nothing to announce. The state is
+ * never carried by colour alone — the verdict above says it, and the caption
+ * below repeats it in nits.
  */
 function BrightnessMeter({ el }: { el: ElVerdict }) {
   if (el.elPeak === undefined) return null;
@@ -233,7 +367,7 @@ function BrightnessMeter({ el }: { el: ElVerdict }) {
         <div className="absolute inset-0 rounded-r-[4px] bg-foreground/[0.08]" />
         <div
           className={`absolute inset-y-0 left-0 rounded-r-[4px] ${
-            over ? "bg-red-600" : "bg-emerald-600"
+            over ? "bg-red-600" : "bg-foreground/55"
           }`}
           style={{ width: pct(el.elPeak) }}
         />
@@ -245,13 +379,18 @@ function BrightnessMeter({ el }: { el: ElVerdict }) {
         />
       </div>
 
-      <p className="text-xs opacity-60">
+      <p
+        className="text-xs opacity-60"
+        title={
+          over
+            ? "Those nits exist only in the enhancement layer — a conversion clips them."
+            : "The enhancement layer adds no brightness the base layer cannot reach."
+        }
+      >
         Base layer holds {nits(el.blPeak)} nits
         {el.blPeakAssumed && " (assumed)"} ·{" "}
         <span className="opacity-100">
-          {over
-            ? `${count(difference)} nits above it, carried only by the enhancement layer`
-            : `the grade stays ${count(difference)} nits inside it`}
+          {count(difference)} nits {over ? "above it" : "inside it"}
         </span>
       </p>
     </figure>
@@ -444,6 +583,7 @@ export function DolbyVision({
   scan,
   hdr10,
   backupBytes,
+  present = true,
 }: {
   moviePath: string;
   fileName: string;
@@ -454,6 +594,12 @@ export function DolbyVision({
   hdr10?: Hdr10Static;
   /** Size of the pre-conversion original, when one is still sitting beside it. */
   backupBytes?: number;
+  /**
+   * Whether the film itself could be found. False means its drive is away —
+   * which is also why `backupBytes` is undefined, so without this the card
+   * would read an unreachable converted film as an unconverted one.
+   */
+  present?: boolean;
 }) {
   const { jobs, apply, subscribe } = useJobs();
   const { dovi: job, convert } = jobs;
@@ -466,8 +612,18 @@ export function DolbyVision({
   const deleteMounted = useClosing(confirmingDelete);
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [showRecipes, setShowRecipes] = useState(false);
   const router = useRouter();
+
+  // A conversion that has not reached the conversion yet: the full pass is
+  // running as its first step. Held in a ref as well as in state because the
+  // job subscription has to see it without resubscribing every time it moves.
+  const [readingToConvert, setReadingToConvert] = useState(false);
+  const wantsConvert = useRef(false);
+  const intend = (want: boolean) => {
+    wantsConvert.current = want;
+    setReadingToConvert(want);
+  };
 
   // Both jobs arrive over the job stream, which also covers a job that
   // outlived the page that started it: the connect-time snapshot already
@@ -500,13 +656,39 @@ export function DolbyVision({
           if (next.dovi.status === "done") {
             // The reading is stored against the probe; this is what folds it
             // into the derived row the page is rendered from.
-            void refreshAfterDoviScan().then(() => router.refresh());
-          } else if (next.dovi.status === "error") {
-            setError(next.dovi.error ?? "Full pass failed");
+            void refreshAfterDoviScan().then(async () => {
+              router.refresh();
+              if (!wantsConvert.current) return;
+              // The second half of a conversion that began with a read. The
+              // server re-checks the verdict against what the pass just wrote,
+              // so a film that turns out to be a complex FEL is refused here
+              // rather than converted on a promise made by a sample.
+              intend(false);
+              const result = await beginConvert(moviePath);
+              if (!result.ok) {
+                setError(result.error);
+                return;
+              }
+              apply({
+                convert: {
+                  status: "running",
+                  path: moviePath,
+                  step: 1,
+                  steps: 3,
+                },
+              });
+            });
+          } else {
+            // Failed, or cancelled: either way the conversion it was the first
+            // step of is off.
+            intend(false);
+            if (next.dovi.status === "error") {
+              setError(next.dovi.error ?? "Full pass failed");
+            }
           }
         }
       }),
-    [subscribe, moviePath, router],
+    [subscribe, moviePath, router, apply],
   );
 
   async function start() {
@@ -516,7 +698,9 @@ export function DolbyVision({
       setError(result.error);
       return;
     }
-    apply({ dovi: { status: "running", path: moviePath, percent: 0, frames: 0 } });
+    apply({
+      dovi: { status: "running", path: moviePath, percent: 0, frames: 0 },
+    });
   }
 
   const el = classifyEnhancementLayer(scan, hdr10);
@@ -529,7 +713,7 @@ export function DolbyVision({
   const dir = moviePath.replace(/\/[^/]+$/, "");
   const out = fileName.replace(/\.[^.]+$/, "");
 
-  const recipes = [
+  const recipes: Recipe[] = [
     {
       id: "dovi_convert",
       title: "With dovi_convert",
@@ -537,7 +721,7 @@ export function DolbyVision({
       // against converting: the tool runs the same brightness check and will
       // refuse on its own, which is a second opinion worth having.
       blurb:
-        "Runs the same brightness check itself and refuses a complex FEL unless you add --force. Backs up the enhancement layer first; -o writes elsewhere.",
+        "Keeps the original, and refuses a complex FEL unless you add --force.",
       install: "brew install dovi_convert",
       command: [`cd ${q(dir)}`, ``, `dovi_convert convert ${q(fileName)}`].join(
         "\n",
@@ -546,8 +730,7 @@ export function DolbyVision({
     {
       id: "dovi_tool",
       title: "By hand, with dovi_tool",
-      blurb:
-        "The same two steps, run yourself. Writes a new file beside the original — nothing is overwritten.",
+      blurb: "The same two steps, run yourself. Nothing is overwritten.",
       command: [
         `cd ${q(dir)}`,
         ``,
@@ -561,15 +744,39 @@ export function DolbyVision({
     },
   ];
 
+  /**
+   * Reads every frame first, when every frame has not been read.
+   *
+   * A conversion decided on a sample is a conversion decided on the frames the
+   * sample happened to cover, so the pass is the first step of converting
+   * rather than a chore to remember beforehand. The subscription above picks it
+   * up when it finishes and starts the conversion itself.
+   */
   async function runConvert() {
     setError(null);
     setConfirming(false);
+
+    if (scan?.depth !== "full") {
+      const started = await beginFullDoviScan(moviePath);
+      if (!started.ok) {
+        setError(started.error);
+        return;
+      }
+      intend(true);
+      apply({
+        dovi: { status: "running", path: moviePath, percent: 0, frames: 0 },
+      });
+      return;
+    }
+
     const result = await beginConvert(moviePath);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    apply({ convert: { status: "running", path: moviePath, step: 1, steps: 3 } });
+    apply({
+      convert: { status: "running", path: moviePath, step: 1, steps: 3 },
+    });
   }
 
   async function runRestore() {
@@ -598,11 +805,149 @@ export function DolbyVision({
     router.refresh();
   }
 
-  async function copy(id: string, command: string) {
-    await navigator.clipboard.writeText(command);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
-  }
+  // -------------------------------------------------------------------------
+  // What the console says, and what it offers to do about it
+  // -------------------------------------------------------------------------
+
+  const converted = backupBytes !== undefined;
+  const justConverted =
+    convert?.status === "done" && convert.path === moviePath;
+  /**
+   * Whether there is an original to go back to. The filesystem is the authority
+   * whenever it can be read; only with the drive away does the conversion this
+   * server ran stand in for it, so an unplugged converted film still offers
+   * restoring rather than falling back to offering a read.
+   */
+  const hasBackup = converted || (!present && justConverted);
+  const canConvert =
+    dvProfile === 7 && el?.kind !== "complex-fel" && !hasBackup;
+  /** Set only when the drive is away, so it can override every other tooltip. */
+  const offline = present ? undefined : "Drive not connected";
+  // Reading and converting are one action now, so they are one busy state: the
+  // pass that precedes a conversion is a step of it, not a separate job the
+  // card has to narrate on its own.
+  const busy = converting || running;
+  const convertingNow = converting || readingToConvert;
+
+  /**
+   * The one sentence at the top of the console. Whatever is happening to the
+   * file outranks the verdict about it — mid-conversion, and afterwards while
+   * the original is still recoverable, the state of the file *is* the answer
+   * to "is this safe".
+   */
+  const banner: Verdict = convertingNow
+    ? {
+        tone: "neutral",
+        headline: "Converting to Profile 8.1…",
+        body: "Cancelling never touches the original.",
+        detail:
+          "Every frame is read first, then the whole file is rewritten, so it takes a while. Leaving this page will not stop it.",
+      }
+    : hasBackup
+      ? {
+          tone: "ok",
+          headline: "Converted to Profile 8.1",
+          body: (
+            <>
+              Original kept as{" "}
+              <code className="font-mono">
+                {fileName}
+                {BACKUP_SUFFIX}
+              </code>
+              {backupBytes !== undefined && <>, {size(backupBytes)}</>}.
+            </>
+          ),
+          detail:
+            justConverted && convert?.summary
+              ? `${convert.summary} of enhancement layer discarded${convert.check ? `, ${convert.check}` : ""}.`
+              : undefined,
+        }
+      : verdict;
+
+  const showMeter = Boolean(el && el.kind !== "mel");
+
+  /**
+   * The way out of the card's own offer, kept beside it.
+   *
+   * Only a Profile 7 file has anything to convert, so only there is there a
+   * recipe worth printing. On a film this page is advising against converting
+   * it is not an alternative but a warning stepped past deliberately, and it
+   * says so.
+   */
+  const manual = dvProfile === 7 && (
+    <button
+      type="button"
+      onClick={() => setShowRecipes(true)}
+      title="Shows the commands. Nothing runs until you run it."
+      className={BUTTON.text}
+    >
+      {el?.kind === "complex-fel"
+        ? "Convert it anyway, by hand"
+        : "Run it yourself instead"}
+    </button>
+  );
+
+  /**
+   * One decision per state, so the card has one thing to press: convert while
+   * there is something to convert, put it back while the original is still
+   * there, and read the stream when neither applies.
+   *
+   * Every one of them reaches the file itself, so with the drive away they all
+   * go grey together. Still shown rather than hidden: an unplugged drive is a
+   * temporary state, and a card that drops its buttons reads as one that never
+   * had any.
+   */
+  const actions = hasBackup ? (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirmingDelete(true)}
+        disabled={!present}
+        title={
+          offline ??
+          `Frees ${backupBytes !== undefined ? size(backupBytes) : "the space"} — the one step here that cannot be undone.`
+        }
+        className={BUTTON.danger}
+      >
+        Delete backup
+      </button>
+      <button
+        type="button"
+        onClick={() => setConfirmingRestore(true)}
+        disabled={!present}
+        title={
+          offline ??
+          "Puts the Profile 7 file back under its own name. You can always convert again."
+        }
+        className={BUTTON.secondary}
+      >
+        Restore original
+      </button>
+    </>
+  ) : canConvert ? (
+    <button
+      type="button"
+      onClick={() => setConfirming(true)}
+      disabled={!present}
+      title={offline ?? "Reads every frame first, then rewrites the file."}
+      className={BUTTON.primary}
+    >
+      Convert to Profile 8.1
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={start}
+      disabled={!present}
+      title={
+        offline ??
+        "Parses one RPU per frame — slower, but it measures the real peak."
+      }
+      className={scan ? BUTTON.secondary : BUTTON.primary}
+    >
+      {scan?.depth === "full" ? "Read again" : "Read every frame"}
+    </button>
+  );
 
   return (
     // Open when there is something to answer — a verdict here is the reason
@@ -618,327 +963,224 @@ export function DolbyVision({
               .join(" · ")
           : "Not read yet"
       }
-      open={verdict?.tone === "danger"}
+      open={verdict.tone === "danger"}
     >
-      <div className="flex flex-col gap-5">
-        {verdict && (
-          <div className="flex flex-col gap-4">
-            <div
-              className={`rounded-control border p-4 ${TONES[verdict.tone]}`}
-            >
-              <p className="text-sm font-medium">{verdict.headline}</p>
-              <p className="mt-1 text-sm opacity-80">{verdict.body}</p>
-            </div>
-            {/* The evidence, directly beneath the claim but outside the tinted
-                box: the fill carries the state, the numbers stay in plain ink
-                where they are legible. Only a FEL needs it — a MEL is safe
-                whatever the brightness figures say. */}
-            {el && el.kind !== "mel" && <BrightnessMeter el={el} />}
-          </div>
-        )}
+      <div className="flex flex-col gap-10">
+        {/* One console, in bands parted by the hairline the rest of the app
+            parts its sections with: the verdict, the measurement it rests on,
+            and every action that follows from it. The answer and the button
+            that acts on the answer can no longer end up at opposite ends of a
+            long section.
 
-        {scan ? (
-          <Metadata scan={scan} hdr10={hdr10} />
-        ) : (
-          <p className="text-sm opacity-50">
-            This film&rsquo;s RPU has not been read yet.
-          </p>
-        )}
-
-        {/* Shown whatever the film's profile now is: after a conversion it is
-            Profile 8, and that is exactly when going back matters. */}
-        {backupBytes !== undefined && !converting && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-line p-4">
-            <p className="text-xs opacity-45">
-              This file was converted. The original is still here as{" "}
-              <code className="font-mono">
-                {fileName}
-                {BACKUP_SUFFIX}
-              </code>
-              , holding {size(backupBytes)}.
-            </p>
-            <div className="flex shrink-0 items-center gap-2">
-              {/* Same shape as its neighbour so the two read as a pair, but
-                  carrying its colour, and only warming up on hover — the
-                  dialog behind it is where the red belongs. */}
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(true)}
-                className="rounded-control border border-line px-3 py-1.5 text-sm text-red-700 transition-colors hover:border-red-500/40 hover:bg-red-500/[0.08] dark:text-red-300"
-              >
-                Delete backup
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmingRestore(true)}
-                className="rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong"
-              >
-                Restore original
-              </button>
+            Rounder than a card: at this size the corner is what tells you the
+            bands inside are one object rather than a stack of them. */}
+        <div className="overflow-hidden rounded-3xl border border-line">
+          {/* The verdict and the button that acts on it, on one line. */}
+          <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 py-5">
+            {/* The reasoning hangs off the sentence as a tooltip: it is worth
+                keeping and not worth reading every time the page opens. */}
+            <div className="flex flex-col gap-0.5" title={banner.detail}>
+              <p className="text-sm font-medium">{banner.headline}</p>
+              {banner.body && (
+                <p className="text-sm opacity-60">{banner.body}</p>
+              )}
             </div>
 
-            {restoreMounted && (
-              <ConfirmModal
-                open={confirmingRestore}
-                title="Put the original Profile 7 file back?"
-                confirmLabel={restoring ? "Restoring…" : "Restore original"}
-                busy={restoring}
-                onConfirm={runRestore}
-                onCancel={() => setConfirmingRestore(false)}
-              >
-                The converted Profile 8.1 file is deleted and{" "}
-                <code className="font-mono text-xs">
-                  {fileName}
-                  {BACKUP_SUFFIX}
-                </code>{" "}
-                takes its place under the original name. You can always convert
-                again — nothing about it is lost by going back.
-              </ConfirmModal>
-            )}
-
-            {deleteMounted && (
-              <ConfirmModal
-                open={confirmingDelete}
-                title="Delete the original Profile 7 file?"
-                confirmLabel={
-                  restoring ? "Deleting…" : `Delete ${size(backupBytes)}`
-                }
-                tone="danger"
-                busy={restoring}
-                onConfirm={runDeleteBackup}
-                onCancel={() => setConfirmingDelete(false)}
-              >
-                Frees {size(backupBytes)}, and the Profile 8.1 file becomes the
-                only copy. This is the one step here that cannot be undone —
-                after it, going back to Profile 7 means ripping the disc again.
-              </ConfirmModal>
+            {/* Beside the verdict while there is one button and a short
+                sentence to sit next to. A restorable film has neither — two
+                buttons, and a line carrying the backup's full filename — so
+                there it takes a band of its own below. */}
+            {!busy && !hasBackup && (
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {/* Leftmost, so the row reads as the alternative and then the
+                    thing itself, and the primary button still ends the line. */}
+                {manual}
+                {actions}
+              </div>
             )}
           </div>
-        )}
 
-        {dvProfile === 7 &&
-          el?.kind !== "complex-fel" &&
-          backupBytes === undefined && (
-            <div className="flex flex-col gap-3 rounded-control border border-line p-4">
-              {converting ? (
-                <>
-                  <div className="flex items-baseline justify-between gap-3">
-                    <p className="text-sm font-medium">
-                      Converting to Profile 8.1…
-                    </p>
-                    <div className="flex items-baseline gap-3">
-                      <p className="text-xs tabular-nums opacity-45">
-                        {convert?.percent !== undefined &&
-                          `${Math.round(convert.percent)}% · `}
-                        step {convert?.step ?? 1} of {convert?.steps ?? 4}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={async () => apply({ convert: await stopConvert() })}
-                        className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-xs opacity-45">
-                    {convert?.label ?? "Working"} — this rewrites the whole
-                    file, so it takes a while. Leaving this page will not stop
-                    it.
-                  </p>
-                  <div className="h-1 overflow-hidden rounded-full bg-surface-strong">
-                    <div
-                      className="h-full rounded-full bg-foreground/70 transition-[width] duration-500"
-                      style={{
-                        // Bytes written when they can be counted; otherwise the
-                        // step is the only thing there is to show.
-                        width: `${
-                          convert?.percent ??
-                          ((convert?.step ?? 1) / (convert?.steps ?? 3)) * 100
-                        }%`,
-                      }}
-                    />
-                  </div>
-                </>
-              ) : convert?.status === "done" && convert.path === moviePath ? (
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm text-emerald-600 dark:text-emerald-400">
-                    Converted to Profile 8.1
-                    {convert.summary &&
-                      ` — ${convert.summary} of enhancement layer discarded`}
-                    {convert.check && `, ${convert.check}`}.
-                  </p>
-                  <p className="text-xs opacity-45">
-                    The original is beside it as{" "}
-                    <code className="font-mono">
-                      {fileName}
-                      {BACKUP_SUFFIX}
-                    </code>
-                    .
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs opacity-45">
-                    {el?.provisional
-                      ? "Read every frame before converting — a sample cannot rule out brightness expansion later in the film."
-                      : "Hand this to dovi_convert, which keeps the original and verifies the result."}
+          {!busy && hasBackup && (
+            <div className="card-band flex flex-wrap items-center justify-end gap-2 px-4 py-5">
+              {manual}
+              {actions}
+            </div>
+          )}
+
+          {/* The evidence, directly beneath the claim: only a FEL needs it — a
+              MEL is safe whatever the brightness figures say. */}
+          {showMeter && el && (
+            <div className="card-band px-4 py-5">
+              <BrightnessMeter el={el} />
+            </div>
+          )}
+
+          {busy && (
+            // One progress band for both jobs. Which of the two is running is
+            // a detail of how the work is done; what is being waited for is
+            // the same thing throughout.
+            <div className="card-band flex flex-col gap-2 px-4 py-5">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-sm">
+                  {converting
+                    ? (convert?.label ?? "Working")
+                    : readingToConvert
+                      ? "Reading every frame before converting"
+                      : "Reading every frame"}
+                </p>
+                <div className="flex items-baseline gap-3">
+                  <p className="text-xs tabular-nums opacity-45">
+                    {converting
+                      ? `${convert?.percent !== undefined ? `${Math.round(convert.percent)}% · ` : ""}step ${convert?.step ?? 1} of ${convert?.steps ?? 3}`
+                      : `${Math.round(job?.percent ?? 0)}% · ${count(job?.frames ?? 0)} frames`}
                   </p>
                   <button
                     type="button"
-                    onClick={() => setConfirming(true)}
-                    // A full enhancement layer has to be read in full first: the
-                    // verdict that makes it safe rests on frames nobody has read.
-                    disabled={running || el?.provisional}
-                    title={
-                      el?.provisional
-                        ? "Needs a full pass first"
-                        : "Convert to Profile 8.1"
-                    }
-                    className="shrink-0 rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40"
+                    onClick={async () => {
+                      // Cancelling the read cancels the conversion it was the
+                      // first step of.
+                      intend(false);
+                      if (converting) {
+                        apply({ convert: await stopConvert() });
+                      } else {
+                        apply({ dovi: await stopFullDoviScan() });
+                      }
+                    }}
+                    className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
                   >
-                    Convert to Profile 8.1
+                    Cancel
                   </button>
-
-                  {convertMounted && (
-                    <ConfirmModal
-                      open={confirming}
-                      title="Rewrite this file as Profile 8.1?"
-                      confirmLabel="Convert"
-                      onConfirm={runConvert}
-                      onCancel={() => setConfirming(false)}
-                    >
-                      <ul className="list-disc space-y-1.5 pl-5">
-                        <li>
-                          The converted file takes this one&rsquo;s place; the
-                          original is renamed to{" "}
-                          <code className="font-mono text-xs">
-                            {fileName}
-                            {BACKUP_SUFFIX}
-                          </code>{" "}
-                          and left beside it, so it needs room for both.
-                        </li>
-                        <li>
-                          Any secondary video track — picture-in-picture
-                          commentary, multi-angle — is dropped. Audio and
-                          subtitles are kept.
-                        </li>
-                        <li>
-                          It rewrites the whole file, so it takes a while. You
-                          can cancel at any point without touching the original.
-                        </li>
-                      </ul>
-                    </ConfirmModal>
-                  )}
                 </div>
-              )}
+              </div>
+              <div className="h-1 overflow-hidden rounded-full bg-surface-strong">
+                <div
+                  className="h-full rounded-full bg-foreground/70 transition-[width] duration-500"
+                  style={{
+                    // Bytes written when they can be counted; otherwise the
+                    // step is the only thing there is to show.
+                    width: `${
+                      converting
+                        ? (convert?.percent ??
+                          ((convert?.step ?? 1) / (convert?.steps ?? 3)) * 100)
+                        : (job?.percent ?? 0)
+                    }%`,
+                  }}
+                />
+              </div>
             </div>
           )}
 
-        {dvProfile === 7 && (
-          <details className="group rounded-control border border-line">
-            <summary className="cursor-pointer list-none px-4 py-2.5 text-sm select-none hover:bg-surface-strong">
-              <span className="mr-2 inline-block opacity-40 transition-transform group-open:rotate-90">
-                ›
-              </span>
-              {el?.kind === "complex-fel"
-                ? "Convert it anyway, by hand"
-                : "Run it yourself instead"}
-            </summary>
-            <div className="flex flex-col gap-6 border-t border-line p-4">
-              {recipes.map((recipe) => (
-                <div key={recipe.id} className="flex flex-col gap-2">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="text-sm font-medium">{recipe.title}</h3>
-                    <button
-                      type="button"
-                      onClick={() => copy(recipe.id, recipe.command)}
-                      className="shrink-0 rounded-control border border-line px-2.5 py-1 text-xs hover:bg-surface-strong"
-                    >
-                      {copied === recipe.id ? "✓ Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <p className="text-xs opacity-45">{recipe.blurb}</p>
-                  <pre className="overflow-x-auto rounded-control border border-line bg-surface-strong p-3 font-mono text-[11px] leading-relaxed">
-                    {recipe.command}
-                  </pre>
-                  {recipe.install && (
-                    <p className="text-xs opacity-40">
-                      Not installed?{" "}
-                      <code className="font-mono">{recipe.install}</code>
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
-
-        {/* How much of the film these numbers describe, next to the control
-            that changes it. */}
-        <div className="flex flex-col gap-2 pt-2">
-          <div
-            aria-hidden
-            className="mb-2 h-px bg-gradient-to-r from-transparent via-line-strong to-transparent"
-          />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs opacity-45">
-              {running
-                ? // What the file said before this pass is no longer the point;
-                  // where the pass has got to is.
-                  `Reading every frame — ${Math.round(job?.percent ?? 0)}% · ${count(job?.frames ?? 0)} frames`
-                : !scan
-                  ? "Not read yet."
-                  : scan.depth === "full"
-                    ? `Read in full — ${count(scan.frames)} frames${cover ? `, ${cover.text}` : ""}.`
-                    : `Read from the first ${count(scan.frames)} frames. A full pass measures the real peak and confirms every frame carries an RPU.`}
-            </p>
-            <div className="flex shrink-0 items-center gap-3">
-              {running && (
-                <button
-                  type="button"
-                  onClick={async () => apply({ dovi: await stopFullDoviScan() })}
-                  className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
-                >
-                  Cancel
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={start}
-                disabled={running || converting}
-                className="rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40"
-              >
-                {running
-                  ? "Reading every frame…"
-                  : scan?.depth === "full"
-                    ? "Read again"
-                    : "Read every frame"}
-              </button>
-            </div>
-          </div>
-
+          {/* Its own band rather than a line under the verdict: a film whose
+              RPU stops partway is a different problem from the one the verdict
+              is answering. */}
           {cover && !cover.ok && (
-            <p className="text-sm text-amber-600 dark:text-amber-400">
-              {cover.text}
-            </p>
-          )}
-
-          {running && (
-            <div className="h-1 overflow-hidden rounded-full bg-surface-strong">
-              <div
-                className="h-full rounded-full bg-foreground/70 transition-[width] duration-300"
-                style={{ width: `${job?.percent ?? 0}%` }}
-              />
+            <div className="card-band px-4 py-5">
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                {cover.text}
+              </p>
             </div>
           )}
 
           {error && (
-            <p className="font-mono text-sm text-red-600 dark:text-red-400">
-              {error}
-            </p>
+            <div className="card-band px-4 py-5">
+              <p className="font-mono text-sm text-red-600 dark:text-red-400">
+                {error}
+              </p>
+            </div>
           )}
         </div>
+
+        {scan && <Metadata scan={scan} hdr10={hdr10} />}
+
+        {/* No mount gate: it reads props and runs nothing, so `Modal` playing
+            itself out is the whole of what has to be kept alive. */}
+        <RecipesModal
+          open={showRecipes}
+          onClose={() => setShowRecipes(false)}
+          title={
+            el?.kind === "complex-fel"
+              ? "Convert it anyway, by hand"
+              : "Run it yourself"
+          }
+          lede={
+            el?.kind === "complex-fel"
+              ? "This film is the one case the card advises against converting — the enhancement layer is holding brightness the base layer cannot. The commands are here anyway."
+              : "The same conversion, on your own machine. Nothing here touches the file until you run it."
+          }
+          recipes={recipes}
+        />
+
+        {convertMounted && (
+          <ConfirmModal
+            open={confirming}
+            title="Rewrite this file as Profile 8.1?"
+            confirmLabel="Convert"
+            onConfirm={runConvert}
+            onCancel={() => setConfirming(false)}
+          >
+            <ul className="list-disc space-y-1.5 pl-5">
+              {scan?.depth !== "full" && (
+                <li>
+                  Every frame is read first, to be sure the enhancement layer
+                  expands no brightness later in the film.
+                </li>
+              )}
+              <li>
+                The original is renamed to{" "}
+                <code className="font-mono text-xs">
+                  {fileName}
+                  {BACKUP_SUFFIX}
+                </code>{" "}
+                and kept beside it, so this needs room for both.
+              </li>
+              <li>
+                Secondary video tracks are dropped. Audio and subtitles are
+                kept.
+              </li>
+              <li>
+                It rewrites the whole file. Cancelling at any point leaves the
+                original untouched.
+              </li>
+            </ul>
+          </ConfirmModal>
+        )}
+
+        {restoreMounted && (
+          <ConfirmModal
+            open={confirmingRestore}
+            title="Put the original Profile 7 file back?"
+            confirmLabel={restoring ? "Restoring…" : "Restore original"}
+            busy={restoring}
+            onConfirm={runRestore}
+            onCancel={() => setConfirmingRestore(false)}
+          >
+            The Profile 8.1 file is deleted and{" "}
+            <code className="font-mono text-xs">
+              {fileName}
+              {BACKUP_SUFFIX}
+            </code>{" "}
+            takes its place under the original name. You can always convert
+            again.
+          </ConfirmModal>
+        )}
+
+        {deleteMounted && backupBytes !== undefined && (
+          <ConfirmModal
+            open={confirmingDelete}
+            title="Delete the original Profile 7 file?"
+            confirmLabel={
+              restoring ? "Deleting…" : `Delete ${size(backupBytes)}`
+            }
+            tone="danger"
+            busy={restoring}
+            onConfirm={runDeleteBackup}
+            onCancel={() => setConfirmingDelete(false)}
+          >
+            Frees {size(backupBytes)} and leaves the Profile 8.1 file as the
+            only copy. Going back to Profile 7 after this means ripping the disc
+            again.
+          </ConfirmModal>
+        )}
       </div>
     </Panel>
   );

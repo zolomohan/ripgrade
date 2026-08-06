@@ -1271,6 +1271,30 @@ html {
 }
 
 /*
+ * The same hairline, for the bands stacked inside a card.
+ *
+ * Painted as the band's own top edge rather than as a border or a pseudo-
+ * element: a border would rule the full width edge to edge, which is the one
+ * thing this app's rules never do, and a pseudo-element would sit inside the
+ * band's padding and stop short of the card on both sides. As a background it
+ * spans the band exactly, whatever padding the band happens to carry.
+ *
+ * On the following sibling, so the first band in a card never draws one and
+ * nothing has to keep track of which band that is.
+ */
+.card-band + .card-band {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(--line-strong),
+    transparent
+  );
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  background-position: top;
+}
+
+/*
  * Placeholder blocks that hold layout while something loads.
  *
  * In the components layer rather than loose at the end of the file, so its
