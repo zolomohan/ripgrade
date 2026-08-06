@@ -1,5 +1,6 @@
 "use client";
 
+import { CONTROL_H } from "./controls";
 import { useScan } from "./scan-provider";
 
 /**
@@ -25,7 +26,9 @@ export function ScanButton() {
       type="button"
       onClick={start}
       disabled={busy}
-      className="flex shrink-0 items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40"
+      // The shelf row's height, so it sits level with the switch and the bar
+      // it shares a line with rather than floating inside it.
+      className={`flex ${CONTROL_H} shrink-0 items-center gap-2 rounded-full bg-foreground px-4 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40`}
     >
       {/* The same glass as the search field: this is the other way of looking
           for films, one that reads the drive rather than the shelf. */}

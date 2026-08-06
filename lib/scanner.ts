@@ -8,6 +8,7 @@ import { downloadMissingArtwork } from "./auto-artwork";
 import { db } from "./db";
 import { hasJackett } from "./jackett";
 import { notifyJobs } from "./job-events";
+import { startSweep } from "./upgrade-sweep";
 import { searchWishlist } from "./wishlist-search";
 import { getDoviScans, scanDovi } from "./dovi";
 import { getShows, seasonYear } from "./shows";
@@ -420,6 +421,30 @@ async function runWishlistPass(): Promise<void> {
   });
 }
 
+/**
+ * The sweep, started the moment a scan is over.
+ *
+ * A scan settles what is on the drive; the sweep settles what the outside world
+ * has that is better. The second question only becomes answerable once the
+ * first one has been — a film's score is what a release is measured against —
+ * so the two belong in that order, and asking someone to press a button for the
+ * half that cannot run first made the queue something you had to remember to
+ * fill. Opening the app scans, and now finishes the thought.
+ *
+ * Reached from both ends of a scan, including the one where the drive was not
+ * there: the sweep reads the library's stored rows and the indexers, never the
+ * drive, which is the same reason the wishlist pass runs in that case too.
+ *
+ * Nothing is awaited and nothing is returned — `startSweep` hands back the
+ * moment the job is running, it is a no-op while one already is, and it skips
+ * anything checked in the last day, so a scan on every start does not mean a
+ * full search on every start.
+ */
+function sweepAfterScan(): void {
+  if (!hasJackett()) return;
+  startSweep();
+}
+
 export function startScan(roots: string[]): ScanState {
   if (current().status === "scanning") return current();
 
@@ -495,6 +520,7 @@ export function startScan(roots: string[]): ScanState {
           error: message,
           finishedAt: Date.now(),
         });
+        sweepAfterScan();
         return;
       }
 
@@ -691,6 +717,7 @@ export function startScan(roots: string[]): ScanState {
         current: undefined,
         finishedAt: Date.now(),
       });
+      sweepAfterScan();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setState({

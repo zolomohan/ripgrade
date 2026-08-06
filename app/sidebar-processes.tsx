@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -15,7 +15,7 @@ import {
   type ProcessDetail,
   type ProcessStat,
 } from "@/app/process-details";
-import { useScan } from "@/app/scan-provider";
+import { useScan, type ScanResult } from "@/app/scan-provider";
 
 /**
  * What is happening right now, at the foot of the rail.
@@ -66,22 +66,32 @@ function Bar({ percent }: { percent: number }) {
 function Job({
   name,
   percent,
+  leaving,
   onOpen,
 }: {
   name: string;
   percent?: number;
+  /** True once the job has ended and the row is playing itself out. */
+  leaving?: boolean;
   onOpen: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`${name} — show progress`}
-      className="w-full min-w-0 text-left transition-opacity hover:opacity-70"
-    >
-      <p className="min-w-0 truncate text-[11px] font-medium">{name}</p>
-      {percent !== undefined && <Bar percent={percent} />}
-    </button>
+    // The wrapper is what animates and what collapses; the padding sits inside
+    // it rather than as a gap on the list, so the space a row takes leaves with
+    // the row instead of snapping shut after it.
+    <div className={`job-row ${leaving ? "is-leaving" : ""}`}>
+      <div>
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`${name} — show progress`}
+          className="w-full min-w-0 pb-3 text-left transition-opacity hover:opacity-70"
+        >
+          <p className="min-w-0 truncate text-[11px] font-medium">{name}</p>
+          {percent !== undefined && <Bar percent={percent} />}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -93,6 +103,89 @@ type Row = {
   detail: ProcessDetail;
   stop?: () => Promise<void>;
 };
+
+/**
+ * The order the rail lists jobs in, which a row on its way out keeps — sorted
+ * back into place rather than left wherever the leaving ones were appended, or
+ * a job ending in the middle would drop to the bottom to do it.
+ */
+const ORDER = ["scan", "dovi", "sweep", "thumbs", "convert"];
+
+/** Matches `--job-out` in globals.css; the two have to agree. */
+const EXIT_MS = 200;
+
+/**
+ * The rows to draw: what is running now, plus what stopped within the last
+ * `--job-out`, marked as leaving.
+ *
+ * A job ending is state disappearing, and React unmounts the row in the same
+ * frame — which leaves nothing on screen to animate out. This is `useClosing`'s
+ * problem in list form, and the same answer: keep the row a moment longer than
+ * the job it describes.
+ *
+ * Diffed during render rather than in an effect, for the reason `useClosing`
+ * gives — an effect would paint the frame the row is already gone from, and
+ * that frame is the exact moment the exit is meant to start.
+ */
+function useLeaving(rows: Row[]): (Row & { leaving?: boolean })[] {
+  const [held, setHeld] = useState<Row[]>([]);
+  const [keys, setKeys] = useState(() => rows.map((row) => row.key).join());
+
+  // The last committed rows, so a job that ends is drawn on its way out with
+  // the numbers it finished on rather than the ones it was started with.
+  const committed = useRef(rows);
+  useEffect(() => {
+    committed.current = rows;
+  });
+
+  const current = rows.map((row) => row.key).join();
+  if (current !== keys) {
+    const running = (key: string) => rows.some((row) => row.key === key);
+    setKeys(current);
+    // Filtered on the way in as well as out: a job started again before its
+    // exit has finished is running, not leaving, and must not be drawn twice.
+    setHeld((leaving) =>
+      [...leaving, ...committed.current].filter((row) => !running(row.key)),
+    );
+  }
+
+  useEffect(() => {
+    if (!held.length) return;
+    const timer = setTimeout(() => setHeld([]), EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [held]);
+
+  return [...rows, ...held.map((row) => ({ ...row, leaving: true }))].sort(
+    (a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key),
+  );
+}
+
+/**
+ * The last result, held for `--job-out` after it is cleared.
+ *
+ * `useLeaving`'s problem for a value rather than a list, and the same answer:
+ * the line clears itself after ten seconds, and without this React drops it in
+ * the same frame — so the one thing it had to do on its way out, it could not.
+ *
+ * Adjusted during render rather than in an effect, for the reason `useClosing`
+ * gives: an effect would paint the frame the line is already gone from, and
+ * that frame is the exact moment the exit is meant to start.
+ */
+function useParting(result: ScanResult | null) {
+  const [held, setHeld] = useState(result);
+
+  if (result && result !== held) setHeld(result);
+
+  const leaving = held !== null && result === null;
+
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = setTimeout(() => setHeld(null), EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [leaving]);
+
+  return [held, leaving] as const;
+}
 
 export function SidebarProcesses() {
   const { state: scan, busy: scanning, result, dismiss } = useScan();
@@ -338,13 +431,21 @@ export function SidebarProcesses() {
     });
   }
 
+  // What the rail draws, which outlives what is running by one animation.
+  const drawn = useLeaving(rows);
+  const [said, saidLeaving] = useParting(result);
+
   // A job that ends takes its dialog with it. Forgotten here rather than left
   // set, or the next run of the same job would find the rail still holding a
   // request to open it and pop up unasked. Adjusted during render, the way
   // `useClosing` does it — an effect would paint the stale frame first.
+  // Against the live rows, not the drawn ones: the dialog goes with the job,
+  // while the row it came from is still on its way out of the rail.
   if (open !== null && !rows.some((row) => row.key === open)) setOpen(null);
 
-  if (!anyRunning && !result) return null;
+  // Held open while a finished job — or the line about one — plays out, or
+  // there would be nothing left rendered to play it.
+  if (!drawn.length && !said) return null;
 
   // Null once the job ends, which is what plays the dialog out.
   const shown = rows.find((row) => row.key === open) ?? null;
@@ -352,12 +453,13 @@ export function SidebarProcesses() {
   return (
     // Bare rather than boxed: it is part of the rail, not a panel visiting it.
     // `px-3` puts the labels on the same vertical line as the links above.
-    <div className="flex w-full min-w-0 flex-col gap-3 px-3 py-1">
-      {rows.map((row) => (
+    <div className="flex w-full min-w-0 flex-col px-3 py-1">
+      {drawn.map((row) => (
         <Job
           key={row.key}
           name={row.name}
           percent={row.percent}
+          leaving={row.leaving}
           onOpen={() => setOpen(row.key)}
         />
       ))}
@@ -379,25 +481,34 @@ export function SidebarProcesses() {
       />
 
       {/* The one piece of the old toast worth keeping: what the scan actually
-          did. It clears itself, and clicking it clears it now. */}
-      {!anyRunning && result && (
-        <button
-          type="button"
-          onClick={dismiss}
-          className="min-w-0 text-left"
-          title={result.text}
-        >
-          <p
-            className={`text-[11px] font-medium ${
-              result.kind === "error" ? "text-red-600 dark:text-red-400" : ""
-            }`}
-          >
-            {result.kind === "ok" ? "Scan complete" : "Scan failed"}
-          </p>
-          <p className="mt-0.5 line-clamp-2 text-[10px] opacity-45">
-            {result.text}
-          </p>
-        </button>
+          did. It clears itself, and clicking it clears it now.
+
+          Drawn as a row of the rail rather than as text under one, so it
+          arrives and leaves the way the jobs above it do — the line is the
+          last thing the scan has to say, and it should not be the one thing
+          that blinks out. */}
+      {!anyRunning && said && (
+        <div className={`job-row ${saidLeaving ? "is-leaving" : ""}`}>
+          <div>
+            <button
+              type="button"
+              onClick={dismiss}
+              className="min-w-0 text-left"
+              title={said.text}
+            >
+              <p
+                className={`text-[11px] font-medium ${
+                  said.kind === "error" ? "text-red-600 dark:text-red-400" : ""
+                }`}
+              >
+                {said.kind === "ok" ? "Scan complete" : "Scan failed"}
+              </p>
+              <p className="mt-0.5 line-clamp-2 text-[10px] opacity-45">
+                {said.text}
+              </p>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

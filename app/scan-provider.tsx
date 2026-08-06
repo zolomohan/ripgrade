@@ -42,14 +42,83 @@ export function useScan(): ScanContext {
   return ctx;
 }
 
-const RESULT_VISIBLE_MS = 8000;
+/**
+ * How long a finished scan has its say for.
+ *
+ * Both clear themselves: the rail reports what is happening, and a line about
+ * something that finished is in the way the moment it has been read. A failure
+ * gets the longer window because it is the longer sentence — a list of folders
+ * that could not be read takes more reading than "412 probed".
+ */
+const RESULT_VISIBLE_MS = { ok: 8000, error: 10000 };
+
 type Result = ScanResult;
+
+/**
+ * What a finished scan has to say, or null while it is still saying it.
+ *
+ * One function for both ways a result arrives — watched live over the stream,
+ * or found already finished when the app is opened — because the two saying
+ * different things about the same scan is exactly the kind of drift a rail is
+ * read to avoid.
+ */
+function outcome(scan: ScanState): Result | null {
+  if (scan.status === "error") {
+    return { kind: "error", text: scan.error ?? "Scan failed" };
+  }
+
+  if (scan.status !== "done") return null;
+
+  // A folder that could not be read is the one outcome worth colouring like a
+  // failure even though the scan finished: what it holds was left out of
+  // everything below, and silently.
+  if (scan.skipped?.length) {
+    return {
+      kind: "error",
+      text: `Skipped and left untouched: ${scan.skipped.join(", ")}`,
+    };
+  }
+
+  return {
+    kind: "ok",
+    text: [
+      `${scan.probed} probed`,
+      `${scan.cached} unchanged`,
+      ...(scan.removed ? [`${scan.removed} removed`] : []),
+      ...(scan.failed ? [`${scan.failed} failed`] : []),
+      ...(scan.doviTotal ? [`${scan.doviTotal} DV streams read`] : []),
+      ...(scan.matchTotal ? [`${scan.matched} matched`] : []),
+      ...(scan.needsReview ? [`${scan.needsReview} need review`] : []),
+      ...(scan.artSaved ? [`${scan.artSaved} images downloaded`] : []),
+      ...(scan.discTotal ? [`${scan.discTotal} discs looked up`] : []),
+      ...(scan.wishTotal
+        ? [`${scan.wishFound} of ${scan.wishTotal} wants found`]
+        : []),
+    ].join(" · "),
+  };
+}
 
 export function ScanProvider({ children }: { children: React.ReactNode }) {
   const { jobs, apply, subscribe } = useJobs();
   const state = jobs.scan;
-  const [result, setResult] = useState<Result | null>(null);
   const router = useRouter();
+
+  /**
+   * A scan that had already ended before this tab existed still has something
+   * to report — but only if it went wrong.
+   *
+   * The library is scanned when the app starts, so by the time a browser is
+   * pointed at it the scan is often over. One that failed left the shelves
+   * looking exactly as they did before, which is the problem: an unplugged
+   * drive means every film below is a memory of one, and nothing on screen
+   * said so. A scan that *worked* needs no announcement — the library it
+   * produced is the announcement — so a summary nobody was waiting for is
+   * dropped rather than shown to whoever opens the app next.
+   */
+  const [result, setResult] = useState<Result | null>(() => {
+    const said = outcome(state);
+    return said?.kind === "error" ? said : null;
+  });
 
   const busy = BUSY.includes(state.status);
 
@@ -61,45 +130,17 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
         if (!BUSY.includes(prev.scan.status)) return;
         const scan = next.scan;
 
-        if (scan.status === "done") {
-          router.refresh();
+        if (scan.status === "done") router.refresh();
 
-          // A folder that could not be read is the one outcome worth colouring
-          // like a failure even though the scan finished: what it holds was
-          // left out of everything below, and silently.
-          if (scan.skipped?.length) {
-            setResult({
-              kind: "error",
-              text: `Skipped and left untouched: ${scan.skipped.join(", ")}`,
-            });
-            return;
-          }
-
-          const parts = [
-            `${scan.probed} probed`,
-            `${scan.cached} unchanged`,
-            ...(scan.removed ? [`${scan.removed} removed`] : []),
-            ...(scan.failed ? [`${scan.failed} failed`] : []),
-            ...(scan.doviTotal ? [`${scan.doviTotal} DV streams read`] : []),
-            ...(scan.matchTotal ? [`${scan.matched} matched`] : []),
-            ...(scan.needsReview ? [`${scan.needsReview} need review`] : []),
-            ...(scan.artSaved ? [`${scan.artSaved} images downloaded`] : []),
-            ...(scan.discTotal ? [`${scan.discTotal} discs looked up`] : []),
-            ...(scan.wishTotal
-              ? [`${scan.wishFound} of ${scan.wishTotal} wants found`]
-              : []),
-          ];
-          setResult({ kind: "ok", text: parts.join(" · ") });
-        } else if (scan.status === "error") {
-          setResult({ kind: "error", text: scan.error ?? "Scan failed" });
-        }
+        const said = outcome(scan);
+        if (said) setResult(said);
       }),
     [subscribe, router],
   );
 
   useEffect(() => {
-    if (result?.kind !== "ok") return;
-    const id = setTimeout(() => setResult(null), RESULT_VISIBLE_MS);
+    if (!result) return;
+    const id = setTimeout(() => setResult(null), RESULT_VISIBLE_MS[result.kind]);
     return () => clearTimeout(id);
   }, [result]);
 
