@@ -10,6 +10,7 @@ import { hasJackett } from "./jackett";
 import { notifyJobs } from "./job-events";
 import { startSweep } from "./upgrade-sweep";
 import { searchWishlist } from "./wishlist-search";
+import { pruneOwnedWishes } from "./wishlist";
 import { getDoviScans, scanDovi } from "./dovi";
 import { getShows, seasonYear } from "./shows";
 import { enrichShow } from "./tv";
@@ -397,6 +398,14 @@ async function probeAll(files: FoundFile[]) {
  * want is already a TMDb film by the time it reaches the list.
  */
 async function runWishlistPass(): Promise<void> {
+  /*
+   * Wants the drive has answered come off the list first, and unconditionally:
+   * this is the app reading its own library, so it is right with no indexer,
+   * no key and no network — and doing it before the search means nothing is
+   * looked up for a film that is already here.
+   */
+  pruneOwnedWishes();
+
   if (!hasJackett()) return;
 
   setState({ ...current(), status: "wishlist", current: undefined });

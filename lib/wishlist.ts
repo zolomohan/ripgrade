@@ -14,8 +14,10 @@ import type { Status } from "./derive";
  * anything, and nothing that happens to the library can rewrite it.
  *
  * An entry stops being a want the moment a scan matches a file to it, which is
- * the only automatic thing here: `owned` is joined on at read time from the
- * library's own TMDb matches, never written into the row.
+ * the only automatic thing here — `pruneOwnedWishes` runs at the end of every
+ * scan and drops it. Until that scan, `owned` is joined on at read time from
+ * the library's own TMDb matches, never written into the row: it is what a
+ * want looks like in the window between the file landing and the app noticing.
  */
 
 /**
@@ -238,4 +240,51 @@ export function removeFromWishlist(
     tmdbId,
     kind,
   );
+}
+
+/**
+ * Takes off the list every film the drive now holds, and returns how many
+ * went.
+ *
+ * A want is a question, and a file is the answer to it. Marking a satisfied
+ * want as owned and leaving it there made the list something you had to weed
+ * by hand — and the entry it left behind was the one row on the page that
+ * could not be acted on, since everything a want offers is a way to go and get
+ * the film. So a scan that matches a file to a want ends the want.
+ *
+ * Films only. A series is owned by degrees — one episode of one season is not
+ * the show — and there is no honest moment to call a want for it answered, so
+ * a wanted show stays until you say otherwise.
+ *
+ * The stored search for it goes too. It is an answer to a question nobody is
+ * asking any more, and keeping it would mean a re-added want spends its first
+ * day showing what the indexers had yesterday.
+ */
+export function pruneOwnedWishes(): number {
+  const wanted = db
+    .prepare("SELECT tmdb_id FROM wishlist WHERE kind = 'movie'")
+    .all() as { tmdb_id: number }[];
+  if (wanted.length === 0) return 0;
+
+  const owned = new Set<number>();
+  for (const movie of getLibrary()) {
+    if (movie.tmdb?.id !== undefined) owned.add(movie.tmdb.id);
+  }
+
+  const satisfied = wanted.filter((row) => owned.has(row.tmdb_id));
+  if (satisfied.length === 0) return 0;
+
+  const drop = db.prepare(
+    "DELETE FROM wishlist WHERE tmdb_id = ? AND kind = 'movie'",
+  );
+  const dropCheck = db.prepare("DELETE FROM wishlist_checks WHERE tmdb_id = ?");
+
+  db.transaction((rows: { tmdb_id: number }[]) => {
+    for (const row of rows) {
+      drop.run(row.tmdb_id);
+      dropCheck.run(row.tmdb_id);
+    }
+  })(satisfied);
+
+  return satisfied.length;
 }
