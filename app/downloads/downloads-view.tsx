@@ -12,6 +12,7 @@ import {
 } from "@/app/actions";
 import { EmptyState } from "@/app/empty-state";
 import { Modal, useLingering } from "@/app/modal";
+import { Failure } from "@/app/settings/parts";
 import { stagger } from "@/app/stagger";
 import { imageUrl } from "@/lib/image-url";
 import type { DownloadEntry } from "@/lib/qbittorrent";
@@ -206,6 +207,8 @@ export function DownloadsView({
 }) {
   const [entries, setEntries] = useState(initial);
   const [pending, startTransition] = useTransition();
+  /** The last control that came back with a reason, until it is dismissed. */
+  const [failure, setFailure] = useState<string | null>(null);
   /*
    * Nothing destructive happens on one click. The x buttons only open this,
    * and the dialog says in words what will happen to the torrent, the files
@@ -227,10 +230,22 @@ export function DownloadsView({
     return () => clearInterval(id);
   }, [activeNow]);
 
-  /** Runs a control and re-reads at once, so the row answers the click. */
-  const control = (run: () => Promise<unknown>) =>
+  /**
+   * Runs a control and re-reads at once, so the row answers the click.
+   *
+   * Every one of these can fail — the client is a separate program that can be
+   * shut, moved or busy — and the result used to be dropped on the floor. A
+   * pause that did nothing then looked exactly like a pause that worked until
+   * the next poll put the row back, which reads as the app ignoring you rather
+   * than as qBittorrent being unreachable. What comes back is said out loud.
+   */
+  const control = (
+    run: () => Promise<{ ok: true } | { ok: false; error: string } | void>,
+  ) =>
     startTransition(async () => {
-      await run();
+      setFailure(null);
+      const result = await run();
+      if (result && !result.ok) setFailure(result.error);
       setEntries(await listDownloadLog());
     });
 
@@ -283,6 +298,35 @@ export function DownloadsView({
 
   return (
     <div className="flex flex-col gap-12">
+      {/* Above both lists rather than against the row that failed: a control
+          can be clicked from the row menu, which is gone by the time there is
+          anything to report, and a torrent removed from the client takes its
+          row with it. It stays until dismissed or until the next control
+          works — an error that clears itself on a timer is an error you find
+          out about by being lucky. */}
+      {failure && (
+        <div className="-mb-8 flex items-start justify-between gap-4 rounded-card border border-red-500/40 bg-red-500/[0.06] px-4 py-3">
+          <div className="min-w-0">
+            <Failure>{failure}</Failure>
+            <p className="mt-1.5 text-[11px] opacity-45">
+              Nothing changed in qBittorrent. Check it is running, or its
+              address on the{" "}
+              <Link href="/settings" className="underline underline-offset-2">
+                Settings page
+              </Link>
+              .
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFailure(null)}
+            className="shrink-0 text-xs opacity-50 transition-opacity hover:opacity-100"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {active.length > 0 && (
         <section className="flex flex-col gap-1">
           <Heading label="Downloading" />
@@ -514,9 +558,11 @@ export function DownloadsView({
                 onClick={() => {
                   const { kind, entry } = confirmShown;
                   control(async () => {
-                    if (kind === "cancel") await qbRemove(entry.hash, true);
-                    else if (kind === "remove") await qbRemove(entry.hash, false);
-                    else await forgetDownloadEntry(entry.hash);
+                    if (kind === "cancel") return qbRemove(entry.hash, true);
+                    if (kind === "remove") return qbRemove(entry.hash, false);
+                    // The only one that touches nothing but our own table,
+                    // and so the only one with no client to refuse it.
+                    return forgetDownloadEntry(entry.hash);
                   });
                   setConfirming(null);
                 }}

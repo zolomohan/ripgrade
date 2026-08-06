@@ -93,10 +93,17 @@ export function Note({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] opacity-45">{children}</p>;
 }
 
-/** What went wrong, in the machine's own words. */
+/**
+ * What went wrong, in the machine's own words.
+ *
+ * `role="alert"` because these appear after a click rather than with the page:
+ * a line that materialises silently is read by whoever happened to be looking
+ * at that corner. Used well beyond Settings now — anywhere an action can come
+ * back with a reason it did not happen.
+ */
 export function Failure({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-mono text-xs text-red-600 dark:text-red-400">
+    <p role="alert" className="font-mono text-xs text-red-600 dark:text-red-400">
       {children}
     </p>
   );

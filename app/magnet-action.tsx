@@ -6,6 +6,7 @@ import { browse, getLibraryFolders, sendToQb } from "@/app/actions";
 import { useCapabilities } from "@/app/capabilities";
 import { FolderPicker } from "@/app/folder-picker";
 import { Modal, useClosing } from "@/app/modal";
+import { Failure } from "@/app/settings/parts";
 import { stagger } from "@/app/stagger";
 import type { DirListing } from "@/lib/browse";
 import type { FilmContext } from "@/lib/qbittorrent";
@@ -224,7 +225,19 @@ export function MagnetAction({
     }
   }
 
-  /** Picking a destination is the send — no second confirmation to find. */
+  /**
+   * Picking a destination is the send — no second confirmation to find.
+   *
+   * The dialog closes on success and stays open on failure. Closing on both
+   * left the whole answer in a red circle's tooltip: something had gone wrong,
+   * on a button that had already given up the one place with room to say what.
+   * A send that did not happen is still the dialog's business, so it holds its
+   * ground and prints the reason where the click was made.
+   *
+   * Returns the result as well as showing it — the folder browser has its own
+   * place for a failure, and reporting `ok` there while the send failed made a
+   * download that never happened look like one that did.
+   */
   function send(savePath?: string) {
     try {
       if (savePath) localStorage.setItem(LAST_PATH_KEY, savePath);
@@ -233,12 +246,20 @@ export function MagnetAction({
       // A private window forgets the preference; the send still works.
     }
 
-    startTransition(async () => {
-      const result = await sendToQb(magnet, savePath, film);
-      setOpen(false);
-      if (result.ok) setSent(true);
-      else setError(result.error);
-    });
+    return new Promise<{ ok: true } | { ok: false; error: string }>(
+      (resolve) => {
+        startTransition(async () => {
+          const result = await sendToQb(magnet, savePath, film);
+          if (result.ok) {
+            setSent(true);
+            setOpen(false);
+          } else {
+            setError(result.error);
+          }
+          resolve(result);
+        });
+      },
+    );
   }
 
   const lastPath = (() => {
@@ -357,16 +378,31 @@ export function MagnetAction({
               </button>
             </header>
 
+            {/* qBittorrent's own words for why it did not take the release —
+                its address, its refusal, its timeout. Not while browsing: the
+                picker prints a failed save under its own button, and the same
+                sentence twice reads as two things having gone wrong. */}
+            {error && !browsing && (
+              <div className="border-t border-line bg-red-500/[0.06] px-5 py-3">
+                <Failure>{error}</Failure>
+                <p className="mt-1.5 text-[11px] opacity-45">
+                  Nothing was sent. Pick a destination to try again, or check
+                  the client on the{" "}
+                  <a href="/settings" className="underline underline-offset-2">
+                    Settings page
+                  </a>
+                  .
+                </p>
+              </div>
+            )}
+
             {browsing ? (
               <div className="pane-forward flex flex-col gap-3 border-t border-line px-5 py-4">
                 {listing ? (
                   <FolderPicker
                     initialListing={listing}
                     saveLabel="Download here"
-                    onSave={async (path) => {
-                      send(path);
-                      return { ok: true as const };
-                    }}
+                    onSave={(path) => send(path)}
                   />
                 ) : (
                   <div className="flex flex-col gap-2">
