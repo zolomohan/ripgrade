@@ -106,11 +106,16 @@ CREATE TABLE IF NOT EXISTS tmdb_matches (
   matched_at  INTEGER NOT NULL
 );
 
--- Films you want but do not have. Denormalised on purpose: an entry is a
--- decision, and it should still render with TMDb unreachable and long after
--- any cache of the record has been dropped.
+-- Films and shows you want but do not have. Denormalised on purpose: an entry
+-- is a decision, and it should still render with TMDb unreachable and long
+-- after any cache of the record has been dropped.
+--
+-- Keyed by id *and* kind: TMDb numbers films and series in separate sequences,
+-- so id 1399 is both a film and a series, and one of them would otherwise
+-- overwrite the other.
 CREATE TABLE IF NOT EXISTS wishlist (
-  tmdb_id     INTEGER PRIMARY KEY,
+  tmdb_id     INTEGER NOT NULL,
+  kind        TEXT NOT NULL DEFAULT 'movie',
   added_at    INTEGER NOT NULL,
   title       TEXT NOT NULL,
   year        INTEGER,
@@ -119,9 +124,11 @@ CREATE TABLE IF NOT EXISTS wishlist (
   -- The set the film belongs to, so the list can be read a franchise at a
   -- time. The checked flag separates "asked TMDb, it has none" from "never
   -- asked", which is what stops a standalone film being looked up for ever.
+  -- Films only: a series belongs to no collection TMDb will tell you about.
   collection_id      INTEGER,
   collection_name    TEXT,
-  collection_checked INTEGER NOT NULL DEFAULT 0
+  collection_checked INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (tmdb_id, kind)
 );
 
 -- Shows and their seasons, cached exactly like the film records: expensive to
@@ -174,6 +181,10 @@ CREATE TABLE IF NOT EXISTS upgrade_checks (
 -- The same, for the films you want but do not have. Written by the scan's
 -- wishlist pass rather than by a sweep, and keyed by TMDb id because a wanted
 -- film has no path to be keyed by — that is the whole point of it.
+--
+-- Films only, so the bare id is still a key here: a wanted series is a dozen
+-- separate searches with no single answer to store, and it is looked for by
+-- hand from the list instead.
 CREATE TABLE IF NOT EXISTS wishlist_checks (
   tmdb_id    INTEGER PRIMARY KEY,
   checked_at INTEGER NOT NULL,
@@ -287,6 +298,47 @@ if (!wishlistColumns.includes("collection_id")) {
   db.exec(
     "ALTER TABLE wishlist ADD COLUMN collection_checked INTEGER NOT NULL DEFAULT 0",
   );
+}
+
+/**
+ * The list grew a second kind of thing on it, which the key had to grow with:
+ * `tmdb_id` alone was the primary key, and a series shares its numbering with
+ * some unrelated film. A column cannot be added to a primary key in place, so
+ * the table is rebuilt — everything already on the list is a film, which is
+ * what the copy across says.
+ */
+if (!wishlistColumns.includes("kind")) {
+  // One transaction: a list half copied and then abandoned by a crash would be
+  // a list you wrote, half gone, with nothing to rebuild it from.
+  db.transaction(() => {
+    db.exec(`
+      DROP TABLE IF EXISTS wishlist_rekeyed;
+
+      CREATE TABLE wishlist_rekeyed (
+        tmdb_id     INTEGER NOT NULL,
+        kind        TEXT NOT NULL DEFAULT 'movie',
+        added_at    INTEGER NOT NULL,
+        title       TEXT NOT NULL,
+        year        INTEGER,
+        poster_path TEXT,
+        overview    TEXT,
+        collection_id      INTEGER,
+        collection_name    TEXT,
+        collection_checked INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (tmdb_id, kind)
+      );
+
+      INSERT INTO wishlist_rekeyed
+        (tmdb_id, kind, added_at, title, year, poster_path, overview,
+         collection_id, collection_name, collection_checked)
+      SELECT tmdb_id, 'movie', added_at, title, year, poster_path, overview,
+             collection_id, collection_name, collection_checked
+        FROM wishlist;
+
+      DROP TABLE wishlist;
+      ALTER TABLE wishlist_rekeyed RENAME TO wishlist;
+    `);
+  })();
 }
 
 /**

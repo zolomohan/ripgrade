@@ -2,9 +2,9 @@ import "server-only";
 
 import path from "node:path";
 
-import { db } from "./db";
+import { db, getSetting, setSetting } from "./db";
 import { duplicateKey } from "./derive";
-import { getDisc } from "./disc";
+import { discIds, getDisc } from "./disc";
 import { notifyJobs } from "./job-events";
 import { getMovies, type LibraryItem } from "./library";
 import { guessFromTitle } from "./release-title";
@@ -349,6 +349,91 @@ export function cancelSweep(): SweepJob {
 }
 
 // ---------------------------------------------------------------------------
+// What is allowed onto the queue
+// ---------------------------------------------------------------------------
+
+const THRESHOLD_KEY = "queueThreshold";
+const DISC_ONLY_KEY = "queueDiscOnly";
+
+/** Everything the sweep finds — the queue's behaviour before the setting. */
+export const DEFAULT_QUEUE_THRESHOLD = 0;
+
+/**
+ * A release that reaches this leaves the film with nothing left to want.
+ *
+ * Two different things arrive at it — the disc matched, or the rubric maxed
+ * with no disc known — and the queue deliberately does not distinguish them.
+ * Both mean the same thing to you: this is the best there is, stop looking.
+ */
+export const TOPS_OUT = 100;
+
+export type QueueRules = {
+  /** The predicted score a find has to reach before the queue will carry it. */
+  threshold: number;
+  /** Keep only films a disc release has been found for. */
+  discOnly: boolean;
+};
+
+export function getQueueRules(): QueueRules {
+  const stored = Number(getSetting(THRESHOLD_KEY));
+  return {
+    threshold: Number.isFinite(stored)
+      ? Math.min(100, Math.max(0, stored))
+      : DEFAULT_QUEUE_THRESHOLD,
+    discOnly: getSetting(DISC_ONLY_KEY) === "on",
+  };
+}
+
+export function setQueueRules(rules: Partial<QueueRules>): void {
+  if (rules.threshold !== undefined) {
+    const clamped = Math.round(Math.min(100, Math.max(0, rules.threshold)));
+    setSetting(THRESHOLD_KEY, String(clamped));
+  }
+  if (rules.discOnly !== undefined) {
+    setSetting(DISC_ONLY_KEY, rules.discOnly ? "on" : "off");
+  }
+}
+
+/**
+ * The rules as a test to run over a list of finds.
+ *
+ * Applied when the queue is read rather than when the sweep writes, so moving
+ * the slider re-answers the question immediately — the searches have already
+ * been paid for, and re-running four hundred of them to change your mind about
+ * a number would be the wrong price for a preference.
+ *
+ * The disc question is asked of the disc table as it stands now, not of the
+ * find. A stored hit carries `relative`, which looks like the answer and is
+ * not: it records whether the sweep *happened to have* a disc when it ran, so
+ * a disc linked after that check — or linked by hand a minute ago — reads as
+ * "no disc" until the check expires a day later. What you want to know is
+ * whether the film has a disc, and that is a fact about the film.
+ *
+ * A find that tops out is exempt from the disc question entirely. The toggle
+ * is there because a rubric score with no disc behind it is an *uncertain*
+ * number — good against an abstract ideal, unknown against what you could
+ * actually buy. At 100 that uncertainty is gone: nothing scores higher, so
+ * there is no disc that could turn out to beat it. Hiding those would be the
+ * toggle doing the opposite of its job, dropping the finished films and
+ * keeping the arguable ones.
+ *
+ * Built once per read so the disc table is asked once rather than per row, and
+ * not at all when the toggle is off.
+ */
+export function queueFilter(): (hit: StoredHit, tmdbId?: number) => boolean {
+  const rules = getQueueRules();
+  const discs = rules.discOnly ? discIds() : null;
+
+  return (hit, tmdbId) => {
+    if (hit.score < rules.threshold) return false;
+    if (hit.score >= TOPS_OUT) return true;
+    // No TMDb id is no disc: nothing has been looked up for it.
+    if (discs && (tmdbId === undefined || !discs.has(tmdbId))) return false;
+    return true;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The queue
 // ---------------------------------------------------------------------------
 
@@ -382,6 +467,7 @@ export function getUpgradeQueue(): UpgradeQueueItem[] {
     .all() as { path: string; checked_at: number; best: string }[];
 
   const byPath = new Map(getMovies().map((m) => [m.path, m]));
+  const passes = queueFilter();
 
   const items: UpgradeQueueItem[] = [];
   for (const row of rows) {
@@ -389,6 +475,8 @@ export function getUpgradeQueue(): UpgradeQueueItem[] {
     if (!movie) continue; // Deleted or unplugged since the sweep.
 
     const hit = JSON.parse(row.best) as StoredHit;
+    if (!passes(hit, movie.tmdb?.id)) continue;
+
     const delta = hit.score - movie.scores.overall;
     if (delta <= 0) continue;
 
@@ -412,7 +500,7 @@ export function getUpgradeQueue(): UpgradeQueueItem[] {
     // taken off the hunt for good, and finishing outranks improving. Within
     // each band, best gain first as before.
     const finishes =
-      Number(b.hit.score >= 100) - Number(a.hit.score >= 100);
+      Number(b.hit.score >= TOPS_OUT) - Number(a.hit.score >= TOPS_OUT);
     if (finishes !== 0) return finishes;
 
     return (

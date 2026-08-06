@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 
 import { clearThumbs, rebuildThumbs } from "../actions";
 import { useJobs } from "../jobs-provider";
+import { PRIMARY, QUIET } from "./parts";
 
 /**
  * The thumbnail cache: how big it has grown, and the two things worth doing
@@ -90,44 +91,42 @@ export function Thumbs({ files, bytes }: { files: number; bytes: number }) {
   }
 
   return (
-    <div className="rounded-card border border-line bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm">
-            {files
-              ? `${files.toLocaleString("en-GB")} thumbnails · ${size(bytes)}`
-              : "Nothing cached yet — thumbnails appear as shelves are browsed"}
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="min-w-0">
+        <p className="text-sm">
+          {files
+            ? `${files.toLocaleString("en-GB")} thumbnails · ${size(bytes)}`
+            : "Nothing cached yet — thumbnails appear as shelves are browsed"}
+        </p>
+        {note && (
+          <p className="mt-0.5 text-[11px] opacity-45" role="status">
+            {note}
           </p>
-          {note && (
-            <p className="mt-0.5 text-xs opacity-55" role="status">
-              {note}
-            </p>
-          )}
-        </div>
+        )}
+      </div>
 
-        <div className="flex shrink-0 items-center gap-3">
-          {files > 0 && (
-            <button
-              type="button"
-              onClick={clear}
-              // Deleting the directory a running rebuild is filling would
-              // leave it writing thumbs nobody asked for any more.
-              disabled={pending || rebuilding}
-              className="text-xs opacity-50 hover:opacity-100 disabled:opacity-30"
-            >
-              Clear
-            </button>
-          )}
+      <div className="flex shrink-0 items-center gap-3">
+        {files > 0 && (
           <button
             type="button"
-            onClick={rebuild}
+            onClick={clear}
+            // Deleting the directory a running rebuild is filling would leave
+            // it writing thumbs nobody asked for any more.
             disabled={pending || rebuilding}
-            title="Generate every poster's thumbnails now, so the whole library shows with the drive unplugged"
-            className="rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40"
+            className={QUIET}
           >
-            {rebuilding ? "Rebuilding…" : "Rebuild now"}
+            Clear
           </button>
-        </div>
+        )}
+        <button
+          type="button"
+          onClick={rebuild}
+          disabled={pending || rebuilding}
+          title="Generate every poster's thumbnails now, so the whole library shows with the drive unplugged"
+          className={PRIMARY}
+        >
+          {rebuilding ? "Rebuilding…" : "Rebuild now"}
+        </button>
       </div>
     </div>
   );

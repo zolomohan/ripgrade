@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 import { browse, clearConvertTempDir, setConvertTempDir } from "../actions";
 import { FolderPicker } from "../folder-picker";
 import type { DirListing } from "@/lib/browse";
+import { PRIMARY, QUIET, Status } from "./parts";
 
 /**
  * Where dovi_convert writes its working video file.
@@ -23,6 +24,9 @@ export function TempFolder({
   defaultPath: string;
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
+  // The browser is behind a button even inside an open panel: it reads the
+  // drive, which is a request, and one made by arriving on this tab would be
+  // made for everyone who came to change something else.
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -34,18 +38,17 @@ export function TempFolder({
   }, [open, listing, current, defaultPath]);
 
   return (
-    <div className="rounded-card border border-line bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm">
-            {current
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Status
+          on={Boolean(current)}
+          label={
+            current
               ? "Working files go to"
-              : "Working files stay beside the film"}
-          </p>
-          {current && (
-            <p className="truncate font-mono text-xs opacity-45">{current}</p>
-          )}
-        </div>
+              : "Working files stay beside the film"
+          }
+          detail={current}
+        />
 
         <div className="flex shrink-0 items-center gap-3">
           {current && (
@@ -53,38 +56,35 @@ export function TempFolder({
               type="button"
               onClick={() => startTransition(async () => clearConvertTempDir())}
               disabled={pending}
-              className="text-xs opacity-50 hover:opacity-100 disabled:opacity-30"
+              className={QUIET}
             >
               Clear
             </button>
           )}
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong"
+            onClick={() => setOpen((value) => !value)}
+            className={open ? QUIET : PRIMARY}
           >
             {open ? "Cancel" : current ? "Change" : "Choose a folder"}
           </button>
         </div>
       </div>
 
-      {open && (
-        <div className="border-t border-line p-4">
-          {listing ? (
-            <FolderPicker
-              initialListing={listing}
-              onSave={setConvertTempDir}
-              saveLabel="Use this folder for working files"
-            />
-          ) : (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 5 }, (_, i) => (
-                <div key={i} className="skeleton h-8 w-full" />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {open &&
+        (listing ? (
+          <FolderPicker
+            initialListing={listing}
+            onSave={setConvertTempDir}
+            saveLabel="Use this folder for working files"
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 5 }, (_, i) => (
+              <div key={i} className="skeleton h-8 w-full" />
+            ))}
+          </div>
+        ))}
     </div>
   );
 }

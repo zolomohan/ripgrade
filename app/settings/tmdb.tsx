@@ -3,18 +3,23 @@
 import { useState, useTransition } from "react";
 
 import { disconnectTmdb, saveTmdbToken } from "../actions";
+import { Failure, Field, FIELD, Note, PRIMARY, QUIET, Status } from "./parts";
 
 /**
  * Connecting TMDb.
  *
  * Write-only from here: the token is stored but no action hands it back, so a
  * connected install shows that it is connected and nothing else. This is the
- * only way to set it — the app does not read the environment for it. Saving runs a live search first and puts back whatever worked
- * before if it fails — a field that accepts a typo silently would leave every
- * title, poster and collection quietly broken.
+ * only way to set it — the app does not read the environment for it. Saving
+ * runs a live search first and puts back whatever worked before if it fails —
+ * a field that accepts a typo silently would leave every title, poster and
+ * collection quietly broken.
+ *
+ * The field is always here rather than behind a Connect button: the panel this
+ * sits in is already the disclosure, and a second one inside it would be two
+ * things to open before you can type.
  */
 export function Tmdb({ configured }: { configured: boolean }) {
-  const [open, setOpen] = useState(false);
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -23,78 +28,58 @@ export function Tmdb({ configured }: { configured: boolean }) {
     setError(null);
     startTransition(async () => {
       const result = await saveTmdbToken(token);
-      if (result.ok) {
-        setOpen(false);
-        setToken("");
-      } else setError(result.error);
+      if (result.ok) setToken("");
+      else setError(result.error);
     });
   }
 
-
   return (
-    <div className="rounded-card border border-line bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <p className="min-w-0 text-sm">
-          {configured ? "Connected" : "Not connected"}
-        </p>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Status
+          on={configured}
+          label={configured ? "Connected" : "Not connected"}
+        />
 
-        <div className="flex shrink-0 items-center gap-3">
-          {configured && (
-            <button
-              type="button"
-              onClick={() => startTransition(async () => disconnectTmdb())}
-              disabled={pending}
-              className="text-xs opacity-50 hover:opacity-100 disabled:opacity-30"
-            >
-              Disconnect
-            </button>
-          )}
+        {configured && (
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong"
+            onClick={() => startTransition(async () => disconnectTmdb())}
+            disabled={pending}
+            className={QUIET}
           >
-            {open ? "Cancel" : configured ? "Change" : "Connect"}
+            Disconnect
           </button>
-        </div>
+        )}
       </div>
 
-      {open && (
-        <div className="flex flex-col gap-3 border-t border-line p-4">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs opacity-55">
-              Read access token — TMDb account settings, under API. The long
-              one, not the v3 key.
-            </span>
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              className="rounded-control border border-line bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-line-strong"
-            />
-          </label>
+      <Field
+        label="Read access token"
+        hint="TMDb account settings, under API — the long one, not the v3 key."
+      >
+        <input
+          type="password"
+          value={token}
+          onChange={(event) => setToken(event.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          className={FIELD}
+        />
+      </Field>
 
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
+      {error && <Failure>{error}</Failure>}
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={save}
-              disabled={pending || !token.trim()}
-              className="rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-30"
-            >
-              {pending ? "Checking…" : "Test and save"}
-            </button>
-            <span className="text-xs opacity-45">
-              Saved only if TMDb answers.
-            </span>
-          </div>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={pending || !token.trim()}
+          className={PRIMARY}
+        >
+          {pending ? "Checking…" : configured ? "Replace token" : "Connect"}
+        </button>
+        <Note>Saved only if TMDb answers.</Note>
+      </div>
     </div>
   );
 }
