@@ -414,7 +414,10 @@ export function SidebarProcesses() {
   if (converting) {
     rows.push({
       key: "convert",
-      name: `Converting · step ${convert.step} of ${convert.steps}`,
+      // What is being done to the file, not how far in it is: the bar under
+      // the line already says that, and "step 2 of 4" says nothing about which
+      // four. The dialog is where the steps are named.
+      name: "DV P7 → P8",
       percent: convert.percent,
       detail: {
         title: "Converting to Profile 8",
