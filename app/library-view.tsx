@@ -9,7 +9,6 @@ import type { LibraryItem } from "@/lib/library";
 import { Art } from "./art";
 import {
   Bar,
-  BarSearch,
   BarSegments,
   HelpTip,
   ICONS,
@@ -552,24 +551,29 @@ const VIEWS = [
   },
 ];
 
-export function LibraryView({ movies }: { movies: LibraryItem[] }) {
+export function LibraryView({
+  movies,
+  tabs,
+}: {
+  movies: LibraryItem[];
+  /** The shelf switch, at the head of this shelf's own row of controls. */
+  tabs: React.ReactNode;
+}) {
   // The URL is the single source of truth, so filters survive navigating into a
   // film and back. `history.replaceState` syncs `useSearchParams` without a
-  // server round-trip, which matters when the search box updates per keystroke.
+  // server round-trip.
   const searchParams = useSearchParams();
 
   // Kept as the raw string for memo dependencies: a Map is a fresh object every
   // render, so it would defeat memoization and trip the exhaustive-deps rule.
   const rawFilters = searchParams.get("f") ?? "";
   const selection = parseSelection(rawFilters);
-  const query = searchParams.get("q") ?? "";
   const sort = searchParams.get("sort") ?? SORTS[0].key;
   const group = searchParams.get("g") ?? GROUPS[0].key;
   const view = searchParams.get("v") ?? DEFAULT_VIEW;
 
   function update(next: {
     f?: string[];
-    q?: string;
     sort?: string;
     g?: string;
     v?: string;
@@ -579,10 +583,6 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
     if (next.f !== undefined) {
       if (next.f.length) params.set("f", next.f.join(","));
       else params.delete("f");
-    }
-    if (next.q !== undefined) {
-      if (next.q) params.set("q", next.q);
-      else params.delete("q");
     }
     // Defaults are omitted so a plain "/" stays clean.
     if (next.sort !== undefined) {
@@ -611,14 +611,6 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
     else next.delete(key);
     update({ f: serialiseSelection(next) });
   }
-  /** Drops one filter, for the chips shown while the panel is closed. */
-  function clear(key: string) {
-    const next: Selection = new Map(selection);
-    next.delete(key);
-    update({ f: serialiseSelection(next) });
-  }
-
-  const setQuery = (q: string) => update({ q });
   const setSort = (s: string) => update({ sort: s });
   const setGroup = (g: string) => update({ g });
   const setView = (v: string) => update({ v });
@@ -663,20 +655,13 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
 
   const ctx: FilterContext = { duplicatePaths: duplicates, recentPaths };
 
+  // Narrowing this shelf is what the filters are for; finding one film by name
+  // is the floating search's job, on this page and every other.
   const shown = (() => {
-    const q = query.trim().toLowerCase();
     const compare = (SORTS.find((s) => s.key === sort) ?? SORTS[0]).compare;
     const active = parseSelection(rawFilters);
 
-    return movies
-      .filter((m) => matches(m, active, ctx))
-      .filter(
-        (m) =>
-          !q ||
-          m.title.toLowerCase().includes(q) ||
-          m.fileName.toLowerCase().includes(q),
-      )
-      .sort(compare);
+    return movies.filter((m) => matches(m, active, ctx)).sort(compare);
   })();
 
   const grouping = GROUPS.find((g) => g.key === group) ?? GROUPS[0];
@@ -706,176 +691,170 @@ export function LibraryView({ movies }: { movies: LibraryItem[] }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Bar>
-        <BarSearch
-          value={query}
-          onChange={setQuery}
-          placeholder="Search title or filename…"
-        />
+      {/* One line: which shelf on the left, what to do with this one on the
+          right. The bar is only as wide as the controls it holds — with the
+          field gone there is nothing to stretch, and a bar drawn the width of
+          the page with four buttons huddled at one end is mostly frame. */}
+      <div className="flex flex-wrap items-center gap-3">
+        {tabs}
 
-        <Popover
-          icon={ICONS.filter}
-          label="Filters"
-          badge={selection.size}
-          width="w-[min(92vw,34rem)]"
-        >
-          {() => (
-            <div className="flex flex-col gap-3 p-4">
-              <div className="flex items-baseline justify-between gap-4">
-                <span className="font-display text-sm font-semibold">
-                  Filters
-                </span>
-                <HelpTip text="Click once to include, twice to exclude. Options in a row are OR-ed; rows are AND-ed." />
-              </div>
+        <div className="ml-auto flex items-center gap-3">
+          <Bar>
+            <Popover
+              icon={ICONS.filter}
+              label="Filters"
+              badge={selection.size}
+              width="w-[min(92vw,34rem)]"
+              // The bar's first slot, so the fill follows its rounded end.
+              buttonClassName="rounded-l-full"
+            >
+              {() => (
+                <div className="flex flex-col gap-3 p-4">
+                  {/* Heading over the same fading hairline every other head in
+                      the app stands on, so the panel's title is a title here
+                      too and not just the first line of the list. */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="font-display text-sm font-semibold">
+                        Filters
+                      </span>
 
-              {FACETS.filter((facet) => facet.when?.(ctx) ?? true).map(
-                (facet) => (
-                  <div key={facet.key} className="flex flex-col gap-1.5">
-                    <span className="text-[11px] tracking-widest uppercase opacity-40">
-                      {facet.label}
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {facet.options.map((option) => {
-                        const mode = selection.get(option.key);
-                        return (
+                      {/* Up here with the heading rather than trailing the last
+                        row of options: the way out of a set of filters should
+                        be where you look when you open the panel, not at the
+                        end of a scroll through them. Shaped like the ? beside
+                        it so the two read as one pair of panel controls. */}
+                      <div className="flex items-center gap-2">
+                        {selection.size > 0 && (
                           <button
-                            key={option.key}
                             type="button"
-                            aria-pressed={mode !== undefined}
-                            title={
-                              mode === "include"
-                                ? "Click to exclude"
-                                : mode === "exclude"
-                                  ? "Click to clear"
-                                  : "Click to include"
-                            }
-                            onClick={() => cycle(option.key)}
-                            className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                              mode === "include"
-                                ? "border-transparent bg-foreground text-background"
-                                : mode === "exclude"
-                                  ? "border-red-500/40 bg-red-500/[0.08] text-red-700 line-through dark:text-red-300"
-                                  : "border-line hover:bg-surface-strong"
-                            }`}
+                            onClick={() => update({ f: [] })}
+                            title="Clear every filter"
+                            className="h-5 rounded-full border border-line px-2 text-[10px] font-medium opacity-40 transition-opacity hover:opacity-100"
                           >
-                            {option.label}
+                            Reset
                           </button>
-                        );
-                      })}
+                        )}
+                        <HelpTip text="Click once to include, twice to exclude. Options in a row are OR-ed; rows are AND-ed." />
+                      </div>
                     </div>
+
+                    <div aria-hidden className="rule-head" />
                   </div>
-                ),
+
+                  {FACETS.filter((facet) => facet.when?.(ctx) ?? true).map(
+                    (facet) => (
+                      <div key={facet.key} className="flex flex-col gap-1.5">
+                        <span className="text-[11px] tracking-widest uppercase opacity-40">
+                          {facet.label}
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {facet.options.map((option) => {
+                            const mode = selection.get(option.key);
+                            return (
+                              <button
+                                key={option.key}
+                                type="button"
+                                aria-pressed={mode !== undefined}
+                                title={
+                                  mode === "include"
+                                    ? "Click to exclude"
+                                    : mode === "exclude"
+                                      ? "Click to clear"
+                                      : "Click to include"
+                                }
+                                onClick={() => cycle(option.key)}
+                                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                                  mode === "include"
+                                    ? "border-transparent bg-foreground text-background"
+                                    : mode === "exclude"
+                                      ? "border-red-500/40 bg-red-500/[0.08] text-red-700 line-through dark:text-red-300"
+                                      : "border-line hover:bg-surface-strong"
+                                }`}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ),
+                  )}
+                </div>
               )}
+            </Popover>
 
-              {selection.size > 0 && (
-                <button
-                  type="button"
-                  onClick={() => update({ f: [] })}
-                  className="self-start text-[11px] underline underline-offset-4 opacity-50 hover:opacity-100"
-                >
-                  Clear all filters
-                </button>
+            <Popover
+              icon={ICONS.sort}
+              label="Sort"
+              value={(SORTS.find((o) => o.key === sort) ?? SORTS[0]).label}
+            >
+              {(close) => (
+                <div className="py-1">
+                  {SORTS.map((option) => (
+                    <MenuItem
+                      key={option.key}
+                      active={option.key === sort}
+                      onClick={() => {
+                        setSort(option.key);
+                        close();
+                      }}
+                    >
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </div>
               )}
-            </div>
-          )}
-        </Popover>
+            </Popover>
 
-        <Popover
-          icon={ICONS.sort}
-          label="Sort"
-          value={(SORTS.find((o) => o.key === sort) ?? SORTS[0]).label}
-        >
-          {(close) => (
-            <div className="py-1">
-              {SORTS.map((option) => (
-                <MenuItem
-                  key={option.key}
-                  active={option.key === sort}
-                  onClick={() => {
-                    setSort(option.key);
-                    close();
-                  }}
-                >
-                  {option.label}
-                </MenuItem>
-              ))}
-            </div>
-          )}
-        </Popover>
+            <Popover
+              icon={ICONS.group}
+              label="Group by"
+              value={(GROUPS.find((o) => o.key === group) ?? GROUPS[0]).label}
+            >
+              {(close) => (
+                <div className="py-1">
+                  {GROUPS.map((option) => (
+                    <MenuItem
+                      key={option.key}
+                      active={option.key === group}
+                      onClick={() => {
+                        setGroup(option.key);
+                        close();
+                      }}
+                    >
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </div>
+              )}
+            </Popover>
 
-        <Popover
-          icon={ICONS.group}
-          label="Group by"
-          value={(GROUPS.find((o) => o.key === group) ?? GROUPS[0]).label}
-        >
-          {(close) => (
-            <div className="py-1">
-              {GROUPS.map((option) => (
-                <MenuItem
-                  key={option.key}
-                  active={option.key === group}
-                  onClick={() => {
-                    setGroup(option.key);
-                    close();
-                  }}
-                >
-                  {option.label}
-                </MenuItem>
-              ))}
-            </div>
-          )}
-        </Popover>
-
-        {/* A segmented pair rather than a third dropdown: two options, and
-            the icons say which is which faster than their names would. */}
-        <BarSegments
-          value={view}
-          onChange={(next) => setView(next as (typeof VIEWS)[number]["key"])}
-          options={VIEWS}
-        />
-      </Bar>
-
-      {/* The one thing that must not hide behind a button: what is currently
-          filtering the list, and a way to drop each one. */}
-      {selection.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          {[...selection.entries()].map(([key, mode]) => {
-            const option = OPTIONS.get(key)!;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => clear(key)}
-                title="Remove this filter"
-                className={`row-enter flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                  mode === "include"
-                    ? "border-transparent bg-foreground text-background"
-                    : "border-red-500/40 bg-red-500/[0.08] text-red-700 dark:text-red-300"
-                }`}
-              >
-                {mode === "exclude" && <span className="opacity-60">not</span>}
-                {option.label}
-                <span className="opacity-50">✕</span>
-              </button>
-            );
-          })}
-
-          <button
-            type="button"
-            onClick={() => update({ f: [], q: "" })}
-            className="text-[11px] underline underline-offset-4 opacity-50 hover:opacity-100"
-          >
-            Reset
-          </button>
+            {/* A segmented pair rather than a third dropdown: two options, and
+                the icons say which is which faster than their names would. */}
+            <BarSegments
+              value={view}
+              onChange={(next) =>
+                setView(next as (typeof VIEWS)[number]["key"])
+              }
+              options={VIEWS}
+            />
+          </Bar>
         </div>
-      )}
+      </div>
+
+      {/* No row of chips under the bar. What is filtering the list is said by
+          the count on the Filters button and by the filled options inside it —
+          repeating it out here pushed the shelf down a line for something you
+          had just chosen and could see the effect of. Reset lives in the panel
+          now, where the filters themselves are. */}
 
       {shown.length === 0 && (
         <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
           <p className="text-sm opacity-50">Nothing matches those filters.</p>
           <button
             type="button"
-            onClick={() => update({ f: [], q: "" })}
+            onClick={() => update({ f: [] })}
             className="mt-2 text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
           >
             Clear filters

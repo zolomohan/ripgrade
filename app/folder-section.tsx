@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 
 import { addLibraryFolder, browse, removeLibraryFolder } from "./actions";
 import { FolderPicker } from "./folder-picker";
+import { DANGER, Failure, PRIMARY, QUIET } from "./settings/parts";
 import type { DirListing } from "@/lib/browse";
 
 /**
@@ -12,6 +13,10 @@ import type { DirListing } from "@/lib/browse";
  * More than one because a collection outgrows a drive. They are listed rather
  * than replaced: adding a second folder should not be indistinguishable from
  * moving the first.
+ *
+ * A plain list rather than a boxed table — the rows carry a hover band that
+ * bleeds past the column, exactly as the queue's rows do, so a path reads as a
+ * line in this app rather than as a cell in a form.
  */
 export function FolderSection({
   roots,
@@ -45,13 +50,16 @@ export function FolderSection({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {roots.length > 0 && (
-        <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+        <ul className="-mx-4 flex flex-col">
           {roots.map((root) => (
-            <li key={root} className="flex flex-col gap-2 px-4 py-3">
+            <li
+              key={root}
+              className="flex flex-col gap-2 rounded-card px-4 py-2.5 transition-colors hover:bg-surface"
+            >
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="min-w-0 truncate font-mono text-sm">
+                <span className="min-w-0 truncate font-mono text-xs">
                   {root}
                 </span>
                 <button
@@ -60,15 +68,22 @@ export function FolderSection({
                     setConfirming(confirming === root ? null : root)
                   }
                   disabled={pending}
-                  className="shrink-0 text-xs text-red-700 opacity-70 hover:opacity-100 disabled:opacity-30 dark:text-red-300"
+                  className={`${QUIET} ${
+                    confirming === root
+                      ? ""
+                      : "text-red-700 dark:text-red-300"
+                  }`}
                 >
                   {confirming === root ? "Cancel" : "Remove"}
                 </button>
               </div>
 
+              {/* The consequence, said only once you have asked for it: what
+                  goes with the folder is every film scanned from it, and that
+                  is not something to learn from an undo. */}
               {confirming === root && (
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="text-xs opacity-60">
+                <div className="flex flex-wrap items-center gap-3 pb-1">
+                  <p className="min-w-0 flex-1 text-[11px] opacity-55">
                     Removing it also forgets every film scanned from it. The
                     files themselves are untouched.
                   </p>
@@ -81,7 +96,7 @@ export function FolderSection({
                       })
                     }
                     disabled={pending}
-                    className="rounded-control border border-red-500/40 bg-red-500/[0.08] px-2.5 py-1 text-xs text-red-700 disabled:opacity-40 dark:text-red-300"
+                    className={DANGER}
                   >
                     Remove folder
                   </button>
@@ -92,46 +107,39 @@ export function FolderSection({
         </ul>
       )}
 
-      <div className="rounded-card border border-line bg-surface">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm hover:bg-surface-strong"
+          onClick={() => setOpen((value) => !value)}
+          className={open ? QUIET : PRIMARY}
         >
-          <span className="opacity-70">
-            {roots.length === 0
+          {open
+            ? "Cancel"
+            : roots.length === 0
               ? "Select a library folder"
               : "Add another folder"}
-          </span>
-          <span className="shrink-0 opacity-40">{open ? "Cancel" : "+"}</span>
         </button>
-
-        {open && (
-          <div className="border-t border-line p-4">
-            {error && (
-              <p className="mb-3 font-mono text-sm text-red-600 dark:text-red-400">
-                {error}
-              </p>
-            )}
-            {listing ? (
-              <FolderPicker
-                initialListing={listing}
-                onSave={add}
-                saveLabel="Add this folder"
-              />
-            ) : (
-              <div className="flex flex-col gap-2">
-                <p className="text-sm opacity-50">
-                  Reading the drive… this can take a moment if it was asleep.
-                </p>
-                {Array.from({ length: 5 }, (_, i) => (
-                  <div key={i} className="skeleton h-8 w-full" />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
+
+      {error && <Failure>{error}</Failure>}
+
+      {open &&
+        (listing ? (
+          <FolderPicker
+            initialListing={listing}
+            onSave={add}
+            saveLabel="Add this folder"
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] opacity-45">
+              Reading the drive… this can take a moment if it was asleep.
+            </p>
+            {Array.from({ length: 5 }, (_, i) => (
+              <div key={i} className="skeleton h-8 w-full" />
+            ))}
+          </div>
+        ))}
     </div>
   );
 }

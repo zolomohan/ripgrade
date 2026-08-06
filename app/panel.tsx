@@ -27,7 +27,11 @@ export function Panel({
   return (
     <details className="ruled group" open={open}>
       <summary className="glow -mx-3 flex cursor-pointer list-none items-center gap-4 rounded-control px-3 py-3.5 transition-colors hover:bg-surface [&::-webkit-details-marker]:hidden">
-        <h2 className="shrink-0 text-sm font-medium tracking-wide uppercase opacity-50">
+        {/* The display face, at the size a section head is set in everywhere
+            else in this app. It was small tracked upper case for a long time,
+            which reads as a label on a form field — and a panel is not a field:
+            it is a section of the page, holding as much as any shelf does. */}
+        <h2 className="shrink-0 font-display text-lg font-semibold tracking-tight">
           {title}
         </h2>
 

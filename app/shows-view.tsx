@@ -216,7 +216,14 @@ const SORTS: {
   },
 ];
 
-export function ShowsView({ shows }: { shows: Show[] }) {
+export function ShowsView({
+  shows,
+  tabs,
+}: {
+  shows: Show[];
+  /** The shelf switch, at the head of this shelf's own row of controls. */
+  tabs: React.ReactNode;
+}) {
   // Its own keys in the URL: the films tab already owns q/f/sort, and one set
   // shared between the two would filter a shelf by controls it never saw.
   const searchParams = useSearchParams();
@@ -271,12 +278,18 @@ export function ShowsView({ shows }: { shows: Show[] }) {
   })();
 
   if (shows.length === 0) {
+    // The switch still has to be there — it is the way back to the films, and
+    // an empty shelf is exactly when you want it.
     return (
-      <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
-        <p className="text-sm opacity-50">
-          No shows found. Episodes are recognised by their filenames —
-          S01E02, 1x02, or a Season folder.
-        </p>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-wrap items-center gap-3">{tabs}</div>
+
+        <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
+          <p className="text-sm opacity-50">
+            No shows found. Episodes are recognised by their filenames —
+            S01E02, 1x02, or a Season folder.
+          </p>
+        </div>
       </div>
     );
   }
@@ -285,101 +298,112 @@ export function ShowsView({ shows }: { shows: Show[] }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Bar>
-        <BarSearch
-          value={query}
-          onChange={(next) => update({ tq: next })}
-          placeholder="Search shows…"
-        />
+      {/* One line: which shelf on the left, what to do with this one on the
+          right. */}
+      <div className="flex flex-wrap items-center gap-3">
+        {tabs}
 
-        <Popover
-          icon={ICONS.filter}
-          label="Filters"
-          badge={selection.size}
-          width="w-[min(92vw,30rem)]"
-        >
-          {() => (
-            <div className="flex flex-col gap-3 p-4">
-              <div className="flex items-baseline justify-between gap-4">
-                <span className="font-display text-sm font-semibold">
-                  Filters
-                </span>
-                <HelpTip text="Click once to include, twice to exclude. Options in a row are OR-ed; rows are AND-ed. A format is claimed only when every episode has it." />
-              </div>
+        {/* All the room the switch leaves: this bar carries a field, and a
+            field squeezed to its label is a field you cannot read what you
+            typed in. */}
+        <div className="ml-auto flex min-w-0 flex-1 items-center gap-3">
+          <Bar className="min-w-0 flex-1">
+            <BarSearch
+              value={query}
+              onChange={(next) => update({ tq: next })}
+              placeholder="Search shows…"
+            />
 
-              {FACETS.map((facet) => (
-                <div key={facet.key} className="flex flex-col gap-1.5">
-                  <span className="text-[11px] tracking-widest uppercase opacity-40">
-                    {facet.label}
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {facet.options.map((option) => {
-                      const mode = selection.get(option.key);
-                      return (
-                        <button
-                          key={option.key}
-                          type="button"
-                          aria-pressed={mode !== undefined}
-                          title={
-                            mode === "include"
-                              ? "Click to exclude"
-                              : mode === "exclude"
-                                ? "Click to clear"
-                                : "Click to include"
-                          }
-                          onClick={() => cycle(option.key)}
-                          className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                            mode === "include"
-                              ? "border-transparent bg-foreground text-background"
-                              : mode === "exclude"
-                                ? "border-red-500/40 bg-red-500/[0.08] text-red-700 line-through dark:text-red-300"
-                                : "border-line hover:bg-surface-strong"
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
+            <Popover
+              icon={ICONS.filter}
+              label="Filters"
+              badge={selection.size}
+              width="w-[min(92vw,30rem)]"
+            >
+              {() => (
+                <div className="flex flex-col gap-3 p-4">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="font-display text-sm font-semibold">
+                      Filters
+                    </span>
+                    <HelpTip text="Click once to include, twice to exclude. Options in a row are OR-ed; rows are AND-ed. A format is claimed only when every episode has it." />
                   </div>
+
+                  {FACETS.map((facet) => (
+                    <div key={facet.key} className="flex flex-col gap-1.5">
+                      <span className="text-[11px] tracking-widest uppercase opacity-40">
+                        {facet.label}
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {facet.options.map((option) => {
+                          const mode = selection.get(option.key);
+                          return (
+                            <button
+                              key={option.key}
+                              type="button"
+                              aria-pressed={mode !== undefined}
+                              title={
+                                mode === "include"
+                                  ? "Click to exclude"
+                                  : mode === "exclude"
+                                    ? "Click to clear"
+                                    : "Click to include"
+                              }
+                              onClick={() => cycle(option.key)}
+                              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                                mode === "include"
+                                  ? "border-transparent bg-foreground text-background"
+                                  : mode === "exclude"
+                                    ? "border-red-500/40 bg-red-500/[0.08] text-red-700 line-through dark:text-red-300"
+                                    : "border-line hover:bg-surface-strong"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+
+                  {selection.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => update({ tf: [] })}
+                      className="self-start text-[11px] underline underline-offset-4 opacity-50 hover:opacity-100"
+                    >
+                      Clear all filters
+                    </button>
+                  )}
                 </div>
-              ))}
-
-              {selection.size > 0 && (
-                <button
-                  type="button"
-                  onClick={() => update({ tf: [] })}
-                  className="self-start text-[11px] underline underline-offset-4 opacity-50 hover:opacity-100"
-                >
-                  Clear all filters
-                </button>
               )}
-            </div>
-          )}
-        </Popover>
+            </Popover>
 
-        <Popover
-          icon={ICONS.sort}
-          label="Sort"
-          value={(SORTS.find((o) => o.key === sort) ?? SORTS[0]).label}
-        >
-          {(close) => (
-            <div className="py-1">
-              {SORTS.map((option) => (
-                <MenuItem
-                  key={option.key}
-                  active={option.key === sort}
-                  onClick={() => {
-                    update({ tsort: option.key });
-                    close();
-                  }}
-                >
-                  {option.label}
-                </MenuItem>
-              ))}
-            </div>
-          )}
-        </Popover>
-      </Bar>
+            <Popover
+              icon={ICONS.sort}
+              label="Sort"
+              value={(SORTS.find((o) => o.key === sort) ?? SORTS[0]).label}
+            >
+              {(close) => (
+                <div className="py-1">
+                  {SORTS.map((option) => (
+                    <MenuItem
+                      key={option.key}
+                      active={option.key === sort}
+                      onClick={() => {
+                        update({ tsort: option.key });
+                        close();
+                      }}
+                    >
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </div>
+              )}
+            </Popover>
+          </Bar>
+        </div>
+      </div>
 
       {/* What is filtering the shelf, and a way to drop each one, out where it
           cannot hide behind a button. */}

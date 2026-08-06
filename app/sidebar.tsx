@@ -25,6 +25,14 @@ import { SidebarProcesses } from "./sidebar-processes";
  * These were one undifferentiated list with everything below, which made
  * "Stats" and "Downloads" look like the same kind of place.
  */
+/**
+ * Above everything, and ruled off from it: search is not one of the places the
+ * library is arranged into, it is the way to any of them. The floating button
+ * opens the same thing over whatever you are looking at — this is for when
+ * looking something up *is* what you are doing.
+ */
+const FIND = [{ href: "/search", label: "Search" }];
+
 const PAGES = [
   { href: "/", label: "Library" },
   { href: "/collections", label: "Collections" },
@@ -32,9 +40,14 @@ const PAGES = [
   { href: "/stats", label: "Stats" },
 ];
 
-/** And what you are getting: finding it, queueing it, watching it land. */
+/**
+ * And what you are getting: queueing it, watching it land.
+ *
+ * Finding it is not here any more. It was a page you navigated to in order to
+ * type into a field, which is the one thing the floating search does from
+ * wherever you already are — the indexers are a tab over its results now.
+ */
 const ACQUIRING = [
-  { href: "/search", label: "Search" },
   // Everything there is to go and fetch, ranked: better copies of what you
   // have, and the wants something has turned up for.
   { href: "/upgrades", label: "Queue" },
@@ -89,7 +102,7 @@ export function Sidebar() {
       </Link>
 
       <nav className="flex flex-1 items-center gap-1 md:flex-col md:items-stretch md:gap-0.5">
-        {[PAGES, ACQUIRING, TOOLS].map((group, g) => (
+        {[FIND, PAGES, ACQUIRING, TOOLS].map((group, g) => (
           <Fragment key={g}>
             {/* Weighted where the labels begin and trailing off away from
                 them — `.rule-head`'s hairline rather than the one that fades

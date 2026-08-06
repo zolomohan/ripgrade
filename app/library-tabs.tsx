@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import type { LibraryItem } from "@/lib/library";
 import type { Show } from "@/lib/shows";
 import { Switch } from "./controls";
-import { ScanButton } from "./scan-button";
 import { LibraryView } from "./library-view";
 import { ShowsView } from "./shows-view";
 
@@ -20,12 +19,9 @@ import { ShowsView } from "./shows-view";
 export function LibraryTabs({
   movies,
   shows,
-  hasRoot,
 }: {
   movies: LibraryItem[];
   shows: Show[];
-  /** No folder chosen means nothing to scan, so no trigger. */
-  hasRoot: boolean;
 }) {
   const searchParams = useSearchParams();
   const tab = searchParams.get("t") === "tv" ? "tv" : "movies";
@@ -38,30 +34,30 @@ export function LibraryTabs({
     window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
   }
 
-  const tabs = [
+  const options = [
     { key: "movies" as const, label: "Films" },
     { key: "tv" as const, label: "Shows" },
   ];
 
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Scanning is what fills this shelf, so its trigger sits at the head of
-          the shelf rather than in the rail beside every other page. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Switch
-          value={tab}
-          onChange={(next) => select(next as "movies" | "tv")}
-          options={tabs}
-        />
+  /**
+   * The head of whichever shelf is showing, handed to it so the switch and the
+   * shelf's own controls can share one line.
+   *
+   * It belongs to the page rather than to either shelf — it is how you leave
+   * one for the other — but the controls beside it belong to the shelf, and a
+   * row split across two components is a row that cannot be one line.
+   */
+  const tabs = (
+    <Switch
+      value={tab}
+      onChange={(next) => select(next as "movies" | "tv")}
+      options={options}
+    />
+  );
 
-        {hasRoot && <ScanButton />}
-      </div>
-
-      {tab === "movies" ? (
-        <LibraryView movies={movies} />
-      ) : (
-        <ShowsView shows={shows} />
-      )}
-    </div>
+  return tab === "movies" ? (
+    <LibraryView movies={movies} tabs={tabs} />
+  ) : (
+    <ShowsView shows={shows} tabs={tabs} />
   );
 }

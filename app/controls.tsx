@@ -37,6 +37,16 @@ export function PillCount({
 }
 
 /**
+ * The height every control on the shelf's row is drawn at.
+ *
+ * The switch, the bar and the scan button sit on one line, and a line of
+ * controls that agree on nothing but their vertical centre reads as three
+ * things that happened to land together. Named because it has to be the same
+ * number in three files.
+ */
+export const CONTROL_H = "h-10";
+
+/**
  * The library bar: one surface, divided.
  *
  * It was six outlined boxes in a row — a search field and four controls, each
@@ -48,9 +58,22 @@ export function PillCount({
  * `items-stretch` so every part is the bar's own height, and the dividers run
  * its full depth rather than floating between differently-sized boxes.
  */
-export function Bar({ children }: { children: React.ReactNode }) {
+export function Bar({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  /** A bar with no field in it has nothing to take up the slack, so the films
+      shelf asks it to be only as wide as its controls. */
+  className?: string;
+}) {
   return (
-    <div className="flex items-stretch divide-x divide-line rounded-full border border-line bg-surface/60 transition-colors focus-within:border-line-strong">
+    // A stated height rather than whatever the contents happen to come to: the
+    // bar shares a line with the shelf switch and the scan button, and three
+    // controls of three heights read as three unrelated things.
+    <div
+      className={`flex ${CONTROL_H} items-stretch divide-x divide-line rounded-full border border-line bg-surface/60 transition-colors focus-within:border-line-strong ${className}`}
+    >
       {children}
     </div>
   );
@@ -66,12 +89,15 @@ export function BarSearch({
   onChange,
   placeholder,
   disabled,
+  autoFocus,
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder: string;
   /** For a search that cannot run yet — no API key, nothing to search. */
   disabled?: boolean;
+  /** For the page whose whole purpose is this field. */
+  autoFocus?: boolean;
 }) {
   return (
     <div className="relative min-w-0 flex-1">
@@ -91,7 +117,12 @@ export function BarSearch({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        className="h-11 w-full rounded-l-full bg-transparent pr-9 pl-11 text-sm outline-none placeholder:opacity-40 disabled:opacity-40"
+        autoFocus={autoFocus}
+        // `focus-quiet`: the bar around this answers focus by brightening its
+        // own border, so the app-wide outline would be a second ring drawn
+        // inside the first. See the rule in globals.css — a utility cannot
+        // turn it off.
+        className="focus-quiet h-full w-full rounded-l-full bg-transparent pr-9 pl-11 text-sm outline-none placeholder:opacity-40 disabled:opacity-40"
       />
 
       {value && (
@@ -171,14 +202,15 @@ export function Switch({
 }: {
   value: string;
   onChange: (key: string) => void;
-  options: { key: string; label: string }[];
+  /** A count says how much is behind an option without having to open it. */
+  options: { key: string; label: string; count?: number }[];
 }) {
   const [track, register, thumbStyle] = useSlider(value);
 
   return (
     <div
       ref={track}
-      className="relative flex shrink-0 gap-1 self-start rounded-full border border-line bg-surface/60 p-1"
+      className={`relative flex ${CONTROL_H} shrink-0 items-stretch gap-1 self-start rounded-full border border-line bg-surface/60 p-1`}
     >
       <span
         aria-hidden
@@ -193,13 +225,16 @@ export function Switch({
           type="button"
           onClick={() => onChange(option.key)}
           aria-pressed={value === option.key}
-          className={`glow relative rounded-full px-4 py-1.5 text-sm transition-colors ${
+          className={`glow relative flex items-center gap-2 rounded-full px-4 text-sm transition-colors ${
             value === option.key
               ? "text-background"
               : "opacity-60 hover:opacity-100"
           }`}
         >
           {option.label}
+          {option.count !== undefined && (
+            <PillCount active={value === option.key}>{option.count}</PillCount>
+          )}
         </button>
       ))}
     </div>

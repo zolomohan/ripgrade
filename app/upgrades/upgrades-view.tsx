@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { startUpgradeSweep } from "@/app/actions";
 import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
 import { useJobs } from "@/app/jobs-provider";
@@ -26,6 +25,10 @@ import type { WishlistFind } from "@/lib/wishlist-search";
  * this page never touches an indexer, it reads what the sweep wrote. The
  * queue empties itself: replace a file, rescan, and its row falls out because
  * the gain is gone.
+ *
+ * Nothing here starts a sweep, either. One runs at the end of every scan, and a
+ * scan runs whenever the app is opened — so the queue is something you read,
+ * never something you have to remember to fill.
  */
 
 const gigabytes = (bytes?: number) =>
@@ -43,7 +46,15 @@ function ago(then: number): string {
 const ROW_ACTION =
   "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong";
 
-/** A release that reaches this leaves the film with nothing left to want. */
+/**
+ * A release that reaches this leaves the film with nothing left to want.
+ *
+ * Duplicated from TOPS_OUT in lib/upgrade-sweep.ts rather than imported: that
+ * module is server-only, and this is a client component — which is why the
+ * queue item comes in as `import type`. Keep the two numbers in step; the
+ * filter there exempts a topped-out find from the disc question, and this is
+ * the band that then has to show it.
+ */
 const TOPS_OUT = 100;
 
 const topsOut = (item: UpgradeQueueItem) => item.hit.score >= TOPS_OUT;
@@ -368,6 +379,35 @@ function WishRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 opacity-60 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        {/* The same first action an upgrade's row carries. Both rows open the
+            full release list on their own click, but a row that only responds
+            to being clicked somewhere in the middle does not say so — and the
+            two rows sit in one list, where the want was the only one missing
+            the button that admits what the click does. */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onMore();
+          }}
+          aria-label={`All releases for ${find.title}`}
+          title="Every release, not just the best one"
+          className={ROW_ACTION}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            aria-hidden
+            className="h-4 w-4"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+        </button>
+
         {hit.detailsUrl && (
           <a
             href={hit.detailsUrl}
@@ -414,56 +454,6 @@ function WishRow({
   );
 }
 
-/**
- * The sweep trigger, floating bottom-right — the one action this page is
- * for, reachable from anywhere in a long queue. Its icon is the mirror of
- * the download arrow on every release row: up, to the line. Progress lives
- * in the rail, which is on every screen anyway.
- */
-function SweepFab({
-  sweeping,
-  jackettReady,
-  candidates,
-  onRun,
-}: {
-  sweeping: boolean;
-  jackettReady: boolean;
-  candidates: number;
-  onRun: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onRun}
-      disabled={sweeping || !jackettReady}
-      aria-label={sweeping ? "Sweeping" : "Run sweep"}
-      title={
-        sweeping
-          ? "Sweeping - progress is in the rail"
-          : jackettReady
-            ? `Search for something better than the ${candidates} films below their best, then for the films on your wishlist`
-            : "Connect Jackett on the Settings page to search"
-      }
-      className="fixed right-6 bottom-6 z-40 grid h-14 w-14 place-items-center rounded-full bg-foreground text-background shadow-2xl transition-opacity hover:opacity-90 disabled:opacity-40"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-        className="h-5 w-5"
-      >
-        <path d="M12 20V9" />
-        <path d="m7.5 13.5 4.5-4.5 4.5 4.5" />
-        <path d="M5 5h14" />
-      </svg>
-    </button>
-  );
-}
-
 export function UpgradesView({
   queue,
   finds,
@@ -478,41 +468,27 @@ export function UpgradesView({
   checked: number;
   jackettReady: boolean;
 }) {
-  const { jobs, apply } = useJobs();
+  const { jobs } = useJobs();
   const sweep = jobs.sweep;
   const sweeping = sweep.status === "running";
   // Which film has its full release list open.
   const [finding, setFinding] = useState<Finding | null>(null);
   const shown = useLingering(finding);
 
-  function run() {
-    void startUpgradeSweep().then((job) => apply({ sweep: job }));
-  }
-
   const finals = queue.filter(topsOut);
   const improvements = queue.filter((item) => !topsOut(item));
 
-  const fab = (
-    <SweepFab
-      sweeping={sweeping}
-      jackettReady={jackettReady}
-      candidates={candidates}
-      onRun={run}
-    />
-  );
-
   return (
     <div className="flex flex-1 flex-col gap-6">
-      {/* A control row rather than a header, like the library's own: the
-          count is the one fact worth stating, and the rail already says what
-          page this is. Empty pages carry the button in their empty state,
-          where the eye already is. */}
+      {/* No trigger of its own: the sweep runs itself, at the end of every
+          scan — which is to say every time the app is opened. What is left for
+          this page to say is what the last one found, and where a sweep failed,
+          why. Progress is in the rail, as it always was. */}
       {sweep.status === "error" && sweep.error && (
         <p className="font-mono text-sm text-red-600 dark:text-red-400">
           {sweep.error}
         </p>
       )}
-
 
       {queue.length > 0 || finds.length > 0 ? (
         <>
@@ -600,9 +576,11 @@ export function UpgradesView({
           }
           title="Nothing swept yet"
         >
-          One sweep searches every film short of its best —{" "}
-          {candidates.toLocaleString("en-GB")} right now — and queues whatever
-          beats your copy.
+          {jackettReady
+            ? `A sweep searches every film short of its best — ${candidates.toLocaleString(
+                "en-GB",
+              )} right now — and queues whatever beats your copy. One runs after every scan, so opening the app fills this page.`
+            : "Connect Jackett on the Settings page, and the sweep that runs after every scan will fill this page."}
         </EmptyState>
       ) : (
         <EmptyState
@@ -614,15 +592,14 @@ export function UpgradesView({
           }
           title="Nothing beats what you have"
         >
-          Every film short of its best was checked against the indexers. Sweep
-          again once the trackers have had time to change.
+          Every film short of its best was checked against the indexers. The
+          next sweep runs when you next open the app, by which time the trackers
+          will have had time to change.
         </EmptyState>
       )}
 
       {/* One dialog for the page: the row shows the sweep's single best find,
           and this is the way to the rest of the field. */}
-      {fab}
-
       {shown &&
         (shown.kind === "upgrade" ? (
           <ReleaseSearchModal

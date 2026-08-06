@@ -4,7 +4,6 @@ import { getLibraryFolders } from "./actions";
 import { getMovies } from "@/lib/library";
 import { getShows } from "@/lib/shows";
 import { LibraryTabs } from "./library-tabs";
-import { ScanButton } from "./scan-button";
 
 // Every render reads the local database, so there is nothing worth prerendering.
 export const dynamic = "force-dynamic";
@@ -17,20 +16,18 @@ export default async function Page() {
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-8 sm:px-8">
       {movies.length > 0 || shows.length > 0 ? (
-        <LibraryTabs movies={movies} shows={shows} hasRoot={roots.length > 0} />
+        <LibraryTabs movies={movies} shows={shows} />
       ) : (
-        // The folder picker lives in Settings now, so an empty library has to
-        // say where to go rather than simply being blank. The scan button lives
-        // with the tabs, which are not rendered here — so an empty library gets
-        // one of its own, or the only thing it can do is nothing.
+        // The folder picker lives in Settings, so an empty library has to say
+        // where to go rather than simply being blank. Scanning happens on
+        // start-up and is triggered from Settings, so this offers the one
+        // thing that is not already under way: somewhere to point it.
         <div className="flex flex-col items-center gap-3 rounded-card border border-line bg-surface px-4 py-12 text-center">
           <p className="text-sm opacity-60">
             {roots.length > 0
-              ? "Nothing scanned yet — scan to fill the library."
+              ? "Nothing scanned yet — the scan runs when the app starts, or on demand from Settings."
               : "No library folder chosen yet."}
           </p>
-
-          {roots.length > 0 && <ScanButton />}
 
           <Link
             href="/settings"

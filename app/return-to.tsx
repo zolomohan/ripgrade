@@ -22,16 +22,24 @@ const SCROLL_KEY = "ripgrade:listingScroll";
 /**
  * A page you can arrive at something *from*.
  *
- * The shelves, and also the two pages that are themselves lists of pages: a
- * show lists its episodes, a collection lists its films. Back from an episode
- * means back to the show, not back to the library it was three clicks ago.
+ * The shelves, and also the pages that are themselves lists of pages: a show
+ * lists its episodes, a collection lists its films, and a series nobody owns
+ * lists its seasons and theirs their episodes. Back from an episode means back
+ * to the season, not back to the library it was three clicks ago.
+ *
+ * Search is one of them. It is a shelf you assembled by typing, and it is the
+ * shelf least like anywhere else — going back to the library from a film you
+ * found by searching throws away the one thing you could not have got to by
+ * browsing. It keeps its term in the query string for the same reason the
+ * library keeps its filters there.
  */
-const LISTINGS = ["/", "/collections", "/wishlist", "/upgrades"];
+const LISTINGS = ["/", "/collections", "/wishlist", "/upgrades", "/search"];
 
 const isListing = (path: string) =>
   LISTINGS.includes(path) ||
   path.startsWith("/show/") ||
-  path.startsWith("/collections/");
+  path.startsWith("/collections/") ||
+  path.startsWith("/discover/");
 
 /** Where you were, and how far down it you had got. */
 type Crumb = { url: string; scroll: number };
@@ -98,7 +106,7 @@ export function RememberListing() {
     const onClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
       const link = target?.closest?.(
-        "a[href^='/film/'], a[href^='/episode/'], a[href^='/show/'], a[href^='/collections/']",
+        "a[href^='/film/'], a[href^='/episode/'], a[href^='/show/'], a[href^='/collections/'], a[href^='/discover/']",
       );
       if (!link) return;
       rememberListing();

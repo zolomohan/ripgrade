@@ -125,6 +125,19 @@ body {
 }
 
 /*
+ * The opt-out, for the few controls that answer focus some other way.
+ *
+ * It has to be here rather than as `focus-visible:outline-none` on the
+ * element, and that is not a style preference: `@import "tailwindcss"` puts
+ * every utility in `@layer utilities`, and an unlayered declaration — the rule
+ * directly above — beats a layered one whatever its specificity. A utility
+ * cannot override it. Anything that wants out has to say so from here.
+ */
+.focus-quiet:focus-visible {
+  outline: none;
+}
+
+/*
  * Rows and cards ease rather than snap when filters change the list.
  *
  * `--i` is the item's place in its list, set by `stagger()`. Each one waits its
@@ -923,6 +936,67 @@ body {
 }
 
 /*
+ * A job joining or leaving the rail.
+ *
+ * Jobs start and finish on their own clock — a sweep ends while you are reading
+ * something else — so a row appearing or vanishing between two frames reads as
+ * the rail glitching rather than as news. It rises into place and sinks out
+ * again, which is the same direction the foot of the rail grows in.
+ *
+ * The row is a one-track grid so the height comes with it: `1fr` to `0fr`
+ * closes the space over the same clock the row moves in, and the rows below
+ * follow it down instead of jumping once it has gone. `useLeaving` in
+ * app/sidebar-processes.tsx holds a finished job on screen for exactly
+ * `--job-out`, which is the only reason there is anything left to animate.
+ */
+:root {
+  --job-in: 280ms;
+  --job-out: 200ms;
+}
+
+.job-row {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+/* Clipped, or the content of a row closing to nothing spills past its edges. */
+.job-row > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* On its way out it is a picture of a job, not a button: nothing to press. */
+.job-row.is-leaving {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .job-row {
+    animation: job-enter var(--job-in) var(--morph-ease) backwards;
+  }
+
+  .job-row.is-leaving {
+    animation: job-leave var(--job-out) ease-in forwards;
+  }
+}
+
+@keyframes job-enter {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes job-leave {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/*
  * Scrollbars in the app's own colours.
  *
  * The default pair is a light grey trough and a dark thumb, which on a near
@@ -1125,7 +1199,7 @@ html {
       block-size var(--panel-in) var(--morph-ease),
       /* Held back a little: the words arrive into a box that has already begun
          to make room for them, rather than being what is stretching it. */
-      opacity calc(var(--panel-in) * 0.6) linear calc(var(--panel-in) * 0.25),
+        opacity calc(var(--panel-in) * 0.6) linear calc(var(--panel-in) * 0.25),
       content-visibility var(--panel-in) allow-discrete;
   }
 
@@ -1196,10 +1270,19 @@ html {
   );
 }
 
-/* Placeholder blocks that hold layout while something loads. */
-.skeleton {
-  background: var(--surface-strong);
-  border-radius: var(--radius-chip);
+/*
+ * Placeholder blocks that hold layout while something loads.
+ *
+ * In the components layer rather than loose at the end of the file, so its
+ * radius is a default and not a decree: a skeleton standing in for a poster
+ * says `rounded-card` and gets it. Unlayered, this rule won that argument and
+ * every placeholder was chip-cornered whatever it was pretending to be.
+ */
+@layer components {
+  .skeleton {
+    background: var(--surface-strong);
+    border-radius: var(--radius-chip);
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1211,5 +1294,70 @@ html {
 @keyframes skeleton-pulse {
   50% {
     opacity: 0.45;
+  }
+}
+
+/*
+ * A value on a continuum, drawn as the app's own switch would be: a hairline
+ * track, the travelled part filled solid, and a thumb the size of a toggle's
+ * knob so the two controls in a settings row read as one family.
+ *
+ * The track is a native range input's, which no two engines expose the same
+ * way — hence the doubled rules. WebKit gives no `::-range-progress`, so the
+ * fill is a hard-stopped gradient positioned from `--fill`, set inline by the
+ * control from the value it is already tracking.
+ */
+@layer components {
+  .slider {
+    appearance: none;
+    width: 100%;
+    height: 1rem;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .slider::-webkit-slider-runnable-track {
+    height: 0.25rem;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      var(--foreground) var(--fill, 0%),
+      var(--surface-strong) var(--fill, 0%)
+    );
+  }
+
+  .slider::-moz-range-track {
+    height: 0.25rem;
+    border-radius: 9999px;
+    background: var(--surface-strong);
+  }
+
+  .slider::-moz-range-progress {
+    height: 0.25rem;
+    border-radius: 9999px;
+    background: var(--foreground);
+  }
+
+  .slider::-webkit-slider-thumb {
+    appearance: none;
+    /* Half the thumb minus half the track, so it rides centred on the line. */
+    margin-top: -0.375rem;
+    height: 1rem;
+    width: 1rem;
+    border-radius: 9999px;
+    background: var(--foreground);
+  }
+
+  .slider::-moz-range-thumb {
+    height: 1rem;
+    width: 1rem;
+    border: none;
+    border-radius: 9999px;
+    background: var(--foreground);
+  }
+
+  .slider:disabled {
+    cursor: default;
+    opacity: 0.4;
   }
 }
