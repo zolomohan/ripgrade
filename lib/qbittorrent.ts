@@ -571,3 +571,90 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
 export function forgetDownload(hash: string): void {
   db.prepare("DELETE FROM downloads WHERE hash = ?").run(hash);
 }
+
+// ---------------------------------------------------------------------------
+// What the queue should stop offering
+// ---------------------------------------------------------------------------
+
+/**
+ * qBittorrent's words for a torrent that has stopped being a download. Not the
+ * same as gone: the entry is still listed, still yours to resume or delete —
+ * but nothing is arriving, so the film is worth offering again.
+ */
+const FAILED_STATES = new Set(["error", "missingFiles"]);
+
+/**
+ * Whether a release is already in hand, asked of the client and the log
+ * together.
+ *
+ * A queue is a list of things worth fetching, and the moment one is fetching
+ * it stops being one — leaving it there invites the same download twice, which
+ * is the one mistake the client will not catch for you. So the page asks this
+ * first and drops the rows that answer yes.
+ *
+ * Yes means: qBittorrent is holding it, or it finished and was tidied away
+ * afterwards. No means the torrent was cancelled, deleted or errored — the
+ * fetch did not happen, so the row comes back exactly as it was. That is the
+ * whole reason this is asked of the client at read time rather than written
+ * down at send time: a send is not an arrival, and only the client knows the
+ * difference.
+ *
+ * Two ways a row is matched, because the queue's suggestion is not the only
+ * release you might take for a film. The magnet's own info hash is exact. The
+ * film recorded against the download catches the rest — you opened the list,
+ * read the options and took a different one — at the cost of matching on title
+ * alone, since that is all the log stores. Two films of the same name and
+ * different years are one hidden row, which the next cancel puts back.
+ *
+ * With no client configured, or one that will not answer, every logged release
+ * counts as held: a row in the log is far more likely to be a fetch in flight
+ * than one taken back, and the failure worth avoiding is the duplicate.
+ */
+export async function alreadyFetching(): Promise<
+  (release: { title: string; magnet?: string }) => boolean
+> {
+  const rows = db
+    .prepare("SELECT hash, completed_at, film_title FROM downloads")
+    .all() as {
+    hash: string;
+    completed_at: number | null;
+    film_title: string | null;
+  }[];
+
+  if (rows.length === 0) return () => false;
+
+  let live: Map<string, Download> | undefined;
+  if (hasQb()) {
+    try {
+      live = new Map((await getDownloads()).map((d) => [d.hash, d]));
+    } catch {
+      // Unreachable: fall through to the log alone, which holds every hash.
+    }
+  }
+
+  const hashes = new Set<string>();
+  const films = new Set<string>();
+
+  for (const row of rows) {
+    const current = live?.get(row.hash);
+    const held =
+      live === undefined
+        ? true
+        : current
+          ? !FAILED_STATES.has(current.state)
+          : // Not listed any more: finished and cleared away, or cancelled.
+            row.completed_at !== null;
+
+    if (!held) continue;
+    hashes.add(row.hash);
+    if (row.film_title) films.add(titleKey(row.film_title));
+  }
+
+  return (release) => {
+    const hash = release.magnet
+      ? parseMagnet(release.magnet).hash
+      : undefined;
+    if (hash && hashes.has(hash)) return true;
+    return films.has(titleKey(release.title));
+  };
+}

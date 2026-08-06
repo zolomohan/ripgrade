@@ -1326,6 +1326,10 @@ export async function sendToQb(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await addMagnet(magnet, { savePath, film });
+    // The queue drops what is being fetched, and the row this was sent from is
+    // on screen at this moment — so the page it left is re-read now rather
+    // than on whatever navigation happens to come next.
+    refresh();
     return { ok: true };
   } catch (err) {
     return {
@@ -1357,9 +1361,17 @@ export async function qbResume(hash: string) {
   return qbResult(() => resumeTorrent(hash));
 }
 
-/** `deleteFiles` follows the caller: junk for a cancel, kept for a finish. */
+/**
+ * `deleteFiles` follows the caller: junk for a cancel, kept for a finish.
+ *
+ * Refreshed after, because a cancelled fetch is a film worth offering again:
+ * the queue row that was hidden while this was downloading comes back on the
+ * same click that stopped it.
+ */
 export async function qbRemove(hash: string, deleteFiles: boolean) {
-  return qbResult(() => removeTorrent(hash, deleteFiles));
+  const result = await qbResult(() => removeTorrent(hash, deleteFiles));
+  if (result.ok) refresh();
+  return result;
 }
 
 /** The Downloads page's poll: the log wearing qBittorrent's present tense. */
@@ -1369,6 +1381,8 @@ export async function listDownloadLog(): Promise<DownloadEntry[]> {
 
 export async function forgetDownloadEntry(hash: string): Promise<void> {
   forgetDownload(hash);
+  // The log is what hides a queue row; forgetting the row un-hides the film.
+  refresh();
 }
 
 export async function getJackettStatus(): Promise<{
