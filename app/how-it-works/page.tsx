@@ -24,9 +24,13 @@ const SEVERITY_STYLE: Record<string, string> = {
 /**
  * One part of the rubric, closed until asked for.
  *
- * The page is a specification, and eleven of them in a row is a document you
+ * The page is a specification, and ten of them in a row is a document you
  * scroll rather than read. Shut, it is a contents page in the shape of the
- * collections list — a title, a line about it, and the same rule between rows.
+ * collections list — titles alone, and the same rule between rows.
+ *
+ * The lede is the section's thesis rather than a label for it, so it opens the
+ * body instead of crowding the summary: closed, you scan ten titles; open, you
+ * read the point of the section before its detail.
  *
  * A native <details>: it needs no JavaScript to open, it is open to a screen
  * reader and to the browser's own find-in-page, and printing shows everything.
@@ -43,12 +47,9 @@ function Section({
   return (
     <details className="doc-section group">
       <summary className="glow -mx-3 flex cursor-pointer list-none items-center gap-4 rounded-control px-3 py-3 transition-colors hover:bg-surface [&::-webkit-details-marker]:hidden">
-        <div className="min-w-0 flex-1">
-          <h2 className="font-display text-lg font-semibold tracking-tight">
-            {title}
-          </h2>
-          {lede && <p className="mt-0.5 text-sm opacity-45">{lede}</p>}
-        </div>
+        <h2 className="min-w-0 flex-1 font-display text-lg font-semibold tracking-tight">
+          {title}
+        </h2>
 
         <svg
           viewBox="0 0 24 24"
@@ -70,6 +71,7 @@ function Section({
           and `code` are lifted back to full strength — they are the words you
           are meant to find when skimming. */}
       <div className="flex flex-col gap-4 pt-1 pb-6 text-sm leading-relaxed opacity-75 [&_code]:rounded-chip [&_code]:bg-surface-strong [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_code]:opacity-100 [&_em]:opacity-100 [&_strong]:font-medium [&_strong]:opacity-100">
+        {lede && <p className="opacity-100">{lede}</p>}
         {children}
       </div>
     </details>
@@ -248,7 +250,7 @@ export default function HowItWorks() {
           ].map((el) => (
             <div
               key={el.name}
-              className="rounded-control border border-line px-4 py-3"
+              className="rounded-card border border-line px-4 py-3"
             >
               <div className="flex items-baseline justify-between gap-3">
                 <p className="text-sm font-medium">{el.name}</p>
@@ -297,7 +299,7 @@ export default function HowItWorks() {
           replaced file is never described by the old file&rsquo;s metadata.
         </p>
         <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-medium tracking-wide uppercase opacity-50">
+          <h3 className="font-display text-base font-semibold tracking-tight">
             Reading every frame
           </h3>
           <p>
@@ -334,33 +336,6 @@ export default function HowItWorks() {
       </Section>
 
       <Section
-        title="Bits per pixel per frame"
-        lede="The single most useful number for judging an encode, and the one that makes different resolutions comparable."
-      >
-        <p className="rounded-control border border-line px-4 py-3 font-mono text-sm">
-          bpp = video bitrate ÷ (width × height × frame rate)
-        </p>
-        <p>
-          Raw bitrate is misleading: 15 Mbps is generous at 1080p and starved at
-          2160p. Dividing by the number of pixels encoded per second normalises
-          that away, so one scale works everywhere.
-        </p>
-        <Table
-          head={["Band", "Threshold", "Meaning"]}
-          rows={[
-            ["Excellent", `≥ ${BPP.excellent}`, "Near-transparent"],
-            ["Good", `≥ ${BPP.good}`, "Very hard to fault"],
-            ["Fair", `≥ ${BPP.fair}`, "Watchable, some loss"],
-            ["Poor", `< ${BPP.fair}`, "Banding and motion smear"],
-          ]}
-        />
-        <p>
-          Remuxes are exempt: they carry the disc bitrate by definition, so bpp
-          only discriminates between encodes.
-        </p>
-      </Section>
-
-      <Section
         title="Video score"
         lede="Points accumulate, then clamp to 100. Resolution sets the floor; HDR and encode quality decide the rest."
       >
@@ -371,6 +346,11 @@ export default function HowItWorks() {
             `+${v}`,
           ])}
         />
+        <p>
+          Resolution is judged on frame <em>width</em>, not height. A 2.40:1
+          scope transfer is 3840×1600 — reading the height alone would misfile
+          it as 1080p.
+        </p>
         <Table
           head={["HDR format", "Points"]}
           rows={Object.entries(VIDEO_POINTS.hdr).map(([k, v]) => [k, `+${v}`])}
@@ -388,11 +368,41 @@ export default function HowItWorks() {
             [`Encode at bpp ≥ ${BPP.fair}`, `+${VIDEO_POINTS.bppFair}`],
           ]}
         />
-        <p>
-          Resolution is judged on frame <em>width</em>, not height. A 2.40:1
-          scope transfer is 3840×1600 — reading the height alone would misfile
-          it as 1080p.
-        </p>
+
+        {/* The bonus table is where a reader first meets bpp, so the measure is
+            explained immediately after it rather than in a section of its own.
+            Release score leans on it too, and reads later — a definition given
+            once, at first sight, serves both. */}
+        <div className="flex flex-col gap-3">
+          <h3 className="font-display text-base font-semibold tracking-tight">
+            Bits per pixel per frame
+          </h3>
+          <p>
+            The single most useful number for judging an encode, and the one
+            that makes different resolutions comparable.
+          </p>
+          <p className="rounded-control border border-line px-4 py-3 font-mono text-sm">
+            bpp = video bitrate ÷ (width × height × frame rate)
+          </p>
+          <p>
+            Raw bitrate is misleading: 15 Mbps is generous at 1080p and starved
+            at 2160p. Dividing by the number of pixels encoded per second
+            normalises that away, so one scale works everywhere.
+          </p>
+          <Table
+            head={["Band", "Threshold", "Meaning"]}
+            rows={[
+              ["Excellent", `≥ ${BPP.excellent}`, "Near-transparent"],
+              ["Good", `≥ ${BPP.good}`, "Very hard to fault"],
+              ["Fair", `≥ ${BPP.fair}`, "Watchable, some loss"],
+              ["Poor", `< ${BPP.fair}`, "Banding and motion smear"],
+            ]}
+          />
+          <p>
+            Remuxes are exempt: they carry the disc bitrate by definition, so
+            bpp only discriminates between encodes.
+          </p>
+        </div>
       </Section>
 
       <Section
