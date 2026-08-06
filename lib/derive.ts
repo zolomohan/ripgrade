@@ -292,6 +292,52 @@ export type AudioTrack = {
 };
 
 /**
+ * One text track. None of this is scored — a subtitle has never made a copy
+ * better or worse on the rubric — but which tracks a file carries decides
+ * whether it can be watched at all in a given room, so it is worth listing
+ * rather than counting.
+ */
+export type SubtitleTrack = {
+  format: string;
+  language?: string;
+  /** The muxer's own name for the track, where it wrote one. */
+  title?: string;
+  /** Shown whether or not subtitles were asked for — signs, alien dialogue. */
+  forced: boolean;
+  /** For the deaf and hard of hearing: names the speaker and the sounds. */
+  sdh: boolean;
+  /** What a player selects when nothing is chosen for it. */
+  default: boolean;
+  /** How many cues the track holds, where MediaInfo counted them. */
+  cues?: number;
+};
+
+/**
+ * "en" is a filing code, not a language. A track carries whatever the muxer
+ * wrote into the header — "en", "eng", "pt-BR" — and the platform already
+ * knows all three by name, so it is asked rather than a table being kept here
+ * and going stale.
+ */
+const LANGUAGE_NAMES = new Intl.DisplayNames(["en-GB"], {
+  type: "language",
+  fallback: "code",
+});
+
+/**
+ * Whatever it cannot place — a private tag, an empty field, the "und" that
+ * means the muxer did not say — is shown exactly as it came. A code you can
+ * look up beats "root", and a malformed tag throws rather than falling back.
+ */
+export function languageName(code: string): string {
+  try {
+    const name = LANGUAGE_NAMES.of(code);
+    return !name || name === "root" ? code : name;
+  } catch {
+    return code;
+  }
+}
+
+/**
  * Everything the rubric actually reads. A file supplies these by being probed;
  * anything else that can be described in the same terms can be scored beside it.
  */
@@ -394,6 +440,13 @@ export type Derived = {
   dovi?: DoviScan;
 
   audio: AudioTrack[];
+  /**
+   * Every text track, in the order the file lists them. Optional because rows
+   * derived before this field existed carry only the languages below; the next
+   * derive pass fills it in.
+   */
+  subtitles?: SubtitleTrack[];
+  /** The distinct languages of the above — what the issue checks read. */
   subtitleLanguages: string[];
 
   releaseType: ReleaseType;
@@ -687,6 +740,33 @@ function audioOf(track: Track): AudioTrack {
     lossless: LOSSLESS.test(label) || LOSSLESS.test(format),
     atmos: /atmos/i.test(label),
     dtsx: /DTS:?X/i.test(label) || /XLL X/i.test(extra),
+  };
+}
+
+/**
+ * Nothing in the stream marks a track as being for the hard of hearing — the
+ * muxer says so in the track name, or nobody does. "HI" is left out of this on
+ * purpose: it matches half the words in an English sentence.
+ */
+const SDH = /\b(SDH|CC|closed[\s-]?captions?|hearing[\s-]?impaired)\b/i;
+
+function subtitleOf(track: Track): SubtitleTrack {
+  const title = str(track, "Title");
+  const format = str(track, "Format") ?? "unknown";
+
+  return {
+    // An SRT is stored as plain UTF-8 text and reported as exactly that, which
+    // is not the word anyone calls the format by. Everything else — PGS,
+    // VobSub, ASS — already arrives under its own name.
+    format: format === "UTF-8" ? "SubRip" : format,
+    language: str(track, "Language"),
+    title,
+    // MediaInfo writes these as "Yes"/"No", and omits them on a track that is
+    // neither — so only an explicit yes counts.
+    forced: str(track, "Forced") === "Yes",
+    default: str(track, "Default") === "Yes",
+    sdh: SDH.test(title ?? ""),
+    cues: num(track, "ElementCount"),
   };
 }
 
@@ -1570,7 +1650,9 @@ export function derive(
   const general = all.find((t) => t["@type"] === "General") ?? {};
   const video = all.find((t) => t["@type"] === "Video") ?? {};
   const audioTracks = all.filter((t) => t["@type"] === "Audio").map(audioOf);
-  const textTracks = all.filter((t) => t["@type"] === "Text");
+  const textTracks = all
+    .filter((t) => t["@type"] === "Text")
+    .map(subtitleOf);
 
   const segments = filePath.split("/");
   const fileName = segments[segments.length - 1] ?? filePath;
@@ -1667,11 +1749,10 @@ export function derive(
     dovi: dovi && !dovi.error ? dovi : undefined,
 
     audio: audioTracks,
+    subtitles: textTracks,
     subtitleLanguages: [
       ...new Set(
-        textTracks
-          .map((t) => str(t, "Language"))
-          .filter((l): l is string => !!l),
+        textTracks.map((t) => t.language).filter((l): l is string => !!l),
       ),
     ],
 

@@ -9,6 +9,7 @@ import {
   STATUS_BANDS,
   classifyEnhancementLayer,
   derive,
+  languageName,
   parseEpisode,
   parseName,
   runtimeDrift,
@@ -253,13 +254,19 @@ test("restores the colon that exFAT-safe folder names replace", () => {
 
 type FakeTrack = Record<string, string | Record<string, string>>;
 
-function mediainfo(general: FakeTrack, video: FakeTrack, audio: FakeTrack[] = []) {
+function mediainfo(
+  general: FakeTrack,
+  video: FakeTrack,
+  audio: FakeTrack[] = [],
+  text: FakeTrack[] = [],
+) {
   return {
     media: {
       track: [
         { "@type": "General", Duration: "7200", ...general },
         { "@type": "Video", Width: "3840", Height: "2160", FrameRate: "23.976", ...video },
         ...audio.map((a) => ({ "@type": "Audio", ...a })),
+        ...text.map((t) => ({ "@type": "Text", ...t })),
       ],
     },
   };
@@ -382,6 +389,69 @@ test("perfect audio cannot lift a 1080p SDR file into the top tier", () => {
   assert.equal(d.scores.audio, 100);
   assert.equal(d.scores.release, 100);
   assert.ok(d.scores.overall < 75, `expected capped score, got ${d.scores.overall}`);
+});
+
+// ---------------------------------------------------------------------------
+// Subtitle tracks
+// ---------------------------------------------------------------------------
+
+test("text tracks are read per track, and the language list follows them", () => {
+  const d = derive(
+    "/m/Arrival/Arrival.2016.2160p.mkv",
+    50e9,
+    mediainfo({}, { Format: "HEVC" }, [], [
+      { Format: "PGS", Language: "en", Default: "Yes", ElementCount: "1420" },
+      { Format: "PGS", Language: "en", Title: "English SDH" },
+      { Format: "UTF-8", Language: "fr", Forced: "Yes", Title: "Forced" },
+      { Format: "PGS", Language: "en" },
+    ]),
+  );
+
+  assert.equal(d.subtitles?.length, 4);
+  assert.deepEqual(d.subtitles?.[0], {
+    format: "PGS",
+    language: "en",
+    title: undefined,
+    forced: false,
+    default: true,
+    sdh: false,
+    cues: 1420,
+  });
+  // An SRT is only "UTF-8" to MediaInfo.
+  assert.equal(d.subtitles?.[2].format, "SubRip");
+  assert.equal(d.subtitles?.[2].forced, true);
+  assert.equal(d.subtitles?.[1].sdh, true);
+  // Deduped, in the order the file lists them.
+  assert.deepEqual(d.subtitleLanguages, ["en", "fr"]);
+});
+
+test("a track named for the hearing is SDH; one merely named 'Hi there' is not", () => {
+  const d = derive(
+    "/m/Heat/Heat.1995.2160p.mkv",
+    40e9,
+    mediainfo({}, { Format: "HEVC" }, [], [
+      { Format: "PGS", Language: "en", Title: "Closed Captions" },
+      { Format: "PGS", Language: "en", Title: "Hi there, commentary" },
+    ]),
+  );
+  assert.equal(d.subtitles?.[0].sdh, true);
+  assert.equal(d.subtitles?.[1].sdh, false);
+});
+
+test("language codes are shown by name, whichever spelling the muxer used", () => {
+  assert.equal(languageName("en"), "English");
+  assert.equal(languageName("eng"), "English");
+  assert.equal(languageName("pt-BR"), "Brazilian Portuguese");
+  // Nothing to name it by: the code itself is more use than "root".
+  assert.equal(languageName("und"), "und");
+  // Malformed tags throw inside Intl rather than falling back.
+  assert.equal(languageName("en_US"), "en_US");
+});
+
+test("a file with no text tracks has an empty subtitle list, not a missing one", () => {
+  const d = derive("/m/Fake/Fake.2020.2160p.mkv", 10e9, mediainfo({}, { Format: "HEVC" }));
+  assert.deepEqual(d.subtitles, []);
+  assert.deepEqual(d.subtitleLanguages, []);
 });
 
 // ---------------------------------------------------------------------------

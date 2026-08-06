@@ -3,8 +3,13 @@ import { notFound, redirect } from "next/navigation";
 
 import { movieId, posterName, showId } from "@/lib/routes";
 import { getEpisodeContext, type ShowEpisode } from "@/lib/shows";
-import { groupIssues, type Status } from "@/lib/derive";
-import { backupBytes } from "@/lib/convert";
+import {
+  groupIssues,
+  languageName,
+  type Status,
+  type SubtitleTrack,
+} from "@/lib/derive";
+import { backupBytes, filePresent } from "@/lib/convert";
 import { getDisc } from "@/lib/disc";
 import { hasJackett } from "@/lib/jackett";
 import { getMovie, type LibraryItem } from "@/lib/library";
@@ -120,7 +125,7 @@ function Spec({ movie }: { movie: LibraryItem }) {
     ...(movie.edition
       ? ([["Edition", movie.edition]] as [string, string][])
       : []),
-    ["Subtitles", movie.subtitleLanguages.join(", ") || "none"],
+    ["Subtitles", movie.subtitleLanguages.map(languageName).join(", ") || "none"],
     ...(movie.imdbId ? ([["IMDb", movie.imdbId]] as [string, string][]) : []),
     ["Path", movie.path],
   ];
@@ -224,6 +229,18 @@ export async function DetailPage({
     movie.audio.find((track) => track.atmos || track.dtsx) ??
     movie.audio.find((track) => track.lossless) ??
     movie.audio[0];
+  // A file scanned before the per-track detail was recorded knows only which
+  // languages it has. That much is still worth showing, so it stands in as a
+  // row per language and fills itself in at the next scan.
+  const subtitles: SubtitleTrack[] =
+    movie.subtitles ??
+    movie.subtitleLanguages.map((language) => ({
+      format: "unknown",
+      language,
+      forced: false,
+      sdh: false,
+      default: false,
+    }));
 
   // An episode is not identified on its own — everything TMDb knows about it
   // comes through its series, so the page looks the file up in its show and
@@ -456,16 +473,16 @@ export async function DetailPage({
         </section>
 
         {/*
-          * What this copy is, and what is wrong with it — one list.
-          *
-          * They were two: a summary here and an Issues section below it. But
-          * both answer the same question in the same sentences, and reading the
-          * good news in one place and the bad in another, a fold apart, made a
-          * page you had to assemble. The flaws come first because they are what
-          * changes what you do next, tinted by severity rather than labelled —
-          * the same trick the score ring plays, with the words kept for anyone
-          * who cannot see the colour.
-          */}
+         * What this copy is, and what is wrong with it — one list.
+         *
+         * They were two: a summary here and an Issues section below it. But
+         * both answer the same question in the same sentences, and reading the
+         * good news in one place and the bad in another, a fold apart, made a
+         * page you had to assemble. The flaws come first because they are what
+         * changes what you do next, tinted by severity rather than labelled —
+         * the same trick the score ring plays, with the words kept for anyone
+         * who cannot see the colour.
+         */}
         <ul className="ruled mt-10 mb-10 flex flex-col gap-2 text-sm opacity-80">
           {groupIssues(movie.issues).flatMap((group) =>
             group.messages
@@ -508,6 +525,7 @@ export async function DetailPage({
             scan={movie.dovi}
             hdr10={movie.hdr10}
             backupBytes={backupBytes(movie.path)}
+            present={filePresent(movie.path)}
           />
         )}
 
@@ -793,7 +811,9 @@ export async function DetailPage({
             title="Best disc available"
             summary={
               disc?.best
-                ? [disc.best.title, disc.best.format].filter(Boolean).join(" · ")
+                ? [disc.best.title, disc.best.format]
+                    .filter(Boolean)
+                    .join(" · ")
                 : "None found"
             }
           >
@@ -945,7 +965,7 @@ export async function DetailPage({
                       {track.channels || "—"}
                     </td>
                     <td className="px-4 py-2 opacity-70">
-                      {track.language ?? "—"}
+                      {track.language ? languageName(track.language) : "—"}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums opacity-70">
                       {track.bitrateKbps
@@ -957,6 +977,68 @@ export async function DetailPage({
               </tbody>
             </table>
           </div>
+        </Panel>
+
+        {/* Subtitle tracks — the audio table's counterpart. The spec grid says
+            which languages are in there; this says what they actually are,
+            which is the difference between a full English track and a forced
+            one that only translates the signs. */}
+        <Panel
+          title="Subtitle tracks"
+          // The count alone. A file can carry a dozen text tracks, and naming
+          // every language in a line that has to stay one line only truncates
+          // — the table below is where the languages are read.
+          summary={
+            subtitles.length === 0
+              ? "none"
+              : `${subtitles.length} track${subtitles.length === 1 ? "" : "s"}`
+          }
+        >
+          {subtitles.length === 0 ? (
+            <p className="text-sm opacity-60">
+              This file carries no subtitles at all — nothing to turn on, in any
+              language.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-xs uppercase tracking-wide opacity-50">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">Format</th>
+                    <th className="px-4 py-2 font-medium">Language</th>
+                    <th className="px-4 py-2 font-medium">Track</th>
+                    <th className="px-4 py-2 text-right font-medium">Cues</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subtitles.map((track, i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-2">{track.format}</td>
+                      <td className="px-4 py-2 opacity-70">
+                        {track.language ? languageName(track.language) : "—"}
+                      </td>
+                      {/* The muxer's name for the track and the flags a player
+                          reads are one answer to "which one is this", so they
+                          are one column rather than three sparse ones. */}
+                      <td className="px-4 py-2 opacity-70">
+                        {[
+                          track.title,
+                          track.forced ? "forced" : null,
+                          track.sdh ? "SDH" : null,
+                          track.default ? "default" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums opacity-70">
+                        {track.cues?.toLocaleString() ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Panel>
 
         {/* Last, because it explains what the top of the page already showed. */}

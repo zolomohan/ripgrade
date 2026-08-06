@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Art } from "@/app/art";
 import { MagnetAction } from "@/app/magnet-action";
+import { languageName } from "@/lib/derive";
 import { findDuplicateGroup, type LibraryItem } from "@/lib/library";
 import { decodeId, posterName } from "@/lib/routes";
 import { storedHitFor, type StoredHit } from "@/lib/upgrade-sweep";
@@ -235,7 +236,9 @@ function buildRows(copies: LibraryItem[], hit: StoredHit | null): Row[] {
     row(
       "Subtitles",
       (m) =>
-        m.subtitleLanguages.length ? m.subtitleLanguages.join(", ") : "none",
+        m.subtitleLanguages.length
+          ? m.subtitleLanguages.map(languageName).join(", ")
+          : "none",
       { score: (m) => m.subtitleLanguages.length },
     ),
     row("Runtime", (m) => runtime(m.durationSec)),
