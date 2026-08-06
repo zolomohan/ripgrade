@@ -23,6 +23,22 @@ export function getDiscs(): Map<number, DiscLookup> {
   );
 }
 
+/**
+ * Every film a disc release was actually found for.
+ *
+ * A lookup that found nothing is cached too, so that it is not retried on every
+ * run — which means a row here is not a disc. `best` is what separates the two,
+ * and `json_extract` asks SQLite rather than parsing every lookup to find out.
+ */
+export function discIds(): Set<number> {
+  const rows = db
+    .prepare(
+      "SELECT tmdb_id FROM disc WHERE json_extract(lookup, '$.best') IS NOT NULL",
+    )
+    .all() as { tmdb_id: number }[];
+  return new Set(rows.map((r) => r.tmdb_id));
+}
+
 export function hasDisc(tmdbId: number): boolean {
   return Boolean(
     db.prepare("SELECT 1 FROM disc WHERE tmdb_id = ?").get(tmdbId),

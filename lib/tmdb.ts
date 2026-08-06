@@ -164,7 +164,27 @@ export type TmdbShow = {
   poster_path?: string | null;
   backdrop_path?: string | null;
   number_of_seasons?: number;
-  seasons?: { season_number: number; episode_count: number; name: string }[];
+  seasons?: {
+    season_number: number;
+    episode_count: number;
+    name: string;
+    /** The rest of what a season carries, for listing one that is not held. */
+    overview?: string;
+    air_date?: string;
+    poster_path?: string | null;
+  }[];
+  /**
+   * The rest of what `/tv/{id}` returns, which only the page for a series
+   * nobody here owns has any use for: with no episodes on the drive to describe
+   * it, what TMDb says about it is all there is to show.
+   */
+  number_of_episodes?: number;
+  episode_run_time?: number[];
+  genres?: { id: number; name: string }[];
+  vote_average?: number;
+  /** "Returning Series", "Ended", "Canceled". */
+  status?: string;
+  last_air_date?: string;
 };
 
 export type TmdbEpisode = {
@@ -196,7 +216,13 @@ export function getTvShow(id: number): Promise<TmdbShow> {
 export function getSeason(
   id: number,
   season: number,
-): Promise<{ episodes: TmdbEpisode[] }> {
+): Promise<{
+  name?: string;
+  overview?: string;
+  air_date?: string;
+  poster_path?: string | null;
+  episodes: TmdbEpisode[];
+}> {
   return api(`/tv/${id}/season/${season}`);
 }
 
