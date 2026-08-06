@@ -7,6 +7,7 @@ import {
   findUpgradesForSeason,
   findReleasesFor,
   findReleasesForEpisode,
+  findReleasesForShow,
   type UpgradeResponse,
 } from "@/app/actions";
 import { MagnetAction } from "@/app/magnet-action";
@@ -35,6 +36,8 @@ import { Modal, useClosing } from "@/app/modal";
 export type Subject =
   | { kind: "movie"; path: string }
   | { kind: "tmdb"; tmdbId: number }
+  /** A whole series nobody here owns — see findReleasesForShow. */
+  | { kind: "tmdbShow"; tmdbId: number }
   | { kind: "season"; showKey: string; season: number }
   | { kind: "episode"; showKey: string; season: number; episode: number };
 
@@ -373,6 +376,30 @@ export function NotConfigured() {
  * differs everywhere it is used: a button on a film, a whole tile on the
  * wishlist. Searching happens on mount — being rendered *is* the request.
  */
+/**
+ * The one search each kind of subject amounts to. Five questions with one
+ * answer shape, so the dialog above asks without knowing which it is asking.
+ */
+function searchFor(subject: Subject, term?: string): Promise<UpgradeResponse> {
+  switch (subject.kind) {
+    case "movie":
+      return findUpgradesForMovie(subject.path, term);
+    case "tmdb":
+      return findReleasesFor(subject.tmdbId, term);
+    case "tmdbShow":
+      return findReleasesForShow(subject.tmdbId, term);
+    case "season":
+      return findUpgradesForSeason(subject.showKey, subject.season, term);
+    case "episode":
+      return findReleasesForEpisode(
+        subject.showKey,
+        subject.season,
+        subject.episode,
+        term,
+      );
+  }
+}
+
 export function ReleaseSearchModal({
   open,
   subject,
@@ -408,24 +435,7 @@ export function ReleaseSearchModal({
 
   function run(term?: string) {
     startTransition(async () => {
-      setResponse(
-        subject.kind === "movie"
-          ? await findUpgradesForMovie(subject.path, term)
-          : subject.kind === "tmdb"
-            ? await findReleasesFor(subject.tmdbId, term)
-            : subject.kind === "season"
-              ? await findUpgradesForSeason(
-                  subject.showKey,
-                  subject.season,
-                  term,
-                )
-              : await findReleasesForEpisode(
-                  subject.showKey,
-                  subject.season,
-                  subject.episode,
-                  term,
-                ),
-      );
+      setResponse(await searchFor(subject, term));
     });
   }
 

@@ -2,11 +2,12 @@ import "server-only";
 
 import { db } from "./db";
 import { getLibrary } from "./library";
+import { getShows } from "./shows";
 import { getMovie, hasCredentials } from "./tmdb";
 import type { Status } from "./derive";
 
 /**
- * Films you want but do not have.
+ * Films and shows you want but do not have.
  *
  * The rest of this app describes what is on the drive. This is the one part
  * that describes what is not — so it is stored whole rather than derived from
@@ -16,26 +17,55 @@ import type { Status } from "./derive";
  * the only automatic thing here: `owned` is joined on at read time from the
  * library's own TMDb matches, never written into the row.
  */
+
+/**
+ * Which half of TMDb an entry came from. The two number their records
+ * separately, so the kind is part of an entry's identity rather than a label
+ * on it — see the composite key in lib/db.ts.
+ */
+export type WishKind = "movie" | "tv";
+
+/**
+ * What the library already holds of a want.
+ *
+ * A film is owned or it is not. A show is owned by degrees — some seasons, some
+ * episodes — so what it says is how much of it is there, and the two shapes
+ * differ because the answers do.
+ */
+export type WishlistOwned =
+  | {
+      kind: "movie";
+      path: string;
+      status: Status;
+      score: number;
+      resolution: string;
+    }
+  | {
+      kind: "tv";
+      /** The show's grouping key — `/show/{showId(key)}`. */
+      showKey: string;
+      score: number;
+      episodeCount: number;
+      seasonCount: number;
+    };
+
 export type WishlistEntry = {
   tmdbId: number;
+  kind: WishKind;
   title: string;
   year?: number;
   posterPath?: string;
   overview?: string;
   addedAt: number;
-  /** The set it belongs to, which is how the list groups itself. */
+  /** The set it belongs to, which is how the list groups itself. Films only. */
   collection?: { id: number; name: string };
-  /** The copy already in the library, if a scan has matched one to this film. */
-  owned?: {
-    path: string;
-    status: Status;
-    score: number;
-    resolution: string;
-  };
+  /** What the library holds of this, if a scan has matched anything to it. */
+  owned?: WishlistOwned;
 };
 
 type Row = {
   tmdb_id: number;
+  kind: string;
   added_at: number;
   title: string;
   year: number | null;
@@ -51,7 +81,7 @@ export function getWishlist(): WishlistEntry[] {
     .all() as Row[];
 
   // Best copy per film, so a duplicate does not decide which one is reported.
-  const owned = new Map<number, WishlistEntry["owned"]>();
+  const owned = new Map<number, WishlistOwned>();
   for (const movie of getLibrary()) {
     const id = movie.tmdb?.id;
     if (id === undefined) continue;
@@ -60,6 +90,7 @@ export function getWishlist(): WishlistEntry[] {
     if (existing && existing.score >= movie.scores.overall) continue;
 
     owned.set(id, {
+      kind: "movie",
       path: movie.path,
       status: movie.status,
       score: movie.scores.overall,
@@ -67,26 +98,49 @@ export function getWishlist(): WishlistEntry[] {
     });
   }
 
-  return rows.map((r) => ({
-    tmdbId: r.tmdb_id,
-    title: r.title,
-    year: r.year ?? undefined,
-    posterPath: r.poster_path ?? undefined,
-    overview: r.overview ?? undefined,
-    addedAt: r.added_at,
-    collection:
-      r.collection_id && r.collection_name
-        ? { id: r.collection_id, name: r.collection_name }
-        : undefined,
-    owned: owned.get(r.tmdb_id),
-  }));
+  // Built only where the list actually holds a series: rebuilding every show
+  // from its episodes is not free, and most lists are all films.
+  const shows = new Map<number, WishlistOwned>();
+  if (rows.some((r) => r.kind === "tv")) {
+    for (const show of getShows()) {
+      if (show.tmdb?.id === undefined) continue;
+      shows.set(show.tmdb.id, {
+        kind: "tv",
+        showKey: show.key,
+        score: show.score,
+        episodeCount: show.episodeCount,
+        seasonCount: show.seasons.length,
+      });
+    }
+  }
+
+  return rows.map((r) => {
+    const kind: WishKind = r.kind === "tv" ? "tv" : "movie";
+    return {
+      tmdbId: r.tmdb_id,
+      kind,
+      title: r.title,
+      year: r.year ?? undefined,
+      posterPath: r.poster_path ?? undefined,
+      overview: r.overview ?? undefined,
+      addedAt: r.added_at,
+      collection:
+        r.collection_id && r.collection_name
+          ? { id: r.collection_id, name: r.collection_name }
+          : undefined,
+      owned: (kind === "tv" ? shows : owned).get(r.tmdb_id),
+    };
+  });
 }
 
-/** Ids already on the list, so search results can say so before you click. */
-export function getWishlistIds(): Set<number> {
-  const rows = db.prepare("SELECT tmdb_id FROM wishlist").all() as {
-    tmdb_id: number;
-  }[];
+/**
+ * Ids already on the list, so search results can say so before you click. Per
+ * kind, because the two numberings say nothing about each other.
+ */
+export function getWishlistIds(kind: WishKind = "movie"): Set<number> {
+  const rows = db
+    .prepare("SELECT tmdb_id FROM wishlist WHERE kind = ?")
+    .all(kind) as { tmdb_id: number }[];
   return new Set(rows.map((r) => r.tmdb_id));
 }
 
@@ -97,6 +151,7 @@ export function getWishlistIds(): Set<number> {
  */
 export function addToWishlist(entry: {
   tmdbId: number;
+  kind?: WishKind;
   title: string;
   year?: number;
   posterPath?: string;
@@ -106,11 +161,11 @@ export function addToWishlist(entry: {
   collectionChecked?: boolean;
 }): void {
   db.prepare(
-    `INSERT INTO wishlist (tmdb_id, added_at, title, year, poster_path, overview,
+    `INSERT INTO wishlist (tmdb_id, kind, added_at, title, year, poster_path, overview,
                            collection_id, collection_name, collection_checked)
-     VALUES (@tmdbId, @addedAt, @title, @year, @posterPath, @overview,
+     VALUES (@tmdbId, @kind, @addedAt, @title, @year, @posterPath, @overview,
              @collectionId, @collectionName, @collectionChecked)
-     ON CONFLICT(tmdb_id) DO UPDATE SET
+     ON CONFLICT(tmdb_id, kind) DO UPDATE SET
        title = excluded.title,
        year = excluded.year,
        poster_path = excluded.poster_path,
@@ -120,6 +175,7 @@ export function addToWishlist(entry: {
        collection_checked = excluded.collection_checked`,
   ).run({
     tmdbId: entry.tmdbId,
+    kind: entry.kind ?? "movie",
     addedAt: Date.now(),
     title: entry.title,
     year: entry.year ?? null,
@@ -144,14 +200,16 @@ export async function backfillWishlistCollections(): Promise<number> {
   if (!hasCredentials()) return 0;
 
   const pending = db
-    .prepare("SELECT tmdb_id FROM wishlist WHERE collection_checked = 0")
+    .prepare(
+      "SELECT tmdb_id FROM wishlist WHERE kind = 'movie' AND collection_checked = 0",
+    )
     .all() as { tmdb_id: number }[];
   if (pending.length === 0) return 0;
 
   const write = db.prepare(
     `UPDATE wishlist
         SET collection_id = ?, collection_name = ?, collection_checked = 1
-      WHERE tmdb_id = ?`,
+      WHERE tmdb_id = ? AND kind = 'movie'`,
   );
 
   const BATCH = 8;
@@ -172,6 +230,12 @@ export async function backfillWishlistCollections(): Promise<number> {
   return pending.length;
 }
 
-export function removeFromWishlist(tmdbId: number): void {
-  db.prepare("DELETE FROM wishlist WHERE tmdb_id = ?").run(tmdbId);
+export function removeFromWishlist(
+  tmdbId: number,
+  kind: WishKind = "movie",
+): void {
+  db.prepare("DELETE FROM wishlist WHERE tmdb_id = ? AND kind = ?").run(
+    tmdbId,
+    kind,
+  );
 }

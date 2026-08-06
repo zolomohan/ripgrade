@@ -26,6 +26,7 @@ import {
   type ConvertJob,
 } from "@/lib/convert";
 import { classifyEnhancementLayer } from "@/lib/derive";
+import { getDiscoverEpisodes, type DiscoverEpisode } from "@/lib/discover";
 import {
   cancelDoviScan,
   getDoviJob,
@@ -45,7 +46,13 @@ import {
   searchAnything,
   type UpgradeSearch,
 } from "@/lib/upgrades";
-import { deriveAll, getLibrary } from "@/lib/library";
+import {
+  deriveAll,
+  getLibrary,
+  getMovies,
+  type LibraryItem,
+} from "@/lib/library";
+import { movieId, showId } from "@/lib/routes";
 import { startScan, type ScanState } from "@/lib/scanner";
 import {
   addLibraryRoot,
@@ -62,8 +69,10 @@ import {
 } from "@/lib/thumbs";
 import {
   cancelSweep,
-  getSweepJob,
+  getQueueRules as readQueueRules,
+  setQueueRules as writeQueueRules,
   startSweep,
+  type QueueRules,
   type SweepJob,
 } from "@/lib/upgrade-sweep";
 import {
@@ -82,9 +91,15 @@ import {
   type DownloadEntry,
   type FilmContext,
 } from "@/lib/qbittorrent";
-import { addToWishlist, getWishlist, removeFromWishlist } from "@/lib/wishlist";
+import {
+  addToWishlist,
+  getWishlist,
+  getWishlistIds,
+  removeFromWishlist,
+  type WishKind,
+} from "@/lib/wishlist";
 import { imageUrl } from "@/lib/image-url";
-import { getShow } from "@/lib/shows";
+import { getShow, getShows, type Show } from "@/lib/shows";
 import {
   clearSeasonDisc,
   getSeasonDisc,
@@ -98,6 +113,7 @@ import {
   getMovie as getTmdbMovie,
   getTmdbToken,
   getTvImages,
+  getTvShow,
   hasCredentials,
   isTmdbImagePath,
   searchMovies,
@@ -289,6 +305,12 @@ export async function rederive(): Promise<number> {
 
 export type SearchHit = {
   id: number;
+  /**
+   * Which half of TMDb answered. Absent means a film — the match review asks
+   * one half at a time and already knows which — but a want list holding both
+   * cannot tell one id from the other without it.
+   */
+  kind?: WishKind;
   title: string;
   year?: string;
   posterPath?: string;
@@ -312,6 +334,7 @@ export async function searchTmdb(query: string): Promise<SearchHit[]> {
 
   return results.slice(0, 12).map((r) => ({
     id: r.id,
+    kind: "movie" as const,
     title: r.title,
     year: r.release_date?.slice(0, 4) || undefined,
     posterPath: (r as { poster_path?: string | null }).poster_path ?? undefined,
@@ -320,13 +343,22 @@ export async function searchTmdb(query: string): Promise<SearchHit[]> {
   }));
 }
 
-/** The same search against TMDb's TV half, for linking a show by hand. */
+/**
+ * The same search against TMDb's TV half, for linking a show by hand and for
+ * the shows half of the universal search.
+ */
 export async function searchTmdbShows(query: string): Promise<SearchHit[]> {
   if (!query.trim()) return [];
 
   const { results } = await searchTv(query.trim());
+
+  // Nothing is said here about what the drive holds: rebuilding every show from
+  // its episodes to answer that would be a second full pass per keystroke, and
+  // the one caller that cares — the universal search — has the shows in hand
+  // already and matches them itself.
   return results.slice(0, 12).map((r) => ({
     id: r.id,
+    kind: "tv" as const,
     title: r.name,
     year: r.first_air_date?.slice(0, 4) || undefined,
     posterPath: r.poster_path ?? undefined,
@@ -397,26 +429,34 @@ export async function confirmMatch(
  * so the list keeps working with no network and no TMDb key.
  */
 export async function addWish(hit: SearchHit): Promise<void> {
+  const kind: WishKind = hit.kind ?? "movie";
+
   // A search result carries no collection, so the film is fetched for it — the
   // list groups by set, and a film that arrives ungrouped looks misfiled until
   // the next backfill. A failed fetch is left unchecked to be picked up then.
+  //
+  // A series has no such set to belong to, so it is stored as asked-and-answered
+  // and the backfill never looks at it again.
   let collection: { id: number; name: string } | undefined;
-  let checked = false;
-  try {
-    const movie = await getTmdbMovie(hit.id);
-    collection = movie.belongs_to_collection
-      ? {
-          id: movie.belongs_to_collection.id,
-          name: movie.belongs_to_collection.name,
-        }
-      : undefined;
-    checked = true;
-  } catch {
-    // Left for the backfill.
+  let checked = kind === "tv";
+  if (kind === "movie") {
+    try {
+      const movie = await getTmdbMovie(hit.id);
+      collection = movie.belongs_to_collection
+        ? {
+            id: movie.belongs_to_collection.id,
+            name: movie.belongs_to_collection.name,
+          }
+        : undefined;
+      checked = true;
+    } catch {
+      // Left for the backfill.
+    }
   }
 
   addToWishlist({
     tmdbId: hit.id,
+    kind,
     title: hit.title,
     year: hit.year ? Number(hit.year) : undefined,
     posterPath: hit.posterPath,
@@ -424,13 +464,252 @@ export async function addWish(hit: SearchHit): Promise<void> {
     collection,
     collectionChecked: checked,
   });
+
+  /**
+   * Its disc, and then go and look for it — without being asked twice.
+   *
+   * Wanting a film is a standing question only the indexers can answer, and
+   * until something asks them the entry sits on the list saying nothing. The
+   * sweep is that question — the same one the queue's own button runs — so it
+   * is started here rather than waiting for the next scan.
+   *
+   * The disc goes first, and the order is the whole point. A release is scored
+   * against the disc wherever one is known and against the bare rubric where
+   * none is, and which of those a search did is frozen into the result it
+   * stores. The scan's disc pass only walks films on the drive, so a want had
+   * no disc to be scored against at all: it was searched blind, and stayed
+   * blind for the day its check took to expire — even if you linked the disc
+   * by hand a minute later. Fetching it here is what makes the first search
+   * the right one.
+   *
+   * The whole sweep rather than this one film: a check younger than a day is
+   * skipped, so on a swept library this amounts to searching the new want and
+   * little else, and on an unswept one it fills the queue that was going to
+   * need filling anyway. It reports on the rail like any other job, and can be
+   * stopped there.
+   *
+   * Detached, so the button does not wait on someone else's server for either.
+   * Films only — the wishlist's pass is film-only, and a series is sold a
+   * season at a time with no single release to look up; see wishlistCandidates
+   * and the scan's own split. Jackett unconnected, the disc is still worth
+   * having: it is what the film's page and every later search read.
+   */
+  if (kind === "movie") {
+    void (async () => {
+      try {
+        await fetchDisc(
+          hit.id,
+          hit.title,
+          hit.year ? Number(hit.year) : undefined,
+        );
+      } catch {
+        // A dead blu-ray.com is no reason not to search; the film is simply
+        // scored on the rubric until a later scan or a hand-linked disc.
+      }
+      if (hasJackett()) startSweep();
+    })();
+  }
+
   refresh();
 }
 
-export async function removeWish(tmdbId: number): Promise<void> {
-  removeFromWishlist(tmdbId);
+export async function removeWish(
+  tmdbId: number,
+  kind: WishKind = "movie",
+): Promise<void> {
+  removeFromWishlist(tmdbId, kind);
   refresh();
 }
+
+// ---------------------------------------------------------------------------
+// Universal search
+// ---------------------------------------------------------------------------
+
+/**
+ * A film or a show you have, as little of it as a search result needs: enough
+ * to recognise it, and the route id to open it with.
+ */
+export type LibraryHit = {
+  /** Route id — `/film/{id}` for a film, `/show/{id}` for a show. */
+  id: string;
+  kind: WishKind;
+  title: string;
+  year?: number;
+  /** Artwork on the drive, and the TMDb path to fall back to; see app/art.tsx. */
+  poster?: string;
+  remotePoster?: string;
+  artAt?: number;
+  score: number;
+  /** A film's standing. A show has none — it is an average of many. */
+  status?: string;
+  /** What the drive holds of a show, which is how much of it you have. */
+  episodeCount?: number;
+  seasonCount?: number;
+};
+
+/** A film or show you do not have, and whether it is already on the want list. */
+export type DiscoverHit = SearchHit & {
+  kind: WishKind;
+  wishlisted: boolean;
+};
+
+export type UniversalResults = {
+  /** What matched on the drive. */
+  library: LibraryHit[];
+  /** What matched at TMDb and is not on the drive. */
+  discover: DiscoverHit[];
+  /** Without TMDb there is no second half — the local half still works. */
+  tmdb: boolean;
+  /** TMDb answered with something other than results. */
+  error?: string;
+};
+
+/** How many owned titles one search puts on screen before it stops listing. */
+const LIBRARY_LIMIT = 12;
+
+/**
+ * One question asked of both halves of the app: what you have, and what you
+ * could have.
+ *
+ * The two used to be separate searches on separate pages — the library filtered
+ * itself, the wishlist searched TMDb — which meant knowing which of the two a
+ * film was in before you could look for it. That is the one thing a search is
+ * for finding out.
+ *
+ * Films and shows are searched together for the same reason. Which shelf a
+ * title lives on is not something you should have to settle before typing it:
+ * the answer names the kind, and the tile that comes back knows where to go.
+ *
+ * A TMDb hit the library already holds is not offered as something to acquire;
+ * it is moved into the owned half, so a title appears once whichever side found
+ * it. That also covers the case a plain title match misses — something filed
+ * under a different name than the one you typed.
+ */
+export async function universalSearch(query: string): Promise<UniversalResults> {
+  const term = query.trim();
+  const tmdb = hasCredentials();
+  if (!term) return { library: [], discover: [], tmdb };
+
+  const needle = term.toLowerCase();
+  const movies = getMovies();
+  const shows = getShows();
+
+  // Keyed by path so a film found by title and again by TMDb id is one entry.
+  const owned = new Map<string, LibraryItem>();
+  for (const movie of movies) {
+    if (
+      movie.title.toLowerCase().includes(needle) ||
+      movie.fileName.toLowerCase().includes(needle)
+    ) {
+      owned.set(movie.path, movie);
+    }
+  }
+
+  // The same, a show at a time rather than a file at a time: an episode's name
+  // is not what you typed, and matching one would put a show on screen for
+  // every episode it has.
+  const ownedShows = new Map<string, Show>();
+  for (const show of shows) {
+    if (show.title.toLowerCase().includes(needle))
+      ownedShows.set(show.key, show);
+  }
+
+  const byTmdbId = new Map<number, LibraryItem>();
+  for (const movie of movies) {
+    if (movie.tmdb?.id !== undefined) byTmdbId.set(movie.tmdb.id, movie);
+  }
+
+  const showsByTmdbId = new Map<number, Show>();
+  for (const show of shows) {
+    if (show.tmdb?.id !== undefined) showsByTmdbId.set(show.tmdb.id, show);
+  }
+
+  const discover: DiscoverHit[] = [];
+  let error: string | undefined;
+
+  if (tmdb) {
+    // Both halves at once: two requests to TMDb answering one question, and
+    // waiting for them in turn would make the second wait on the first for no
+    // reason. One half failing does not take the other down with it.
+    const [films, series] = await Promise.allSettled([
+      searchTmdb(term),
+      searchTmdbShows(term),
+    ]);
+
+    if (films.status === "fulfilled") {
+      const wanted = getWishlistIds("movie");
+      for (const hit of films.value) {
+        const held = byTmdbId.get(hit.id);
+        if (held) owned.set(held.path, held);
+        else
+          discover.push({
+            ...hit,
+            kind: "movie",
+            wishlisted: wanted.has(hit.id),
+          });
+      }
+    } else {
+      error = reasonOf(films.reason);
+    }
+
+    if (series.status === "fulfilled") {
+      const wanted = getWishlistIds("tv");
+      for (const hit of series.value) {
+        const held = showsByTmdbId.get(hit.id);
+        if (held) ownedShows.set(held.key, held);
+        else
+          discover.push({ ...hit, kind: "tv", wishlisted: wanted.has(hit.id) });
+      }
+    } else {
+      error = error ?? reasonOf(series.reason);
+    }
+  }
+
+  // A title that starts with what you typed is more likely the one you meant
+  // than one that merely contains it somewhere. Films before shows within that,
+  // because the library is mostly films and the exceptions read as exceptions.
+  const library: LibraryHit[] = [
+    ...[...owned.values()].map((movie) => ({
+      id: movieId(movie.path),
+      kind: "movie" as const,
+      title: movie.title,
+      year: movie.year,
+      poster: movie.poster,
+      remotePoster: movie.art.poster,
+      artAt: movie.artAt,
+      score: movie.scores.overall,
+      status: movie.status,
+    })),
+    ...[...ownedShows.values()].map((show) => ({
+      id: showId(show.key),
+      kind: "tv" as const,
+      title: show.title,
+      year: show.tmdb?.year,
+      poster: show.poster,
+      remotePoster: show.art.poster,
+      artAt: show.artAt,
+      score: show.score,
+      episodeCount: show.episodeCount,
+      seasonCount: show.seasons.length,
+    })),
+  ]
+    .sort((a, b) => {
+      const starts = (hit: LibraryHit) =>
+        hit.title.toLowerCase().startsWith(needle) ? 0 : 1;
+      const film = (hit: LibraryHit) => (hit.kind === "movie" ? 0 : 1);
+      return (
+        starts(a) - starts(b) ||
+        film(a) - film(b) ||
+        a.title.localeCompare(b.title)
+      );
+    })
+    .slice(0, LIBRARY_LIMIT);
+
+  return { library, discover, tmdb, error };
+}
+
+const reasonOf = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
 
 // ---------------------------------------------------------------------------
 // Discs
@@ -887,17 +1166,12 @@ export async function chooseArtwork(
 // Upgrade sweep
 // ---------------------------------------------------------------------------
 
-export async function startUpgradeSweep(): Promise<SweepJob> {
-  if (!hasJackett()) {
-    return {
-      ...getSweepJob(),
-      status: "error",
-      error: "Connect Jackett on the Settings page to search.",
-    };
-  }
-  return startSweep();
-}
-
+/**
+ * There is no start here. A sweep begins where a scan ends — see
+ * sweepAfterScan in lib/scanner.ts — and a want being added starts one too, so
+ * nothing in the browser has to ask for it. Stopping one is still yours: the
+ * rail's cancel is the only control the sweep has left.
+ */
 export async function stopUpgradeSweep(): Promise<SweepJob> {
   return cancelSweep();
 }
@@ -954,6 +1228,23 @@ export async function saveTmdbToken(
 
 export async function disconnectTmdb(): Promise<void> {
   clearTmdbToken();
+  refresh();
+}
+
+// ---------------------------------------------------------------------------
+// The queue's bar
+// ---------------------------------------------------------------------------
+
+export async function getQueueRules(): Promise<QueueRules> {
+  return readQueueRules();
+}
+
+/**
+ * Takes whichever half changed. The queue is filtered as it is read, so this
+ * needs nothing more than a refresh to show its effect.
+ */
+export async function setQueueRules(rules: Partial<QueueRules>): Promise<void> {
+  writeQueueRules(rules);
   refresh();
 }
 
@@ -1277,6 +1568,153 @@ export async function findReleasesFor(
     return { ok: true, search };
   } catch (err) {
     return failed(err);
+  }
+}
+
+/**
+ * Releases for a series nobody here owns — a want list entry, or a show found
+ * in the search and not on the drive.
+ *
+ * The whole series at once, which is the only question that can be asked of a
+ * show you have none of: a season search needs a season, and picking one for
+ * you would be inventing the question. Complete-series packs are what the
+ * indexers answer with, and a season landing among them is still a season.
+ */
+export async function findReleasesForShow(
+  tmdbId: number,
+  /** A hand-edited search phrase, replacing the constructed one. */
+  query?: string,
+): Promise<UpgradeResponse> {
+  const entry = getWishlist().find(
+    (w) => w.kind === "tv" && w.tmdbId === tmdbId,
+  );
+
+  // As with a wanted film: the list is consulted but not required, and TMDb
+  // fills in whatever it does not carry. Usually cached, so usually free.
+  let title = entry?.title;
+  let year = entry?.year;
+  try {
+    const show = await getTvShow(tmdbId);
+    title = title ?? show.name;
+    year =
+      year ??
+      (show.first_air_date
+        ? Number(show.first_air_date.slice(0, 4))
+        : undefined);
+  } catch {
+    // Searchable without the year; only the title filter gets looser.
+  }
+
+  if (!title) return { ok: false, error: "Nothing known about this show." };
+
+  try {
+    // No disc and no copy on the drive, so the scores are the rubric's own —
+    // there is nothing here to be a fraction of or an improvement on.
+    const search = await findUpgrades(
+      { kind: "tv", title, year },
+      { term: query },
+    );
+    return { ok: true, search };
+  } catch (err) {
+    return failed(err);
+  }
+}
+
+/**
+ * The same for one season, and for one episode, of a series nobody here owns.
+ *
+ * Everything the library's own season and episode searches lean on — the files
+ * held, their runtimes, the disc set the season was released on — comes from
+ * the drive, and none of it exists here. What is left is the series' name and
+ * the numbers, which is exactly what an indexer is asked for anyway.
+ */
+async function tvTargetFor(
+  tmdbId: number,
+): Promise<{ title?: string; year?: number; runtimeMinutes?: number }> {
+  const entry = getWishlist().find(
+    (w) => w.kind === "tv" && w.tmdbId === tmdbId,
+  );
+
+  try {
+    const show = await getTvShow(tmdbId);
+    return {
+      title: entry?.title ?? show.name,
+      year:
+        entry?.year ??
+        (show.first_air_date
+          ? Number(show.first_air_date.slice(0, 4))
+          : undefined),
+      // TMDb's own figure for how long an episode runs, without which every
+      // encode among the results scores as "bitrate unknown".
+      runtimeMinutes: show.episode_run_time?.[0],
+    };
+  } catch {
+    return { title: entry?.title, year: entry?.year };
+  }
+}
+
+export async function findReleasesForTmdbSeason(
+  tmdbId: number,
+  season: number,
+  /** A hand-edited search phrase, replacing the constructed one. */
+  query?: string,
+): Promise<UpgradeResponse> {
+  const target = await tvTargetFor(tmdbId);
+  if (!target.title) return { ok: false, error: "Nothing known about this show." };
+
+  try {
+    const search = await findUpgrades(
+      { kind: "tv", title: target.title, year: target.year, season },
+      { term: query },
+    );
+    return { ok: true, search };
+  } catch (err) {
+    return failed(err);
+  }
+}
+
+export async function findReleasesForTmdbEpisode(
+  tmdbId: number,
+  season: number,
+  episode: number,
+  /** A hand-edited search phrase, replacing the constructed one. */
+  query?: string,
+): Promise<UpgradeResponse> {
+  const target = await tvTargetFor(tmdbId);
+  if (!target.title) return { ok: false, error: "Nothing known about this show." };
+
+  try {
+    const search = await findUpgrades(
+      {
+        kind: "tv",
+        title: target.title,
+        year: target.year,
+        season,
+        episode,
+        runtimeMinutes: target.runtimeMinutes,
+      },
+      { term: query },
+    );
+    return { ok: true, search };
+  } catch (err) {
+    return failed(err);
+  }
+}
+
+/**
+ * One season's episodes, for the list on a series nobody here owns. Read from
+ * TMDb on demand — the page asks for the season being looked at and no other.
+ */
+export async function listDiscoverEpisodes(
+  tmdbId: number,
+  season: number,
+): Promise<
+  { ok: true; episodes: DiscoverEpisode[] } | { ok: false; error: string }
+> {
+  try {
+    return { ok: true, episodes: await getDiscoverEpisodes(tmdbId, season) };
+  } catch (err) {
+    return { ok: false, error: reasonOf(err) };
   }
 }
 

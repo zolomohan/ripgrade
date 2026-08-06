@@ -1,20 +1,19 @@
-import { hasJackett } from "@/lib/jackett";
 import { SearchView } from "./search-view";
 
 export const metadata = { title: "Search — RipGrade" };
 
-// Nothing is read from the database here, but the Jackett settings are, and
-// they can change while the app is running.
+// Nothing is read here at render time — every answer arrives from an action —
+// but the actions behind it read the database and the settings, so there is
+// nothing worth prerendering either.
 export const dynamic = "force-dynamic";
 
 export default function SearchPage() {
   return (
-    <div className="flex flex-col">
-      {/* min-h-dvh so the empty state below the field has a height to centre
-          itself in; see the upgrades page. */}
-      <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col gap-6 px-6 py-8 sm:px-8">
-        <SearchView configured={hasJackett()} />
-      </main>
-    </div>
+    // The library page's own column and padding: this is a shelf of films like
+    // any other, arrived at by typing rather than by scanning a drive.
+    // `min-h-dvh` so the empty state has a height to centre itself in.
+    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-8 sm:px-8">
+      <SearchView />
+    </main>
   );
 }

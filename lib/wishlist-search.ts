@@ -3,7 +3,7 @@ import "server-only";
 import { db } from "./db";
 import { getDisc } from "./disc";
 import { bestUpgrade } from "./upgrades";
-import { trim, type StoredHit } from "./upgrade-sweep";
+import { queueFilter, trim, type StoredHit } from "./upgrade-sweep";
 import { getWishlist, type WishlistEntry } from "./wishlist";
 
 /**
@@ -52,9 +52,16 @@ const ABORT_AFTER_FAILURES = 3;
  *
  * An owned entry stays on the wishlist — taking it off is yours to do — but
  * searching for it would be answering a question that has stopped being open.
+ *
+ * Films only. A wanted series is not one search with one best answer: it is a
+ * season at a time, or an episode at a time, and which of those you want is
+ * not something a background pass can decide. Shows on the list are searched by
+ * hand, from the list.
  */
 export function wishlistCandidates(): WishlistEntry[] {
-  return getWishlist().filter((entry) => !entry.owned);
+  return getWishlist().filter(
+    (entry) => entry.kind === "movie" && !entry.owned,
+  );
 }
 
 export type WishlistProgress = {
@@ -93,7 +100,9 @@ export async function searchWishlist(
     .filter((entry) => now - (checked.get(entry.tmdbId) ?? 0) > FRESH_MS)
     // Never-checked first, then oldest check first — the same order the sweep
     // uses, so an interrupted pass resumes where it stopped.
-    .sort((a, b) => (checked.get(a.tmdbId) ?? 0) - (checked.get(b.tmdbId) ?? 0));
+    .sort(
+      (a, b) => (checked.get(a.tmdbId) ?? 0) - (checked.get(b.tmdbId) ?? 0),
+    );
 
   const progress: WishlistProgress = { total: stale.length, done: 0, found: 0 };
   options.onProgress?.({ ...progress });
@@ -176,10 +185,17 @@ export function getWishlistFinds(): WishlistFind[] {
     wishlistCandidates().map((entry) => [entry.tmdbId, entry]),
   );
 
+  const passes = queueFilter();
+
   const finds: WishlistFind[] = [];
   for (const row of rows) {
     const entry = wanted.get(row.tmdb_id);
     if (!entry) continue; // Taken off the list, or now on the drive.
+
+    // The queue's threshold, applied here too: a want and an upgrade sit in
+    // the same list and are read the same way, so one bar governs both.
+    const hit = JSON.parse(row.best) as StoredHit;
+    if (!passes(hit, entry.tmdbId)) continue;
 
     finds.push({
       tmdbId: entry.tmdbId,
@@ -187,7 +203,7 @@ export function getWishlistFinds(): WishlistFind[] {
       year: entry.year,
       posterPath: entry.posterPath,
       checkedAt: row.checked_at,
-      hit: JSON.parse(row.best) as StoredHit,
+      hit,
     });
   }
 
@@ -201,8 +217,8 @@ export function getWishlistFinds(): WishlistFind[] {
 
 /** How many wants have been looked up at all, for the empty states. */
 export function wishlistCheckedCount(): number {
-  const row = db
-    .prepare("SELECT COUNT(*) AS n FROM wishlist_checks")
-    .get() as { n: number };
+  const row = db.prepare("SELECT COUNT(*) AS n FROM wishlist_checks").get() as {
+    n: number;
+  };
   return row.n;
 }

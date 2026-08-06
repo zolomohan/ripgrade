@@ -1,6 +1,4 @@
 import { backfillWishlistCollections, getWishlist } from "@/lib/wishlist";
-import { hasJackett } from "@/lib/jackett";
-import { hasCredentials } from "@/lib/tmdb";
 import { WishlistView } from "./wishlist-view";
 
 export const metadata = { title: "Wishlist — RipGrade" };
@@ -19,11 +17,7 @@ export default async function WishlistPage() {
   return (
     <div className="flex flex-col">
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 sm:px-8">
-        <WishlistView
-          entries={entries}
-          canSearch={hasCredentials()}
-          jackettReady={hasJackett()}
-        />
+        <WishlistView entries={entries} />
       </main>
     </div>
   );
