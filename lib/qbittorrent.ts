@@ -2,9 +2,9 @@ import "server-only";
 
 import { db, getSetting, setSetting } from "./db";
 import { titleKey } from "./derive";
-import { getMovies } from "./library";
+import { getMovies, type LibraryItem } from "./library";
 import { guessFromTitle } from "./release-title";
-import { getWishlist } from "./wishlist";
+import { getWishlist, type WishlistEntry } from "./wishlist";
 
 /**
  * qBittorrent, over its WebUI API.
@@ -223,7 +223,16 @@ function parseMagnet(magnet: string): { hash?: string; name?: string } {
 }
 
 /** Which film a release was fetched for, carried from the button that sent it. */
-export type FilmContext = { title?: string; posterPath?: string };
+export type FilmContext = {
+  title?: string;
+  posterPath?: string;
+  /**
+   * The file in the library, when the match was one. Never stored — a film can
+   * arrive or leave between two reads of the log — so it is worked out again
+   * each time and only means "the library holds this right now".
+   */
+  path?: string;
+};
 
 /** Hands a magnet over, into this app's own category — and into the log. */
 export async function addMagnet(
@@ -408,6 +417,12 @@ export type DownloadEntry = {
   /** The film the release was fetched for, when the send knew it. */
   filmTitle?: string;
   posterPath?: string;
+  /**
+   * Where that film sits in the library, if it is in the library at all. The
+   * name the rest of the app knows this poster by is built from it, which is
+   * what lets the same film's poster travel between a shelf and this log.
+   */
+  filmPath?: string;
   live?: Download;
 };
 
@@ -421,7 +436,15 @@ export type DownloadEntry = {
  * against the library first and the wishlist second, exact year before
  * title alone.
  */
-function resolveFilm(releaseTitle: string): FilmContext | undefined {
+function resolveFilm(
+  releaseTitle: string,
+  /**
+   * Read once by the caller and handed in. This used to read the whole library
+   * and the whole wishlist itself, inside a loop, inside a loop over every row
+   * in the log — which is a full library read per candidate reading per row.
+   */
+  library: { movies: LibraryItem[]; wishes: WishlistEntry[] },
+): FilmContext | undefined {
   const tags = guessFromTitle(releaseTitle, {}).tags;
   if (!tags.title) return undefined;
 
@@ -444,17 +467,21 @@ function resolveFilm(releaseTitle: string): FilmContext | undefined {
   }
 
   for (const pass of passes) {
-    const movie = getMovies().find(
+    const movie = library.movies.find(
       (m) =>
         m.tmdb &&
         titleKey(m.tmdb.title, pass.year ? m.tmdb.year : undefined) ===
           pass.key,
     );
     if (movie?.tmdb) {
-      return { title: movie.tmdb.title, posterPath: movie.art.poster };
+      return {
+        title: movie.tmdb.title,
+        posterPath: movie.art.poster,
+        path: movie.path,
+      };
     }
 
-    const wish = getWishlist().find(
+    const wish = library.wishes.find(
       (w) => titleKey(w.title, pass.year ? w.year : undefined) === pass.key,
     );
     if (wish) return { title: wish.title, posterPath: wish.posterPath };
@@ -523,17 +550,22 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
     "UPDATE downloads SET film_title = ?, poster_path = ? WHERE hash = ?",
   );
 
+  // Read once for the whole pass, and handed to every match below.
+  const library = { movies: getMovies(), wishes: getWishlist() };
+
   const entries = rows.map((row): DownloadEntry => {
     const current = live?.get(row.hash);
     let completedAt = row.completed_at ?? undefined;
 
-    if (!row.film_title) {
-      const film = resolveFilm(current?.name ?? row.title);
-      if (film) {
-        row.film_title = film.title ?? null;
-        row.poster_path = film.posterPath ?? null;
-        fill.run(row.film_title, row.poster_path, row.hash);
-      }
+    // Run for every row, not only the ones with no film yet: the title and
+    // poster are stored once and stay, but where the film sits in the library
+    // is only true until the next scan, so it is asked again each read.
+    const film = resolveFilm(current?.name ?? row.title, library);
+
+    if (!row.film_title && film) {
+      row.film_title = film.title ?? null;
+      row.poster_path = film.posterPath ?? null;
+      fill.run(row.film_title, row.poster_path, row.hash);
     }
 
     if (current) {
@@ -560,6 +592,7 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
       lastState: current?.state ?? row.last_state ?? undefined,
       filmTitle: row.film_title ?? undefined,
       posterPath: row.poster_path ?? undefined,
+      filmPath: film?.path,
       live: current,
     };
   });

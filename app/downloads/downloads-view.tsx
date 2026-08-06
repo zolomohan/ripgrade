@@ -10,12 +10,13 @@ import {
   qbRemove,
   qbResume,
 } from "@/app/actions";
+import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
 import { CloseButton, Modal, useLingering } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
 import { stagger } from "@/app/stagger";
-import { imageUrl } from "@/lib/image-url";
 import type { DownloadEntry } from "@/lib/qbittorrent";
+import { posterName } from "@/lib/routes";
 
 /**
  * Everything ever handed to qBittorrent, in two tenses.
@@ -74,13 +75,30 @@ const SEEDING_STATES = new Set([
 ]);
 
 
-/** The film the release was fetched for, when the send knew it. */
-function Poster({ path, dim }: { path?: string; dim?: boolean }) {
+/**
+ * The film the release was fetched for, when the send knew it.
+ *
+ * Drawn by `Art` like every other poster in the app rather than by an `<img>`
+ * of its own — a broken frame here is the same broken frame it is anywhere
+ * else, and one component already knows what to do about it. That is also
+ * what lets it be named, and a named poster is one the browser will carry
+ * over from the shelf you came from rather than redraw.
+ */
+function Poster({
+  path,
+  name,
+  dim,
+}: {
+  path?: string;
+  /** `posterName(…)`, where this row's film is one the library holds. */
+  name?: string;
+  dim?: boolean;
+}) {
   return path ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={imageUrl(path, "w92")}
-      alt=""
+    <Art
+      remote={path}
+      size="w92"
+      transitionName={name}
       loading="lazy"
       className={`h-24 w-16 shrink-0 rounded-control object-cover ring-1 ring-line ${
         dim ? "opacity-60" : ""
@@ -252,6 +270,31 @@ export function DownloadsView({
   const active = entries.filter((e) => e.live && !e.live.done);
   const past = entries.filter((e) => !e.live || e.live.done);
 
+  /**
+   * Which rows name their poster, by hash.
+   *
+   * A row whose film is in the library names its poster the same thing every
+   * shelf in the app names it, so arriving here from one of them carries the
+   * picture across instead of drawing a new one. A film the library does not
+   * hold — a wishlist send, something fetched and not yet scanned — has no
+   * counterpart to travel from, and naming it would cost the browser a
+   * snapshot on every transition for nothing.
+   *
+   * Deduped because a name has to be unique on the page: two rows for one film
+   * (fetched twice, or a re-download beside its own history) would name the
+   * same poster twice, and the browser answers that by abandoning the
+   * transition altogether. The row nearest the top wins.
+   */
+  const named = new Map<string, string>();
+  const taken = new Set<string>();
+  for (const entry of [...active, ...past]) {
+    if (!entry.filmPath) continue;
+    const name = posterName(entry.filmPath);
+    if (taken.has(name)) continue;
+    taken.add(name);
+    named.set(entry.hash, name);
+  }
+
   if (!configured && entries.length === 0) {
     return (
       <EmptyState
@@ -342,7 +385,7 @@ export function DownloadsView({
                   style={stagger(i)}
                   className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-4"
                 >
-                  <Poster path={entry.posterPath} />
+                  <Poster path={entry.posterPath} name={named.get(entry.hash)} />
 
                   <div className="min-w-0 flex-1">
                     {entry.filmTitle && (
@@ -431,7 +474,11 @@ export function DownloadsView({
                   style={stagger(i)}
                   className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-4"
                 >
-                  <Poster path={entry.posterPath} dim={!d} />
+                  <Poster
+                    path={entry.posterPath}
+                    name={named.get(entry.hash)}
+                    dim={!d}
+                  />
                   <div className="min-w-0 flex-1">
                     {entry.filmTitle && (
                       <p
