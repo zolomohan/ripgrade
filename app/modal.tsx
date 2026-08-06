@@ -66,6 +66,52 @@ export function useLingering<T>(value: T | null): T | null {
   return alive ? held : null;
 }
 
+/**
+ * The way out, in the corner every dialog keeps it in.
+ *
+ * Escape and a click outside both dismiss, but neither is visible, and on a
+ * touchscreen only one of them exists at all — so every dialog draws the same
+ * small circle in the same place rather than each inventing its own word for
+ * leaving. It was already three identical copies before it was this.
+ *
+ * Not rendered by `Modal` itself: a dialog with a header wants it on the title
+ * line, and one without wants it floating over the corner. Where it goes is
+ * the dialog's business; what it looks like is not.
+ */
+export function CloseButton({
+  onClick,
+  disabled,
+  label = "Close",
+}: {
+  onClick: () => void;
+  /** Set while something is running that a stray dismissal must not interrupt. */
+  disabled?: boolean;
+  /** Where "Close" alone does not say what is being left. */
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line opacity-50 transition-opacity hover:opacity-100 disabled:opacity-20"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        aria-hidden
+        className="h-3.5 w-3.5"
+      >
+        <path d="M6 6l12 12M18 6L6 18" />
+      </svg>
+    </button>
+  );
+}
+
 export function Modal({
   open,
   onClose,

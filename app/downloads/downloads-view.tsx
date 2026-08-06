@@ -11,7 +11,7 @@ import {
   qbResume,
 } from "@/app/actions";
 import { EmptyState } from "@/app/empty-state";
-import { Modal, useLingering } from "@/app/modal";
+import { CloseButton, Modal, useLingering } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
 import { stagger } from "@/app/stagger";
 import { imageUrl } from "@/lib/image-url";
@@ -523,17 +523,25 @@ export function DownloadsView({
           panelClassName="w-full max-w-md overflow-hidden rounded-card border border-line bg-background shadow-2xl"
         >
           <div className="flex flex-col gap-4 p-5">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight">
-                {confirmShown.kind === "cancel"
-                  ? "Cancel this download?"
-                  : confirmShown.kind === "remove"
-                    ? "Remove from qBittorrent?"
-                    : "Clear from history?"}
-              </h2>
-              <p className="mt-1 truncate font-mono text-xs opacity-45">
-                {confirmShown.entry.filmTitle ?? confirmShown.entry.title}
-              </p>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold tracking-tight">
+                  {confirmShown.kind === "cancel"
+                    ? "Cancel this download?"
+                    : confirmShown.kind === "remove"
+                      ? "Remove from qBittorrent?"
+                      : "Clear from history?"}
+                </h2>
+                <p className="mt-1 truncate font-mono text-xs opacity-45">
+                  {confirmShown.entry.filmTitle ?? confirmShown.entry.title}
+                </p>
+              </div>
+              {/* Grey while the request is in flight, for the same reason the
+                  backdrop stops dismissing then. */}
+              <CloseButton
+                onClick={() => setConfirming(null)}
+                disabled={pending}
+              />
             </div>
 
             <p className="text-sm opacity-70">

@@ -5,7 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 import { browse, getLibraryFolders, sendToQb } from "@/app/actions";
 import { useCapabilities } from "@/app/capabilities";
 import { FolderPicker } from "@/app/folder-picker";
-import { Modal, useClosing } from "@/app/modal";
+import { CloseButton, Modal, useClosing } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
 import { stagger } from "@/app/stagger";
 import type { DirListing } from "@/lib/browse";
@@ -359,23 +359,7 @@ export function MagnetAction({
               <h2 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
                 Download to
               </h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line opacity-50 transition-opacity hover:opacity-100"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  className="h-3.5 w-3.5"
-                >
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </button>
+              <CloseButton onClick={() => setOpen(false)} />
             </header>
 
             {/* qBittorrent's own words for why it did not take the release —

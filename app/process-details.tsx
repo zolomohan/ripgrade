@@ -2,7 +2,7 @@
 
 import { useState, useSyncExternalStore } from "react";
 
-import { Modal } from "./modal";
+import { CloseButton, Modal } from "./modal";
 
 /**
  * Everything a running job knows, for when the rail is not enough.
@@ -110,13 +110,18 @@ export function ProcessDetails({
       panelClassName="flex w-full max-w-md flex-col gap-4 rounded-card border border-line bg-background p-6 shadow-2xl"
     >
       <>
-        <header className="flex items-baseline justify-between gap-3">
-          <h2 className="text-base font-semibold">{shown.title}</h2>
-          {shown.percent !== undefined && (
-            <p className="shrink-0 text-sm tabular-nums opacity-55">
-              {Math.round(shown.percent)}%
-            </p>
-          )}
+        <header className="flex items-center justify-between gap-3">
+          <h2 className="min-w-0 text-base font-semibold">{shown.title}</h2>
+          {/* The figure keeps its place beside the title; the circle takes the
+              corner, where every other dialog in the app keeps it. */}
+          <div className="flex shrink-0 items-center gap-3">
+            {shown.percent !== undefined && (
+              <p className="text-sm tabular-nums opacity-55">
+                {Math.round(shown.percent)}%
+              </p>
+            )}
+            <CloseButton onClick={onClose} />
+          </div>
         </header>
 
         {shown.percent !== undefined && (
@@ -169,8 +174,11 @@ export function ProcessDetails({
 
         {shown.note && <p className="text-xs opacity-45">{shown.note}</p>}
 
-        <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
-          {onCancel && (
+        {/* Only what this dialog can *do*. Leaving it is the circle in the
+            corner now, and a footer button saying the same thing was two ways
+            out of a dialog that only needs one. */}
+        {onCancel && (
+          <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               onClick={onCancel}
@@ -179,16 +187,8 @@ export function ProcessDetails({
             >
               Stop
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            autoFocus
-            className="rounded-control bg-foreground px-3 py-1.5 text-sm text-background hover:opacity-90"
-          >
-            Close
-          </button>
-        </div>
+          </div>
+        )}
       </>
     </Modal>
   );

@@ -11,7 +11,7 @@ import {
 } from "@/app/actions";
 import { imageUrl } from "@/lib/image-url";
 import { HERO_BUTTON } from "./hero-button";
-import { Modal } from "@/app/modal";
+import { CloseButton, Modal } from "@/app/modal";
 
 type Tab = "poster" | "fanart" | "logo";
 
@@ -291,13 +291,9 @@ export function ArtworkEditor({
               saves as {KINDS[tab].file}
             </span>
 
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="ml-auto text-sm opacity-50 hover:opacity-100"
-            >
-              Close
-            </button>
+            <div className="ml-auto">
+              <CloseButton onClick={() => setOpen(false)} />
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5">

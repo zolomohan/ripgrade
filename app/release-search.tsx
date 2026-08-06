@@ -14,7 +14,7 @@ import { MagnetAction } from "@/app/magnet-action";
 import type { FilmContext } from "@/lib/qbittorrent";
 import { ScoreDial } from "@/app/score-circle";
 import type { DiscSummary, ScoredRelease, Standing } from "@/lib/upgrades";
-import { Modal, useClosing } from "@/app/modal";
+import { CloseButton, Modal, useClosing } from "@/app/modal";
 
 /**
  * What the indexers have, read through the same rubric as the drive.
@@ -504,23 +504,7 @@ export function ReleaseSearchModal({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-line opacity-50 transition-opacity hover:opacity-100"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className="h-3.5 w-3.5"
-            >
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
+          <CloseButton onClick={onClose} />
         </header>
 
         {search &&

@@ -14,7 +14,7 @@ import {
   unlinkSeasonDisc,
   type DiscCandidate,
 } from "@/app/actions";
-import { Modal } from "@/app/modal";
+import { CloseButton, Modal } from "@/app/modal";
 
 /**
  * Picking the disc by hand. A film often has a dozen editions — regions,
@@ -185,13 +185,7 @@ export function DiscReview({
                   : `Every episode of season ${season} is scored against whichever release is picked here.`}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="shrink-0 text-sm opacity-50 hover:opacity-100"
-            >
-              Close
-            </button>
+            <CloseButton onClick={() => setOpen(false)} />
           </header>
 
           {/* Pasting the exact release is often faster than picking through a
