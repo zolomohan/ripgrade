@@ -9,6 +9,7 @@ import {
   findReleasesForTmdbSeason,
   type UpgradeResponse,
 } from "@/app/actions";
+import { BUTTON, FIELD } from "@/app/controls";
 import { Panel } from "@/app/panel";
 import { NotConfigured, Result, SORTS } from "@/app/release-search";
 
@@ -233,12 +234,9 @@ export function Downloads({
                     if (event.key === "Escape") setEditing(false);
                   }}
                   aria-label="Search phrase"
-                  className="min-w-0 flex-1 rounded-control border border-line bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus:border-line-strong"
+                  className={`${FIELD.small} min-w-0 flex-1`}
                 />
-                <button
-                  type="submit"
-                  className="shrink-0 rounded-chip border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
-                >
+                <button type="submit" className={BUTTON.small}>
                   Search
                 </button>
                 <button

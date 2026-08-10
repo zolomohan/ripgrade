@@ -165,12 +165,29 @@ const upsertCheck = () =>
       best = excluded.best
   `);
 
-/** The films a sweep would look at: matched, and with something to gain. */
-export function sweepCandidates(): LibraryItem[] {
-  return getMovies().filter((m) => m.tmdb?.id && m.priority !== "None");
+/**
+ * The films a sweep would look at: matched, and with something to gain.
+ *
+ * The films arrive as a defaulted parameter for the reason given in
+ * `lib/queue-tasks.ts`: a page asking this and half a dozen other questions at
+ * once should read the table once, not once per question.
+ */
+export function sweepCandidates(
+  movies: LibraryItem[] = getMovies(),
+): LibraryItem[] {
+  return movies.filter((m) => m.tmdb?.id && m.priority !== "None");
 }
 
-export function startSweep(): SweepJob {
+/**
+ * @param force Ask the indexers about every candidate, however recently it was
+ *   checked. FRESH_MS is right for the sweep that runs itself after a scan —
+ *   nobody asked for it, so it should not spend four hundred searches on
+ *   listings that were read this morning. It is wrong for a sweep somebody
+ *   pressed a button for: "checked 3 h ago" is precisely the row they are
+ *   trying to get past, and a pass that skipped it would report itself done in
+ *   a second having changed nothing.
+ */
+export function startSweep({ force = false } = {}): SweepJob {
   if (current().status === "running") return current();
 
   globalForSweep.medlibSweepCancel = false;
@@ -197,7 +214,7 @@ export function startSweep(): SweepJob {
 
       const now = Date.now();
       const stale = candidates
-        .filter((m) => now - (checked.get(m.path) ?? 0) > FRESH_MS)
+        .filter((m) => force || now - (checked.get(m.path) ?? 0) > FRESH_MS)
         // Never-checked first, then oldest check first: the films the queue
         // knows least about are the ones a cancelled sweep should have
         // reached before it stopped.
@@ -282,7 +299,7 @@ export function startSweep(): SweepJob {
         }
       }
 
-      await sweepWishlist();
+      await sweepWishlist(force);
 
       setJob({
         ...current(),
@@ -316,12 +333,15 @@ export function startSweep(): SweepJob {
  * module for the stored-release shape, and statically it would be a cycle —
  * the same reason dovi.ts reaches for library.ts this way.
  */
-async function sweepWishlist(): Promise<void> {
+async function sweepWishlist(force: boolean): Promise<void> {
   setJob({ ...current(), phase: "wishlist", current: undefined });
 
   const { searchWishlist } = await import("./wishlist-search");
 
   const wishes = await searchWishlist({
+    // A forced sweep forces both halves. The button is on the whole queue, and
+    // a want checked this morning is as stale to whoever pressed it as a film.
+    force,
     shouldStop: () => Boolean(globalForSweep.medlibSweepCancel),
     onProgress: (p) =>
       setJob({
@@ -459,14 +479,16 @@ export type UpgradeQueueItem = {
  * check time — replace the file and rescan, and the entry falls out of the
  * queue by itself instead of celebrating an upgrade you already made.
  */
-export function getUpgradeQueue(): UpgradeQueueItem[] {
+export function getUpgradeQueue(
+  movies: LibraryItem[] = getMovies(),
+): UpgradeQueueItem[] {
   const rows = db
     .prepare(
       "SELECT path, checked_at, best FROM upgrade_checks WHERE best IS NOT NULL",
     )
     .all() as { path: string; checked_at: number; best: string }[];
 
-  const byPath = new Map(getMovies().map((m) => [m.path, m]));
+  const byPath = new Map(movies.map((m) => [m.path, m]));
   const passes = queueFilter();
 
   const items: UpgradeQueueItem[] = [];

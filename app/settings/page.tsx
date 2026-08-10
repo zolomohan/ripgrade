@@ -1,4 +1,5 @@
 import {
+  getAudioLanguages,
   getConvertTempDir,
   getJackettStatus,
   getLibraryFolders,
@@ -7,6 +8,7 @@ import {
   getThumbCache,
   getTmdbStatus,
 } from "../actions";
+import { AudioLanguages } from "./audio-languages";
 import { FolderSection } from "../folder-section";
 import { ScanButton } from "../scan-button";
 import { Jackett } from "./jackett";
@@ -74,6 +76,15 @@ export default async function SettingsPage() {
   const tmdb = await getTmdbStatus();
   const thumbs = await getThumbCache();
   const queue = await getQueueRules();
+  const audio = await getAudioLanguages();
+
+  /** What the shut row says: the languages kept, in the order they were shown. */
+  const audioSummary = [
+    ...audio.available
+      .filter((language) => audio.preference.languages.includes(language.key))
+      .map((language) => language.name),
+    ...(audio.preference.original ? ["Original"] : []),
+  ];
 
   /*
    * In the order you meet them: where the films are, what they are called and
@@ -141,6 +152,19 @@ export default async function SettingsPage() {
           configured={jackett.configured}
           url={jackett.url}
           managed={jackett.managed}
+        />
+      </Setting>
+
+      <Setting
+        title="Audio languages"
+        summary={
+          audioSummary.length ? audioSummary.join(" · ") : "Nothing preferred"
+        }
+        hint="Which languages are worth the space they take. On a remux the audio is routinely half the file, and a disc carries every language it was pressed with — so everything you do not keep is what the queue's Audio tracks tab offers to remove, one film at a time, original kept beside it."
+      >
+        <AudioLanguages
+          preference={audio.preference}
+          available={audio.available}
         />
       </Setting>
 

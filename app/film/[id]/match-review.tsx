@@ -170,6 +170,9 @@ export function MatchReview({
             <CloseButton onClick={() => setOpen(false)} />
           </header>
 
+          {/* The floor the title stands on, as under every other dialog's. */}
+          <div aria-hidden className="rule-head mx-5 mb-4 shrink-0" />
+
           {/* The same bar every other search in the app runs in — typing
               searches by itself, Enter merely skips the pause. */}
           <form

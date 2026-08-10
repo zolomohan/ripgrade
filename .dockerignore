@@ -1,0 +1,25 @@
+# node_modules is rebuilt inside the image on purpose: better-sqlite3 and sharp
+# are native, and the copies on a Mac are Mach-O binaries a Linux container
+# cannot load.
+node_modules
+.next
+out
+build
+
+# The library database and the thumbnail cache. These live in a volume, not in
+# the image — baking one in would ship somebody else's drive.
+data
+
+.git
+.gitignore
+.env*
+!.env.docker.example
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+.codegraph
+.claude
+docs/screenshots
+Dockerfile
+docker-compose.yml
+README.md

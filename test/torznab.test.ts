@@ -63,6 +63,49 @@ test("an item with only an info hash still yields a magnet", () => {
   assert.ok(second.magnet?.startsWith("magnet:?xt=urn:btih:bbbbccccdddd"));
 });
 
+test("a hash in the details URL is enough to build a magnet", () => {
+  // TorrentDownload and LimeTorrents send neither magneturl nor infohash, and
+  // offer the download only as Jackett's own link — which embeds the API key
+  // and so never reaches the browser. Without this the release arrives with
+  // nothing to fetch it by and the row draws empty.
+  const [result] = parseTorznab(`
+    <item>
+      <title>Inception 2010 1080p AV1 10Bit DKong</title>
+      <guid>https://www.torrentdownload.info/520F5BB299060C2CD62192E602F1C2157E9D277F/Inception-2010</guid>
+    </item>
+  `);
+  assert.equal(result.infoHash, "520f5bb299060c2cd62192e602f1c2157e9d277f");
+  assert.ok(
+    result.magnet?.startsWith(
+      "magnet:?xt=urn:btih:520f5bb299060c2cd62192e602f1c2157e9d277f",
+    ),
+  );
+});
+
+test("a v2 hash in a URL is not mistaken for a v1 one", () => {
+  // 64 hex characters is a v2 info hash, which is not a btih — taking forty of
+  // them would build a magnet that resolves to nothing at all.
+  const [result] = parseTorznab(`
+    <item>
+      <title>Some Release 2024</title>
+      <guid>https://example.org/a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90/x</guid>
+    </item>
+  `);
+  assert.equal(result.infoHash, undefined);
+  assert.equal(result.magnet, undefined);
+});
+
+test("a real infohash attribute still wins over the URL", () => {
+  const [result] = parseTorznab(`
+    <item>
+      <title>Some Release 2024</title>
+      <guid>https://example.org/520F5BB299060C2CD62192E602F1C2157E9D277F/x</guid>
+      <torznab:attr name="infohash" value="AAAABBBBCCCCDDDDEEEEFFFF0000111122223333" />
+    </item>
+  `);
+  assert.equal(result.infoHash, "aaaabbbbccccddddeeeeffff0000111122223333");
+});
+
 test("a CDATA title comes through unwrapped", () => {
   const [, second] = parseTorznab(FEED);
   assert.equal(second.title, "Heat.1995.1080p.BluRay.x264.DTS-HD.MA.5.1-GRP");

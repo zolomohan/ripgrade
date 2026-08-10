@@ -14,6 +14,7 @@ import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
 import { CloseButton, Modal, useLingering } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
+import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
 import type { DownloadEntry } from "@/lib/qbittorrent";
 import { posterName } from "@/lib/routes";
@@ -440,7 +441,14 @@ export function DownloadsView({
                         title={paused ? "Resume" : "Pause"}
                         className={ROW_ACTION}
                       >
-                        <ActionIcon kind={paused ? "resume" : "pause"} />
+                        {/* The client is being asked, and the answer arrives
+                            on the next poll rather than with the click — so
+                            the wheel takes the mark's place until it does. */}
+                        {pending ? (
+                          <Spinner className="h-3.5 w-3.5" />
+                        ) : (
+                          <ActionIcon kind={paused ? "resume" : "pause"} />
+                        )}
                       </button>
                       <button
                         type="button"
@@ -590,6 +598,9 @@ export function DownloadsView({
                 disabled={pending}
               />
             </div>
+
+            {/* The floor the title stands on, as under every other dialog's. */}
+            <div aria-hidden className="rule-head" />
 
             <p className="text-sm opacity-70">
               {confirmShown.kind === "cancel"

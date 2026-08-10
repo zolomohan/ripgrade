@@ -1,6 +1,12 @@
 import type { LibraryItem } from "./library";
 import type { Show } from "./shows";
-import { classifyEnhancementLayer, openIssues, type Status } from "./derive";
+import {
+  ISSUE_CATALOGUE,
+  classifyEnhancementLayer,
+  openIssues,
+  type Severity,
+  type Status,
+} from "./derive";
 
 /**
  * There are two scales here, not one ladder.
@@ -115,7 +121,8 @@ export function computeShowStats(shows: Show[]): ShowStats {
     (n, show) =>
       n +
       show.seasons.reduce(
-        (m, season) => m + (season.total === undefined ? 0 : season.missing.length),
+        (m, season) =>
+          m + (season.total === undefined ? 0 : season.missing.length),
         0,
       ),
     0,
@@ -154,7 +161,11 @@ export function computeShowStats(shows: Show[]): ShowStats {
       ["2160p", "1080p", "720p", "SD", "unknown"],
       (e) => e.resolution,
     ),
-    hdr: tally(episodes, ["Dolby Vision", "HDR10+", "HDR10", "SDR"], (e) => e.hdr),
+    hdr: tally(
+      episodes,
+      ["Dolby Vision", "HDR10+", "HDR10", "SDR"],
+      (e) => e.hdr,
+    ),
     release: tally(
       episodes,
       ["REMUX", "WEB-DL", "ENCODE", "UNKNOWN"],
@@ -312,4 +323,232 @@ export function computeStats(items: LibraryItem[]): LibraryStats {
     dolbyVision,
     collections,
   };
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * The dashboard's share of the arithmetic.
+ *
+ * These live here rather than in `lib/dashboard.ts` for the reason stated at
+ * the top of this file: they take the library they are given and return
+ * numbers, so they can be tested against a handful of fixtures instead of
+ * against four hundred real films. What the dashboard needs that they cannot
+ * supply — the filesystem, the settings table, the clock — stays there.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * The library's open issues, counted twice over.
+ *
+ * By severity, because that is the axis you triage on: three criticals matter
+ * more than thirty pieces of info, and a bar showing forty-two issues without
+ * saying which kind is a number nobody can act on.
+ *
+ * And by code, because a count of issues is not a list of problems. Twelve
+ * `dv-profile-7` files is one afternoon's work; twelve different codes is
+ * twelve investigations.
+ *
+ * Each code arrives under the name the catalogue gives it rather than as the
+ * code itself. A chart of the commonest problems is a chart about the library,
+ * and `disc-higher-bitrate` turns it into a chart about this app's vocabulary —
+ * readable only to someone who has already read `/how-it-works`. The name comes
+ * from `ISSUE_CATALOGUE`, so it is not a second naming of the same check; a
+ * code with no entry there falls back to itself.
+ */
+export type IssueTally = {
+  /** Issues, not films: one film can hold several. */
+  bySeverity: { label: string; count: number }[];
+  /** The commonest checks, in words, with the storage they sit on. */
+  byCode: Slice[];
+  /** Films holding at least one open issue. */
+  filmsAffected: number;
+  /** Films holding at least one critical, which is the queue-jumping kind. */
+  filmsCritical: number;
+};
+
+const SEVERITY_ORDER: Severity[] = ["critical", "warning", "info"];
+const SEVERITY_LABEL: Record<Severity, string> = {
+  critical: "Critical",
+  warning: "Warning",
+  info: "Info",
+};
+
+const ISSUE_LIMIT = 6;
+
+/** The check in words, or the code itself where the catalogue has no entry. */
+const issueName = (code: string): string =>
+  code in ISSUE_CATALOGUE
+    ? ISSUE_CATALOGUE[code as keyof typeof ISSUE_CATALOGUE].name
+    : code;
+
+export function computeIssues(
+  items: LibraryItem[],
+  limit = ISSUE_LIMIT,
+): IssueTally {
+  const bySeverity = new Map<Severity, number>();
+  const byCode = new Map<string, Slice>();
+  let filmsAffected = 0;
+  let filmsCritical = 0;
+
+  for (const item of items) {
+    const open = openIssues(item);
+    if (open.length === 0) continue;
+
+    filmsAffected += 1;
+    if (open.some((issue) => issue.severity === "critical")) filmsCritical += 1;
+
+    for (const issue of open) {
+      bySeverity.set(issue.severity, (bySeverity.get(issue.severity) ?? 0) + 1);
+
+      const slice = byCode.get(issue.code) ?? {
+        label: issueName(issue.code),
+        count: 0,
+        bytes: 0,
+      };
+      slice.count += 1;
+      slice.bytes += item.sizeBytes;
+      byCode.set(issue.code, slice);
+    }
+  }
+
+  return {
+    // Every severity is listed even at zero: the bar is a part of a whole, and
+    // a whole that silently drops its empty parts changes shape between two
+    // renders of the same library.
+    bySeverity: SEVERITY_ORDER.map((severity) => ({
+      label: SEVERITY_LABEL[severity],
+      count: bySeverity.get(severity) ?? 0,
+    })),
+    byCode: [...byCode.values()]
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+      .slice(0, limit),
+    filmsAffected,
+    filmsCritical,
+  };
+}
+
+/**
+ * How the library grew, month by month.
+ *
+ * `addedAt` is when this app first saw a file, not when you acquired it — a
+ * fresh database would report the whole collection as having arrived on the
+ * day it was scanned. That is why the chart carries a hint saying so rather
+ * than a title claiming otherwise.
+ *
+ * It is still an honest cohort: every row written by one derive pass shares
+ * the value exactly, so "the month this appeared" is a real bucket even when
+ * the first one is the entire back catalogue.
+ *
+ * Cumulative, because the question is how big the library got, not how busy a
+ * particular February was — and a bar chart of monthly additions is mostly
+ * zero with two spikes in it.
+ */
+export type GrowthBucket = {
+  label: string;
+  /** Files that first appeared in this month. */
+  count: number;
+  /** Bytes those files account for. */
+  bytes: number;
+  /** Everything held by the end of this month, back catalogue included. */
+  cumulativeBytes: number;
+  cumulativeCount: number;
+};
+
+const GROWTH_MONTHS = 12;
+
+export function computeGrowth(
+  items: LibraryItem[],
+  months = GROWTH_MONTHS,
+  // The clock arrives as an argument so a test can stand still.
+  now = Date.now(),
+): GrowthBucket[] {
+  if (months <= 0) return [];
+
+  const end = new Date(now);
+  // The first day of the month `months - 1` back, so the window ends with the
+  // month we are in rather than a month from now.
+  const first = new Date(end.getFullYear(), end.getMonth() - (months - 1), 1);
+
+  const buckets: GrowthBucket[] = [];
+  const starts: number[] = [];
+  for (let i = 0; i < months; i++) {
+    const date = new Date(first.getFullYear(), first.getMonth() + i, 1);
+    starts.push(date.getTime());
+    buckets.push({
+      label: date.toLocaleDateString("en-GB", { month: "short" }),
+      count: 0,
+      bytes: 0,
+      cumulativeBytes: 0,
+      cumulativeCount: 0,
+    });
+  }
+
+  // Everything older than the window is the floor the first column stands on,
+  // not a month that fell off the end.
+  let priorBytes = 0;
+  let priorCount = 0;
+
+  for (const item of items) {
+    const at = item.addedAt;
+    if (at === undefined) continue;
+
+    if (at < starts[0]) {
+      priorBytes += item.sizeBytes;
+      priorCount += 1;
+      continue;
+    }
+
+    // Later than the last bucket's start means "this month", which is the last
+    // bucket — there is no bucket after it to fall into.
+    let index = starts.length - 1;
+    for (let i = 0; i < starts.length; i++) {
+      if (at < starts[i]) {
+        index = i - 1;
+        break;
+      }
+    }
+    if (index < 0) continue;
+
+    buckets[index].count += 1;
+    buckets[index].bytes += item.sizeBytes;
+  }
+
+  let runningBytes = priorBytes;
+  let runningCount = priorCount;
+  for (const bucket of buckets) {
+    runningBytes += bucket.bytes;
+    runningCount += bucket.count;
+    bucket.cumulativeBytes = runningBytes;
+    bucket.cumulativeCount = runningCount;
+  }
+
+  return buckets;
+}
+
+/**
+ * How much of the library knows what it is.
+ *
+ * Three states rather than matched/unmatched, because a low-confidence match is
+ * a different problem from no match at all: one needs confirming, the other
+ * needs finding. Only `high` is trusted enough to raise runtime issues, so only
+ * `high` counts as done here.
+ */
+export function computeMatchCoverage(
+  items: LibraryItem[],
+): { label: string; count: number }[] {
+  let confirmed = 0;
+  let review = 0;
+  let unknown = 0;
+
+  for (const item of items) {
+    if (!item.tmdb?.id) unknown += 1;
+    else if (item.tmdb.confidence === "high") confirmed += 1;
+    else review += 1;
+  }
+
+  return [
+    { label: "Matched", count: confirmed },
+    { label: "Needs review", count: review },
+    { label: "Not identified", count: unknown },
+  ];
 }

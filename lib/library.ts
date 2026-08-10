@@ -72,6 +72,10 @@ export function deriveAll(): number {
       posterPath: movie.poster_path ?? undefined,
       backdropPath: movie.backdrop_path ?? undefined,
       overview: movie.overview,
+      // Straight off the record already cached, so every film has this after
+      // one re-derive — no second pass over the API to learn what TMDb told us
+      // the first time.
+      originalLanguage: movie.original_language,
       // A manual correction is authoritative; otherwise trust the match method.
       confidence: match.manual
         ? "high"
@@ -143,6 +147,12 @@ export type LibraryItem = Derived & {
   /** You have looked at this one and accepted it as-is, issues and all. */
   acknowledged: boolean;
   /**
+   * Your answer to "is this an extended cut?", where you have given one.
+   * Undefined is a question not yet put to you — which is what the film page
+   * asks on, so it must stay distinct from a plain "no".
+   */
+  extendedCut?: boolean;
+  /**
    * When the file first appeared in the library. Every row inserted by one
    * `deriveAll` pass carries the same timestamp, so films added by the same
    * scan share this value exactly — which is what "added in the last scan"
@@ -175,12 +185,49 @@ export function getLibrary(): LibraryItem[] {
   const art = new Map(artRows.map((a) => [a.dir, a]));
   const triage = getTriage();
 
-  return rows.map((r) => {
-    const derived = JSON.parse(r.derived) as Derived;
+  const parsed = rows.map((r) => JSON.parse(r.derived) as Derived);
+
+  /**
+   * The original language of every matched film, for rows written before that
+   * field existed.
+   *
+   * A derived row is a snapshot, and adding a field to it normally means waiting
+   * for the next derive pass. That is fine for a fact nothing acts on yet — but
+   * this one decides which files the audio queue will touch, and a queue that
+   * silently holds nothing until somebody happens to rescan is indistinguishable
+   * from a broken one. The answer is already in the cache the derive reads, so
+   * it is read from there directly: one query, extracting one string per film in
+   * SQLite rather than parsing a thousand full records here, and only when
+   * something is actually missing it.
+   */
+  const stale = parsed.some(
+    (d) => d.tmdb && d.tmdb.originalLanguage === undefined,
+  );
+  const languages = stale
+    ? new Map(
+        (
+          db
+            .prepare(
+              "SELECT tmdb_id, json_extract(json, '$.original_language') AS lang FROM tmdb_movies",
+            )
+            .all() as { tmdb_id: number; lang: string | null }[]
+        ).map((row) => [row.tmdb_id, row.lang ?? undefined]),
+      )
+    : undefined;
+
+  return rows.map((r, i) => {
+    const derived = parsed[i];
     const found = art.get(path.dirname(derived.path));
     const decided = triage.get(derived.path);
     return {
       ...derived,
+      tmdb:
+        derived.tmdb && derived.tmdb.originalLanguage === undefined
+          ? {
+              ...derived.tmdb,
+              originalLanguage: languages?.get(derived.tmdb.id),
+            }
+          : derived.tmdb,
       poster: found?.poster ?? undefined,
       fanart: found?.fanart ?? undefined,
       logo: found?.logo ?? undefined,
@@ -193,6 +240,13 @@ export function getLibrary(): LibraryItem[] {
       },
       artAt: found?.found_at,
       acknowledged: decided?.acknowledged ?? false,
+      extendedCut: decided?.extendedCut,
+      // Saying yes is what marks the film, so the edition it implies is filled
+      // in here — after the filename, which is the more specific answer of the
+      // two. A file already named "Directors Cut" keeps that name.
+      edition:
+        derived.edition ??
+        (decided?.extendedCut ? "Extended Cut" : undefined),
       addedAt: r.first_seen,
     };
   });

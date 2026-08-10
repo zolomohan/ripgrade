@@ -16,21 +16,23 @@
  * a couple of these directly.
  */
 
-/** The one action a section exists for. The film page's Upgrade button. */
+/**
+ * The one action a section exists for. The film page's Upgrade button.
+ *
+ * A pill, like every other button in the app now — and `inline-flex` with a
+ * gap, so the ones that go and ask a server something can put a `Spinner`
+ * beside their label while they wait.
+ */
 export const PRIMARY =
-  "h-8 shrink-0 rounded-chip bg-foreground px-3.5 text-sm font-medium text-background transition-opacity duration-150 hover:opacity-90 disabled:opacity-40";
+  "inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity duration-150 hover:opacity-90 disabled:opacity-40";
 
 /** Everything else you can do here — present, but never the loudest thing. */
 export const QUIET =
-  "shrink-0 text-xs opacity-50 transition-opacity hover:opacity-100 disabled:opacity-30";
+  "inline-flex shrink-0 items-center gap-1.5 text-xs opacity-50 transition-opacity hover:opacity-100 disabled:opacity-30";
 
 /** Undoing something, which is quiet too but says so in red at the last step. */
 export const DANGER =
-  "shrink-0 rounded-control border border-red-500/40 bg-red-500/[0.08] px-2.5 py-1 text-xs text-red-700 transition-opacity hover:opacity-80 disabled:opacity-40 dark:text-red-300";
-
-/** Addresses, keys and paths — machine text, so a machine face. */
-export const FIELD =
-  "w-full rounded-control border border-line bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-line-strong";
+  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/[0.08] px-3 py-1 text-xs text-red-700 transition-opacity hover:opacity-80 disabled:opacity-40 dark:text-red-300";
 
 /**
  * Whether a thing is on, as a dot and a word.

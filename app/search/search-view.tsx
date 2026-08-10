@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import {
@@ -15,7 +14,7 @@ import {
   type UpgradeResponse,
 } from "@/app/actions";
 import { Art } from "@/app/art";
-import { Bar, BarSearch, ICONS, MenuItem, Popover, Switch } from "@/app/controls";
+import { Bar, BarSearch, ICONS, MenuItem, Popover } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
 import { Result, SORTS, type Sort } from "@/app/release-search";
 import { scoreTheme, STATUS_THEME } from "@/app/score-circle";
@@ -39,9 +38,12 @@ import { posterName } from "@/lib/routes";
  * title is on is another thing you should not have to know before typing it.
  * The tile says which it is and goes where it belongs.
  *
- * It is a page like the others rather than a dialog over them, so it is built
- * out of what the others are built out of: the shelf switch, the bar, the
- * poster grid, the empty card.
+ * It is built out of what the rest of the app is built out of — the bar, the
+ * poster grid, the empty card — and it is drawn in the window ⌘F opens, over
+ * whatever you were looking at. It was a page for a while, and the page is
+ * gone: a search is a thing you do in the middle of something else, and making
+ * it a destination meant leaving that something else to reach it. See
+ * app/search/dialog.tsx, which is the only thing that renders this.
  */
 
 /** How long a pause in typing counts as "done typing". */
@@ -71,8 +73,70 @@ const INDEXER_DEBOUNCE_MS = 700;
  */
 type Mode = "library" | "tmdb" | "indexer";
 
-/** The one tab that is not read out of the TMDb answer. */
+/** The one scope that is not read out of the TMDb answer. */
 const INDEXER: Mode = "indexer";
+
+/**
+ * The three, in the order Tab walks them.
+ *
+ * They were a segmented switch when this was only a page and there was a row to
+ * spare. In a dialog the row is the field, and three named segments in front of
+ * it push the thing you came to type into a corner — so the scope is a word at
+ * the head of the bar that opens a menu, the way every other choice in this app
+ * is made. It reads as a preposition: in Library, "the abyss".
+ *
+ * The menu is for pointing at; the keyboard has Tab, because a hand already on
+ * the field to type should not have to leave it to ask the same words of
+ * somewhere else. See `cycle` below.
+ */
+const SCOPES: { key: Mode; label: string; icon: string }[] = [
+  // The poster shelf: four tiles, which is what the drive looks like on every
+  // other page of this app.
+  {
+    key: "library",
+    label: "Library",
+    icon: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  },
+  // A globe for everything you do not have — TMDb is the world the library is
+  // a small corner of.
+  {
+    key: "tmdb",
+    label: "TMDb",
+    icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M3.5 12h17M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9s1.2-6.5 3.6-9",
+  },
+  // And a signal going out for the indexers, because that is the difference
+  // that matters: this one is a question put to other people's machines.
+  {
+    key: INDEXER,
+    label: "Indexers",
+    icon: "M12 12h.01M8.6 15.4a4.8 4.8 0 0 1 0-6.8M15.4 8.6a4.8 4.8 0 0 1 0 6.8M5.6 18.4a8.9 8.9 0 0 1 0-12.8M18.4 5.6a8.9 8.9 0 0 1 0 12.8",
+  },
+];
+
+/**
+ * A scope's mark, at the size the bar's own controls draw theirs.
+ *
+ * Three marks rather than one for the idea of scope: the trigger shows only the
+ * scope you are in, so a single icon there would say "this is a choice" and
+ * never which choice. Repeated down the menu, so the mark on the bar is one you
+ * have already been told the meaning of.
+ */
+function ScopeIcon({ path }: { path: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-4 w-4 shrink-0 opacity-50"
+    >
+      <path d={path} />
+    </svg>
+  );
+}
 
 /** How the releases can be ordered, in the app's own menu rather than a select. */
 const SORT_OPTIONS: { key: Sort; label: string }[] = [
@@ -409,26 +473,8 @@ function ReleasesSkeleton() {
 }
 
 export function SearchView() {
-  /*
-   * The words and the tab are mirrored into the URL, which is what makes this
-   * page a place you can come back to: opening a film records the address you
-   * left, and an address that said only "/search" would return you to an empty
-   * field. See app/return-to.tsx.
-   *
-   * Read once, at mount, rather than held there. A field driven by the query
-   * string would put a router round-trip between the keystroke and the letter
-   * appearing; the state stays local and the URL follows it a render later.
-   */
-  const searchParams = useSearchParams();
-
-  /** The words the page was opened with: an address is a search, here. */
-  const opening = (searchParams.get("q") ?? "").trim();
-
-  const [query, setQuery] = useState(opening);
-  const [mode, setMode] = useState<Mode>(() => {
-    const tab = searchParams.get("t");
-    return tab === "tmdb" || tab === INDEXER ? tab : "library";
-  });
+  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<Mode>("library");
 
   // The term is held with its answer, so a result can say which question it
   // was the answer to: while the next one is in flight the last one stays on
@@ -471,23 +517,10 @@ export function SearchView() {
   // must not land on top of the answer to five.
   const seq = useRef(0);
 
+  /** The results, so the field can hand the keyboard down into them. */
+  const shelf = useRef<HTMLDivElement>(null);
+
   const term = query.trim();
-
-  /*
-   * The URL, kept level with the field. `replaceState` rather than a router
-   * push: typing is not a series of pages to walk back through, and Next
-   * threads its own history patch through this so `useSearchParams` stays true
-   * without a server round-trip. Defaults are left out, so a search you have
-   * not narrowed is a plain `/search?q=…`.
-   */
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (term) params.set("q", term);
-    if (mode !== "library") params.set("t", mode);
-
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
-  }, [term, mode]);
 
   /*
    * What has already been found for exactly these words, from the cache.
@@ -539,6 +572,39 @@ export function SearchView() {
     return () => window.clearTimeout(timer);
   }, [term, mode, answered]);
 
+  /** The next scope along, wrapping — Tab forwards, Shift+Tab back. */
+  function cycle(step: number) {
+    const at = SCOPES.findIndex((scope) => scope.key === mode);
+    setMode(SCOPES[(at + step + SCOPES.length) % SCOPES.length].key);
+  }
+
+  /**
+   * What the keys do while the field has the focus.
+   *
+   * Tab is taken because the field is where you already are: the same words
+   * asked of somewhere else is the commonest thing to want next, and reaching
+   * for the menu to do it means leaving the keyboard. Down takes its place as
+   * the way out — it moves into the results, which is where Tab would otherwise
+   * have gone, so the shelf stays reachable without a mouse.
+   *
+   * Both only from the field. Once the focus is in the results Tab is Tab again
+   * and walks them one by one.
+   */
+  function onFieldKey(event: React.KeyboardEvent) {
+    if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      cycle(event.shiftKey ? -1 : 1);
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      const first = shelf.current?.querySelector<HTMLElement>("a, button");
+      if (!first) return;
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   const wanted = (hit: DiscoverHit) => wants[wantKey(hit)] ?? hit.wishlisted;
 
   function want(hit: DiscoverHit) {
@@ -577,76 +643,118 @@ export function SearchView() {
   // Asked, but nothing back yet — the only state the skeletons stand in for.
   const loading = Boolean(term) && (mode === INDEXER ? !response : !results);
 
-  // Counts as soon as there is an answer to count, so the switch says where the
-  // results are rather than making you open each shelf to find out. The
-  // indexers carry none: theirs is a question that has not been asked yet.
-  const tabs = [
-    {
-      key: "library",
-      label: "Library",
-      count: results ? library.length : undefined,
-    },
-    { key: "tmdb", label: "TMDb", count: results ? discover.length : undefined },
-    { key: INDEXER, label: "Indexers" },
-  ];
+  // Counts as soon as there is an answer to count, so the menu says where the
+  // results are rather than making you open each scope to find out. Each one
+  // only once it has been asked: a blank beside "Indexers" is the honest
+  // reading of a question nobody has put yet, and a nought would be a lie.
+  const found: Record<Mode, number | undefined> = {
+    library: results ? library.length : undefined,
+    tmdb: results ? discover.length : undefined,
+    indexer: response ? showing.length : undefined,
+  };
+
+  const scope = SCOPES.find((option) => option.key === mode) ?? SCOPES[0];
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* The library's own row, asking the library's own question of it: which
-          shelf on the left, the instrument that narrows it on the right. */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Switch
-          value={mode}
-          onChange={(next) => setMode(next as Mode)}
-          options={tabs}
+    <div className="flex min-h-0 flex-1 flex-col gap-6">
+      {/* One instrument: where to look, what to look for, and — where they are
+          releases — how to order what comes back. */}
+      <Bar className="min-w-0 shrink-0">
+        <Popover
+          icon={scope.icon}
+          label="Where to search"
+          value={scope.label}
+          width="w-56"
+          // At the head of the bar, so it hangs from the same edge as the
+          // button that opens it rather than reaching back off the left of it.
+          align="left"
+          // A stated width, because the three labels are of three lengths and
+          // the field takes whatever is left: sized to the longest of them, so
+          // cycling the scope does not drag the words you are typing sideways.
+          // Narrow where the label is hidden anyway — the mark alone, at the
+          // width of the mark. The bar's first slot, so the fill follows its
+          // rounded end.
+          buttonClassName="w-12 rounded-l-full sm:w-32"
+        >
+          {(close) => (
+            <div className="py-1">
+              {SCOPES.map((option) => (
+                <MenuItem
+                  key={option.key}
+                  active={option.key === mode}
+                  onClick={() => {
+                    setMode(option.key);
+                    close();
+                  }}
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <ScopeIcon path={option.icon} />
+                    {option.label}
+                  </span>
+                  {found[option.key] !== undefined && (
+                    <span className="ml-auto text-[11px] tabular-nums opacity-40">
+                      {found[option.key]}
+                    </span>
+                  )}
+                </MenuItem>
+              ))}
+
+              {/* Said once, under the menu it saves you opening. */}
+              <p className="mt-1 border-t border-line px-3 py-2 text-[11px] opacity-40">
+                Tab cycles these while you are typing.
+              </p>
+            </div>
+          )}
+        </Popover>
+
+        <BarSearch
+          value={query}
+          onChange={setQuery}
+          onKeyDown={onFieldKey}
+          placeholder="Search every film and show — yours and everything else"
+          autoFocus
         />
 
-        <Bar className="ml-auto min-w-0 flex-1">
-          <BarSearch
-            value={query}
-            onChange={setQuery}
-            placeholder="Search every film and show — yours and everything else"
-            autoFocus
-          />
-
-          {/* The sort belongs to the releases, so it is offered with them. */}
-          {mode === INDEXER && showing.length > 0 && (
-            <Popover
-              icon={ICONS.sort}
-              label="Sort"
-              value={
-                (SORT_OPTIONS.find((o) => o.key === sort) ?? SORT_OPTIONS[0])
-                  .label
-              }
-              // The bar's last slot, so the fill follows its rounded end.
-              buttonClassName="rounded-r-full"
-            >
-              {(close) => (
-                <div className="py-1">
-                  {SORT_OPTIONS.map((option) => (
-                    <MenuItem
-                      key={option.key}
-                      active={option.key === sort}
-                      onClick={() => {
-                        setSort(option.key);
-                        PREFERENCE.sort = option.key;
-                        close();
-                      }}
-                    >
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </div>
-              )}
-            </Popover>
-          )}
-        </Bar>
-      </div>
+        {/* The sort belongs to the releases, so it is offered with them. */}
+        {mode === INDEXER && showing.length > 0 && (
+          <Popover
+            icon={ICONS.sort}
+            label="Sort"
+            value={
+              (SORT_OPTIONS.find((o) => o.key === sort) ?? SORT_OPTIONS[0]).label
+            }
+            // The bar's last slot, so the fill follows its rounded end.
+            buttonClassName="rounded-r-full"
+          >
+            {(close) => (
+              <div className="py-1">
+                {SORT_OPTIONS.map((option) => (
+                  <MenuItem
+                    key={option.key}
+                    active={option.key === sort}
+                    onClick={() => {
+                      setSort(option.key);
+                      PREFERENCE.sort = option.key;
+                      close();
+                    }}
+                  >
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </div>
+            )}
+          </Popover>
+        )}
+      </Bar>
 
       {/* Dimmed while the next answer is on its way, rather than cleared: what
-          is on screen is still the answer to nearly the same question. */}
+          is on screen is still the answer to nearly the same question.
+
+          And the only thing that scrolls: the bar is the one part that must not
+          move out from under the words being typed into it. */}
       <div
-        className={`mx-4 flex flex-1 flex-col gap-10 transition-opacity duration-150 ${
+        ref={shelf}
+        className={`flex min-h-0 flex-1 flex-col gap-10 overflow-y-auto px-1 pb-1 transition-opacity duration-150 ${
           pending && stale ? "opacity-50" : ""
         }`}
       >
@@ -765,21 +873,26 @@ export function SearchView() {
             a copy you hold nor a disc to weigh it against, so the score is what
             the name alone implies. */}
         {mode === INDEXER && search && showing.length > 0 && (
-          /* No heading over these. The tab you are on already says they are
+          /* No heading over these. The scope you are in already says they are
              releases, and the sort control sits beside it — a "Releases" rule
-             under a Releases tab is the same word twice. */
-          /* `Result` is its own <li>, so the list is its parent and nothing
+             under the Indexers scope is the same word twice. */
+          /* And no card round them either. The other two scopes put their
+             answers straight onto the page, so a bordered box here would say
+             the releases are a different kind of thing rather than the same
+             question asked somewhere else. Ruled apart instead, by the hairline
+             this app parts everything with.
+
+             `Result` is its own <li>, so the list is its parent and nothing
              else: wrapping each one put an <li> inside an <li>. */
-          <div className="overflow-hidden rounded-card border border-line bg-surface">
-            <ul className="divide-y divide-line">
-              {showing.map((release) => (
-                <Result
-                  key={`${release.title}-${release.infoHash ?? release.indexer}`}
-                  release={release}
-                />
-              ))}
-            </ul>
-          </div>
+          <ul>
+            {showing.map((release) => (
+              <Result
+                key={`${release.title}-${release.infoHash ?? release.indexer}`}
+                release={release}
+                ruled
+              />
+            ))}
+          </ul>
         )}
 
         {mode === INDEXER && search && showing.length === 0 && (

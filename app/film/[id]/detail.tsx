@@ -6,23 +6,31 @@ import { getEpisodeContext, type ShowEpisode } from "@/lib/shows";
 import {
   groupIssues,
   languageName,
+  openIssues,
   type Status,
   type SubtitleTrack,
 } from "@/lib/derive";
+import { getAudioPreference } from "@/lib/audio-prefs";
+import { audioBackupBytes } from "@/lib/audio-strip";
 import { backupBytes, filePresent } from "@/lib/convert";
 import { getDisc } from "@/lib/disc";
+import { entryFromSpec, qualityLabel } from "@/lib/disc-entry";
 import { hasJackett } from "@/lib/jackett";
 import { getMovie, type LibraryItem } from "@/lib/library";
+import { canRevealInFinder } from "@/lib/system";
 import { Art } from "@/app/art";
+import { DiscHeading } from "@/app/disc-heading";
 import { FormatBadges } from "@/app/format-badges";
 import { UpgradeButton } from "@/app/release-search";
 import { NoDisc } from "@/app/no-disc";
 import { Panel } from "@/app/panel";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { ArtworkEditor } from "./artwork-editor";
+import { AudioTracks } from "./audio-tracks";
 import { BackButton } from "./back-button";
 import { DiscReview } from "./disc-review";
 import { DolbyVision } from "./dolby-vision";
+import { ExtendedCut } from "./extended-cut";
 import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
 import { ScoreBreakdown } from "./score-breakdown";
@@ -220,6 +228,10 @@ export async function DetailPage({
 
   const theme = STATUS_THEME[movie.status];
   const { breakdown } = movie;
+  // What still stands against this copy — never the raw list. A film accepted
+  // as-is, or one whose length you have already accounted for, has answered
+  // here already, and this is the page it answered on.
+  const open = openIssues(movie);
   // Full specs live in the disc table; the derived payload only carries the gaps.
   const disc = movie.tmdb ? getDisc(movie.tmdb.id) : undefined;
   const jackettReady = hasJackett();
@@ -366,7 +378,7 @@ export async function DetailPage({
               stays where it was. Stacked below on a narrow screen, where there
               is no room beside the poster to pin anything to. */}
           <div className="mt-2 flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:bottom-1 sm:mt-0">
-            <RevealInFinder moviePath={movie.path} />
+            {canRevealInFinder && <RevealInFinder moviePath={movie.path} />}
             {/* An episode has no artwork of its own — the poster and backdrop
                 above are the show's, so this edits the show's. */}
             {tv?.show.tmdb ? (
@@ -483,8 +495,13 @@ export async function DetailPage({
          * the same trick the score ring plays, with the words kept for anyone
          * who cannot see the colour.
          */}
-        <ul className="ruled mt-10 mb-10 flex flex-col gap-2 text-sm opacity-80">
-          {groupIssues(movie.issues).flatMap((group) =>
+        {/* Not ruled apart, unlike the lists on the queue: these are single
+            lines of prose about one file, already parted by their own dashes and
+            tints, and a hairline between each would rule this paragraph into a
+            table. The class was on it for a while doing nothing, which is the
+            only reason it ever looked right. */}
+        <ul className="mt-10 mb-10 flex flex-col gap-2 text-sm opacity-80">
+          {groupIssues(open).flatMap((group) =>
             group.messages
               // The rubric often gives its reason in the issue's own words;
               // said once is enough.
@@ -513,6 +530,28 @@ export async function DetailPage({
             </li>
           ))}
         </ul>
+
+        {/* Directly beneath the list, because it is about one line of it: asked
+            only while that line is actually raised, so it never appears over an
+            empty list with nothing to explain it.
+
+            Answering is what removes the line, which is why an answer already
+            given keeps the question on screen — one that vanished with the
+            issue it settled would leave the copy quietly marked and no way
+            back to unmark it. */}
+        {(open.some((issue) => issue.code === "runtime-longer") ||
+          movie.extendedCut !== undefined) && (
+          <ExtendedCut
+            moviePath={movie.path}
+            answer={movie.extendedCut}
+            // Rounded exactly as the check rounds them, so the card and the
+            // issue line above it cannot disagree by a minute.
+            fileMinutes={
+              movie.durationSec ? Math.round(movie.durationSec / 60) : undefined
+            }
+            listedMinutes={movie.tmdb?.runtimeMinutes}
+          />
+        )}
 
         {/* What is actually inside the Dolby Vision stream */}
         {movie.hdr === "Dolby Vision" && (
@@ -743,33 +782,48 @@ export async function DetailPage({
         {/* An episode is scored against its season's set, so the page says
             which set that is — the edition is chosen on the show page, where it
             applies to every episode at once. */}
-        {tv && movie.disc?.url && (
+        {tv && movie.disc?.releaseTitle && (
           <Panel
-            title="Best disc available"
-            summary={[movie.disc.releaseTitle, movie.disc.format]
+            title="Best quality available"
+            summary={[
+              movie.disc.releaseTitle,
+              movie.disc.format &&
+                qualityLabel({
+                  format: movie.disc.format,
+                  source: movie.disc.source,
+                }),
+            ]
               .filter(Boolean)
               .join(" · ")}
           >
             <div>
-              {/* The title is the release, and the release has a page — so the
+              {/* The title is the release, and where the release has a page the
                   words themselves link to it. A separate "View on Blu-ray.com"
                   beside them was a second thing to read that pointed at the
-                  first. */}
+                  first. A set entered by hand has no page, so it is just the
+                  name. */}
               <div className="flex flex-wrap items-baseline gap-2">
-                <a
-                  href={movie.disc.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
-                >
-                  {movie.disc.releaseTitle}
-                  <span aria-hidden className="ml-1 opacity-40">
-                    ↗
-                  </span>
-                </a>
+                {movie.disc.url ? (
+                  <a
+                    href={movie.disc.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
+                  >
+                    {movie.disc.releaseTitle}
+                    <span aria-hidden className="ml-1 opacity-40">
+                      ↗
+                    </span>
+                  </a>
+                ) : (
+                  <p className="font-medium">{movie.disc.releaseTitle}</p>
+                )}
                 {movie.disc.format && (
                   <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
-                    {movie.disc.format}
+                    {qualityLabel({
+                      format: movie.disc.format,
+                      source: movie.disc.source,
+                    })}
                   </span>
                 )}
               </div>
@@ -805,13 +859,13 @@ export async function DetailPage({
           </Panel>
         )}
 
-        {/* Best disc available */}
+        {/* Best quality available */}
         {movie.tmdb && (
           <Panel
-            title="Best disc available"
+            title="Best quality available"
             summary={
               disc?.best
-                ? [disc.best.title, disc.best.format]
+                ? [disc.best.title, qualityLabel(disc.best)]
                     .filter(Boolean)
                     .join(" · ")
                 : "None found"
@@ -837,22 +891,7 @@ export async function DetailPage({
                 </div>
               ) : (
                 <>
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <a
-                      href={disc.best.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
-                    >
-                      {disc.best.title}
-                      <span aria-hidden className="ml-1 opacity-40">
-                        ↗
-                      </span>
-                    </a>
-                    <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
-                      {disc.best.format}
-                    </span>
-                  </div>
+                  <DiscHeading best={disc.best} entered={disc.entered} />
 
                   <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
                     {(
@@ -874,11 +913,13 @@ export async function DetailPage({
                         ["Audio", disc.best.audio.join(" · ") || "unknown"],
                         [
                           "Editions",
-                          `${disc.releaseCount} on Blu-ray.com${
-                            disc.uhdExists
-                              ? " · 4K available"
-                              : " · no 4K release"
-                          }`,
+                          disc.entered
+                            ? "Entered by hand"
+                            : `${disc.releaseCount} on Blu-ray.com${
+                                disc.uhdExists
+                                  ? " · 4K available"
+                                  : " · no 4K release"
+                              }`,
                         ],
                       ] as [string, string][]
                     ).map(([label, value]) => (
@@ -914,6 +955,7 @@ export async function DetailPage({
                   year={movie.tmdb.year}
                   currentUrl={disc.best.url}
                   manual={disc.manual}
+                  entered={disc.entered ? entryFromSpec(disc.best) : undefined}
                 />
               )}
             </div>
@@ -936,9 +978,10 @@ export async function DetailPage({
           <Spec movie={movie} />
         </Panel>
 
-        {/* Audio tracks */}
-        <Panel
-          title="Audio tracks"
+        {/* Audio tracks, and what removing the unwanted ones would free. */}
+        <AudioTracks
+          moviePath={movie.path}
+          fileName={movie.fileName}
           summary={[
             `${movie.audio.length} track${movie.audio.length === 1 ? "" : "s"}`,
             bestTrack?.label,
@@ -946,38 +989,22 @@ export async function DetailPage({
           ]
             .filter(Boolean)
             .join(" · ")}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase tracking-wide opacity-50">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Format</th>
-                  <th className="px-4 py-2 font-medium">Channels</th>
-                  <th className="px-4 py-2 font-medium">Language</th>
-                  <th className="px-4 py-2 text-right font-medium">Bitrate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movie.audio.map((track, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-2">{track.label}</td>
-                    <td className="px-4 py-2 opacity-70">
-                      {track.channels || "—"}
-                    </td>
-                    <td className="px-4 py-2 opacity-70">
-                      {track.language ? languageName(track.language) : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums opacity-70">
-                      {track.bitrateKbps
-                        ? `${track.bitrateKbps.toLocaleString()} kbps`
-                        : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
+          tracks={movie.audio}
+          sizeBytes={movie.sizeBytes}
+          backupBytes={audioBackupBytes(movie.path)}
+          present={filePresent(movie.path)}
+          // What you said you keep, and what this particular film was made in
+          // — together they decide which rows the table marks, and which ones
+          // it stops you removing without saying so first.
+          preference={getAudioPreference()}
+          // A film knows its own; an episode borrows the series', because there
+          // is no per-episode record for TMDb to have put it on. Without the
+          // second half every anime on the shelf reads as having no original
+          // language at all — which is the one shelf this setting is for.
+          originalLanguage={
+            movie.tmdb?.originalLanguage ?? tv?.show.tmdb?.originalLanguage
+          }
+        />
 
         {/* Subtitle tracks — the audio table's counterpart. The spec grid says
             which languages are in there; this says what they actually are,
@@ -1047,7 +1074,7 @@ export async function DetailPage({
           // "vs disc", in the words the ring under the poster already uses.
           summary={
             breakdown.relative
-              ? `${movie.scores.overall} vs the best disc available`
+              ? `${movie.scores.overall} vs the best quality available`
               : `${movie.scores.overall} on the rubric alone`
           }
         >

@@ -10,6 +10,8 @@ import {
   findReleasesForShow,
   type UpgradeResponse,
 } from "@/app/actions";
+import { BUTTON, FIELD } from "@/app/controls";
+import { qualityLabel } from "@/lib/disc-entry";
 import { MagnetAction } from "@/app/magnet-action";
 import type { FilmContext } from "@/lib/qbittorrent";
 import { ScoreDial } from "@/app/score-circle";
@@ -175,19 +177,25 @@ function DiscPanel({ disc }: { disc: DiscSummary }) {
         <p className="text-[10px] font-semibold tracking-[0.12em] uppercase opacity-40">
           Scored against
         </p>
-        <a
-          href={disc.url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
-        >
-          Blu-ray.com ↗
-        </a>
+        {/* Only where there is a page to open: a ceiling typed in by hand says
+            so instead, since the numbers beside it came from you. */}
+        {disc.url ? (
+          <a
+            href={disc.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
+          >
+            Blu-ray.com ↗
+          </a>
+        ) : (
+          <p className="text-xs opacity-40">entered by hand</p>
+        )}
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <p className="font-medium">{disc.title}</p>
-        <Chip tone="strong">{disc.format}</Chip>
+        <Chip tone="strong">{qualityLabel(disc)}</Chip>
         {disc.nativeFourK === false && <Chip>UPSCALE</Chip>}
       </div>
 
@@ -216,11 +224,22 @@ export function Result({
   release,
   referenceKind,
   film,
+  ruled,
 }: {
   release: ScoredRelease;
   referenceKind?: "copy" | "disc";
   /** Which film the search was for, riding into the download log. */
   film?: FilmContext;
+  /**
+   * For a list that is not inside a card: the row is parted from the one above
+   * it by the app's own hairline rather than by a border ruled edge to edge,
+   * and it gives up the inset the card's frame was there to hold it off.
+   *
+   * The universal search reads this way. There the releases are one answer
+   * among four, shown in a window that is already a frame — a bordered box
+   * inside it would be a second frame around a third of the results.
+   */
+  ruled?: boolean;
 }) {
   const { facts, tags, confidence } = release.guess;
   const best = facts.audio[0];
@@ -247,7 +266,11 @@ export function Result({
       ].filter(Boolean) as string[]);
 
   return (
-    <li className="glow group flex items-center gap-4 px-5 py-3 transition-colors hover:bg-surface">
+    <li
+      className={`glow group flex items-center gap-4 py-3 transition-colors hover:bg-surface ${
+        ruled ? "card-band px-2" : "px-5"
+      }`}
+    >
       <div className="flex w-11 shrink-0 flex-col items-center gap-0.5">
         <ScoreDial
           score={release.score}
@@ -258,12 +281,12 @@ export function Result({
           }
           title={
             release.relative
-              ? `Predicted ${release.score}% of the disc`
+              ? `Predicted ${release.score}% of the best release`
               : `Predicted ${release.score} of 100`
           }
           srLabel={
             release.relative
-              ? `Predicted ${release.score} percent of the disc`
+              ? `Predicted ${release.score} percent of the best release`
               : `Predicted score ${release.score} of 100`
           }
         />
@@ -507,6 +530,10 @@ export function ReleaseSearchModal({
           <CloseButton onClick={onClose} />
         </header>
 
+        {/* The floor the title stands on, as under every other dialog's. What
+            follows is a tinted band, so the rule doubles as its top edge. */}
+        <div aria-hidden className="rule-head mx-5 shrink-0" />
+
         {search &&
           (search.disc ? <DiscPanel disc={search.disc} /> : <NoDiscPanel />)}
 
@@ -517,7 +544,7 @@ export function ReleaseSearchModal({
                 value={sort}
                 onChange={(e) => setSort(e.target.value as Sort)}
                 aria-label="Sort releases"
-                className="cursor-pointer appearance-none rounded-control border border-line bg-transparent py-1 pr-7 pl-2.5 text-xs outline-none focus:border-line-strong"
+                className={FIELD.select}
               >
                 <option value="score">Best score</option>
                 <option value="seeders">Most seeders</option>
@@ -529,7 +556,7 @@ export function ReleaseSearchModal({
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="pointer-events-none absolute top-1/2 right-2 h-3 w-3 -translate-y-1/2 opacity-40"
+                className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 opacity-40"
               >
                 <path d="m6 9 6 6 6-6" />
               </svg>
@@ -624,12 +651,9 @@ export function ReleaseSearchModal({
                     }
                   }}
                   aria-label="Search phrase"
-                  className="min-w-0 flex-1 rounded-control border border-line bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus:border-line-strong"
+                  className={`${FIELD.small} min-w-0 flex-1`}
                 />
-                <button
-                  type="submit"
-                  className="shrink-0 rounded-chip border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
-                >
+                <button type="submit" className={BUTTON.small}>
                   Search
                 </button>
                 <button
@@ -700,8 +724,11 @@ export function UpgradeButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        // h-8 and rounded-chip to sit level with the icon buttons beside it.
-        className="h-8 shrink-0 rounded-chip bg-foreground px-3.5 text-sm font-medium text-background transition-opacity duration-150 hover:opacity-90"
+        // h-8 to sit level with the icon buttons beside it, which are the same
+        // pill with equal sides. It agrees with the padding rather than
+        // fighting it: 20px of line plus 6px either side is the 32px asked
+        // for, so nothing here is overriding anything.
+        className={`${BUTTON.primary} h-8 font-medium`}
       >
         {label}
       </button>
@@ -750,7 +777,7 @@ export function ReleaseSearchButton({
           <p className="text-sm">{label}</p>
           <p className="text-xs opacity-45">
             {configured
-              ? "Scored against the best disc release — predicted, not measured."
+              ? "Scored against the best release available — predicted, not measured."
               : "Connect Jackett on the Settings page to search."}
           </p>
         </div>
@@ -758,7 +785,7 @@ export function ReleaseSearchButton({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="shrink-0 rounded-control border border-line px-3 py-1.5 text-sm transition-colors hover:bg-surface-strong"
+          className={BUTTON.secondary}
         >
           Search
         </button>

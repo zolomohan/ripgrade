@@ -144,6 +144,16 @@ const FACETS: {
         label: "Open issues",
         test: (m) => openIssues(m).length > 0,
       },
+      // The shelf of films still waiting on the extended-cut question. Through
+      // `openIssues`, so answering one takes it off this shelf — which is what
+      // makes the filter a queue you can work down rather than a list of every
+      // film that has ever run long.
+      {
+        key: "longer",
+        label: "Longer runtime",
+        test: (m) =>
+          openIssues(m).some((issue) => issue.code === "runtime-longer"),
+      },
       {
         key: "upgrade",
         label: "Needs upgrade",

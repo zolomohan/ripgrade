@@ -1055,6 +1055,27 @@ html {
 }
 
 /*
+ * A strip that scrolls without saying so.
+ *
+ * The bars above are right for a panel you read down: the thumb tells you how
+ * much is left and where you are in it, and a page of text is unusable without
+ * that. A shelf of posters is not read, it is glanced at — the artwork running
+ * off the edge already says there is more that way, and a 10px rule sitting
+ * under a row of pictures adds nothing to it but a line.
+ *
+ * Both properties are needed and neither is redundant: `scrollbar-width` is
+ * what Firefox reads and is also what overrides the `* { scrollbar-width: thin }`
+ * above, and the pseudo-element is what Chrome and Safari read.
+ */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/*
  * A row lit where the pointer is — see app/glow.tsx, which supplies the two
  * coordinates and nothing else.
  *
@@ -1216,7 +1237,8 @@ html {
 }
 
 /*
- * The rule under a section's name.
+ * The rule under a section's name — and under a dialog's title, which is the
+ * same thing in a smaller room.
  *
  * Weighted at the left and trailing off to the right, unlike the rules that
  * merely part one thing from the next: this one belongs to the heading above
@@ -1271,6 +1293,39 @@ html {
 }
 
 /*
+ * And the rows of a list, parted the same way.
+ *
+ * `ul.ruled` has stood over every list in the queue and the downloads log from
+ * the beginning, saying what it meant and drawing nothing at all: the rule above
+ * parts *siblings* that are ruled, which is exactly right for a stack of panels
+ * and matches no `li` anywhere. Every one of those lists ran its rows straight
+ * into each other, with the class in the markup insisting otherwise.
+ *
+ * A background rather than a pseudo-element, for the reason `.card-band` gives
+ * below and one more that is specific to a row: these are flex containers, so a
+ * `::before` would not sit quietly along the top of one — it would become a flex
+ * item and take a column of its own between the poster and the title.
+ *
+ * From the second row on, so a list never opens with a line under the heading
+ * that already parts it from the page, and every line belongs to the join above
+ * it rather than to the row it is drawn on. The rows bleed past the content
+ * column at both ends to give their hover band room; the gradient has faded out
+ * long before those edges, so the bleed shows the line trailing off rather than
+ * the line stopping short.
+ */
+.ruled > li + li {
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    var(--line-strong),
+    transparent
+  );
+  background-size: 100% 1px;
+  background-repeat: no-repeat;
+  background-position: top;
+}
+
+/*
  * The same hairline, for the bands stacked inside a card.
  *
  * Painted as the band's own top edge rather than as a border or a pseudo-
@@ -1318,6 +1373,46 @@ html {
 @keyframes skeleton-pulse {
   50% {
     opacity: 0.45;
+  }
+}
+
+/*
+ * Work under way, where nobody can say how much is left. The turning half of
+ * `app/spinner.tsx` — the spokes are drawn there, and this moves them.
+ *
+ * `steps(8)` rather than a smooth turn, because the spokes are eight fixed
+ * lamps and not a picture of a wheel: run continuously they smear, and the
+ * chase that makes this read as the iPhone's indicator comes entirely from
+ * landing on each spoke exactly. One turn per eight steps, so the brightest
+ * position advances by one spoke each time and the ring never sits askew.
+ *
+ * There was a bar here before — a lozenge running a track, for the one button
+ * that starts a pass over hundreds of films. It was the honest shape for that
+ * button alone, which was the trouble: every other action in the app said
+ * "working" some other way or not at all. A loader is a word in the app's
+ * vocabulary, and the app gets one.
+ */
+@layer components {
+  .spinner {
+    transform-origin: center;
+    animation: spinner 800ms steps(8, end) infinite;
+  }
+}
+
+/*
+ * Not stopped, only slowed. A still spinner is the app claiming to be busy
+ * with no evidence, which is worse than the motion it was asked to spare —
+ * and at eight steps a turn there is nothing here that sweeps or slides.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 1600ms;
+  }
+}
+
+@keyframes spinner {
+  to {
+    transform: rotate(1turn);
   }
 }
 

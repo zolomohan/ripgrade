@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { reveal } from "@/app/actions";
+import { Spinner } from "@/app/spinner";
 import { HERO_BUTTON } from "./hero-button";
 
 /**
@@ -28,17 +29,21 @@ export function RevealInFinder({ moviePath }: { moviePath: string }) {
         }
         className={HERO_BUTTON}
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-4 w-4"
-        >
-          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        </svg>
+        {pending ? (
+          <Spinner className="h-4 w-4" />
+        ) : (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+          >
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          </svg>
+        )}
       </button>
 
       {error && (

@@ -10,8 +10,12 @@
   },
   "include": [
     "test/**/*.ts",
+    "lib/audio-plan.ts",
+    "lib/cleanup-names.ts",
     "lib/derive.ts",
+    "lib/disc-entry.ts",
     "lib/release-title.ts",
+    "lib/stats.ts",
     "lib/torznab.ts"
   ]
 }

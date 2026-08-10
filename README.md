@@ -33,6 +33,7 @@ you replace them.
 | **[First run](#first-run)** | Point it at a drive, give it a TMDb token |
 | **[How your files should be laid out](#how-your-files-should-be-laid-out)** | Naming that the scanner can read |
 | **[Optional integrations](#optional-integrations)** | Jackett, qBittorrent, `dovi_convert` |
+| **[Running it in Docker](#running-it-in-docker)** | The tools, Jackett and a VPN, in one `up` |
 | **[What a scan actually does](#what-a-scan-actually-does)** | The eight phases, in order |
 | **[How the score is built](#how-the-score-is-built)** | Weights, bands, verdicts |
 | **[Project layout](#project-layout)** | Where things live |
@@ -112,6 +113,8 @@ All five in one go:
 ```bash
 brew install mediainfo ffmpeg dovi_tool dovi_convert mkvtoolnix
 ```
+
+Or skip all five — [the Docker image](#running-it-in-docker) has them baked in.
 
 ### Accounts
 
@@ -284,6 +287,68 @@ needs somewhere to go, and that is not a decision an audit tool should make for 
 
 Without it, the same page still prints both recipes (`dovi_convert`, and the by-hand
 `ffmpeg | dovi_tool` + `mkvmerge` pair) ready to copy into a terminal.
+
+---
+
+## Running it in Docker
+
+The five command-line tools are the fiddly half of the install, so there is an image with all of
+them already in it: MediaInfo and ffmpeg and mkvmerge from Debian, `dovi_tool` as its static
+release binary, and `dovi_convert` — which turns out to be one Python file with nothing but the
+standard library behind it — fetched at build time. Nothing to `brew install`.
+
+`docker-compose.yml` brings up three containers:
+
+| | What it is |
+|---|---|
+| **gluetun** | The VPN. Holds the credentials and the killswitch. |
+| **jackett** | Runs with `network_mode: service:gluetun` — it has no network stack of its own, so if the tunnel drops, its indexer traffic has nowhere to go rather than somewhere worse. |
+| **ripgrade** | The app, with the drive bound in. Outside the tunnel: it talks to TMDb and Blu-ray.com, and has no business in one. |
+
+```bash
+cp .env.docker.example .env    # provider name and WireGuard key
+docker compose up -d --build
+```
+
+The app is on **<http://localhost:7979>**, Jackett's dashboard on **<http://localhost:9117>** —
+published by gluetun, because Jackett has no ports of its own to publish.
+
+Not 3000: that port belongs to `next dev`, and running the container and the dev server at the
+same time should not be a choice. `RIPGRADE_PORT` in `.env` moves it.
+
+### Two things worth knowing before you start
+
+**The drive is bound at the same path it has on the host.** `/Volumes:/Volumes`, not
+`/Volumes:/media` — so every absolute path already in the database still resolves, and a library
+scanned outside the container is the same library inside it. Docker Desktop shares `/Volumes` by
+default; if you have narrowed that, it is Settings → Resources → File sharing.
+
+> [!IMPORTANT]
+> A drive plugged in *after* the container started may not appear inside it — the share is
+> established when the container is, and Docker Desktop does not always propagate a later mount.
+> Mount the drive first, then `docker compose restart ripgrade`.
+
+**Jackett is at `http://gluetun:9117`, not `localhost`.** That is the address to paste into
+**Settings → Jackett** — container to container, by service name. `JACKETT_URL` and
+`JACKETT_API_KEY` are deliberately *not* set in the compose file: the app reads the environment
+before it reads Settings, so a variable set to an empty string would quietly beat a good key saved
+in the UI, and the key does not exist until Jackett has booted once anyway.
+
+If the searches hang rather than fail, it is gluetun's killswitch dropping the replies on the way
+back to the app. `DOCKER_SUBNETS` in `.env` is what opens that path.
+
+### What you lose
+
+**Reveal in Finder.** There is no Finder in a container, so the button is not drawn — everything
+else on the film page works unchanged. Convert, audio strip and cleanup all write through the bind
+mount, and the files land on the host owned by you.
+
+### And the honest caveat
+
+On **macOS**, every byte the app reads travels through Docker Desktop's file sharing. MediaInfo
+only reads headers and barely notices. A `dovi_convert` run is a 90 GB remux through that same
+mount, and it will be meaningfully slower than running the app natively. On Linux, where the drive
+is just mounted, none of this applies.
 
 ---
 

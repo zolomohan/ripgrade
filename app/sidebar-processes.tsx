@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   stopConvert,
   stopFullDoviScan,
+  stopStripAudio,
   stopThumbRebuild,
   stopUpgradeSweep,
 } from "@/app/actions";
@@ -42,6 +43,12 @@ import { useScan, type ScanResult } from "@/app/scan-provider";
  */
 
 const count = (n: number) => n.toLocaleString("en-GB");
+
+/** The two-tier form the library list and the film page both set sizes in. */
+const gigabytes = (bytes: number) =>
+  bytes >= 1e12
+    ? `${(bytes / 1e12).toFixed(2)} TB`
+    : `${(bytes / 1e9).toFixed(1)} GB`;
 
 function Bar({ percent }: { percent: number }) {
   return (
@@ -109,7 +116,7 @@ type Row = {
  * back into place rather than left wherever the leaving ones were appended, or
  * a job ending in the middle would drop to the bottom to do it.
  */
-const ORDER = ["scan", "dovi", "sweep", "thumbs", "convert"];
+const ORDER = ["scan", "dovi", "sweep", "thumbs", "convert", "strip"];
 
 /** Matches `--job-out` in globals.css; the two have to agree. */
 const EXIT_MS = 200;
@@ -190,16 +197,18 @@ function useParting(result: ScanResult | null) {
 export function SidebarProcesses() {
   const { state: scan, busy: scanning, result, dismiss } = useScan();
   const { jobs, apply } = useJobs();
-  const { dovi, convert, sweep, thumbs } = jobs;
+  const { dovi, convert, strip, sweep, thumbs } = jobs;
   const [stopping, setStopping] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const router = useRouter();
 
   const reading = dovi.status === "running";
   const converting = convert.status === "running";
+  const stripping = strip.status === "running";
   const sweeping = sweep.status === "running";
   const thumbing = thumbs.status === "running";
-  const anyRunning = scanning || reading || converting || sweeping || thumbing;
+  const anyRunning =
+    scanning || reading || converting || stripping || sweeping || thumbing;
 
   // A job that finished changed the library underneath whatever is open.
   useEffect(() => {
@@ -351,7 +360,9 @@ export function SidebarProcesses() {
 
     rows.push({
       key: "sweep",
-      name: `${wishing ? "Wishlist" : "Upgrades"} · ${count(done)} of ${count(total)}`,
+      // What it is doing, not how far along it is: the bar under this line is
+      // already the fraction, and saying it twice makes the name a readout.
+      name: wishing ? "Finding Wishlist" : "Finding Upgrades",
       percent: total ? (done / total) * 100 : 0,
       detail: {
         title: wishing ? "Searching for wanted films" : "Sweeping for upgrades",
@@ -431,6 +442,36 @@ export function SidebarProcesses() {
         note: convert.path,
       },
       stop: () => stopConvert().then((job) => apply({ convert: job })),
+    });
+  }
+
+  if (stripping) {
+    rows.push({
+      key: "strip",
+      // What is being done, in the fewest words that still say which tracks:
+      // "Remuxing" alone would not distinguish this from the conversion's own
+      // second step, and the rail has room for one line.
+      name: "Removing audio",
+      percent: strip.percent,
+      detail: {
+        title: "Removing audio tracks",
+        percent: strip.percent,
+        current: strip.label ?? strip.path,
+        currentLabel: "Step",
+        stats: [
+          ...(strip.removed !== undefined
+            ? [{ label: "Removing", value: count(strip.removed) }]
+            : []),
+          ...(strip.kept !== undefined
+            ? [{ label: "Keeping", value: count(strip.kept) }]
+            : []),
+          ...(strip.freedBytes !== undefined
+            ? [{ label: "Frees", value: gigabytes(strip.freedBytes) }]
+            : []),
+        ],
+        note: "The original is kept beside it. Cancelling leaves it untouched.",
+      },
+      stop: () => stopStripAudio().then((job) => apply({ strip: job })),
     });
   }
 

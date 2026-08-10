@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { StripJob } from "./audio-strip";
 import type { ConvertJob } from "./convert";
 import type { DoviJob } from "./dovi";
 import type { ScanState } from "./scanner";
@@ -21,6 +22,7 @@ export type JobsSnapshot = {
   scan: ScanState;
   dovi: DoviJob;
   convert: ConvertJob;
+  strip: StripJob;
   sweep: SweepJob;
   thumbs: ThumbJob;
 };

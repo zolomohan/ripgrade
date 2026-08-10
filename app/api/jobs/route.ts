@@ -1,3 +1,4 @@
+import { getStripJob } from "@/lib/audio-strip";
 import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
 import { subscribeJobs, type JobsSnapshot } from "@/lib/job-events";
@@ -29,6 +30,7 @@ export function GET(request: Request) {
     scan: getScanState(),
     dovi: getDoviJob(),
     convert: getConvertJob(),
+    strip: getStripJob(),
     sweep: getSweepJob(),
     thumbs: getThumbJob(),
   });

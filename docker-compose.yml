@@ -1,0 +1,94 @@
+# RipGrade, Jackett, and the tunnel Jackett lives inside.
+#
+# Three containers and two networks' worth of intent:
+#
+#   gluetun   holds the VPN. Nothing else in this file has an unprotected route
+#             out except RipGrade itself, which only ever talks to TMDb and
+#             Blu-ray.com and has no business in a tunnel.
+#   jackett   has no network stack of its own — it borrows gluetun's, so if the
+#             VPN drops, its indexer traffic has nowhere to go rather than
+#             somewhere worse.
+#   ripgrade  the app and its five command-line tools, with the drive bound in.
+#
+# Copy .env.docker.example to .env and fill it in before the first up.
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      # Jackett's dashboard. Published here rather than on the jackett service
+      # because jackett has no ports of its own to publish — this container is
+      # its network.
+      - "9117:9117"
+    environment:
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER}
+      VPN_TYPE: ${VPN_TYPE:-wireguard}
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:-}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES:-}
+      OPENVPN_USER: ${OPENVPN_USER:-}
+      OPENVPN_PASSWORD: ${OPENVPN_PASSWORD:-}
+      SERVER_COUNTRIES: ${SERVER_COUNTRIES:-}
+      TZ: ${TZ:-Europe/London}
+      # The killswitch drops every packet not bound for the tunnel, and a reply
+      # to RipGrade on the Docker bridge is one of those. Without this line the
+      # app's searches hang until they time out and Jackett looks broken when
+      # it is only unreachable.
+      FIREWALL_OUTBOUND_SUBNETS: ${DOCKER_SUBNETS:-172.16.0.0/12}
+    volumes:
+      - gluetun:/gluetun
+    restart: unless-stopped
+
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    # Shares gluetun's network namespace. This is the whole point: Jackett
+    # cannot reach an indexer except through the VPN, by construction rather
+    # than by configuration.
+    network_mode: "service:gluetun"
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Europe/London}
+    volumes:
+      - jackett:/config
+    depends_on:
+      - gluetun
+    restart: unless-stopped
+
+  ripgrade:
+    build:
+      context: .
+    image: ripgrade:local
+    ports:
+      # 7979 outside, because 3000 belongs to `next dev` and the two want to be
+      # runnable at once — the container is the library you keep, not the one
+      # you are editing. Inside it is still 3000; nothing about the app cares.
+      - "${RIPGRADE_PORT:-7979}:3000"
+    volumes:
+      # Bound at the same path it has on the host, so every path already in the
+      # database still resolves and a library scanned outside the container is
+      # the same library inside it. Docker Desktop shares /Volumes by default;
+      # if you moved it, Settings → Resources → File sharing.
+      - /Volumes:/Volumes
+      # Writable: dovi_convert leaves the original beside its result, and the
+      # audio strip writes a new MKV next to the file it read.
+      - ripgrade-data:/app/data
+    environment:
+      TZ: ${TZ:-Europe/London}
+      RIPGRADE_BROWSE_ROOT: ${RIPGRADE_BROWSE_ROOT:-/Volumes}
+      # JACKETT_URL and JACKETT_API_KEY are deliberately absent. The app reads
+      # the environment before it reads Settings, so a variable set to an empty
+      # string here would beat a good key saved in the UI — and the key does
+      # not exist until Jackett has booted once anyway. Configure it at
+      # Settings → Jackett, with the URL http://gluetun:9117.
+    depends_on:
+      - jackett
+    restart: unless-stopped
+
+volumes:
+  gluetun:
+  jackett:
+  ripgrade-data:

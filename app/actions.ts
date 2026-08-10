@@ -14,10 +14,29 @@ import {
   fetchDisc,
   getDisc,
   searchReleases,
+  setEnteredDisc,
   setManualDisc,
   type Candidate,
 } from "@/lib/disc";
+import { readEntry, type DiscEntry } from "@/lib/disc-entry";
+import { canStripAudio, type AudioPreference } from "@/lib/audio-plan";
 import {
+  getAudioPreference,
+  libraryLanguages,
+  setAudioPreference,
+  type LibraryLanguage,
+} from "@/lib/audio-prefs";
+import {
+  audioBackupBytes,
+  cancelStrip,
+  deleteAudioBackup,
+  getStripJob,
+  restoreAudioTracks,
+  startStripAudio,
+  type StripJob,
+} from "@/lib/audio-strip";
+import {
+  backupBytes,
   cancelConvert,
   deleteBackup,
   getConvertJob,
@@ -27,6 +46,7 @@ import {
 } from "@/lib/convert";
 import { classifyEnhancementLayer } from "@/lib/derive";
 import { getDiscoverEpisodes, type DiscoverEpisode } from "@/lib/discover";
+import { deleteCleanupFiles } from "@/lib/queue-tasks";
 import {
   cancelDoviScan,
   getDoviJob,
@@ -60,6 +80,7 @@ import {
   removeLibraryRoot,
 } from "@/lib/roots";
 import { revealInFinder } from "@/lib/system";
+import { setExtendedCut } from "@/lib/triage";
 import {
   cancelThumbRebuild,
   clearThumbCache,
@@ -70,6 +91,7 @@ import {
 import {
   cancelSweep,
   getQueueRules as readQueueRules,
+  getSweepJob,
   setQueueRules as writeQueueRules,
   startSweep,
   type QueueRules,
@@ -104,6 +126,7 @@ import {
   clearSeasonDisc,
   getSeasonDisc,
   searchSeasonReleases,
+  setEnteredSeasonDisc,
   setManualSeasonDisc,
 } from "@/lib/tv-disc";
 import { enrichShow, setManualShowMatch } from "@/lib/tv";
@@ -410,6 +433,34 @@ export async function confirmMatch(
   try {
     await setManualMatch(moviePath, tmdbId);
     deriveAll();
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Answers the extended-cut question a long-running film is asked, or takes the
+ * answer back with `null` so it is asked again.
+ *
+ * No re-derive: the answer is a decision about the file rather than a fact
+ * derived from it, so it is joined on when the library is read and every page
+ * sees it on the next render.
+ */
+export async function answerExtendedCut(
+  moviePath: string,
+  answer: boolean | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+
+  try {
+    setExtendedCut(moviePath, answer);
     refresh();
     return { ok: true };
   } catch (err) {
@@ -770,6 +821,34 @@ export async function linkDiscByUrl(
   return linkDisc(tmdbId, candidate);
 }
 
+/**
+ * Records a ceiling you typed in, for a film Blu-ray.com has no page for.
+ *
+ * The last resort of the three: the search found nothing and there is no URL to
+ * paste, so the specs themselves are the input. Everything downstream — the
+ * score, the gap list, the release search — reads it as it would a scraped
+ * release, which is the point of allowing it at all.
+ */
+export async function enterDisc(
+  tmdbId: number,
+  entry: DiscEntry,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const clean = readEntry(entry);
+  if (!clean) return { ok: false, error: "Those specs did not make sense." };
+
+  try {
+    setEnteredDisc(tmdbId, clean);
+    deriveAll();
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /** Forgets the stored release so the next scan searches again. */
 export async function unlinkDisc(
   tmdbId: number,
@@ -788,8 +867,14 @@ export async function unlinkDisc(
 }
 
 /**
- * The same three, for one season of a show. A series is sold a season at a
+ * The same four, for one season of a show. A series is sold a season at a
  * time, so the release being picked belongs to the season and not to the show.
+ *
+ * Each one re-derives, exactly as the film side does. The show page reads the
+ * season's release live, but an episode's scores and gaps are not read live:
+ * they were written into its `derived` row by the last pass, with the season's
+ * ceiling already folded in. Without this the panel names the new release
+ * while every score beneath it still answers to the old one.
  */
 export async function searchSeasonDiscs(
   showTitle: string,
@@ -819,6 +904,7 @@ export async function linkSeasonDisc(
   try {
     const lookup = await setManualSeasonDisc(showKey, season, candidate);
     if (lookup.error) return { ok: false, error: lookup.error };
+    deriveAll();
     refresh();
     return { ok: true };
   } catch (err) {
@@ -845,12 +931,35 @@ export async function linkSeasonDiscByUrl(
   return linkSeasonDisc(showKey, season, candidate);
 }
 
+/** The same, for a season no search can find a boxed set of. */
+export async function enterSeasonDisc(
+  showKey: string,
+  season: number,
+  entry: DiscEntry,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const clean = readEntry(entry);
+  if (!clean) return { ok: false, error: "Those specs did not make sense." };
+
+  try {
+    setEnteredSeasonDisc(showKey, season, clean);
+    deriveAll();
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function unlinkSeasonDisc(
   showKey: string,
   season: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     clearSeasonDisc(showKey, season);
+    deriveAll();
     refresh();
     return { ok: true };
   } catch (err) {
@@ -882,6 +991,9 @@ export async function beginFullDoviScan(
   }
   if (getConvertJob().status === "running") {
     return { ok: false, error: "Wait for the conversion to finish." };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "Wait for the track removal to finish." };
   }
 
   // The duration is only used to turn elapsed time into a percentage.
@@ -923,6 +1035,19 @@ export async function beginConvert(
   // being rewritten underneath it.
   if (getDoviJob().status === "running") {
     return { ok: false, error: "Wait for the current full pass to finish." };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "Wait for the track removal to finish." };
+  }
+  // One original at a time. dovi_convert would rename the stripped file aside
+  // as *its* original, leaving two files each claiming to be what the film was
+  // before — and restoring either would silently undo the other.
+  if (audioBackupBytes(moviePath) !== undefined) {
+    return {
+      ok: false,
+      error:
+        "An original from a track removal is still kept beside this film. Restore it or delete it before converting.",
+    };
   }
 
   const movie = getLibrary().find((m) => m.path === moviePath);
@@ -976,6 +1101,9 @@ export async function discardBackup(
   if (getConvertJob().status === "running") {
     return { ok: false, error: "A conversion is running — wait for it." };
   }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "A track removal is running — wait for it." };
+  }
 
   try {
     await deleteBackup(moviePath);
@@ -1012,6 +1140,9 @@ export async function restoreOriginal(
   if (getDoviJob().status === "running") {
     return { ok: false, error: "A full pass is running — wait for it." };
   }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "A track removal is running — wait for it." };
+  }
 
   try {
     await restore(moviePath);
@@ -1024,6 +1155,222 @@ export async function restoreOriginal(
 
   refresh();
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Audio tracks
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether anything else is already rewriting this drive.
+ *
+ * Every one of these reads or writes the same film on the same disk, and two of
+ * them at once means a tool describing a file another tool is replacing
+ * underneath it. Named once because the four actions below all need it and all
+ * need it to say the same thing.
+ */
+function otherWorkRunning(): string | undefined {
+  if (getConvertJob().status === "running") {
+    return "A Dolby Vision conversion is running — wait for it.";
+  }
+  if (getDoviJob().status === "running") {
+    return "A full Dolby Vision pass is running — wait for it.";
+  }
+  return undefined;
+}
+
+/**
+ * Removes audio tracks from a film, keeping the original beside it.
+ *
+ * Minutes of disk on a large remux, so it starts a job and returns — the job
+ * stream is how the page follows it. The tracks are named by position among the
+ * audio tracks alone; `resolvePlan` is what turns that into mkvmerge's own
+ * numbering, and it re-reads the container before it will.
+ */
+export async function beginStripAudio(
+  moviePath: string,
+  removeOrdinals: number[],
+  audioCount: number,
+  numbers?: (number | undefined)[],
+  freedBytes?: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "A track removal is already running." };
+  }
+  const busy = otherWorkRunning();
+  if (busy) return { ok: false, error: busy };
+
+  if (!canStripAudio(moviePath)) {
+    return {
+      ok: false,
+      error: "Only Matroska (.mkv) files can have tracks removed.",
+    };
+  }
+  if (audioBackupBytes(moviePath) !== undefined) {
+    return {
+      ok: false,
+      error:
+        "An original is already kept beside this film. Restore it or delete it before removing more tracks.",
+    };
+  }
+  // The reciprocal of the guard in `beginConvert`, for the same reason: two
+  // files each claiming to be the original is a state nothing can undo cleanly.
+  if (backupBytes(moviePath) !== undefined) {
+    return {
+      ok: false,
+      error:
+        "The pre-conversion original is still kept beside this film. Restore it or delete it before removing tracks.",
+    };
+  }
+  if (removeOrdinals.length === 0) {
+    return { ok: false, error: "No audio tracks were selected." };
+  }
+
+  startStripAudio(moviePath, {
+    removeOrdinals,
+    audioCount,
+    numbers,
+    freedBytes,
+  });
+  return { ok: true };
+}
+
+/** Stops a removal and sweeps up its working file. The film is untouched. */
+export async function stopStripAudio(): Promise<StripJob> {
+  return cancelStrip();
+}
+
+/**
+ * Puts back the file that still holds every track, and deletes the stripped
+ * one. Two renames and a re-read, so it runs inline rather than as a job.
+ */
+export async function restoreAudioOriginal(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "A track removal is running — wait for it." };
+  }
+  const busy = otherWorkRunning();
+  if (busy) return { ok: false, error: busy };
+
+  try {
+    await restoreAudioTracks(moviePath);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+/**
+ * Throws away the original that still holds the removed tracks. The one action
+ * here that cannot be walked back, so it is kept separate from restoring.
+ */
+export async function discardAudioBackup(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "A track removal is running — wait for it." };
+  }
+
+  try {
+    await deleteAudioBackup(moviePath);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+/**
+ * Which audio languages to keep, and what there is to choose between.
+ *
+ * Both in one call because the panel needs both to draw a single row, and the
+ * two are read from the same pass over the library.
+ */
+export async function getAudioLanguages(): Promise<{
+  preference: AudioPreference;
+  available: LibraryLanguage[];
+}> {
+  return { preference: getAudioPreference(), available: libraryLanguages() };
+}
+
+/**
+ * Changes what the audio queue proposes removing.
+ *
+ * Nothing is rewritten by this and nothing is remembered about the last answer:
+ * the queue is computed from the preference every time it is read, so a language
+ * ticked here brings every track of it straight back off the list.
+ */
+export async function setAudioLanguages(
+  preference: AudioPreference,
+): Promise<{ ok: true }> {
+  setAudioPreference(preference);
+  refresh();
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Clearing up
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes originals and leftovers the queue's cleanup list found.
+ *
+ * Takes several at once because a run of leftovers is one decision, not one per
+ * file. Which paths are acceptable is decided by `deleteCleanupFiles` against
+ * its own fresh scan, so nothing here has to trust the browser about what a
+ * given path is.
+ *
+ * Both rewrites are refused while they run, and for the same reason the film's
+ * own console refuses: a conversion's half-written output is a leftover by
+ * every test this app can apply, and it is also the file the running tool is
+ * still writing to.
+ */
+export async function discardCleanup(
+  paths: string[],
+): Promise<
+  { ok: true; deleted: number; freed: number } | { ok: false; error: string }
+> {
+  if (getConvertJob().status === "running") {
+    return { ok: false, error: "A conversion is running — wait for it." };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "A track removal is running — wait for it." };
+  }
+
+  let result;
+  try {
+    result = await deleteCleanupFiles(paths);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // Outside the catch, like every other action here: by this point the files
+  // are gone, and a failure to repaint the page is not a failure to delete
+  // them — reporting one as the other would have the list offering them again.
+  refresh();
+  return { ok: true, ...result };
 }
 
 // ---------------------------------------------------------------------------
@@ -1174,6 +1521,59 @@ export async function chooseArtwork(
  */
 export async function stopUpgradeSweep(): Promise<SweepJob> {
   return cancelSweep();
+}
+
+/**
+ * The way out of a sweep that gave up.
+ *
+ * ABORT_AFTER_FAILURES exists to stop a dead Jackett costing an hour of
+ * attempts, and it works — but what it leaves behind is a job frozen at
+ * `error`, and nothing on the page clears it. Start Jackett, search a film by
+ * hand, watch it work, go back to the queue: the failure is still there,
+ * describing a proxy that has been up for an hour. It outlives its own cause,
+ * because the only thing that would overwrite it is the next scan.
+ *
+ * A resume rather than a redo: the films the failed pass got through are still
+ * checked, and the point is to reach the ones it never asked about.
+ */
+export async function retryUpgradeSweep(): Promise<SweepJob> {
+  return sweep(false);
+}
+
+/**
+ * The other way in: check it all again, now.
+ *
+ * A sweep skips anything checked in the last day, which is what keeps a scan an
+ * hour after a scan from costing four hundred searches. Read from the queue
+ * page, though, that window is a wall: every row says how long ago it was
+ * checked, and the natural response to "checked 20 h ago" — when a release you
+ * are waiting for might have landed since — is to ask again. Nothing on the
+ * page could, and waiting out the rest of the day is not an answer.
+ *
+ * So this is the sweep with the freshness rule turned off. It is deliberately
+ * not the same button as the one that fills the queue by itself: that one runs
+ * unasked and should stay cheap. This one was asked for, and the asking is what
+ * pays for the searches.
+ *
+ * Nothing calls it at the moment: the Scan pill it was written for is off the
+ * queue page, which now only reads what the sweep wrote. Kept because the need
+ * it answers has not gone anywhere — a row checked 20 h ago and a release that
+ * landed since — and whatever offers that next will want exactly this.
+ */
+export async function rescanUpgradeQueue(): Promise<SweepJob> {
+  return sweep(true);
+}
+
+/** Both of the above, which differ only in whether a recent check counts. */
+function sweep(force: boolean): SweepJob {
+  if (!hasJackett()) {
+    return {
+      ...getSweepJob(),
+      status: "error",
+      error: "Jackett is not set up. Add its URL and API key on the Settings page.",
+    };
+  }
+  return startSweep({ force });
 }
 
 // ---------------------------------------------------------------------------

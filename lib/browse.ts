@@ -16,8 +16,13 @@ export type DirListing = {
   error?: string;
 };
 
-/** External drives mount here on macOS, so it's the natural starting point. */
-export const DEFAULT_ROOT = "/Volumes";
+/**
+ * External drives mount here on macOS, so it's the natural starting point. The
+ * container image binds the host's `/Volumes` to the same path inside itself,
+ * precisely so every path already in the database keeps resolving; the
+ * override is for the host that mounts its drives somewhere else.
+ */
+export const DEFAULT_ROOT = process.env.RIPGRADE_BROWSE_ROOT || "/Volumes";
 
 export async function listDirectory(target: string): Promise<DirListing> {
   const resolved = path.resolve(target);

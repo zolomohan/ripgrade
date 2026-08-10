@@ -2,7 +2,9 @@
 
 import { useState, useSyncExternalStore } from "react";
 
+import { BUTTON } from "./controls";
 import { CloseButton, Modal } from "./modal";
+import { Spinner } from "./spinner";
 
 /**
  * Everything a running job knows, for when the rail is not enough.
@@ -124,6 +126,9 @@ export function ProcessDetails({
           </div>
         </header>
 
+        {/* The floor the title stands on, as under every other dialog's. */}
+        <div aria-hidden className="rule-head" />
+
         {shown.percent !== undefined && (
           <div className="h-1.5 overflow-hidden rounded-full bg-surface-strong">
             <div
@@ -183,8 +188,12 @@ export function ProcessDetails({
               type="button"
               onClick={onCancel}
               disabled={busy}
-              className="rounded-control border border-red-500/40 bg-red-500/[0.10] px-3 py-1.5 text-sm text-red-700 hover:bg-red-500/20 disabled:opacity-40 dark:text-red-300"
+              // The dialog's filled red, same as the confirmations on the film
+              // page — this is the thing the dialog is for, not one option in
+              // a row, so it does not wait for hover to say what it is.
+              className={BUTTON.confirm}
             >
+              {busy && <Spinner />}
               Stop
             </button>
           </div>

@@ -142,7 +142,7 @@ export function SubScore({
           // the mark on the track at 100 instead of hanging off the end.
           <span
             aria-hidden
-            title={`Best disc: ${ceiling}`}
+            title={`Best available: ${ceiling}`}
             className="absolute -top-[5px] h-4 w-0.5 -translate-x-1/2 rounded-full bg-foreground/70"
             style={{ left: `${ceiling}%` }}
           />

@@ -66,7 +66,12 @@ CREATE TABLE IF NOT EXISTS triage (
   path          TEXT PRIMARY KEY,
   acknowledged  INTEGER NOT NULL DEFAULT 0,
   note          TEXT,
-  updated_at    INTEGER NOT NULL
+  updated_at    INTEGER NOT NULL,
+  -- Your answer to "is this an extended cut?", asked of a film that runs long.
+  -- Nullable on purpose, and three-valued: NULL is a question nobody has
+  -- answered, which is not the same as one answered "no". Only the first is
+  -- worth asking again.
+  extended_cut  INTEGER
 );
 
 -- Per-issue decisions, kept from an earlier version of the app that let you
@@ -224,6 +229,28 @@ CREATE TABLE IF NOT EXISTS artwork (
   fanart_src  TEXT,
   logo_src    TEXT
 );
+
+-- What was lying beside the films the last time their folders could be read.
+--
+-- Every other figure on the dashboard survives an unplugged drive, because
+-- every other figure was derived once and written down. Backups and leftovers
+-- never were: they are found by reading each folder, so "reclaimable" used to
+-- read zero the moment a volume went away — not "unknown", which is what it
+-- actually was, but zero, which is a claim.
+--
+-- Keyed by the file's own path and stamped with the folder it was found in, so
+-- one readable folder replaces exactly its own rows and the folders that are
+-- away keep theirs.
+CREATE TABLE IF NOT EXISTS cleanup_files (
+  path        TEXT PRIMARY KEY,
+  dir         TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  bytes       INTEGER NOT NULL,
+  modified_at INTEGER NOT NULL,
+  seen_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS cleanup_files_dir ON cleanup_files (dir);
 `;
 
 const DB_PATH = path.join(process.cwd(), "data", "medlib.db");
@@ -280,6 +307,20 @@ const downloadColumns = (
 if (downloadColumns.length > 0 && !downloadColumns.includes("film_title")) {
   db.exec("ALTER TABLE downloads ADD COLUMN film_title TEXT");
   db.exec("ALTER TABLE downloads ADD COLUMN poster_path TEXT");
+}
+
+/**
+ * The same, for the extended-cut answer. `triage` is the one table that holds
+ * decisions rather than derivations — nothing on disk could rebuild it — so the
+ * column is added in place rather than waiting for a rescan that would never
+ * bring it back.
+ */
+const triageColumns = (
+  db.prepare("PRAGMA table_info(triage)").all() as { name: string }[]
+).map((c) => c.name);
+
+if (!triageColumns.includes("extended_cut")) {
+  db.exec("ALTER TABLE triage ADD COLUMN extended_cut INTEGER");
 }
 
 /**

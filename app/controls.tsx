@@ -90,6 +90,7 @@ export function BarSearch({
   placeholder,
   disabled,
   autoFocus,
+  onKeyDown,
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -98,6 +99,9 @@ export function BarSearch({
   disabled?: boolean;
   /** For the page whose whole purpose is this field. */
   autoFocus?: boolean;
+  /** For a field that answers keys of its own — see the universal search, where
+      Tab moves between the places the words are put. */
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
 }) {
   return (
     <div className="relative min-w-0 flex-1">
@@ -115,6 +119,7 @@ export function BarSearch({
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         disabled={disabled}
         autoFocus={autoFocus}
@@ -317,6 +322,7 @@ export function Popover({
   value,
   badge,
   width = "w-64",
+  align = "right",
   buttonClassName = "",
   children,
 }: {
@@ -325,6 +331,12 @@ export function Popover({
   value?: string;
   badge?: number;
   width?: string;
+  /**
+   * Which edge the panel hangs from. Right for everything that sits at the end
+   * of a bar, which is most of them; left for a control at the head of one,
+   * where a panel measured from its right edge would open off the side of it.
+   */
+  align?: "left" | "right";
   /** For the trigger — a control at the bar's end needs its rounded cap. */
   buttonClassName?: string;
   children: (close: () => void) => React.ReactNode;
@@ -386,7 +398,9 @@ export function Popover({
 
       {open && (
         <div
-          className={`row-enter absolute top-full right-0 z-30 mt-2 ${width} overflow-hidden rounded-card border border-line bg-background shadow-2xl`}
+          className={`row-enter absolute top-full ${
+            align === "left" ? "left-0" : "right-0"
+          } z-30 mt-2 ${width} overflow-hidden rounded-card border border-line bg-background shadow-2xl`}
         >
           {children(() => setOpen(false))}
         </div>
@@ -482,3 +496,106 @@ export function HelpTip({ text }: { text: string }) {
     </span>
   );
 }
+
+/**
+ * One shape for every button that commits to something, so a row of them
+ * lines up.
+ *
+ * This began as the console's own, on the film page, where a verdict band and
+ * an action band needed their buttons to agree. It is here now because the
+ * queue's rows and the dashboard's inline actions want the same four weights,
+ * and a second set written from memory would drift from this one at the first
+ * change to either.
+ *
+ * The shape is the pill. It was `--radius-control` here, `--radius-chip` on
+ * the settings pages, and a full round on the shelf's own controls — three
+ * answers to one question, which is how the app came to look like three apps
+ * depending on which page you were standing on. The shelf's answer won,
+ * because it was already the shape of the search field, the segmented tabs,
+ * the filter chips and every icon button: the app was mostly pills and the
+ * buttons were the holdout.
+ *
+ * `inline-flex` and a gap on all three of the boxed weights, so a label can be
+ * joined by a `Spinner` — or an icon — without the button having to be rebuilt
+ * around it. `justify-center` matters for the ones that are given a width:
+ * their contents change size as they work, and centred is the only alignment
+ * that does not make the button look like it is drifting.
+ */
+export const BUTTON = {
+  primary:
+    "inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40",
+  secondary:
+    "inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-line px-4 py-1.5 text-sm transition-colors hover:bg-surface-strong disabled:opacity-40",
+  // Its colour arrives on hover, when you are reaching for it: sitting in the
+  // row it is one button among several, and the dialog behind it is where the
+  // red belongs.
+  danger:
+    "inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-line px-4 py-1.5 text-sm transition-colors hover:border-red-500/40 hover:bg-red-500/[0.08] hover:text-red-700 disabled:opacity-40 dark:hover:text-red-300",
+  // Words rather than a box: what it offers is an alternative to the button
+  // beside it, and a second bordered button would read as a second decision of
+  // equal weight. The app's own link treatment, underline arriving on hover.
+  // No pill, because there is no box to round — but still a flex row, so a
+  // spinner can sit beside the words like it does everywhere else.
+  text: "inline-flex shrink-0 items-center gap-1.5 px-1 py-1.5 text-sm underline decoration-transparent underline-offset-4 opacity-60 transition hover:decoration-current hover:opacity-100 disabled:opacity-30",
+  // The red a dialog wears, which is not the red a row wears. `danger` above
+  // waits for hover because out on a page it is one option among several; by
+  // the time a dialog is open, the destructive thing is the only thing being
+  // asked about, and a button that looks neutral until you reach for it is
+  // hiding what it does. Same pill, filled from the start.
+  //
+  // Written out rather than layered onto `secondary`, because two `border-*`
+  // colours in one class string are settled by the order Tailwind emits them
+  // in, not the order they are written — which is a coin toss dressed up as
+  // an override.
+  confirm:
+    "inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-red-500/40 bg-red-500/[0.10] px-4 py-1.5 text-sm text-red-700 transition-colors hover:bg-red-500/20 disabled:opacity-40 dark:text-red-300",
+  // The same button at the size of the small print. Copy, Try again, Browse,
+  // Edit poster: things offered beside a line of `text-xs` and sized to it, so
+  // that a button next to a caption does not out-shout the caption. This one
+  // existed already — six times, in six files, written from memory each time
+  // and no two agreeing on radius or padding. Once, here.
+  small:
+    "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-line px-3 py-1 text-xs transition-colors hover:bg-surface-strong disabled:opacity-40",
+};
+
+/**
+ * One shape for everything you type into, for the same reason as `BUTTON`.
+ *
+ * The buttons were three radii until they were one; the fields were the same
+ * story a page later — `--radius-control` in Settings and the film dialogs,
+ * `--radius-chip` in the folder picker, a full round on the shelf's search —
+ * and a form whose field is squarer than the button under it reads as two
+ * controls borrowed from two apps. The pill wins here too, and for the plainest
+ * of reasons: the search field was already one, so the app's most-used field
+ * had already settled the question.
+ *
+ * The recipe under the radius was never in dispute — hairline border, no fill,
+ * a machine face for the addresses, keys and paths these mostly hold, and focus
+ * answered by the border brightening rather than by a ring. Written six times
+ * from memory, it agreed six times on the colours and never once on the
+ * padding. Once, here.
+ *
+ * No width: a field is either given the column (`w-full`) or given the slack in
+ * a row (`flex-1`), and that is the caller's business, not the shape's.
+ */
+export const FIELD = {
+  // The field with a label over it — Settings' keys and addresses, the film
+  // details entered by hand. `px-4` rather than the `px-3` it carried as a
+  // rounded box: the pill's corners eat the first few pixels of the line, and
+  // text that starts inside the curve reads as text that is falling out of it.
+  default:
+    "rounded-full border border-line bg-transparent px-4 py-2 font-mono text-xs outline-none transition-colors focus:border-line-strong",
+  // The same field at the size of the small print, for the rows where it sits
+  // beside a `BUTTON.small` — a search phrase being corrected, a URL being
+  // pasted. Its padding is that button's, so the two are one control's height
+  // and the row does not step.
+  small:
+    "rounded-full border border-line bg-transparent px-3 py-1 font-mono text-xs outline-none transition-colors focus:border-line-strong",
+  // A choice rather than a phrase, but the same shape, because it stands in the
+  // same rows. `appearance-none` drops the platform's own chevron — every
+  // engine draws a different one, and none of them a pill — so each caller
+  // supplies the arrow that `pr-7` leaves room for. Sans, not mono: what these
+  // hold is a written option, not a machine string.
+  select:
+    "cursor-pointer appearance-none rounded-full border border-line bg-transparent py-1 pr-7 pl-3 text-xs outline-none transition-colors focus:border-line-strong",
+};

@@ -9,6 +9,8 @@ import {
   listArtwork,
   type ArtworkChoice,
 } from "@/app/actions";
+import { BUTTON, FIELD } from "@/app/controls";
+import { Spinner } from "@/app/spinner";
 import { imageUrl } from "@/lib/image-url";
 import { HERO_BUTTON } from "./hero-button";
 import { CloseButton, Modal } from "@/app/modal";
@@ -49,22 +51,6 @@ const KINDS: Record<
   },
 };
 type Sort = "default" | "largest";
-
-function Spinner({ big }: { big?: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      aria-hidden
-      className={`motion-safe:animate-spin ${big ? "h-7 w-7" : "h-4 w-4"}`}
-    >
-      <path d="M12 3a9 9 0 1 0 9 9" />
-    </svg>
-  );
-}
 
 /**
  * Either a film — identified by its file — or a show, identified by its key.
@@ -200,7 +186,7 @@ export function ArtworkEditor({
           <button
             type="button"
             onClick={() => openWith(openAs ?? "poster")}
-            className="rounded-control border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
+            className={BUTTON.small}
           >
             {label}
           </button>
@@ -262,14 +248,14 @@ export function ArtworkEditor({
         panelClassName="flex h-[min(80vh,44rem)] w-full max-w-5xl flex-col rounded-card border border-line bg-background shadow-2xl"
       >
         <>
-          <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line p-5">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 px-5 pt-5 pb-4">
             <h2 className="text-lg font-semibold">{KINDS[tab].label}</h2>
 
             <div className="relative">
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as Sort)}
-                className="cursor-pointer appearance-none rounded-control border border-line bg-transparent py-1.5 pr-8 pl-3 text-xs outline-none focus:border-line-strong"
+                className={FIELD.select}
               >
                 <option value="largest">Largest dimensions</option>
                 <option value="default">TMDb order</option>
@@ -295,6 +281,10 @@ export function ArtworkEditor({
               <CloseButton onClick={() => setOpen(false)} />
             </div>
           </div>
+
+          {/* The floor the title stands on, in place of the border that used to
+              rule the panel edge to edge — a thing no other line here does. */}
+          <div aria-hidden className="rule-head mx-5 shrink-0" />
 
           <div className="flex-1 overflow-y-auto p-5">
             {!images && !error && (
@@ -366,7 +356,7 @@ export function ArtworkEditor({
                           looking. */}
                     {saving === choice.filePath && (
                       <span className="absolute inset-0 grid place-items-center bg-black/60 text-white">
-                        <Spinner big />
+                        <Spinner className="h-7 w-7" />
                       </span>
                     )}
                     {saved === choice.filePath && (

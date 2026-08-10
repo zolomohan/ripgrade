@@ -6,10 +6,10 @@ import { rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { getSetting } from "./db";
-import { BACKUP_SUFFIX, RUNTIME_DRIFT, runtimeDrift } from "./derive";
+import { BACKUP_SUFFIX } from "./derive";
 import { scanDovi } from "./dovi";
 import { notifyJobs } from "./job-events";
-import { probe } from "./media";
+import { compareRuntime } from "./media";
 import { deriveAll } from "./library";
 import { reprobeFile } from "./scanner";
 
@@ -203,54 +203,6 @@ async function refreshFileFacts(filePath: string): Promise<void> {
   deriveAll();
 }
 
-/** Seconds, read the same way for both files so the comparison is like for like. */
-async function durationOf(filePath: string): Promise<number | undefined> {
-  const { mediainfo } = await probe(filePath);
-  const tracks = (
-    mediainfo as { media?: { track?: Record<string, unknown>[] } }
-  )?.media?.track;
-  const general = tracks?.find((t) => t["@type"] === "General");
-  const value = Number.parseFloat(String(general?.["Duration"] ?? ""));
-  return Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
-const clock = (seconds: number) => {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.round((seconds % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-};
-
-/**
- * Compares the converted file against the original it replaced.
- *
- * dovi_convert verifies its own output, but on metadata rather than length — a
- * mux that emits the stream twice passes that check and produces a film of
- * double the runtime. Reading both files settles it in about a second, which is
- * nothing against the minutes already spent.
- */
-async function checkRuntime(
-  filePath: string,
-): Promise<{ ok: boolean; message: string }> {
-  const [before, after] = await Promise.all([
-    durationOf(backupPathFor(filePath)),
-    durationOf(filePath),
-  ]);
-
-  if (before === undefined || after === undefined) {
-    return {
-      ok: true,
-      message: "runtime could not be compared — check the file plays through",
-    };
-  }
-
-  return runtimeDrift(before, after) > RUNTIME_DRIFT
-    ? {
-        ok: false,
-        message: `the converted file runs ${clock(after)} against the original's ${clock(before)}. The mux is faulty — restore the original rather than keeping this.`,
-      }
-    : { ok: true, message: `runtime matches the original at ${clock(after)}` };
-}
-
 /**
  * Progress, measured rather than guessed.
  *
@@ -396,7 +348,7 @@ export function startConvert(
       label: "Checking runtime",
       percent: 99,
     });
-    const check = await checkRuntime(filePath);
+    const check = await compareRuntime(backupPathFor(filePath), filePath);
 
     try {
       await refreshFileFacts(filePath);

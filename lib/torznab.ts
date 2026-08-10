@@ -65,6 +65,35 @@ const digits = (value?: string): number | undefined => {
 const magnetFor = (infoHash: string, name: string) =>
   `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(name)}`;
 
+/**
+ * The info hash an indexer published only inside its own URLs.
+ *
+ * Some trackers — TorrentDownload and LimeTorrents among them — send neither
+ * `magneturl` nor `infohash`, and offer the download solely as Jackett's `link`.
+ * That link cannot be used: it carries the API key, and these results are drawn
+ * in a browser. So those releases arrive with nothing to fetch them by and the
+ * row renders bare, which reads as "no download exists" rather than "the feed
+ * described it differently".
+ *
+ * But the hash is right there in the details URL, because that is how those
+ * sites address a torrent — /520F5BB2…/Inception-2010. Forty hex characters is
+ * a v1 info hash and is not plausibly anything else in a path, so reading it
+ * back costs nothing and asks no more of the indexer than it already said.
+ *
+ * Bounded on both sides so a longer hex run — a 64-character v2 hash, which is
+ * not a btih and would make a magnet nothing can resolve — cannot match part of
+ * itself and be mistaken for one.
+ */
+const HASH_IN_URL = /(?:^|[^0-9a-f])([0-9a-f]{40})(?:[^0-9a-f]|$)/i;
+
+const hashFromUrls = (urls: (string | undefined)[]): string | undefined => {
+  for (const url of urls) {
+    const found = url?.match(HASH_IN_URL);
+    if (found) return found[1].toLowerCase();
+  }
+  return undefined;
+};
+
 /** The `<error>` element Jackett returns, often alongside a 200. */
 export function feedError(xml: string): string | undefined {
   const match = xml.match(/<error\b[^>]*\bdescription="([^"]*)"/i);
@@ -146,7 +175,11 @@ export function parseTorznab(xml: string): IndexerResult[] {
       digits(a.get("size")) ??
       digits(enclosure?.[1]);
 
-    const infoHash = a.get("infohash")?.toLowerCase();
+    // Both of these describe the release's own page, and both are read twice:
+    // once for the link the UI offers, once for a hash the feed omitted.
+    const pageUrls = [tagValue(item, "comments"), tagValue(item, "guid")];
+
+    const infoHash = a.get("infohash")?.toLowerCase() ?? hashFromUrls(pageUrls);
     const magnet =
       a.get("magneturl") ?? (infoHash ? magnetFor(infoHash, title) : undefined);
 
@@ -172,7 +205,7 @@ export function parseTorznab(xml: string): IndexerResult[] {
       infoHash,
       // `guid` is a URL on most indexers and an opaque id on some, so it is
       // only worth offering as a link when it actually looks like one.
-      detailsUrl: [tagValue(item, "comments"), tagValue(item, "guid")].find(
+      detailsUrl: pageUrls.find(
         (value) => value && /^https?:\/\//i.test(value),
       ),
       categories: (a.get("category")?.split(",") ?? [])

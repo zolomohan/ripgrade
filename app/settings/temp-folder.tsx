@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 import { browse, clearConvertTempDir, setConvertTempDir } from "../actions";
 import { FolderPicker } from "../folder-picker";
 import type { DirListing } from "@/lib/browse";
+import { SettingDialog } from "./dialog";
 import { PRIMARY, QUIET, Status } from "./parts";
 
 /**
@@ -15,6 +16,11 @@ import { PRIMARY, QUIET, Status } from "./parts";
  * whole job runs at whatever is left; pointing the intermediate at an SSD
  * splits them apart. The final file still lands beside the original, so this
  * changes the speed and nothing else.
+ *
+ * Choosing goes in a dialog. The tree is a scrolling list of folders with a
+ * breadcrumb over it — the biggest thing on the Settings page while it was
+ * open, and it grew downward out of a row whose whole job was to tell you the
+ * one path in force. Asked for, it gets the width the paths in it want.
  */
 export function TempFolder({
   current,
@@ -24,8 +30,8 @@ export function TempFolder({
   defaultPath: string;
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
-  // The browser is behind a button even inside an open panel: it reads the
-  // drive, which is a request, and one made by arriving on this tab would be
+  // The browser is behind a button rather than opening with the panel: it reads
+  // the drive, which is a request, and one made by arriving on this tab would be
   // made for everyone who came to change something else.
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -38,44 +44,48 @@ export function TempFolder({
   }, [open, listing, current, defaultPath]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Status
-          on={Boolean(current)}
-          label={
-            current
-              ? "Working files go to"
-              : "Working files stay beside the film"
-          }
-          detail={current}
-        />
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <Status
+        on={Boolean(current)}
+        label={
+          current ? "Working files go to" : "Working files stay beside the film"
+        }
+        detail={current}
+      />
 
-        <div className="flex shrink-0 items-center gap-3">
-          {current && (
-            <button
-              type="button"
-              onClick={() => startTransition(async () => clearConvertTempDir())}
-              disabled={pending}
-              className={QUIET}
-            >
-              Clear
-            </button>
-          )}
+      <div className="flex shrink-0 items-center gap-3">
+        {current && (
           <button
             type="button"
-            onClick={() => setOpen((value) => !value)}
-            className={open ? QUIET : PRIMARY}
+            onClick={() => startTransition(async () => clearConvertTempDir())}
+            disabled={pending}
+            className={QUIET}
           >
-            {open ? "Cancel" : current ? "Change" : "Choose a folder"}
+            Clear
           </button>
-        </div>
+        )}
+        <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
+          {current ? "Change" : "Choose a folder"}
+        </button>
       </div>
 
-      {open &&
-        (listing ? (
+      <SettingDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        wide
+        title={current ? "Change the scratch space" : "Choose a scratch folder"}
+        lede="The working file is written here while a conversion runs. The film itself still lands beside the original."
+      >
+        {/* The listing is kept once fetched, so reopening the dialog shows the
+            tree where you left it rather than paying for the walk again. */}
+        {listing ? (
           <FolderPicker
             initialListing={listing}
-            onSave={setConvertTempDir}
+            onSave={async (path) => {
+              const result = await setConvertTempDir(path);
+              if (result.ok) setOpen(false);
+              return result;
+            }}
             saveLabel="Use this folder for working files"
           />
         ) : (
@@ -84,7 +94,8 @@ export function TempFolder({
               <div key={i} className="skeleton h-8 w-full" />
             ))}
           </div>
-        ))}
+        )}
+      </SettingDialog>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 
 import { addLibraryFolder, browse, removeLibraryFolder } from "./actions";
 import { FolderPicker } from "./folder-picker";
+import { Spinner } from "./spinner";
 import { DANGER, Failure, PRIMARY, QUIET } from "./settings/parts";
 import type { DirListing } from "@/lib/browse";
 
@@ -98,6 +99,7 @@ export function FolderSection({
                     disabled={pending}
                     className={DANGER}
                   >
+                    {pending && <Spinner className="h-3 w-3" />}
                     Remove folder
                   </button>
                 </div>

@@ -1,5 +1,5 @@
 /**
- * What the Best disc panel says when there is no disc.
+ * What the Best quality panel says when there is no disc.
  *
  * It used to be one dim sentence with two buttons under it, which read as a
  * failure notice rather than as a state: the panel said what it had not found
@@ -36,7 +36,7 @@ export function NoDisc({
 
       <p className="max-w-prose text-sm opacity-55">
         {lookedUp
-          ? `Nothing on Blu-ray.com matches this ${scope}, so ${subject} scored on the rubric alone rather than against the best disc released. If you know the release, you can link it by hand.`
+          ? `Nothing on Blu-ray.com matches this ${scope}, so ${subject} scored on the rubric alone rather than against the best release. If you know the release you can link it by hand — and if there is no page for it at all, you can type its specs in instead.`
           : `A scan looks this up on Blu-ray.com automatically. Until it has, ${subject} scored on the rubric alone.`}
       </p>
 

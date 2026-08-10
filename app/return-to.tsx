@@ -27,13 +27,12 @@ const SCROLL_KEY = "ripgrade:listingScroll";
  * lists its seasons and theirs their episodes. Back from an episode means back
  * to the season, not back to the library it was three clicks ago.
  *
- * Search is one of them. It is a shelf you assembled by typing, and it is the
- * shelf least like anywhere else — going back to the library from a film you
- * found by searching throws away the one thing you could not have got to by
- * browsing. It keeps its term in the query string for the same reason the
- * library keeps its filters there.
+ * Search was one of them, while it was a page. It is a window now, and a window
+ * is not somewhere you can be sent back to: opening a film from it closes it
+ * and leaves the page underneath, which is the page this trail already holds.
+ * See app/search/dialog.tsx.
  */
-const LISTINGS = ["/", "/collections", "/wishlist", "/upgrades", "/search"];
+const LISTINGS = ["/library", "/collections", "/wishlist", "/upgrades"];
 
 const isListing = (path: string) =>
   LISTINGS.includes(path) ||
@@ -149,8 +148,14 @@ export function RememberListing() {
 /** Whether a return is in progress; see `markReturning`. */
 export const isReturning = () => returning;
 
-/** The listing last left, or the library when this page was opened directly. */
-export const lastListing = () => readTrail().at(-1)?.url ?? "/";
+/**
+ * The listing last left, or the library when this page was opened directly.
+ *
+ * The shelf rather than the dashboard: arriving at a film from a bookmark and
+ * pressing back means "show me this among the others", which is a question the
+ * status board does not answer.
+ */
+export const lastListing = () => readTrail().at(-1)?.url ?? "/library";
 
 /**
  * The same, and steps off it: going back is leaving this page, so the page it
@@ -167,7 +172,7 @@ export const popListing = () => {
     // See writeTrail.
   }
 
-  return crumb?.url ?? "/";
+  return crumb?.url ?? "/library";
 };
 
 /**

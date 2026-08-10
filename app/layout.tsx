@@ -7,6 +7,7 @@ import {
   Orbitron,
 } from "next/font/google";
 import "./globals.css";
+import { getStripJob } from "@/lib/audio-strip";
 import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
 import { hasQb } from "@/lib/qbittorrent";
@@ -18,6 +19,7 @@ import { JobsProvider } from "./jobs-provider";
 import { ScanProvider } from "./scan-provider";
 import { Glow } from "./glow";
 import { RememberListing } from "./return-to";
+import { SearchProvider } from "./search/dialog";
 import { Sidebar } from "./sidebar";
 import { Splash } from "./splash";
 
@@ -80,6 +82,7 @@ export default function RootLayout({
     scan: getScanState(),
     dovi: getDoviJob(),
     convert: getConvertJob(),
+    strip: getStripJob(),
     sweep: getSweepJob(),
     thumbs: getThumbJob(),
   };
@@ -99,10 +102,26 @@ export default function RootLayout({
         <CapabilitiesProvider qb={hasQb()}>
           <JobsProvider initial={jobs}>
             <ScanProvider>
-              <Sidebar />
-              {/* Clears the rail once it is fixed; above that it is a top bar
-                  and the content simply follows it. */}
-              <div className="flex min-h-full flex-col md:pl-56">{children}</div>
+              {/* Around both the rail and the page, because the rail's own
+                  search button opens the window that hangs over the page. */}
+              <SearchProvider>
+                <Sidebar />
+                {/* Clears the rail once it is fixed; above that it is a top bar
+                    and the content simply follows it.
+
+                    `overflow-x-clip` so a full-bleed strip can run to the edges
+                    of this column without the page gaining a sideways
+                    scrollbar. A shelf that escapes the reading column has to
+                    measure itself against the viewport, and `100vw` counts the
+                    scrollbar gutter this app holds open — a few pixels of
+                    overshoot at each end, which clipping simply absorbs. `clip`
+                    rather than `hidden`: hidden makes this a scroll container,
+                    which would break any sticky heading inside it, and clip
+                    does not. */}
+                <div className="flex min-h-full flex-col overflow-x-clip md:pl-56">
+                  {children}
+                </div>
+              </SearchProvider>
             </ScanProvider>
           </JobsProvider>
         </CapabilitiesProvider>

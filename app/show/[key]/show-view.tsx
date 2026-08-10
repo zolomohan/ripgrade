@@ -6,7 +6,9 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { ArtworkEditor } from "@/app/film/[id]/artwork-editor";
 import { BackButton } from "@/app/film/[id]/back-button";
 import { MatchReview } from "@/app/film/[id]/match-review";
+import { BUTTON } from "@/app/controls";
 import { FormatBadges } from "@/app/format-badges";
+import { DiscHeading } from "@/app/disc-heading";
 import { useClosing, useLingering } from "@/app/modal";
 import { NoDisc } from "@/app/no-disc";
 import { Panel } from "@/app/panel";
@@ -17,6 +19,7 @@ import { stagger } from "@/app/stagger";
 import { ScoreCircle, ScoreDial } from "@/app/score-circle";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { openIssues } from "@/lib/derive";
+import { entryFromSpec, qualityLabel } from "@/lib/disc-entry";
 import { imageUrl } from "@/lib/image-url";
 import { movieId, posterName } from "@/lib/routes";
 import type {
@@ -524,9 +527,9 @@ function SeasonUpgrade({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        // h-8 and rounded-chip to sit level with the icon buttons beside it,
-        // exactly as a film's own upgrade button does.
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-chip bg-foreground pr-2.5 pl-3.5 text-sm font-medium text-background transition-opacity duration-150 hover:opacity-90"
+        // h-8 to sit level with the icon buttons beside it, exactly as a film's
+        // own upgrade button does — the same pill with equal sides.
+        className={`${BUTTON.primary} h-8 font-medium`}
       >
         Upgrade
         <svg
@@ -562,7 +565,7 @@ function SeasonUpgrade({
                 }}
                 title={
                   best
-                    ? "Already matches the best disc released"
+                    ? "Already matches the best release available"
                     : jackettReady
                       ? undefined
                       : "Connect Jackett on the Settings page to search"
@@ -711,10 +714,12 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
 
   return (
     <Panel
-      title="Best disc available"
+      title="Best quality available"
       summary={
         disc?.best
-          ? [disc.best.title, disc.best.format].filter(Boolean).join(" · ")
+          ? [disc.best.title, qualityLabel(disc.best)]
+              .filter(Boolean)
+              .join(" · ")
           : "None found"
       }
     >
@@ -738,22 +743,7 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-baseline gap-2">
-              <a
-                href={disc.best.url}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
-              >
-                {disc.best.title}
-                <span aria-hidden className="ml-1 opacity-40">
-                  ↗
-                </span>
-              </a>
-              <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
-                {disc.best.format}
-              </span>
-            </div>
+            <DiscHeading best={disc.best} entered={disc.entered} />
 
             <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
               {(
@@ -774,9 +764,13 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
                   ["Audio", disc.best.audio.join(" · ") || "unknown"],
                   [
                     "Editions",
-                    `${disc.releaseCount} for this season${
-                      disc.uhdExists ? " · 4K available" : " · no 4K release"
-                    }`,
+                    disc.entered
+                      ? "Entered by hand"
+                      : `${disc.releaseCount} for this season${
+                          disc.uhdExists
+                            ? " · 4K available"
+                            : " · no 4K release"
+                        }`,
                   ],
                 ] as [string, string][]
               ).map(([label, value]) => (
@@ -823,6 +817,7 @@ function SeasonDisc({ show, season }: { show: Show; season: ShowSeason }) {
             year={season.year}
             currentUrl={disc.best.url}
             manual={disc.manual}
+            entered={disc.entered ? entryFromSpec(disc.best) : undefined}
           />
         )}
       </div>
@@ -874,7 +869,7 @@ function Gap({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="shrink-0 rounded-chip border border-line px-2.5 py-1 text-xs transition-colors hover:bg-surface-strong"
+        className={BUTTON.small}
       >
         Find
       </button>

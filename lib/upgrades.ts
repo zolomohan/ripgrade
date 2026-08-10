@@ -58,8 +58,11 @@ function standingOf(
 /** The disc a search was scored against, for the modal to show as its yardstick. */
 export type DiscSummary = {
   title: string;
-  url: string;
+  /** Absent where the ceiling was typed in rather than found on a page. */
+  url?: string;
   format: "4K" | "3D" | "BD";
+  /** "web" where the best release is a stream rather than a disc. */
+  source?: "disc" | "web";
   resolution?: string;
   videoCodec?: string;
   videoBitrateMbps?: number;
@@ -348,6 +351,7 @@ export async function findUpgrades(
           title: best.title,
           url: best.url,
           format: best.format,
+          source: best.source,
           resolution: best.resolution,
           videoCodec: best.videoCodec,
           videoBitrateMbps: best.videoBitrateMbps,

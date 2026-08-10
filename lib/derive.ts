@@ -101,6 +101,17 @@ export const ASSUMED_BL_PEAK = 1000;
 export const BACKUP_SUFFIX = ".bak.dovi_convert";
 
 /**
+ * The same idea for a track removal, under its own name.
+ *
+ * Deliberately not the suffix above: that one is dovi_convert's, and a film
+ * that carried both would have two files claiming to be the original with no
+ * way to tell which change each one predates. Separate names mean each card
+ * looks only for its own, and the guard that stops both existing at once is
+ * one comparison rather than a stored history.
+ */
+export const AUDIO_BACKUP_SUFFIX = ".bak.audio";
+
+/**
  * How far a converted file's runtime may drift from the original's before the
  * mux is treated as faulty. The two hold the same frames and should agree to
  * the millisecond — what this catches is not rounding but a remux that emits
@@ -114,109 +125,135 @@ export const runtimeDrift = (before: number, after: number) =>
 /**
  * Every check `detectIssues` can raise. Severity lives here rather than at each
  * call site so the engine and the documentation page cannot disagree.
+ *
+ * `name` is the check in words, for anywhere a code would be read by someone
+ * who has not memorised them — a chart of the commonest problems is a chart
+ * about the library, and `disc-higher-bitrate` makes it a chart about this
+ * app's vocabulary. Short enough to sit in a bar's label column, and kept here
+ * with the severity for the same reason: one place to add a check, one place
+ * that can be wrong about it.
  */
 export const ISSUE_CATALOGUE = {
   "dv-profile-7": {
+    name: "Dolby Vision Profile 7",
     severity: "warning",
     trigger: "Dolby Vision profile reads dvhe.07",
     why: "Dual-layer Profile 7 is a disc format. Many TVs, streaming boxes and Plex clients drop the enhancement layer or refuse the file; a Profile 8.1 version plays everywhere. The scan reads the RPU to establish whether that enhancement layer is MEL or FEL, which is what decides whether converting discards anything.",
   },
   "dv-no-fallback": {
+    name: "No HDR10 fallback",
     severity: "critical",
     trigger: "Dolby Vision profile reads dvhe.05",
     why: "Profile 5 carries no HDR10 base layer, so anything without Dolby Vision decoding renders it with badly shifted colour.",
   },
   "dv-no-compat": {
+    name: "No compatible base layer",
     severity: "warning",
     trigger:
       "Dolby Vision present but HDR_Format_Compatibility lists no HDR10, Blu-ray or SDR fallback",
     why: "Without a compatible base layer the file depends entirely on the player supporting Dolby Vision.",
   },
   "custom-encoder": {
+    name: "Unrecognised encoder",
     severity: "warning",
     trigger:
       "Encoder string matches neither a known professional nor a known hobbyist encoder",
     why: "Official releases come off recognisable encoders. A custom string usually marks a fan-made hybrid or an AI upscale rather than a real master.",
   },
   "fake-4k": {
+    name: "Upscaled 4K",
     severity: "critical",
     trigger: "Frame width is 2160p class but the codec is AVC",
     why: "No commercial UHD release ships in AVC. This is almost certainly a 1080p source scaled up, so it carries 4K file size with 1080p detail.",
   },
   "8bit-4k": {
+    name: "8-bit 4K",
     severity: "warning",
     trigger: "2160p frame at 8-bit depth",
     why: "Genuine UHD masters are 10-bit. 8-bit at this resolution points to an upscale or a re-encode that discarded precision.",
   },
   "low-bitrate": {
+    name: "Low bitrate",
     severity: "warning",
     trigger: "An encode below the 'fair' bits-per-pixel-per-frame threshold",
     why: "Below this density, expect banding in gradients and smeared detail in motion.",
   },
   "atmos-mislabelled": {
+    name: "Atmos in name only",
     severity: "warning",
     trigger: "Filename says Atmos but no track carries the Atmos extension",
     why: "The file is not what its name claims. The underlying track is plain TrueHD or Dolby Digital Plus.",
   },
   "dtsx-mislabelled": {
+    name: "DTS:X in name only",
     severity: "warning",
     trigger: "Filename says DTS:X but no track carries the DTS:X extension",
     why: "Same as above — usually plain DTS-HD Master Audio underneath.",
   },
   "lossy-remux": {
+    name: "Remux without lossless",
     severity: "warning",
     trigger: "Classified REMUX but no lossless audio track present",
     why: "A disc remux should carry the disc's lossless track. Its absence suggests the audio was replaced or the release is mislabelled.",
   },
   "no-audio": {
+    name: "No audio track",
     severity: "critical",
     trigger: "No audio track at all",
     why: "Either a broken file or a video-only stream.",
   },
   "no-english-subs": {
+    name: "No English subtitles",
     severity: "info",
     trigger: "Subtitle tracks exist but none is English",
     why: "Informational only — it does not affect the score.",
   },
   "disc-better-resolution": {
+    name: "Disc is higher resolution",
     severity: "warning",
     trigger: "A 4K disc exists and this copy is not 2160p",
     why: "The single largest upgrade available. A native 4K transfer carries detail no 1080p master has.",
   },
   "disc-better-hdr": {
+    name: "Disc has better HDR",
     severity: "warning",
     trigger: "The disc carries a dynamic-range format this copy lacks",
     why: "Usually Dolby Vision on the disc against HDR10, or HDR against SDR, in your file.",
   },
   "disc-better-audio": {
+    name: "Disc has object audio",
     severity: "warning",
     trigger:
       "The disc carries object audio (Atmos or DTS:X) that this copy lacks",
     why: "Either the release you have dropped the object track, or it was encoded from a lossy source.",
   },
   "disc-higher-bitrate": {
+    name: "Disc has higher bitrate",
     severity: "info",
     trigger: "The file's video bitrate is well below the disc's",
     why: "Expected on an encode. On something claiming to be a remux it suggests the stream was re-compressed.",
   },
   "runtime-longer": {
+    name: "Longer than TMDb lists",
     severity: "info",
     trigger: `File runs more than ${Math.round((RUNTIME_TOLERANCE.longer - 1) * 100)}% longer than the runtime TMDb lists`,
-    why: "Usually an extended or director's cut, since TMDb lists the theatrical runtime. Worth confirming the edition is the one you wanted.",
+    why: "Usually an extended or director's cut, since TMDb lists the theatrical runtime. The film's own page asks which it is — confirm the extended cut and the length stops being raised.",
   },
   "runtime-shorter": {
+    name: "Shorter than TMDb lists",
     severity: "warning",
     trigger: `File runs more than ${Math.round((1 - RUNTIME_TOLERANCE.shorter) * 100)}% shorter than the runtime TMDb lists`,
     why: "Could be a cut version, a different edition, or the wrong film. PAL transfers also run about 4% short by design.",
   },
   "runtime-truncated": {
+    name: "Runtime truncated",
     severity: "critical",
     trigger: `File runs under ${Math.round(RUNTIME_TOLERANCE.truncated * 100)}% of the runtime TMDb lists`,
     why: "A gap this large usually means an incomplete download or a damaged file rather than an alternate cut.",
   },
 } as const satisfies Record<
   string,
-  { severity: Severity; trigger: string; why: string }
+  { name: string; severity: Severity; trigger: string; why: string }
 >;
 
 export type IssueCode = keyof typeof ISSUE_CATALOGUE;
@@ -289,6 +326,29 @@ export type AudioTrack = {
   lossless: boolean;
   atmos: boolean;
   dtsx: boolean;
+  /**
+   * Where the track sits in the container, counting every stream from zero —
+   * which is the number mkvmerge calls a track ID and selects on. Undefined on
+   * the tracks inferred from a release name, which describe no file.
+   */
+  id?: number;
+  /**
+   * The Matroska track number, reported by mkvmerge as `properties.number`.
+   * Kept beside `id` because the two are read from different tools, and a plan
+   * made against one can be checked against the other before anything is
+   * rewritten.
+   */
+  number?: number;
+  /** The muxer's own name for the track: "Commentary", "Original Audio". */
+  title?: string;
+  /** What a player selects when nothing is chosen for it. */
+  default?: boolean;
+  /** Meant to play regardless of preference — rare on audio, but it happens. */
+  forced?: boolean;
+  /** What the track costs in the file. */
+  sizeBytes?: number;
+  /** True when the size above is bitrate × runtime rather than a counted one. */
+  sizeEstimated?: boolean;
 };
 
 /**
@@ -363,6 +423,16 @@ export type TmdbFacts = {
   /** The film's own backdrop, which stands in for a fanart file we cannot read. */
   backdropPath?: string;
   overview?: string;
+  /**
+   * The language the film was made in, as TMDb records it.
+   *
+   * Not a fact about the file — it is a fact about the film, and the only one
+   * that can tell an English track on a French film from an English track on an
+   * English one. Which is the difference between a dub and the performance.
+   * Optional because a row derived before this field existed carries no copy of
+   * it; the next derive pass fills it in from the record already cached.
+   */
+  originalLanguage?: string;
   /** Only "high" is trusted enough to raise runtime issues. */
   confidence: "high" | "medium" | "low";
 };
@@ -375,6 +445,8 @@ export type DiscFacts = {
   url?: string;
   releaseTitle?: string;
   format?: "4K" | "3D" | "BD";
+  /** "web" where the best release is a stream rather than a disc. */
+  source?: "disc" | "web";
   uhdExists: boolean;
   nativeFourK?: boolean;
   hdr: string[];
@@ -723,23 +795,57 @@ function hdr10Of(video: Track): Hdr10Static | undefined {
 
 const LOSSLESS = /MLP FBA|TrueHD|DTS-HD Master|PCM|FLAC|ALAC/i;
 
+/**
+ * What one track costs, in bytes.
+ *
+ * MediaInfo counts this for nearly every track in a Matroska file, and for a
+ * few it cannot — a variable-bitrate track it did not have to fully parse
+ * reports no size at all. Bitrate times runtime stands in there: near enough to
+ * decide whether a track is worth keeping, and flagged as an estimate so a
+ * figure derived from it can say so rather than claim to have been counted.
+ */
+function trackBytes(
+  track: Track,
+  bitrate?: number,
+): { bytes: number; estimated: boolean } | undefined {
+  const counted = num(track, "StreamSize");
+  if (counted !== undefined) return { bytes: counted, estimated: false };
+
+  const duration = num(track, "Duration");
+  if (bitrate === undefined || duration === undefined) return undefined;
+  return { bytes: Math.round((bitrate * duration) / 8), estimated: true };
+}
+
 function audioOf(track: Track): AudioTrack {
   const commercial = str(track, "Format_Commercial_IfAny");
   const format = str(track, "Format") ?? "unknown";
   const extra = str(track, "Format_AdditionalFeatures") ?? "";
   const label = commercial ?? format;
+  const bitrate = num(track, "BitRate");
+  const size = trackBytes(track, bitrate);
 
   return {
     label,
     format,
     channels: num(track, "Channels") ?? 0,
     language: str(track, "Language"),
-    bitrateKbps: num(track, "BitRate")
-      ? Math.round(num(track, "BitRate")! / 1000)
-      : undefined,
+    bitrateKbps: bitrate ? Math.round(bitrate / 1000) : undefined,
     lossless: LOSSLESS.test(label) || LOSSLESS.test(format),
     atmos: /atmos/i.test(label),
     dtsx: /DTS:?X/i.test(label) || /XLL X/i.test(extra),
+    // MediaInfo counts streams from zero in `StreamOrder` and numbers Matroska
+    // tracks from one in `ID`; mkvmerge calls the first a track ID and reports
+    // the second as `properties.number`. Both are kept under the names their
+    // own tool uses, so neither has to be converted at the point it is checked.
+    id: num(track, "StreamOrder"),
+    number: num(track, "ID"),
+    title: str(track, "Title"),
+    // Written as "Yes"/"No", and omitted on a track that is neither — so only
+    // an explicit yes counts, the same way `subtitleOf` reads them.
+    default: str(track, "Default") === "Yes",
+    forced: str(track, "Forced") === "Yes",
+    sizeBytes: size?.bytes,
+    sizeEstimated: size?.estimated,
   };
 }
 
@@ -909,7 +1015,47 @@ function detectIssues(
  *
  * This is what makes a perfect copy of a modest disc score 100: the ceiling is
  * the disc, not an abstract ideal no release for this film ever reached.
+ *
+ * Which is also why the ceiling is not always a disc. A film that went straight
+ * to a streaming service was never pressed, so the best copy anyone can have is
+ * the provider's own master — and scoring that as though a remux of it existed
+ * would leave every copy of it permanently short of a disc nobody can buy.
  */
+/**
+ * The frames a second a feature is shot at, which a stated bitrate says nothing
+ * about. Assumed rather than asked for: 25 would move the figure by 4%, and the
+ * bands it is read against are far coarser than that.
+ */
+const FILM_FPS = 23.976;
+
+/** The pixels a frame of each resolution holds, for the same sum. */
+const FRAME_PIXELS: Record<Derived["resolution"], number | undefined> = {
+  "2160p": 3840 * 2160,
+  "1080p": 1920 * 1080,
+  "720p": 1280 * 720,
+  SD: 720 * 576,
+  unknown: undefined,
+};
+
+/**
+ * A ceiling's bits per pixel per frame, from the bitrate you stated.
+ *
+ * The same arithmetic `derive` does on a real file, off the two things a
+ * hand-entered release knows: how many pixels a frame holds and how many
+ * megabits a second it was given. Absent where no bitrate was stated — the
+ * line then scores nothing, rather than guessing at a number that decides
+ * whether your copy can ever be called the best there is.
+ */
+function bppOf(
+  best: NonNullable<DiscInput["best"]>,
+  resolution: Derived["resolution"],
+): number | undefined {
+  const pixels = FRAME_PIXELS[resolution];
+  return best.videoBitrateMbps && pixels
+    ? (best.videoBitrateMbps * 1_000_000) / (pixels * FILM_FPS)
+    : undefined;
+}
+
 export function scoreDisc(best: NonNullable<DiscInput["best"]>): {
   video: number;
   audio: number;
@@ -945,20 +1091,30 @@ export function scoreDisc(best: NonNullable<DiscInput["best"]>): {
     dtsx: /DTS:?X/i.test(label) || (best.hasDtsX && LOSSLESS.test(label)),
   }));
 
+  // A disc is the source, so it scores as an untouched stream. A streaming
+  // master is the source too, but of a stream that was already compressed —
+  // which is exactly what the rubric's WEB-DL line says.
+  const releaseType: ReleaseType =
+    best.source === "web" ? "WEB-DL" : ("REMUX" as ReleaseType);
+
   const shape = {
     resolution,
     hdr,
-    // UHD discs are 10-bit by specification; standard Blu-ray is 8-bit.
+    // UHD discs are 10-bit by specification; standard Blu-ray is 8-bit, and a
+    // 4K stream carries the HDR that needs ten bits either way.
     bitDepth: best.format === "4K" ? 10 : 8,
-    bpp: undefined,
-    // The disc is the source, so it scores as an untouched stream.
-    releaseType: "REMUX" as ReleaseType,
+    // A disc needs no bits-per-pixel: it is a remux, and takes the
+    // untouched-source points outright. A stream has to earn that line, and
+    // can only earn it from a bitrate somebody stated — left blank, its
+    // density goes unscored, which is the honest reading of not knowing.
+    bpp: releaseType === "WEB-DL" ? bppOf(best, resolution) : undefined,
+    releaseType,
     dvProfile: undefined,
   };
 
   const video = total(videoLines(shape));
   const audioScore = total(audioLines(audio));
-  const release = total(releaseLines("REMUX"));
+  const release = total(releaseLines(releaseType));
 
   const weighted =
     video * WEIGHTS.video +
@@ -1008,9 +1164,12 @@ export function relativeToDisc(
 type DiscInput = {
   uhdExists: boolean;
   best?: {
-    url: string;
+    /** Absent where the ceiling was typed in rather than found on a page. */
+    url?: string;
     title: string;
     format: "4K" | "3D" | "BD";
+    /** "web" where no disc was ever pressed; absent reads as a disc. */
+    source?: "disc" | "web";
     nativeFourK?: boolean;
     hdr: string[];
     hasAtmos: boolean;
@@ -1062,12 +1221,22 @@ export function groupIssues(issues: Issue[]): {
  * accepted as-is. Kept as a function rather than read straight off the film so
  * the acceptance is applied in one place — nothing sets it any more, but the
  * films already carrying it still read the way they did.
+ *
+ * Confirming an extended cut answers `runtime-longer` rather than dismissing
+ * it. The check exists to ask which edition this is; once you have said, the
+ * long runtime is the expected fact about the file and not a finding about it.
+ * Every count in the app reads through here, so one answer clears it from the
+ * library shelf, the dashboard tally and the film's own page at once.
  */
 export function openIssues(m: {
   issues: Issue[];
   acknowledged?: boolean;
+  extendedCut?: boolean;
 }): Issue[] {
-  return m.acknowledged ? [] : m.issues;
+  if (m.acknowledged) return [];
+  return m.extendedCut
+    ? m.issues.filter((issue) => issue.code !== "runtime-longer")
+    : m.issues;
 }
 
 /** Nits, as MediaInfo reports them from the stream's SEI messages. */
@@ -1186,9 +1355,25 @@ export function classifyEnhancementLayer(
 const HDR_ORDER = ["SDR", "HDR10", "HDR10+", "Dolby Vision"];
 
 /**
- * Compares a file against the best disc that exists. Every gap is something you
- * could actually buy your way out of — which is what makes "Best Available"
+ * How far a file's source is from being the thing itself. A copy cannot fall
+ * short of a source better than the one the film was released with, which is
+ * the whole reason a WEB-DL ceiling has to be spelled out separately.
+ */
+const SOURCE_RANK: Record<ReleaseType, number> = {
+  REMUX: 3,
+  "WEB-DL": 2,
+  ENCODE: 1,
+  UNKNOWN: 0,
+};
+
+/**
+ * Compares a file against the best copy that exists. Every gap is something you
+ * could actually get your hands on — which is what makes "Best Available"
  * meaningful rather than just a high score.
+ *
+ * Usually that best copy is a disc. Where it is not — a streaming original, a
+ * film never pressed — the comparison is against the provider's master instead,
+ * and a WEB-DL of it is the top of the scale rather than a step below one.
  */
 function compareToDisc(
   d: Pick<
@@ -1200,8 +1385,14 @@ function compareToDisc(
   const best = disc.best;
   const gaps: string[] = [];
 
+  // What to call the thing on the other side of every gap below.
+  const web = best?.source === "web";
+  const it = web ? "The WEB-DL" : "Disc";
+
   if (disc.uhdExists && d.resolution !== "2160p") {
-    gaps.push("A 4K disc exists; this copy is " + d.resolution);
+    gaps.push(
+      `A 4K ${web ? "release" : "disc"} exists; this copy is ` + d.resolution,
+    );
   }
 
   if (best) {
@@ -1210,23 +1401,29 @@ function compareToDisc(
       "SDR",
     );
     if (HDR_ORDER.indexOf(discTop) > HDR_ORDER.indexOf(d.hdr)) {
-      gaps.push(`Disc has ${discTop}; this copy is ${d.hdr}`);
+      gaps.push(`${it} has ${discTop}; this copy is ${d.hdr}`);
     }
 
     const fileObject = d.audio.some((a) => a.atmos || a.dtsx);
     if ((best.hasAtmos || best.hasDtsX) && !fileObject) {
       gaps.push(
-        `Disc has ${best.hasAtmos ? "Dolby Atmos" : "DTS:X"}; this copy has neither`,
+        `${it} has ${best.hasAtmos ? "Dolby Atmos" : "DTS:X"}; this copy has neither`,
       );
     }
 
-    if (d.releaseType !== "REMUX") {
+    // Against a disc that is every source but a remux; against a streaming
+    // master, a WEB-DL of it is already the thing itself, and a remux of a
+    // disc that does not exist is not something to hold a copy short of.
+    if (SOURCE_RANK[d.releaseType] < SOURCE_RANK[web ? "WEB-DL" : "REMUX"]) {
+      const mine =
+        d.releaseType === "UNKNOWN"
+          ? "re-encode of unknown origin"
+          : d.releaseType;
+
       gaps.push(
-        `Disc is the untouched source; this copy is a ${
-          d.releaseType === "UNKNOWN"
-            ? "re-encode of unknown origin"
-            : d.releaseType
-        }`,
+        web
+          ? `The WEB-DL is the provider's own master; this copy is a ${mine}`
+          : `Disc is the untouched source; this copy is a ${mine}`,
       );
     }
 
@@ -1236,7 +1433,7 @@ function compareToDisc(
       d.videoBitrateKbps / 1000 < best.videoBitrateMbps * BITRATE_SHORTFALL
     ) {
       gaps.push(
-        `Disc runs at ${best.videoBitrateMbps} Mbps; this copy at ${Math.round(
+        `${it} runs at ${best.videoBitrateMbps} Mbps; this copy at ${Math.round(
           d.videoBitrateKbps / 1000,
         )} Mbps`,
       );
@@ -1247,6 +1444,7 @@ function compareToDisc(
     url: best?.url,
     releaseTitle: best?.title,
     format: best?.format,
+    source: best?.source,
     uhdExists: disc.uhdExists,
     nativeFourK: best?.nativeFourK,
     hdr: best?.hdr ?? [],
@@ -1650,9 +1848,7 @@ export function derive(
   const general = all.find((t) => t["@type"] === "General") ?? {};
   const video = all.find((t) => t["@type"] === "Video") ?? {};
   const audioTracks = all.filter((t) => t["@type"] === "Audio").map(audioOf);
-  const textTracks = all
-    .filter((t) => t["@type"] === "Text")
-    .map(subtitleOf);
+  const textTracks = all.filter((t) => t["@type"] === "Text").map(subtitleOf);
 
   const segments = filePath.split("/");
   const fileName = segments[segments.length - 1] ?? filePath;

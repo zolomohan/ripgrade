@@ -180,6 +180,8 @@ export type TmdbShow = {
    */
   number_of_episodes?: number;
   episode_run_time?: number[];
+  /** The language the series was made in — a film's `original_language`. */
+  original_language?: string;
   genres?: { id: number; name: string }[];
   vote_average?: number;
   /** "Returning Series", "Ended", "Canceled". */

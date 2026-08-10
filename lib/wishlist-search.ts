@@ -84,6 +84,8 @@ export async function searchWishlist(
     onProgress?: (p: WishlistProgress) => void;
     /** Asked before each film, so a cancelled sweep stops here too. */
     shouldStop?: () => boolean;
+    /** Search every want, however recently checked; see startSweep. */
+    force?: boolean;
   } = {},
 ): Promise<WishlistProgress> {
   const checked = new Map(
@@ -97,7 +99,10 @@ export async function searchWishlist(
 
   const now = Date.now();
   const stale = wishlistCandidates()
-    .filter((entry) => now - (checked.get(entry.tmdbId) ?? 0) > FRESH_MS)
+    .filter(
+      (entry) =>
+        options.force || now - (checked.get(entry.tmdbId) ?? 0) > FRESH_MS,
+    )
     // Never-checked first, then oldest check first — the same order the sweep
     // uses, so an interrupted pass resumes where it stopped.
     .sort(

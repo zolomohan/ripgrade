@@ -10,9 +10,11 @@ import {
   classifyEnhancementLayer,
   derive,
   languageName,
+  openIssues,
   parseEpisode,
   parseName,
   runtimeDrift,
+  scoreDisc,
   titleKey,
   type DoviScan,
 } from "../lib/derive";
@@ -142,6 +144,29 @@ test("an extended cut is flagged as longer, and says so", () => {
   assert.match(issue!.message, /Extended/);
   // Informational only: a longer cut is not a defect.
   assert.equal(issue!.severity, "info");
+});
+
+test("confirming the extended cut answers the length, and nothing else", () => {
+  const d = derive("/m/T/T.2020.mkv", 40e9, withDuration(150 * 60), facts(120));
+  // Something else wrong with the same file, to prove the answer is narrow.
+  const issues = [
+    ...d.issues,
+    { code: "no-audio", severity: "critical" as const, message: "No audio." },
+  ];
+
+  assert.ok(issues.some((i) => i.code === "runtime-longer"));
+
+  const open = openIssues({ issues, extendedCut: true });
+  assert.ok(!open.some((i) => i.code === "runtime-longer"));
+  assert.ok(open.some((i) => i.code === "no-audio"));
+});
+
+test("answering no leaves the length standing", () => {
+  const d = derive("/m/T/T.2020.mkv", 40e9, withDuration(150 * 60), facts(120));
+  // The distinction the stored answer exists for: "no" must read as the
+  // unanswered question does, not as an acceptance of the file.
+  assert.deepEqual(openIssues({ issues: d.issues, extendedCut: false }), d.issues);
+  assert.deepEqual(openIssues({ issues: d.issues }), d.issues);
 });
 
 test("a badly short file is critical", () => {
@@ -455,6 +480,88 @@ test("a file with no text tracks has an empty subtitle list, not a missing one",
 });
 
 // ---------------------------------------------------------------------------
+// Audio tracks: what identifies one, and what it costs
+// ---------------------------------------------------------------------------
+
+test("an audio track carries the two numberings its tools use", () => {
+  // MediaInfo counts every stream from zero in StreamOrder — which is what
+  // mkvmerge calls a track ID — and numbers Matroska tracks from one in ID,
+  // which mkvmerge reports as `properties.number`. Removing the right track
+  // rests on not confusing the two, so both are kept under their own name.
+  const d = derive(
+    "/m/Dune/Dune.2021.2160p.BluRay.REMUX.mkv",
+    60e9,
+    mediainfo({}, { Format: "HEVC", StreamOrder: "0", ID: "1" }, [
+      { StreamOrder: "1", ID: "2", Format: "MLP FBA", Language: "en" },
+      { StreamOrder: "2", ID: "3", Format: "AC-3", Language: "fr" },
+    ]),
+  );
+
+  assert.equal(d.audio[0].id, 1);
+  assert.equal(d.audio[0].number, 2);
+  assert.equal(d.audio[1].id, 2);
+  assert.equal(d.audio[1].number, 3);
+});
+
+test("a counted stream size is taken as it stands", () => {
+  const d = derive(
+    "/m/Dune/Dune.2021.2160p.mkv",
+    60e9,
+    mediainfo({}, { Format: "HEVC" }, [
+      { Format: "MLP FBA", StreamSize: "5492714864", BitRate: "7827129", Duration: "5614" },
+    ]),
+  );
+
+  assert.equal(d.audio[0].sizeBytes, 5492714864);
+  assert.equal(d.audio[0].sizeEstimated, false);
+});
+
+test("a track MediaInfo could not count falls back to bitrate × runtime", () => {
+  // A VBR track it did not fully parse reports no size at all. The estimate is
+  // near enough to decide whether the track is worth keeping, and says so.
+  const d = derive(
+    "/m/Dune/Dune.2021.2160p.mkv",
+    60e9,
+    mediainfo({}, { Format: "HEVC" }, [
+      { Format: "FLAC", BitRate: "1000000", Duration: "3600" },
+    ]),
+  );
+
+  assert.equal(d.audio[0].sizeBytes, 450e6);
+  assert.equal(d.audio[0].sizeEstimated, true);
+});
+
+test("a track with neither a size nor a bitrate reports no size at all", () => {
+  // Not zero: the page words an unknown as "at least", and a silent zero would
+  // promise a figure the file cannot be held to.
+  const d = derive(
+    "/m/Dune/Dune.2021.2160p.mkv",
+    60e9,
+    mediainfo({}, { Format: "HEVC" }, [{ Format: "AAC", Duration: "3600" }]),
+  );
+
+  assert.equal(d.audio[0].sizeBytes, undefined);
+  assert.equal(d.audio[0].sizeEstimated, undefined);
+});
+
+test("an audio track's name and flags are read the way a subtitle's are", () => {
+  const d = derive(
+    "/m/Alien/Alien.1979.2160p.mkv",
+    40e9,
+    mediainfo({}, { Format: "HEVC" }, [
+      { Format: "MLP FBA", Language: "en", Default: "Yes" },
+      { Format: "AC-3", Language: "en", Title: "Commentary by Ridley Scott" },
+    ]),
+  );
+
+  assert.equal(d.audio[0].default, true);
+  assert.equal(d.audio[0].forced, false);
+  assert.equal(d.audio[0].title, undefined);
+  assert.equal(d.audio[1].title, "Commentary by Ridley Scott");
+  assert.equal(d.audio[1].default, false);
+});
+
+// ---------------------------------------------------------------------------
 // Enhancement layer classification
 //
 // The numbers are from real files: The Godfather is a 4000-nit grade over a
@@ -634,3 +741,166 @@ for (const film of [
     assert.equal(parseEpisode(film, []), undefined);
   });
 }
+
+// ---------------------------------------------------------------------------
+// What the ceiling is
+// ---------------------------------------------------------------------------
+
+/**
+ * Plenty of films were never pressed. Scoring a streaming original against a
+ * disc that does not exist leaves every copy of it permanently short of a
+ * remux nobody can make — so the ceiling has to be able to say it is a stream.
+ */
+
+/** A 4K release with no HDR and one lossy track, as a disc unless told else. */
+const ceiling = (over: Record<string, unknown> = {}) => ({
+  uhdExists: true,
+  best: {
+    title: "The Master",
+    format: "4K" as const,
+    hdr: [] as string[],
+    hasAtmos: false,
+    hasDtsX: false,
+    audioTracks: ["Dolby Digital Plus 5.1"],
+    ...over,
+  },
+});
+
+/** A 4K WEB-DL of it: the best copy of a film that was never on a disc. */
+const webPull = (disc: ReturnType<typeof ceiling>) =>
+  derive(
+    "/m/Fake/Fake.2024.2160p.NF.WEB-DL.DDP5.1.mkv",
+    12e9,
+    mediainfo(
+      {},
+      { Format: "HEVC", BitDepth: "10", Encoded_Library: "ATEME Titan File" },
+      [{ Format: "E-AC-3", Channels: "6" }],
+    ),
+    undefined,
+    disc,
+  );
+
+test("a WEB-DL ceiling scores as the compressed master it is", () => {
+  const asDisc = scoreDisc(ceiling().best);
+  const asWeb = scoreDisc(ceiling({ source: "web" }).best);
+
+  assert.ok(asWeb.release < asDisc.release);
+  assert.ok(asWeb.overall < asDisc.overall);
+  // A disc's bitrate is a known quantity and a stream's is not, so the web
+  // ceiling claims no density it cannot show — which is what lets a faithful
+  // pull of that stream reach it.
+  assert.ok(asWeb.video < asDisc.video);
+  // The sound is the same either way; only the source moved.
+  assert.equal(asWeb.audio, asDisc.audio);
+});
+
+test("a WEB-DL is not held short of a disc that was never pressed", () => {
+  const d = webPull(ceiling({ source: "web" }));
+
+  assert.equal(d.releaseType, "WEB-DL");
+  assert.deepEqual(d.disc?.gaps, []);
+  assert.equal(d.disc?.bestAvailable, true);
+  assert.equal(d.scores.overall, 100);
+  assert.equal(d.status, "Best Available");
+});
+
+test("the same file against a real disc is still one source short of it", () => {
+  const d = webPull(ceiling());
+
+  assert.deepEqual(d.disc?.gaps, [
+    "Disc is the untouched source; this copy is a WEB-DL",
+  ]);
+  assert.equal(d.disc?.bestAvailable, false);
+  assert.ok(d.scores.overall < 100);
+});
+
+test("a WEB-DL ceiling still names the gaps a copy really has", () => {
+  const d = derive(
+    "/m/Fake/Fake.2024.1080p.x264-GRP.mkv",
+    4e9,
+    mediainfo(
+      { Duration: "7200" },
+      {
+        Width: "1920",
+        Height: "1080",
+        Format: "AVC",
+        Encoded_Library: "x264 - core 164",
+      },
+      [{ Format: "E-AC-3", Channels: "6" }],
+    ),
+    undefined,
+    ceiling({ source: "web", hdr: ["HDR10", "Dolby Vision"], hasAtmos: true }),
+  );
+
+  assert.equal(d.releaseType, "ENCODE");
+  assert.deepEqual(d.disc?.gaps, [
+    "A 4K release exists; this copy is 1080p",
+    "The WEB-DL has Dolby Vision; this copy is SDR",
+    "The WEB-DL has Dolby Atmos; this copy has neither",
+    "The WEB-DL is the provider's own master; this copy is a ENCODE",
+  ]);
+});
+
+test("a stated bitrate is what earns a stream its density line", () => {
+  const blank = scoreDisc(ceiling({ source: "web" }).best);
+  // 13.8 Mbps at 2160p is 0.069 bpp — the "some loss" band, 5 of 14.
+  const stated = scoreDisc(
+    ceiling({ source: "web", videoBitrateMbps: 13.8 }).best,
+  );
+  const dense = scoreDisc(
+    ceiling({ source: "web", videoBitrateMbps: 40 }).best,
+  );
+
+  assert.equal(stated.video - blank.video, 5);
+  assert.ok(dense.video > stated.video);
+  // Nothing else moves: it is one line of the video score.
+  assert.equal(stated.audio, blank.audio);
+  assert.equal(stated.release, blank.release);
+});
+
+test("a disc's bitrate does not move it: a remux is untouched by definition", () => {
+  assert.deepEqual(
+    scoreDisc(ceiling({ videoBitrateMbps: 72 }).best),
+    scoreDisc(ceiling().best),
+  );
+});
+
+test("a copy no denser than the master it came from does not exceed it", () => {
+  // The real case: a 13.8 Mbps 4K pull of a 13.8 Mbps master. Before the
+  // ceiling could read the bitrate, the copy scored 5 above it on video.
+  const master = ceiling({
+    source: "web",
+    videoBitrateMbps: 13.8,
+    hdr: ["HDR10", "Dolby Vision"],
+    hasAtmos: true,
+    audioTracks: ["Dolby Digital Plus 5.1 with Dolby Atmos"],
+  });
+
+  const d = derive(
+    "/m/Fake/Fake.2026.2160p.DSNP.WEB-DL.DV.HDR.mkv",
+    12e9,
+    mediainfo(
+      { Duration: "7200" },
+      {
+        Format: "HEVC",
+        BitDepth: "10",
+        HDR_Format: "Dolby Vision",
+        BitRate: "13818000",
+        Encoded_Library: "ATEME Titan File",
+      },
+      [
+        {
+          Format: "E-AC-3",
+          Channels: "6",
+          Format_Commercial_IfAny: "Dolby Digital Plus with Dolby Atmos",
+        },
+      ],
+    ),
+    undefined,
+    master,
+  );
+
+  assert.equal(d.scores.video, scoreDisc(master.best).video);
+  assert.equal(d.scores.overall, 100);
+  assert.deepEqual(d.disc?.gaps, []);
+});

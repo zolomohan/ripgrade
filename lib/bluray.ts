@@ -425,9 +425,17 @@ export async function lookupSeasonDisc(
 // ---------------------------------------------------------------------------
 
 export type DiscSpec = {
-  url: string;
+  /** Absent on a ceiling typed in by hand: there is no page behind it. */
+  url?: string;
   title: string;
   format: "4K" | "3D" | "BD";
+  /**
+   * What the best version of this film actually is. Anything scraped from
+   * Blu-ray.com is a disc, which is why this is absent there and read as one —
+   * but plenty of films were never pressed, and for those the ceiling is the
+   * streaming master. A copy cannot fall short of a disc that does not exist.
+   */
+  source?: "disc" | "web";
   videoCodec?: string;
   videoBitrateMbps?: number;
   resolution?: string;
@@ -560,6 +568,12 @@ export type DiscLookup = {
   error?: string;
   /** You picked this release by hand; automatic runs must leave it alone. */
   manual?: boolean;
+  /**
+   * Stronger than `manual`: the specs were typed in rather than picked, because
+   * the search found nothing to pick. Nothing scores differently for it — it is
+   * so the app can say where the ceiling came from, and offer to edit it.
+   */
+  entered?: boolean;
 };
 
 /** Fetches one specific release — used when you choose the edition yourself. */

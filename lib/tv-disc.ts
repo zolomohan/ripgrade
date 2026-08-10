@@ -8,6 +8,7 @@ import {
   type DiscLookup,
 } from "./bluray";
 import { db } from "./db";
+import { specFromEntry, type DiscEntry } from "./disc-entry";
 
 export { searchSeasonReleases };
 
@@ -99,6 +100,27 @@ export async function setManualSeasonDisc(
   candidate: Candidate,
 ): Promise<DiscLookup> {
   const lookup = await lookupRelease(candidate, getSeasonDisc(showKey, season));
+  save(showKey, season, lookup);
+  return lookup;
+}
+
+/** Specs you typed in yourself, for a season with no page to be found. */
+export function setEnteredSeasonDisc(
+  showKey: string,
+  season: number,
+  entry: DiscEntry,
+): DiscLookup {
+  const existing = getSeasonDisc(showKey, season);
+  const best = specFromEntry(entry);
+
+  const lookup: DiscLookup = {
+    uhdExists: existing?.uhdExists || best.format === "4K",
+    releaseCount: existing?.releaseCount ?? 0,
+    best,
+    manual: true,
+    entered: true,
+  };
+
   save(showKey, season, lookup);
   return lookup;
 }

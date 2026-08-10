@@ -1,7 +1,9 @@
+import { DiscHeading } from "@/app/disc-heading";
 import { DiscReview } from "@/app/film/[id]/disc-review";
 import { NoDisc } from "@/app/no-disc";
 import { Panel } from "@/app/panel";
 import { fetchDisc, getDisc } from "@/lib/disc";
+import { entryFromSpec, qualityLabel } from "@/lib/disc-entry";
 
 /**
  * The disc this film was released on, which is what its release scores mean.
@@ -14,7 +16,7 @@ import { fetchDisc, getDisc } from "@/lib/disc";
 
 const label = (disc: Awaited<ReturnType<typeof fetchDisc>> | undefined) =>
   disc?.best
-    ? [disc.best.title, disc.best.format].filter(Boolean).join(" · ")
+    ? [disc.best.title, qualityLabel(disc.best)].filter(Boolean).join(" · ")
     : "None found";
 
 export async function DiscSection({
@@ -43,7 +45,7 @@ export async function DiscSection({
   }
 
   return (
-    <Panel title="Best disc available" summary={label(disc)}>
+    <Panel title="Best quality available" summary={label(disc)}>
       <div>
         {!disc || disc.error || !disc.best ? (
           <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
@@ -52,27 +54,7 @@ export async function DiscSection({
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-baseline gap-2">
-              <a
-                href={disc.best.url}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
-              >
-                {disc.best.title}
-                <span aria-hidden className="ml-1 opacity-40">
-                  ↗
-                </span>
-              </a>
-              <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
-                {disc.best.format}
-              </span>
-              {disc.best.nativeFourK === false && (
-                <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium opacity-60 ring-1 ring-line-strong ring-inset">
-                  Upscale
-                </span>
-              )}
-            </div>
+            <DiscHeading best={disc.best} entered={disc.entered} />
 
             <dl className="mt-4 grid grid-cols-[9rem_1fr] gap-x-6 gap-y-2.5 text-sm">
               {(
@@ -94,9 +76,13 @@ export async function DiscSection({
                   ["Audio", disc.best.audio.join(" · ") || "unknown"],
                   [
                     "Editions",
-                    `${disc.releaseCount} on Blu-ray.com${
-                      disc.uhdExists ? " · 4K available" : " · no 4K release"
-                    }`,
+                    disc.entered
+                      ? "Entered by hand"
+                      : `${disc.releaseCount} on Blu-ray.com${
+                          disc.uhdExists
+                            ? " · 4K available"
+                            : " · no 4K release"
+                        }`,
                   ],
                 ] as [string, string][]
               ).map(([name, value]) => (
@@ -113,6 +99,7 @@ export async function DiscSection({
               year={year}
               currentUrl={disc.best.url}
               manual={disc.manual}
+              entered={disc.entered ? entryFromSpec(disc.best) : undefined}
             />
           </>
         )}
@@ -133,7 +120,7 @@ export async function DiscSection({
 export function DiscPending() {
   return (
     <Panel
-      title="Best disc available"
+      title="Best quality available"
       summary={
         <span className="flex items-center justify-end gap-2">
           {/* The skeleton's own pulse, at the size of a full stop: enough to

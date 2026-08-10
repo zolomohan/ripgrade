@@ -7,6 +7,7 @@ import { useCapabilities } from "@/app/capabilities";
 import { FolderPicker } from "@/app/folder-picker";
 import { CloseButton, Modal, useClosing } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
+import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
 import type { DirListing } from "@/lib/browse";
 import type { FilmContext } from "@/lib/qbittorrent";
@@ -288,7 +289,12 @@ export function MagnetAction({
             : "bg-foreground text-background hover:opacity-90"
       }`}
     >
-      {sent ? (
+      {/* The mark says which of the three things has happened; while the
+          client is being handed the magnet, the wheel stands in its place so
+          the button does not change width on its way to an answer. */}
+      {pending ? (
+        <Spinner />
+      ) : sent ? (
         <Check className="h-3.5 w-3.5" />
       ) : (
         <DownArrow className="h-3.5 w-3.5" />
@@ -310,7 +316,13 @@ export function MagnetAction({
             : "border-line-strong hover:bg-surface-strong"
       } disabled:opacity-50`}
     >
-      {sent ? <Check className={icon} /> : <DownArrow className={icon} />}
+      {pending ? (
+        <Spinner className={icon} />
+      ) : sent ? (
+        <Check className={icon} />
+      ) : (
+        <DownArrow className={icon} />
+      )}
     </button>
   );
 
@@ -362,12 +374,16 @@ export function MagnetAction({
               <CloseButton onClick={() => setOpen(false)} />
             </header>
 
+            {/* The floor the title stands on, in place of the border the block
+                below used to draw across the whole panel. */}
+            <div aria-hidden className="rule-head mx-5" />
+
             {/* qBittorrent's own words for why it did not take the release —
                 its address, its refusal, its timeout. Not while browsing: the
                 picker prints a failed save under its own button, and the same
                 sentence twice reads as two things having gone wrong. */}
             {error && !browsing && (
-              <div className="border-t border-line bg-red-500/[0.06] px-5 py-3">
+              <div className="bg-red-500/[0.06] px-5 py-3">
                 <Failure>{error}</Failure>
                 <p className="mt-1.5 text-[11px] opacity-45">
                   Nothing was sent. Pick a destination to try again, or check
@@ -381,7 +397,7 @@ export function MagnetAction({
             )}
 
             {browsing ? (
-              <div className="pane-forward flex flex-col gap-3 border-t border-line px-5 py-4">
+              <div className="pane-forward flex flex-col gap-3 px-5 py-4">
                 {listing ? (
                   <FolderPicker
                     initialListing={listing}
@@ -397,10 +413,12 @@ export function MagnetAction({
                 )}
               </div>
             ) : (
+              /* Its own top edge only when the failure band is above it —
+                 otherwise the title's rule is already the line here. */
               <div
-                className={`flex flex-col divide-y divide-line border-t border-line ${
-                  visitedBrowse ? "pane-back" : ""
-                }`}
+                className={`flex flex-col divide-y divide-line ${
+                  error ? "border-t border-line" : ""
+                } ${visitedBrowse ? "pane-back" : ""}`}
               >
                 {/* Each destination is a full row: what it is in words, where
                     it is in mono, and the one picked last says so. */}

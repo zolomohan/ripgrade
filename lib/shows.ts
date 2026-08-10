@@ -78,6 +78,8 @@ export type Show = {
     name: string;
     year?: number;
     overview?: string;
+    /** What the series was made in, which is a film's `originalLanguage`. */
+    originalLanguage?: string;
     confidence: "high" | "low";
   };
 };
@@ -121,10 +123,15 @@ function gapsWithin(numbers: number[]): number[] {
   return gaps;
 }
 
-export function getShows(): Show[] {
+/**
+ * The episodes arrive as a defaulted parameter for the same reason the library
+ * does in `lib/queue-tasks.ts`: a page that wants shows *and* films should read
+ * the table once and split it, not read it twice and filter each half.
+ */
+export function getShows(episodes: LibraryItem[] = getEpisodes()): Show[] {
   const byShow = new Map<string, LibraryItem[]>();
 
-  for (const item of getEpisodes()) {
+  for (const item of episodes) {
     const key = titleKey(item.episode!.showTitle);
     byShow.set(key, [...(byShow.get(key) ?? []), item]);
   }
@@ -237,6 +244,7 @@ export function getShows(): Show[] {
               ? Number(record.first_air_date.slice(0, 4))
               : undefined,
             overview: record.overview,
+            originalLanguage: record.original_language,
             confidence: match?.confidence ?? "low",
           }
         : undefined,

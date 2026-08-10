@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 
 import { clearThumbs, rebuildThumbs } from "../actions";
 import { useJobs } from "../jobs-provider";
+import { Spinner } from "../spinner";
 import { PRIMARY, QUIET } from "./parts";
 
 /**
@@ -125,6 +126,7 @@ export function Thumbs({ files, bytes }: { files: number; bytes: number }) {
           title="Generate every poster's thumbnails now, so the whole library shows with the drive unplugged"
           className={PRIMARY}
         >
+          {rebuilding && <Spinner />}
           {rebuilding ? "Rebuilding…" : "Rebuild now"}
         </button>
       </div>

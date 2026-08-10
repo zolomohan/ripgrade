@@ -294,10 +294,12 @@ export default async function ComparePage({
 
   return (
     <main className="flex flex-col pb-16">
-      {/* The same hero a film and a show get, at the show page's own height —
-          the backdrop is what says which film faster than any heading, and
-          this page is about choosing between its copies. */}
-      <div className="relative h-72 w-full overflow-hidden sm:h-96">
+      {/* The same hero a film gets, at the film page's own height — the
+          backdrop is what says which film faster than any heading, and this
+          page is about choosing between that film's copies. It sat a size
+          short of the page it is reached from, which made arriving here feel
+          like arriving somewhere lesser. */}
+      <div className="relative h-96 w-full overflow-hidden sm:h-[32rem]">
         {keep.fanart || keep.art.fanart ? (
           <>
             <Art

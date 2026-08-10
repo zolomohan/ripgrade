@@ -9,9 +9,22 @@ import {
   type DiscLookup,
 } from "./bluray";
 import { db } from "./db";
+import { specFromEntry, type DiscEntry } from "./disc-entry";
 
 export type { Candidate, DiscLookup };
 export { candidateFromUrl, searchReleases };
+
+/** One row, written the one way — every path here stores the same shape. */
+function save(tmdbId: number, lookup: DiscLookup): void {
+  db.prepare(
+    `INSERT INTO disc (tmdb_id, fetched_at, lookup, error)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(tmdb_id) DO UPDATE SET
+       fetched_at = excluded.fetched_at,
+       lookup = excluded.lookup,
+       error = excluded.error`,
+  ).run(tmdbId, Date.now(), JSON.stringify(lookup), lookup.error ?? null);
+}
 
 export function getDiscs(): Map<number, DiscLookup> {
   const rows = db.prepare("SELECT tmdb_id, lookup FROM disc").all() as {
@@ -68,16 +81,7 @@ export async function fetchDisc(
   if (cached && (!refresh || cached.manual)) return cached;
 
   const lookup = await lookupDisc(title, year);
-
-  db.prepare(
-    `INSERT INTO disc (tmdb_id, fetched_at, lookup, error)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(tmdb_id) DO UPDATE SET
-       fetched_at = excluded.fetched_at,
-       lookup = excluded.lookup,
-       error = excluded.error`,
-  ).run(tmdbId, Date.now(), JSON.stringify(lookup), lookup.error ?? null);
-
+  save(tmdbId, lookup);
   return lookup;
 }
 
@@ -88,16 +92,33 @@ export async function setManualDisc(
 ): Promise<DiscLookup> {
   const existing = getDisc(tmdbId);
   const lookup = await lookupRelease(candidate, existing);
+  save(tmdbId, lookup);
+  return lookup;
+}
 
-  db.prepare(
-    `INSERT INTO disc (tmdb_id, fetched_at, lookup, error)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(tmdb_id) DO UPDATE SET
-       fetched_at = excluded.fetched_at,
-       lookup = excluded.lookup,
-       error = excluded.error`,
-  ).run(tmdbId, Date.now(), JSON.stringify(lookup), lookup.error ?? null);
+/**
+ * Records specs you typed in yourself, for a film Blu-ray.com has no page for.
+ *
+ * Kept as manual, so no later scan overwrites it — the search that found
+ * nothing the first time will find nothing again, and quietly replacing a
+ * hand-written ceiling with "no release found" would undo the work.
+ */
+export function setEnteredDisc(tmdbId: number, entry: DiscEntry): DiscLookup {
+  const existing = getDisc(tmdbId);
+  const best = specFromEntry(entry);
 
+  const lookup: DiscLookup = {
+    // A 4K entry says a 4K version exists — that is what you just told it, and
+    // it reads as a stream or a disc according to the source you picked. A
+    // lower one leaves the search's own finding alone rather than denying it.
+    uhdExists: existing?.uhdExists || best.format === "4K",
+    releaseCount: existing?.releaseCount ?? 0,
+    best,
+    manual: true,
+    entered: true,
+  };
+
+  save(tmdbId, lookup);
   return lookup;
 }
 

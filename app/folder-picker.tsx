@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 
 import { browse } from "./actions";
+import { BUTTON, FIELD } from "./controls";
+import { Spinner } from "./spinner";
 import type { DirListing } from "@/lib/browse";
 
 function Breadcrumb({
@@ -19,7 +21,7 @@ function Breadcrumb({
       <button
         type="button"
         onClick={() => onNavigate("/")}
-        className="rounded-chip px-1 hover:bg-surface-strong"
+        className="rounded-full px-1.5 hover:bg-surface-strong"
       >
         /
       </button>
@@ -28,7 +30,7 @@ function Breadcrumb({
           <button
             type="button"
             onClick={() => onNavigate("/" + segments.slice(0, i + 1).join("/"))}
-            className="rounded-chip px-1 hover:bg-surface-strong"
+            className="rounded-full px-1.5 hover:bg-surface-strong"
           >
             {segment}
           </button>
@@ -90,7 +92,7 @@ export function FolderPicker({
           spellCheck={false}
           placeholder="/Volumes/…"
           aria-label="Path — press Enter to open"
-          className="w-full rounded-chip border border-line bg-transparent px-3 py-2 font-mono text-sm outline-none focus:border-line-strong"
+          className={`${FIELD.default} w-full`}
         />
       </form>
 
@@ -124,9 +126,10 @@ export function FolderPicker({
           <div className="min-w-0 flex-1">
             <Breadcrumb path={listing.path} onNavigate={navigate} />
           </div>
-          {pending && (
-            <span className="shrink-0 text-xs opacity-60">working…</span>
-          )}
+          {/* The same wheel the buttons use, because a folder being read is
+              the same kind of wait — it just happens not to have been
+              started by anything you can point at. */}
+          {pending && <Spinner className="h-3.5 w-3.5 opacity-50" />}
         </div>
 
         <div className="max-h-96 overflow-y-auto">
@@ -165,8 +168,9 @@ export function FolderPicker({
         type="button"
         onClick={save}
         disabled={pending}
-        className="self-start rounded-chip bg-foreground px-4 py-2 text-sm text-background disabled:opacity-40"
+        className={`${BUTTON.primary} self-start`}
       >
+        {pending && <Spinner />}
         {saveLabel}
       </button>
     </div>

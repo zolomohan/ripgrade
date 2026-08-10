@@ -24,6 +24,8 @@ import {
   type Hdr10Static,
 } from "@/lib/derive";
 import { CloseButton, Modal, useClosing } from "@/app/modal";
+import { BUTTON } from "@/app/controls";
+import { ConfirmModal } from "./console";
 
 /**
  * What is inside the Dolby Vision stream, and for a Profile 7 file the one
@@ -142,109 +144,6 @@ function verdictFor(
   };
 }
 
-/** One shape for every button in the console, so a row of them lines up. */
-const BUTTON = {
-  primary:
-    "shrink-0 rounded-control bg-foreground px-3 py-1.5 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40",
-  secondary:
-    "shrink-0 rounded-control border border-line px-3 py-1.5 text-sm transition-colors hover:bg-surface-strong disabled:opacity-40",
-  // Its colour arrives on hover, when you are reaching for it: sitting in the
-  // row it is one button among several, and the dialog behind it is where the
-  // red belongs.
-  danger:
-    "shrink-0 rounded-control border border-line px-3 py-1.5 text-sm transition-colors hover:border-red-500/40 hover:bg-red-500/[0.08] hover:text-red-700 disabled:opacity-40 dark:hover:text-red-300",
-  // Words rather than a box: what it offers is an alternative to the button
-  // beside it, and a second bordered button would read as a second decision of
-  // equal weight. The app's own link treatment, underline arriving on hover.
-  text: "shrink-0 px-1 py-1.5 text-sm underline decoration-transparent underline-offset-4 opacity-60 transition hover:decoration-current hover:opacity-100 disabled:opacity-30",
-};
-
-/**
- * Every confirmation in this section, in one shape.
- *
- * These all commit to something long or irreversible, and asking inside the
- * card meant the question appeared wherever the card happened to be — sometimes
- * below the fold, and always by pushing the rest of the section around. A
- * dialog asks in one place and puts the page back exactly as it was.
- *
- * Same portal-and-backdrop construction as the score breakdown, so the two
- * behave alike: click outside or press Escape to dismiss.
- */
-function ConfirmModal({
-  open,
-  title,
-  confirmLabel,
-  tone = "neutral",
-  busy,
-  onConfirm,
-  onCancel,
-  children,
-}: {
-  open: boolean;
-  title: string;
-  confirmLabel: string;
-  tone?: "neutral" | "danger";
-  busy?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-  children: React.ReactNode;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Not while the work is already under way — there is nothing to take back
-      // by then, and dismissing would only hide it.
-      if (e.key === "Escape" && !busy) onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onCancel]);
-
-  return (
-    <Modal
-      open={open}
-      onClose={onCancel}
-      dismissible={!busy}
-      label={title}
-      panelClassName="flex w-full max-w-md flex-col gap-3 rounded-card border border-line bg-background p-6 shadow-2xl"
-    >
-      <>
-        <div className="flex items-start justify-between gap-4">
-          <h2 className="min-w-0 text-base font-semibold">{title}</h2>
-          {/* Cancel below says the same thing, but the circle is where the
-              hand goes on every other dialog here — and it goes grey with the
-              rest once there is nothing left to take back. */}
-          <CloseButton onClick={onCancel} disabled={busy} />
-        </div>
-        <div className="text-sm opacity-70">{children}</div>
-
-        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="rounded-control border border-line px-3 py-1.5 text-sm hover:bg-surface-strong disabled:opacity-40"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            autoFocus
-            className={
-              tone === "danger"
-                ? "rounded-control border border-red-500/40 bg-red-500/[0.10] px-3 py-1.5 text-sm text-red-700 hover:bg-red-500/20 disabled:opacity-40 dark:text-red-300"
-                : "rounded-control bg-foreground px-3 py-1.5 text-sm text-background hover:opacity-90 disabled:opacity-40"
-            }
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </>
-    </Modal>
-  );
-}
-
 type Recipe = {
   id: string;
   title: string;
@@ -302,6 +201,10 @@ function RecipesModal({
           <CloseButton onClick={onClose} />
         </header>
 
+        {/* The floor the title stands on. Outside the scrolling column, so the
+            recipes pass under it rather than past it. */}
+        <div aria-hidden className="rule-head mx-6 mb-4 shrink-0" />
+
         <div className="flex flex-col gap-6 overflow-y-auto px-6 pb-6">
           {recipes.map((recipe) => (
             <div key={recipe.id} className="flex flex-col gap-2">
@@ -310,7 +213,7 @@ function RecipesModal({
                 <button
                   type="button"
                   onClick={() => copy(recipe)}
-                  className="shrink-0 rounded-control border border-line px-2.5 py-1 text-xs hover:bg-surface-strong"
+                  className={BUTTON.small}
                 >
                   {copied === recipe.id ? "✓ Copied" : "Copy"}
                 </button>
