@@ -6,8 +6,6 @@ import { useState, useTransition, ViewTransition } from "react";
 
 import { addWish } from "@/app/actions";
 import { Art } from "@/app/art";
-import { useLingering } from "@/app/modal";
-import { ReleaseSearchModal } from "@/app/release-search";
 import { scoreTheme } from "@/app/score-circle";
 import { pace } from "@/app/collections/collections-view";
 import { stagger } from "@/app/stagger";
@@ -20,8 +18,14 @@ import type { CollectionFilm, CollectionSet } from "@/lib/collections";
  *
  * Both halves are the library's own tile — same grid, same proportions, same
  * score in the same corner — because a film is the same object here as it is on
- * the shelf. What differs is the verb: a film you hold opens its page, a film
- * you do not opens the release search, and the poster is the control for both.
+ * the shelf. What differs is only which page the poster opens: a film you hold
+ * opens its own, a film you do not opens its page on TMDb's side of the app,
+ * where what it is and every release of it both live.
+ *
+ * A poster is a way in to a film, never a dialog. Clicking one used to throw
+ * the release search over the page, which answered a question nobody had asked
+ * yet and left no way to the film itself; the search still runs, on arrival, on
+ * the page it belongs to.
  */
 const GRID = "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5";
 
@@ -96,49 +100,43 @@ function Absent({
   film,
   index,
   wishlisted,
-  onFind,
   onWish,
 }: {
   film: CollectionFilm;
   index: number;
   wishlisted: boolean;
-  onFind: () => void;
   onWish: () => void;
 }) {
   return (
     <div style={stagger(index)} className="row-enter group flex flex-col gap-2">
-      {/* A div with a button role rather than a real one: it holds the wishlist
-          button of its own, and nesting that inside a <button> is invalid. */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onFind}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onFind();
-          }
-        }}
-        aria-label={`Find releases for ${film.title}`}
-        className={`${FRAME} cursor-pointer`}
-      >
-        {/* Held back so the two halves of the page read apart at a glance, and
-            brought most of the way up under the pointer. */}
-        <Art
-          src={undefined}
-          remote={film.posterPath}
-          loading="lazy"
-          className={`${POSTER} opacity-40 transition-opacity group-hover:opacity-90`}
-        />
+      {/* The heart is a sibling of the link rather than a child of it: a button
+          nested inside an anchor is invalid, and one click would fire both. */}
+      <div className="relative">
+        <Link
+          href={`/discover/movie/${film.tmdbId}`}
+          aria-label={film.title}
+          className={`${FRAME} block`}
+        >
+          {/* Held back so the two halves of the page read apart at a glance, and
+              brought most of the way up under the pointer. */}
+          <Art
+            src={undefined}
+            remote={film.posterPath}
+            // The name the discover page's own poster answers to, so the tile
+            // travels into it rather than being swapped for it.
+            transitionName={posterName(`tmdb-movie-${film.tmdbId}`)}
+            loading="lazy"
+            className={`${POSTER} opacity-40 transition-opacity group-hover:opacity-90`}
+          />
 
-        <span className="pointer-events-none absolute inset-x-2 bottom-2 rounded-chip bg-background/85 py-1 text-center text-[10px] font-medium opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
-          Find releases
-        </span>
+          <span className="pointer-events-none absolute inset-x-2 bottom-2 rounded-chip bg-background/85 py-1 text-center text-[10px] font-medium opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+            Find releases
+          </span>
+        </Link>
 
         <button
           type="button"
-          onClick={(event) => {
-            event.stopPropagation();
+          onClick={() => {
             if (!wishlisted) onWish();
           }}
           disabled={wishlisted}
@@ -178,15 +176,11 @@ function Heading({ label }: { label: string }) {
 
 export function CollectionView({
   set,
-  jackettReady,
   wishlisted,
 }: {
   set: CollectionSet;
-  jackettReady: boolean;
   wishlisted: number[];
 }) {
-  const [finding, setFinding] = useState<CollectionFilm | null>(null);
-  const shown = useLingering(finding);
   const [added, setAdded] = useState<number[]>([]);
   const [, startTransition] = useTransition();
   const router = useRouter();
@@ -240,24 +234,12 @@ export function CollectionView({
                   film={film}
                   index={i}
                   wishlisted={onList.has(film.tmdbId)}
-                  onFind={() => setFinding(film)}
                   onWish={() => wish(film)}
                 />
               ))}
             </div>
           </section>
         </>
-      )}
-
-      {shown && (
-        <ReleaseSearchModal
-          open={finding !== null}
-          subject={{ kind: "tmdb", tmdbId: shown.tmdbId }}
-          title={shown.title}
-          subtitle={shown.year ? String(shown.year) : undefined}
-          configured={jackettReady}
-          onClose={() => setFinding(null)}
-        />
       )}
     </div>
   );

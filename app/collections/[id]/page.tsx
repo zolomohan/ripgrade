@@ -7,7 +7,6 @@ import { ScoreRing } from "@/app/score-card";
 import { scoreTheme } from "@/app/score-circle";
 import { getCollectionSet } from "@/lib/collections";
 import { collectionMetaName, collectionTitleName } from "@/lib/routes";
-import { hasJackett } from "@/lib/jackett";
 import { getMovies } from "@/lib/library";
 import { getWishlistIds } from "@/lib/wishlist";
 import { CollectionView } from "./collection-view";
@@ -108,11 +107,7 @@ export default async function CollectionPage({
           )}
         </div>
 
-        <CollectionView
-          set={set}
-          jackettReady={hasJackett()}
-          wishlisted={[...getWishlistIds()]}
-        />
+        <CollectionView set={set} wishlisted={[...getWishlistIds()]} />
       </div>
     </main>
   );
