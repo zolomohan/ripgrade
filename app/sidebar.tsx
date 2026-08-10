@@ -99,6 +99,14 @@ const ACQUIRING = [
     label: "Downloads",
     icon: "M12 4v11m0 0 4-4m-4 4-4-4M4 20h16",
   },
+  // The work itself, while it runs and after it has. A clock face: what this
+  // page is about is jobs against time — how far in, how long it took, when it
+  // ended — and the rail below already spends the arrows.
+  {
+    href: "/jobs",
+    label: "Jobs",
+    icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3.5 2",
+  },
 ];
 
 /**

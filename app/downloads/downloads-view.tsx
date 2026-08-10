@@ -12,6 +12,7 @@ import {
 } from "@/app/actions";
 import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
+import { SectionHeading } from "@/app/section-heading";
 import { CloseButton, Modal, useLingering } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
 import { Spinner } from "@/app/spinner";
@@ -25,10 +26,18 @@ import { posterName } from "@/lib/routes";
  * The top half is now: what is moving, how fast, and the controls that
  * change it. The bottom half is the log — finished downloads still seeding,
  * and releases qBittorrent has long forgotten, which only the app's own
- * record can still show. Polled while anything moves, still when nothing
- * does.
+ * record can still show. Polled quickly while anything moves, slowly while
+ * anything is merely in the client, and not at all once nothing is.
  */
 const POLL_MS = 3000;
+
+/**
+ * The same read, at the pace a finished row deserves: it is waiting on
+ * something a person did in another window, not on a transfer. Slow enough
+ * that a page of seeded history is not a torrent of requests, quick enough
+ * that "it stopped in qBittorrent" and "it says so here" are the same glance.
+ */
+const IDLE_POLL_MS = 15_000;
 
 const gigabytes = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 
@@ -113,45 +122,47 @@ function Poster({
 const ROW_ACTION =
   "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong disabled:opacity-40";
 
-const ICON = {
-  pause: <path d="M9 5v14M15 5v14" />,
-  resume: <path d="M8 5.5v13l10.5-6.5z" />,
-  remove: <path d="M6 6l12 12M18 6L6 18" />,
-  more: (
-    <>
-      <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" />
-    </>
-  ),
-};
-
-function ActionIcon({ kind }: { kind: keyof typeof ICON }) {
+/*
+ * The only mark a row wears now. There were four here — pause, resume, a cross
+ * and this — from when a running row carried its own controls; they went with
+ * the buttons that used them.
+ */
+function MoreIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      fill="currentColor"
       aria-hidden
       className="h-4 w-4"
     >
-      {ICON[kind]}
+      <circle cx="5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="19" cy="12" r="1.6" />
     </svg>
   );
 }
 
 /**
- * A history row's actions, folded behind one ellipsis: which of them exist
- * depends on the torrent's fate, and three conditionally-appearing circles
- * were a row that never looked the same twice.
+ * A row's actions, folded behind one ellipsis.
+ *
+ * History rows first, where which actions exist depends on the torrent's fate
+ * and three conditionally-appearing circles were a row that never looked the
+ * same twice. Running rows now too — those had a fixed pair, pause and cancel,
+ * so they were never that; what they were was two live buttons sitting a
+ * centimetre from a progress bar, one of which throws the download away. Named
+ * in a menu, both have to be read before they can be pressed.
+ *
+ * `busy` is the wait the pause button used to show on its own face: the client
+ * is being asked, and the answer arrives on the next poll rather than with the
+ * click. The trigger holds that now — the menu it would have been shown in is
+ * already closed by then — and refuses a second press while it turns.
  */
 function RowMenu({
   items,
+  busy,
 }: {
   items: { label: string; onSelect: () => void }[];
+  busy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -177,12 +188,13 @@ function RowMenu({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        disabled={busy}
         aria-label="Actions"
         aria-expanded={open}
         title="Actions"
         className={`${ROW_ACTION} ${open ? "" : "opacity-50 hover:opacity-100"}`}
       >
-        <ActionIcon kind="more" />
+        {busy ? <Spinner className="h-3.5 w-3.5" /> : <MoreIcon />}
       </button>
 
       {open && (
@@ -202,17 +214,6 @@ function RowMenu({
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function Heading({ label }: { label: string }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <h2 className="font-display text-lg font-semibold tracking-tight">
-        {label}
-      </h2>
-      <div aria-hidden className="rule-head" />
     </div>
   );
 }
@@ -239,15 +240,30 @@ export function DownloadsView({
   } | null>(null);
   const confirmShown = useLingering(confirming);
 
-  const activeNow = entries.some((e) => e.live && !e.live.done);
+  /*
+   * Two speeds, because there are two reasons to read again.
+   *
+   * A download in flight changes every second it runs, and the page is worth
+   * a few seconds' latency at most. A row that is only seeding changes almost
+   * never — but it does change: stopped from qBittorrent's own window, or by
+   * this app the moment a finish is noticed and the stop-seeding setting is
+   * on. Gated on downloads alone, as it was, none of that ever reached the
+   * page: the interval never started, and a row went on saying "seeding" for
+   * as long as the page stayed open.
+   */
+  const downloadingNow = entries.some((e) => e.live && !e.live.done);
+  const liveNow = entries.some((e) => e.live);
 
   useEffect(() => {
-    if (!activeNow) return;
-    const id = setInterval(async () => {
-      setEntries(await listDownloadLog());
-    }, POLL_MS);
+    if (!liveNow) return;
+    const id = setInterval(
+      async () => {
+        setEntries(await listDownloadLog());
+      },
+      downloadingNow ? POLL_MS : IDLE_POLL_MS,
+    );
     return () => clearInterval(id);
-  }, [activeNow]);
+  }, [liveNow, downloadingNow]);
 
   /**
    * Runs a control and re-reads at once, so the row answers the click.
@@ -373,7 +389,7 @@ export function DownloadsView({
 
       {active.length > 0 && (
         <section className="flex flex-col gap-1">
-          <Heading label="Downloading" />
+          <SectionHeading label="Downloading" />
 
           <ul className="ruled flex flex-col">
             {active.map((entry, i) => {
@@ -403,11 +419,19 @@ export function DownloadsView({
                       {d.name}
                     </p>
                     {/* The bar: progress that reads at a glance across the
-                        row's whole width, which a dial never quite did. */}
-                    <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-surface-strong">
+                        row's whole width, which a dial never quite did. Lit
+                        only while it is moving — a paused download keeps the
+                        channel but throws no light, so the row that has
+                        stopped is the dull one. */}
+                    {/* Held back from the right edge of its column, which the
+                        title and the file name run to but the bar should not:
+                        those stop when the words stop, and a bar stops where
+                        it is told, so at full width it was the one thing in
+                        the row reaching for the ellipsis. */}
+                    <div className="bar-track mt-2.5 mr-10">
                       <div
-                        className={`h-full rounded-full motion-safe:transition-[width] motion-safe:duration-500 ${
-                          paused ? "bg-foreground/30" : "bg-foreground/70"
+                        className={`bar-fill motion-safe:transition-[width] motion-safe:duration-500 ${
+                          paused ? "bar-fill-idle" : ""
                         }`}
                         style={{ width: `${Math.min(100, percent)}%` }}
                       />
@@ -428,39 +452,24 @@ export function DownloadsView({
                     </p>
                   </div>
 
-                  <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
+                  {/* The same ellipsis the history rows carry, so one column
+                      of marks runs down the page whatever state a row is in. */}
+                  <RowMenu
+                    busy={pending}
+                    items={[
+                      {
+                        label: paused ? "Resume" : "Pause",
+                        onSelect: () =>
                           control(() =>
                             paused ? qbResume(entry.hash) : qbPause(entry.hash),
-                          )
-                        }
-                        disabled={pending}
-                        aria-label={paused ? "Resume" : "Pause"}
-                        title={paused ? "Resume" : "Pause"}
-                        className={ROW_ACTION}
-                      >
-                        {/* The client is being asked, and the answer arrives
-                            on the next poll rather than with the click — so
-                            the wheel takes the mark's place until it does. */}
-                        {pending ? (
-                          <Spinner className="h-3.5 w-3.5" />
-                        ) : (
-                          <ActionIcon kind={paused ? "resume" : "pause"} />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirming({ kind: "cancel", entry })}
-                        disabled={pending}
-                        aria-label="Cancel this download"
-                        title="Cancel this download"
-                        className={ROW_ACTION}
-                      >
-                        <ActionIcon kind="remove" />
-                      </button>
-                  </div>
+                          ),
+                      },
+                      {
+                        label: "Cancel this download",
+                        onSelect: () => setConfirming({ kind: "cancel", entry }),
+                      },
+                    ]}
+                  />
                 </li>
               );
             })}
@@ -470,7 +479,7 @@ export function DownloadsView({
 
       {past.length > 0 && (
         <section className="flex flex-col gap-1">
-          <Heading label="History" />
+          <SectionHeading label="History" />
 
           <ul className="ruled flex flex-col">
             {past.map((entry, i) => {

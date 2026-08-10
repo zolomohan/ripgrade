@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   beginConvert,
   beginFullDoviScan,
+  checkConvertible,
   refreshAfterDoviScan,
 } from "@/app/actions";
 import { Art } from "@/app/art";
@@ -38,6 +39,10 @@ import { byTitle, pickSort, type SortOption } from "./sorts";
  * the same original kept beside it, the same single job at a time — so the
  * button offers it where the list of candidates already is, rather than sending
  * you into twelve pages to press the same button twelve times.
+ *
+ * A row whose enhancement layer could still rule the film out offers the check
+ * instead, for the same reason the film's own console does: the button says
+ * which of the two it is, rather than promising a rewrite and finding out.
  */
 
 const size = (bytes: number) =>
@@ -206,7 +211,8 @@ const EL_LABEL: Record<string, string> = {
 
 const EL_TITLE: Record<string, string> = {
   mel: "Minimum enhancement layer — nothing in it, so converting loses nothing at all",
-  "simple-fel": "Full enhancement layer, but graded within the base layer's range — what converting drops is refinement, not picture",
+  "simple-fel":
+    "Full enhancement layer, but graded within the base layer's range — what converting drops is refinement, not picture",
   unknown: "No pass has read the enhancement layer yet",
 };
 
@@ -216,8 +222,16 @@ const EL_TITLE: Record<string, string> = {
  * separates one row from another.
  */
 export const DOVI_SORTS: SortOption<DoviTask>[] = [
-  { key: "size", label: "Largest file", compare: (a, b) => b.sizeBytes - a.sizeBytes },
-  { key: "smallest", label: "Smallest file", compare: (a, b) => a.sizeBytes - b.sizeBytes },
+  {
+    key: "size",
+    label: "Largest file",
+    compare: (a, b) => b.sizeBytes - a.sizeBytes,
+  },
+  {
+    key: "smallest",
+    label: "Smallest file",
+    compare: (a, b) => a.sizeBytes - b.sizeBytes,
+  },
   {
     // A film whose frames have all been read converts straight away; the rest
     // begin with the pass. Worth being able to see the ready ones together.
@@ -226,8 +240,16 @@ export const DOVI_SORTS: SortOption<DoviTask>[] = [
     compare: (a, b) =>
       Number(b.scanned) - Number(a.scanned) || b.sizeBytes - a.sizeBytes,
   },
-  { key: "added", label: "Recently added", compare: (a, b) => b.addedAt - a.addedAt },
-  { key: "title", label: "Title", compare: (a, b) => byTitle(a.title, b.title) },
+  {
+    key: "added",
+    label: "Recently added",
+    compare: (a, b) => b.addedAt - a.addedAt,
+  },
+  {
+    key: "title",
+    label: "Title",
+    compare: (a, b) => byTitle(a.title, b.title),
+  },
 ];
 
 /** The three things that make one of these rows different from another. */
@@ -250,6 +272,12 @@ export const DOVI_GROUPS: GroupOption<DoviTask>[] = [
   { key: "kind", label: "Films and shows", of: kindOf, order: KIND_ORDER },
 ];
 
+/**
+ * A full pass this page started, and what it started it for: the conversion the
+ * pass is the first step of, or the answer the pass was run to get.
+ */
+type Errand = { path: string; fileName: string; then: "convert" | "report" };
+
 export function DoviTasks({
   tasks: unsorted,
   sort,
@@ -271,21 +299,33 @@ export function DoviTasks({
   const shown = useClosing(asking !== null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * What a check found, which is not an error even when it rules the film out —
+   * the row simply leaves the list, and a row that vanishes without a word is
+   * the answer withheld.
+   */
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
+    null,
+  );
 
   /**
-   * A conversion that has not reached the conversion yet.
+   * The pass this page is waiting on.
    *
-   * A film whose frames have never all been read is converted in two steps —
-   * the pass, then the rewrite — and the second is started here when the first
-   * lands. Held in a ref as well as in state because the job subscription has
-   * to see it without resubscribing every time it changes.
+   * Two errands for one job, because on a MEL the pass is a step of converting
+   * — nothing it can find changes the verdict — while on a FEL it *is* the
+   * verdict, and what follows it is a sentence rather than a rewrite.
+   *
+   * Held in a ref as well as in state because the job subscription has to see
+   * it without resubscribing every time it changes.
    */
-  const [queued, setQueued] = useState<string | null>(null);
-  const wants = useRef<string | null>(null);
-  const intend = (path: string | null) => {
-    wants.current = path;
-    setQueued(path);
+  const [pending, setPending] = useState<Errand | null>(null);
+  const wants = useRef<Errand | null>(null);
+  const intend = (next: Errand | null) => {
+    wants.current = next;
+    setPending(next);
   };
+  /** Only a conversion has a hand-off to narrate; a check ends where it ends. */
+  const queued = pending?.then === "convert" ? pending.path : null;
 
   // React only to the edge out of a run this page saw, exactly as the film's
   // own console does: the server reports "done" forever after, so a status
@@ -306,13 +346,13 @@ export function DoviTasks({
           }
         }
 
-        const target = wants.current;
+        const errand = wants.current;
         const wasReading =
-          prev.dovi.status === "running" && prev.dovi.path === target;
+          prev.dovi.status === "running" && prev.dovi.path === errand?.path;
         if (!wasReading || next.dovi.status === "running") return;
 
-        if (next.dovi.status !== "done" || !target) {
-          // Failed or cancelled: the conversion it was the first step of is off.
+        if (next.dovi.status !== "done" || !errand) {
+          // Failed or cancelled: whatever it was the first step of is off.
           intend(null);
           if (next.dovi.status === "error") {
             setError(next.dovi.error ?? "Full pass failed");
@@ -323,31 +363,68 @@ export function DoviTasks({
         void refreshAfterDoviScan().then(async () => {
           router.refresh();
           intend(null);
+
+          // A check reports and stops. The verdict it just settled decides
+          // whether the row keeps its Convert button or leaves the list, and
+          // either way the reader asked a question and is owed the answer.
+          if (errand.then === "report") {
+            const verdict = await checkConvertible(errand.path);
+            setNotice({
+              ok: verdict.ok,
+              text: verdict.ok
+                ? `${errand.fileName} can be converted — its button is ready.`
+                : verdict.error,
+            });
+            return;
+          }
+
           // The server re-checks the verdict against what the pass just wrote,
           // so a film that turns out to be a complex FEL is refused here rather
           // than converted on the strength of a sample.
-          const result = await beginConvert(target);
+          const result = await beginConvert(errand.path);
           if (!result.ok) {
             setError(result.error);
             return;
           }
-          apply({
-            convert: { status: "running", path: target, step: 1, steps: 3 },
-          });
+          apply({ convert: result.job });
         });
       }),
     [subscribe, router, apply],
   );
 
   /**
+   * Reads every frame and stops there, so the verdict is settled before
+   * anything is offered on the strength of it.
+   *
+   * Nothing is written, so nothing is confirmed: a check costs time and no
+   * film.
+   */
+  async function check(task: DoviTask) {
+    setError(null);
+    setNotice(null);
+
+    const started = await beginFullDoviScan(task.path);
+    if (!started.ok) {
+      setError(started.error);
+      return;
+    }
+    intend({ path: task.path, fileName: task.fileName, then: "report" });
+    apply({
+      dovi: { status: "running", path: task.path, percent: 0, frames: 0 },
+    });
+  }
+
+  /**
    * Reads every frame first, when every frame has not been read.
    *
-   * The same two-step the console runs, and for the same reason: a conversion
-   * decided on a sample is a conversion decided on the frames the sample
-   * happened to cover.
+   * The same two-step the console runs, and reachable for the same reason: only
+   * on a film whose verdict the pass cannot overturn. Anything a full read
+   * could still rule out goes through `check` instead, and comes back here as a
+   * separate click.
    */
   async function run(task: DoviTask) {
     setError(null);
+    setNotice(null);
     setStarting(true);
 
     if (!task.scanned) {
@@ -358,7 +435,7 @@ export function DoviTasks({
         setError(started.error);
         return;
       }
-      intend(task.path);
+      intend({ path: task.path, fileName: task.fileName, then: "convert" });
       apply({
         dovi: { status: "running", path: task.path, percent: 0, frames: 0 },
       });
@@ -372,9 +449,7 @@ export function DoviTasks({
       setError(result.error);
       return;
     }
-    apply({
-      convert: { status: "running", path: task.path, step: 1, steps: 3 },
-    });
+    apply({ convert: result.job });
   }
 
   // One rewrite at a time, which the server enforces anyway — the buttons say
@@ -412,112 +487,141 @@ export function DoviTasks({
         </p>
       )}
 
+      {/* Amber when the check ruled the film out, because that row has just
+          left the list and the sentence is all that is left of it. */}
+      {notice && (
+        <p
+          className={`text-sm ${
+            notice.ok ? "opacity-60" : "text-amber-600 dark:text-amber-400"
+          }`}
+        >
+          {notice.text}
+        </p>
+      )}
+
       <Grouped items={tasks} group={grouping} note={filmsNote}>
         {(rows, offset) => (
-      <ul className="ruled flex flex-col">
-        {rows.map((task, index) => {
-          const i = offset + index;
-          const converting =
-            convert.status === "running" && convert.path === task.path;
-          const reading =
-            pass.status === "running" && pass.path === task.path;
-          // The gap between a pass finishing and its conversion starting, which
-          // is a round trip long and would otherwise read as the row stopping.
-          const handing = queued === task.path && !reading && !converting;
-          const active = converting || reading || handing;
+          <ul className="ruled flex flex-col">
+            {rows.map((task, index) => {
+              const i = offset + index;
+              const converting =
+                convert.status === "running" && convert.path === task.path;
+              const reading =
+                pass.status === "running" && pass.path === task.path;
+              // The gap between a pass finishing and its conversion starting, which
+              // is a round trip long and would otherwise read as the row stopping.
+              const handing = queued === task.path && !reading && !converting;
+              const active = converting || reading || handing;
+              /**
+               * Whether this row offers the question rather than the answer. A MEL
+               * has nothing a full read could turn up, so it converts on one click;
+               * anything else with unread frames could still be ruled out, and a
+               * button labelled Convert on one of those promises a rewrite the
+               * server would refuse once the pass came back.
+               */
+              const checkFirst = !task.scanned && task.el !== "mel";
 
-          const percent = converting
-            ? (convert.percent ?? 0)
-            : reading
-              ? pass.percent
-              : 0;
+              const percent = converting
+                ? (convert.percent ?? 0)
+                : reading
+                  ? pass.percent
+                  : 0;
 
-          return (
-            <TaskRow
-              key={task.path}
-              task={task}
-              index={i}
-              chips={
-                <>
-                  <Chip>Profile 7</Chip>
-                  {task.el && EL_LABEL[task.el] && (
-                    <Chip title={EL_TITLE[task.el]}>{EL_LABEL[task.el]}</Chip>
-                  )}
-                  <span className="text-xs opacity-40">
-                    {size(task.sizeBytes)}
-                    {task.scanned
-                      ? " · every frame read"
-                      : " · converting reads every frame first"}
-                  </span>
-                </>
-              }
-              progress={
-                active ? (
-                  <>
-                    {/* The downloads page's own bar, because it answers the
+              return (
+                <TaskRow
+                  key={task.path}
+                  task={task}
+                  index={i}
+                  chips={
+                    <>
+                      <Chip>Profile 7</Chip>
+                      {task.el && EL_LABEL[task.el] && (
+                        <Chip title={EL_TITLE[task.el]}>
+                          {EL_LABEL[task.el]}
+                        </Chip>
+                      )}
+                      <span className="text-xs opacity-40">
+                        {size(task.sizeBytes)}
+                        {task.scanned
+                          ? " · every frame read"
+                          : task.el === "mel"
+                            ? " · converting reads every frame first"
+                            : " · a check reads every frame"}
+                      </span>
+                    </>
+                  }
+                  progress={
+                    active ? (
+                      <>
+                        {/* The downloads page's own bar, because it answers the
                         same question about the same kind of wait: how far
                         through, read across the row rather than squinted at. */}
-                    <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-surface-strong">
-                      <div
-                        className="h-full rounded-full bg-foreground/70 motion-safe:transition-[width] motion-safe:duration-500"
-                        style={{ width: `${Math.min(100, percent)}%` }}
-                      />
-                    </div>
+                        <div className="bar-track mt-2.5">
+                          <div
+                            className="bar-fill motion-safe:transition-[width] motion-safe:duration-500"
+                            style={{ width: `${Math.min(100, percent)}%` }}
+                          />
+                        </div>
 
-                    <p className="mt-2 text-xs tabular-nums opacity-45">
-                      {converting
-                        ? [
-                            `Converting to Profile 8.1 · step ${convert.step} of ${convert.steps}`,
-                            convert.label,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")
-                        : reading
-                          ? `Reading every frame · ${Math.round(pass.percent)}%${
-                              pass.frames ? ` · ${pass.frames} frames` : ""
-                            }`
-                          : "Starting the conversion…"}
-                    </p>
-                  </>
-                ) : undefined
-              }
-              figure={
-                active ? (
-                  <span className="text-sm font-medium tabular-nums">
-                    {Math.round(percent)}%
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      // The row navigates; this does not.
-                      e.stopPropagation();
-                      setAsking(task);
-                    }}
-                    disabled={busy || task.offline}
-                    title={
-                      task.offline
-                        ? "The drive this file lives on is not connected"
-                        : busy
-                          ? "Something is already rewriting a file — wait for it"
-                          : task.scanned
-                            ? "Rewrite as Profile 8.1, keeping the original"
-                            : "Read every frame, then rewrite as Profile 8.1"
-                    }
-                    // Bordered rather than filled: twelve filled buttons down a
-                    // list is a column of black blobs, and the emphasis the
-                    // console's own button earns comes from being the one
-                    // thing on that page.
-                    className={BUTTON.secondary}
-                  >
-                    Convert
-                  </button>
-                )
-              }
-            />
-          );
-        })}
-      </ul>
+                        <p className="mt-2 text-xs tabular-nums opacity-45">
+                          {converting
+                            ? [
+                                `Converting to Profile 8.1 · step ${convert.step} of ${convert.steps}`,
+                                convert.label,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : reading
+                              ? `Reading every frame · ${Math.round(pass.percent)}%${
+                                  pass.frames ? ` · ${pass.frames} frames` : ""
+                                }`
+                              : "Starting the conversion…"}
+                        </p>
+                      </>
+                    ) : undefined
+                  }
+                  figure={
+                    active ? (
+                      <span className="text-sm font-medium tabular-nums">
+                        {Math.round(percent)}%
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          // The row navigates; this does not.
+                          e.stopPropagation();
+                          // A check writes nothing, so it runs on the click. Only
+                          // the rewrite is worth stopping to confirm.
+                          if (checkFirst) void check(task);
+                          else setAsking(task);
+                        }}
+                        disabled={busy || task.offline}
+                        title={
+                          task.offline
+                            ? "The drive this file lives on is not connected"
+                            : busy
+                              ? "Something is already rewriting a file — wait for it"
+                              : checkFirst
+                                ? "Reads every frame to settle whether converting would clip anything. Nothing is written."
+                                : task.scanned
+                                  ? "Rewrite as Profile 8.1, keeping the original"
+                                  : "Read every frame, then rewrite as Profile 8.1"
+                        }
+                        // Bordered rather than filled: twelve filled buttons down a
+                        // list is a column of black blobs, and the emphasis the
+                        // console's own button earns comes from being the one
+                        // thing on that page.
+                        className={BUTTON.secondary}
+                      >
+                        {checkFirst ? "Check" : "Convert"}
+                      </button>
+                    )
+                  }
+                />
+              );
+            })}
+          </ul>
         )}
       </Grouped>
 
@@ -574,9 +678,21 @@ export const AUDIO_SORTS: SortOption<AudioTask>[] = [
     label: "Most tracks removed",
     compare: (a, b) => b.removing - a.removing || b.freedBytes - a.freedBytes,
   },
-  { key: "size", label: "Largest file", compare: (a, b) => b.sizeBytes - a.sizeBytes },
-  { key: "added", label: "Recently added", compare: (a, b) => b.addedAt - a.addedAt },
-  { key: "title", label: "Title", compare: (a, b) => byTitle(a.title, b.title) },
+  {
+    key: "size",
+    label: "Largest file",
+    compare: (a, b) => b.sizeBytes - a.sizeBytes,
+  },
+  {
+    key: "added",
+    label: "Recently added",
+    compare: (a, b) => b.addedAt - a.addedAt,
+  },
+  {
+    key: "title",
+    label: "Title",
+    compare: (a, b) => byTitle(a.title, b.title),
+  },
 ];
 
 /**
@@ -670,39 +786,39 @@ export function AudioTasks({
 
       <Grouped items={tasks} group={grouping} note={freedNote}>
         {(rows, offset) => (
-      <ul className="ruled flex flex-col">
-        {rows.map((task, index) => (
-          <TaskRow
-            key={task.path}
-            task={task}
-            index={offset + index}
-            chips={
-              // No count chip. What is going is named — the languages — and
-              // what it is worth is the figure on the right; "8 of 9 tracks"
-              // sat between them saying neither.
-              <span className="min-w-0 truncate text-xs opacity-40">
-                {languageLine(task.languages)} · {size(task.sizeBytes)} file
-              </span>
-            }
-            figure={
-              <>
-                <span
-                  className="text-sm font-medium tabular-nums text-emerald-600 dark:text-emerald-400"
-                  title={
-                    task.estimated
-                      ? "Part of this total is worked out from bitrate rather than counted"
-                      : undefined
-                  }
-                >
-                  {task.estimated ? "≈" : "−"}
-                  {size(task.freedBytes)}
-                </span>
-                <span className="text-xs opacity-40">freed</span>
-              </>
-            }
-          />
-        ))}
-      </ul>
+          <ul className="ruled flex flex-col">
+            {rows.map((task, index) => (
+              <TaskRow
+                key={task.path}
+                task={task}
+                index={offset + index}
+                chips={
+                  // No count chip. What is going is named — the languages — and
+                  // what it is worth is the figure on the right; "8 of 9 tracks"
+                  // sat between them saying neither.
+                  <span className="min-w-0 truncate text-xs opacity-40">
+                    {languageLine(task.languages)} · {size(task.sizeBytes)} file
+                  </span>
+                }
+                figure={
+                  <>
+                    <span
+                      className="text-sm font-medium tabular-nums text-emerald-600 dark:text-emerald-400"
+                      title={
+                        task.estimated
+                          ? "Part of this total is worked out from bitrate rather than counted"
+                          : undefined
+                      }
+                    >
+                      {task.estimated ? "≈" : "−"}
+                      {size(task.freedBytes)}
+                    </span>
+                    <span className="text-xs opacity-40">freed</span>
+                  </>
+                }
+              />
+            ))}
+          </ul>
         )}
       </Grouped>
     </section>

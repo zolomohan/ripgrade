@@ -238,9 +238,10 @@ const filmOf = (
  * scanner calls these across its phases, after `deriveAll` has rewritten the
  * rows, and every phase has to see what the last one wrote.
  */
-export function libraryTasks(
-  items: LibraryItem[] = getLibrary(),
-): { dovi: DoviTask[]; audio: AudioTask[] } {
+export function libraryTasks(items: LibraryItem[] = getLibrary()): {
+  dovi: DoviTask[];
+  audio: AudioTask[];
+} {
   const dovi: DoviTask[] = [];
   const audio: AudioTask[] = [];
   const artworkOf = artworkReader();
@@ -388,6 +389,40 @@ export type CleanupFile = {
   film?: TaskFilm;
 };
 
+/**
+ * The films behind a set of paths, for a list that holds paths rather than
+ * films — the job log, whose rows record what was done to a file and nothing
+ * about the film it is.
+ *
+ * Goes through `filmOf` and `artworkReader` like every other list here, so a
+ * poster is found the same way wherever it is drawn: from the file's own folder
+ * when it is there, from TMDb when the drive is away, and from the show rather
+ * than the episode where a file is one.
+ *
+ * A path with no film is simply absent from the map. A log outlives what it
+ * describes — a film can be renamed, converted or removed after the row about
+ * it was written — and a row that has lost its film is still a true record of
+ * what ran.
+ */
+export function filmsByPath(
+  paths: string[],
+  library: LibraryItem[] = getLibrary(),
+): Map<string, TaskFilm> {
+  const wanted = new Set(paths);
+  if (wanted.size === 0) return new Map();
+
+  const artworkOf = artworkReader();
+  const plugged = reachabilityReader();
+  const films = new Map<string, TaskFilm>();
+
+  for (const item of library) {
+    if (!wanted.has(item.path)) continue;
+    films.set(item.path, filmOf(item, artworkOf(item), !plugged(item.path)));
+  }
+
+  return films;
+}
+
 /** See `libraryTasks` for why the library arrives as a defaulted parameter. */
 export function cleanupFiles(
   library: LibraryItem[] = getLibrary(),
@@ -500,11 +535,7 @@ type RememberedFile = {
   modifiedAt: number;
 };
 
-function remember(
-  read: string[],
-  found: CleanupFile[],
-  known: string[],
-): void {
+function remember(read: string[], found: CleanupFile[], known: string[]): void {
   const now = Date.now();
   const clear = db.prepare("DELETE FROM cleanup_files WHERE dir = ?");
   const insert = db.prepare(
@@ -612,9 +643,12 @@ export async function deleteCleanupFiles(
     // And the sidecar macOS keeps beside it on an exFAT drive, which the scan
     // above deliberately never lists: left alone it would outlive the file it
     // describes, as a hidden orphan nothing in this app would mention again.
-    await rm(path.join(path.dirname(target), sidecarFor(path.basename(target))), {
-      force: true,
-    });
+    await rm(
+      path.join(path.dirname(target), sidecarFor(path.basename(target))),
+      {
+        force: true,
+      },
+    );
     deleted += 1;
     freed += bytes;
   }

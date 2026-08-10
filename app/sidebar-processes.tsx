@@ -3,19 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import {
-  stopConvert,
-  stopFullDoviScan,
-  stopStripAudio,
-  stopThumbRebuild,
-  stopUpgradeSweep,
-} from "@/app/actions";
+import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
-import {
-  ProcessDetails,
-  type ProcessDetail,
-  type ProcessStat,
-} from "@/app/process-details";
+import { ProcessDetails, type ProcessRow } from "@/app/process-details";
 import { useScan, type ScanResult } from "@/app/scan-provider";
 
 /**
@@ -44,17 +34,11 @@ import { useScan, type ScanResult } from "@/app/scan-provider";
 
 const count = (n: number) => n.toLocaleString("en-GB");
 
-/** The two-tier form the library list and the film page both set sizes in. */
-const gigabytes = (bytes: number) =>
-  bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : `${(bytes / 1e9).toFixed(1)} GB`;
-
 function Bar({ percent }: { percent: number }) {
   return (
-    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-strong">
+    <div className="bar-track bar-track-thin mt-1.5">
       <div
-        className="h-full rounded-full bg-foreground/70 motion-safe:transition-[width] motion-safe:duration-300"
+        className="bar-fill motion-safe:transition-[width] motion-safe:duration-300"
         style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
       />
     </div>
@@ -94,22 +78,18 @@ function Job({
           aria-label={`${name} — show progress`}
           className="w-full min-w-0 pb-3 text-left transition-opacity hover:opacity-70"
         >
-          <p className="min-w-0 truncate text-[11px] font-medium">{name}</p>
+          {/* Centred over the bar rather than ranged left with the links
+              above: the name belongs to the bar under it, and the two read as
+              one object when they share a centre line. */}
+          <p className="min-w-0 truncate text-center text-[11px] font-medium">
+            {name}
+          </p>
           {percent !== undefined && <Bar percent={percent} />}
         </button>
       </div>
     </div>
   );
 }
-
-/** A running job, as both the rail draws it and the dialog explains it. */
-type Row = {
-  key: string;
-  name: string;
-  percent?: number;
-  detail: ProcessDetail;
-  stop?: () => Promise<void>;
-};
 
 /**
  * The order the rail lists jobs in, which a row on its way out keeps — sorted
@@ -134,8 +114,8 @@ const EXIT_MS = 200;
  * gives — an effect would paint the frame the row is already gone from, and
  * that frame is the exact moment the exit is meant to start.
  */
-function useLeaving(rows: Row[]): (Row & { leaving?: boolean })[] {
-  const [held, setHeld] = useState<Row[]>([]);
+function useLeaving(rows: JobRow[]): (JobRow & { leaving?: boolean })[] {
+  const [held, setHeld] = useState<JobRow[]>([]);
   const [keys, setKeys] = useState(() => rows.map((row) => row.key).join());
 
   // The last committed rows, so a job that ends is drawn on its way out with
@@ -219,7 +199,7 @@ export function SidebarProcesses() {
 
   // Named once here rather than inside each branch: every phase reports the
   // same four counts, and only the headline changes.
-  const scanCounts: ProcessStat[] = [
+  const scanCounts: ProcessRow[] = [
     { label: "Found", value: count(scan.discovered) },
     { label: "Probed", value: count(scan.probed) },
     { label: "Unchanged", value: count(scan.cached) },
@@ -245,7 +225,9 @@ export function SidebarProcesses() {
         ? {
             name: `Dolby Vision · ${scan.doviDone} of ${scan.doviTotal}`,
             title: "Reading Dolby Vision streams",
-            percent: scan.doviTotal ? (scan.doviDone / scan.doviTotal) * 100 : 0,
+            percent: scan.doviTotal
+              ? (scan.doviDone / scan.doviTotal) * 100
+              : 0,
             currentLabel: "Film",
             stats: [
               { label: "Read", value: count(scan.doviDone) },
@@ -315,7 +297,7 @@ export function SidebarProcesses() {
                   note: "Wants the library has not matched a file to yet.",
                 };
 
-  const rows: Row[] = [];
+  const rows: JobRow[] = [];
 
   if (scanning) {
     rows.push({
@@ -325,155 +307,29 @@ export function SidebarProcesses() {
       detail: {
         title: scanPhase.title,
         percent: scanPhase.percent,
-        current: scan.current,
-        currentLabel: scanPhase.currentLabel,
-        stats: scanPhase.stats,
+        // The item in hand leads the table: it is the row that changes, and
+        // the counters below it are what it has changed so far.
+        rows: [
+          ...(scan.current
+            ? [
+                {
+                  label: scanPhase.currentLabel,
+                  value: scan.current,
+                  mono: true,
+                },
+              ]
+            : []),
+          ...scanPhase.stats,
+        ],
         startedAt: scan.startedAt,
         note: scanPhase.note,
       },
     });
   }
 
-  if (reading) {
-    rows.push({
-      key: "dovi",
-      name: `Reading DV · ${Math.round(dovi.percent)}%`,
-      percent: dovi.percent,
-      detail: {
-        title: "Reading Dolby Vision",
-        percent: dovi.percent,
-        current: dovi.path,
-        currentLabel: "File",
-        stats: [{ label: "Frames read", value: count(dovi.frames) }],
-        note: "Every frame, rather than the first three hundred.",
-      },
-      stop: () => stopFullDoviScan().then((job) => apply({ dovi: job })),
-    });
-  }
-
-  if (sweeping) {
-    // One job, two halves. The rail names whichever is running rather than
-    // averaging them into a number that describes neither.
-    const wishing = sweep.phase === "wishlist";
-    const done = wishing ? sweep.wishDone : sweep.done;
-    const total = wishing ? sweep.wishTotal : sweep.total;
-
-    rows.push({
-      key: "sweep",
-      // What it is doing, not how far along it is: the bar under this line is
-      // already the fraction, and saying it twice makes the name a readout.
-      name: wishing ? "Finding Wishlist" : "Finding Upgrades",
-      percent: total ? (done / total) * 100 : 0,
-      detail: {
-        title: wishing ? "Searching for wanted films" : "Sweeping for upgrades",
-        percent: total ? (done / total) * 100 : 0,
-        current: sweep.current,
-        currentLabel: "Film",
-        stats: wishing
-          ? [
-              { label: "Searched", value: count(sweep.wishDone) },
-              { label: "To search", value: count(sweep.wishTotal) },
-              { label: "Found", value: count(sweep.wishFound) },
-              { label: "Upgrades found", value: count(sweep.found) },
-            ]
-          : [
-              { label: "Checked", value: count(sweep.done) },
-              { label: "To check", value: count(sweep.total) },
-              { label: "Found", value: count(sweep.found) },
-              {
-                label: "Fresh enough",
-                value: count(sweep.skipped),
-                quiet: !sweep.skipped,
-              },
-            ],
-        startedAt: sweep.startedAt,
-        note: wishing
-          ? "Films you want but do not have, asked of the same indexers."
-          : "Stopping keeps every check already made; the next run resumes.",
-      },
-      stop: () => stopUpgradeSweep().then((job) => apply({ sweep: job })),
-    });
-  }
-
-  if (thumbing) {
-    rows.push({
-      key: "thumbs",
-      name: `Thumbnails · ${count(thumbs.done)} of ${count(thumbs.total)}`,
-      percent: thumbs.total ? (thumbs.done / thumbs.total) * 100 : 0,
-      detail: {
-        title: "Rebuilding thumbnails",
-        percent: thumbs.total ? (thumbs.done / thumbs.total) * 100 : 0,
-        current: thumbs.current,
-        currentLabel: "Folder",
-        stats: [
-          { label: "Done", value: count(thumbs.done) },
-          { label: "To make", value: count(thumbs.total) },
-          { label: "Ready", value: count(thumbs.ready) },
-          {
-            label: "Unreadable",
-            value: count(thumbs.failed),
-            quiet: !thumbs.failed,
-          },
-        ],
-        startedAt: thumbs.startedAt,
-        note: "Three widths per poster. What is made is kept if you stop.",
-      },
-      stop: () => stopThumbRebuild().then((job) => apply({ thumbs: job })),
-    });
-  }
-
-  if (converting) {
-    rows.push({
-      key: "convert",
-      // What is being done to the file, not how far in it is: the bar under
-      // the line already says that, and "step 2 of 4" says nothing about which
-      // four. The dialog is where the steps are named.
-      name: "DV P7 → P8",
-      percent: convert.percent,
-      detail: {
-        title: "Converting to Profile 8",
-        percent: convert.percent,
-        current: convert.label ?? convert.path,
-        currentLabel: "Step",
-        stats: [
-          { label: "Step", value: `${convert.step} of ${convert.steps}` },
-          ...(convert.check ? [{ label: "Check", value: convert.check }] : []),
-        ],
-        note: convert.path,
-      },
-      stop: () => stopConvert().then((job) => apply({ convert: job })),
-    });
-  }
-
-  if (stripping) {
-    rows.push({
-      key: "strip",
-      // What is being done, in the fewest words that still say which tracks:
-      // "Remuxing" alone would not distinguish this from the conversion's own
-      // second step, and the rail has room for one line.
-      name: "Removing audio",
-      percent: strip.percent,
-      detail: {
-        title: "Removing audio tracks",
-        percent: strip.percent,
-        current: strip.label ?? strip.path,
-        currentLabel: "Step",
-        stats: [
-          ...(strip.removed !== undefined
-            ? [{ label: "Removing", value: count(strip.removed) }]
-            : []),
-          ...(strip.kept !== undefined
-            ? [{ label: "Keeping", value: count(strip.kept) }]
-            : []),
-          ...(strip.freedBytes !== undefined
-            ? [{ label: "Frees", value: gigabytes(strip.freedBytes) }]
-            : []),
-        ],
-        note: "The original is kept beside it. Cancelling leaves it untouched.",
-      },
-      stop: () => stopStripAudio().then((job) => apply({ strip: job })),
-    });
-  }
+  // Every job but the scan, described in `app/job-rows.ts` so the rail and
+  // the Jobs page cannot end up saying different things about the same job.
+  rows.push(...jobRows(jobs, apply));
 
   // What the rail draws, which outlives what is running by one animation.
   const drawn = useLeaving(rows);

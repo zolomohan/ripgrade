@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { db } from "./db";
 import type { DoviDepth, DoviScan } from "./derive";
 import { notifyJobs } from "./job-events";
+import { ended, recordRun } from "./job-history";
 
 const execFileAsync = promisify(execFile);
 
@@ -396,6 +397,8 @@ export type DoviJob = {
   path?: string;
   percent: number;
   frames: number;
+  /** When it started, for the dialog's clock and the log's duration. */
+  startedAt?: number;
   error?: string;
   finishedAt?: number;
 };
@@ -417,7 +420,21 @@ const globalForJob = globalThis as unknown as { medlibDoviJob?: DoviJob };
 const current = (): DoviJob => globalForJob.medlibDoviJob ?? IDLE_JOB;
 
 function setJob(next: DoviJob) {
+  const was = current();
   globalForJob.medlibDoviJob = next;
+
+  if (was.status === "running" && ended(next.status)) {
+    recordRun({
+      kind: "dovi",
+      title: next.path ? path.basename(next.path) : "Dolby Vision read",
+      path: next.path,
+      outcome: next.status,
+      startedAt: next.startedAt,
+      finishedAt: next.finishedAt ?? Date.now(),
+      detail: next.error || `${next.frames.toLocaleString("en-GB")} frames`,
+    });
+  }
+
   notifyJobs();
 }
 
@@ -437,7 +454,13 @@ export function startFullDoviScan(
   if (current().status === "running") return current();
 
   cancelled = false;
-  setJob({ status: "running", path: filePath, percent: 0, frames: 0 });
+  setJob({
+    status: "running",
+    path: filePath,
+    percent: 0,
+    frames: 0,
+    startedAt: Date.now(),
+  });
 
   void (async () => {
     const scan = await scanDovi(filePath, {
@@ -466,7 +489,6 @@ export function startFullDoviScan(
       setJob({ ...current(), status: "cancelled", finishedAt: Date.now() });
       return;
     }
-
 
     setJob({
       ...current(),

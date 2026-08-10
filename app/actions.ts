@@ -44,7 +44,7 @@ import {
   startConvert,
   type ConvertJob,
 } from "@/lib/convert";
-import { classifyEnhancementLayer } from "@/lib/derive";
+import { classifyEnhancementLayer, convertRefusal } from "@/lib/derive";
 import { getDiscoverEpisodes, type DiscoverEpisode } from "@/lib/discover";
 import { deleteCleanupFiles } from "@/lib/queue-tasks";
 import {
@@ -636,7 +636,9 @@ const LIBRARY_LIMIT = 12;
  * it. That also covers the case a plain title match misses — something filed
  * under a different name than the one you typed.
  */
-export async function universalSearch(query: string): Promise<UniversalResults> {
+export async function universalSearch(
+  query: string,
+): Promise<UniversalResults> {
   const term = query.trim();
   const tmdb = hasCredentials();
   if (!term) return { library: [], discover: [], tmdb };
@@ -1016,6 +1018,30 @@ export async function refreshAfterDoviScan(): Promise<void> {
 }
 
 /**
+ * Whether this film could be converted, asked without starting anything.
+ *
+ * What a full pass is for on a FEL: the pass answers a question, and a question
+ * answered by a row quietly vanishing from a list is not answered. This gives
+ * the page the same sentence `beginConvert` would have refused with, so a check
+ * can say what it found rather than leaving the reader to infer it.
+ */
+export async function checkConvertible(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  const movie = getLibrary().find((m) => m.path === moviePath);
+  if (!movie) return { ok: false, error: "Film is no longer in the library." };
+
+  const refusal = convertRefusal(
+    movie.dvProfile,
+    classifyEnhancementLayer(movie.dovi, movie.hdr10),
+  );
+  return refusal ? { ok: false, error: refusal } : { ok: true };
+}
+
+/**
  * Rewrites a Profile 7 file as Profile 8.1, in place, via dovi_convert.
  *
  * The only action in this app that changes a film rather than describing one,
@@ -1024,7 +1050,7 @@ export async function refreshAfterDoviScan(): Promise<void> {
  */
 export async function beginConvert(
   moviePath: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; job: ConvertJob } | { ok: false; error: string }> {
   if (!knownMoviePath(moviePath)) {
     return { ok: false, error: `Unknown file: ${moviePath}` };
   }
@@ -1052,40 +1078,28 @@ export async function beginConvert(
 
   const movie = getLibrary().find((m) => m.path === moviePath);
   if (!movie) return { ok: false, error: "Film is no longer in the library." };
-  if (movie.dvProfile !== 7) {
-    return { ok: false, error: "Only Profile 7 files need converting." };
-  }
 
-  const el = classifyEnhancementLayer(movie.dovi, movie.hdr10);
-  if (el?.kind === "complex-fel") {
-    return {
-      ok: false,
-      error:
-        "This film's enhancement layer reconstructs brightness — converting would clip it. Run dovi_convert with --force yourself if you want it anyway.",
-    };
-  }
-  // A full enhancement layer judged safe on a few hundred frames has only been
-  // judged on those frames: expansion anywhere later in the film would not have
-  // shown up. `provisional` is set for exactly that case, and converting on it
-  // is the one way to discard highlights while believing you checked.
-  if (el?.provisional) {
-    return {
-      ok: false,
-      error:
-        "This is a full enhancement layer and only the start of it has been read. Read every frame first — a sample cannot rule out brightness expansion later in the film.",
-    };
-  }
+  // The same rule the button reads, so the two cannot disagree about a film.
+  const refusal = convertRefusal(
+    movie.dvProfile,
+    classifyEnhancementLayer(movie.dovi, movie.hdr10),
+  );
+  if (refusal) return { ok: false, error: refusal };
 
   // Read from the file we already know about, so the progress watcher has
   // something to measure against.
-  startConvert(moviePath, {
+  const job = startConvert(moviePath, {
     sourceBytes: movie.sizeBytes,
     videoBytes:
       movie.videoBitrateKbps && movie.durationSec
         ? (movie.videoBitrateKbps * 1000 * movie.durationSec) / 8
         : undefined,
   });
-  return { ok: true };
+  // The job itself, not an `ok` for the caller to build one from. A page that
+  // hand-wrote the running state got to leave a field out of it — and the one
+  // it left out was `percent`, which is the difference between the rail drawing
+  // a bar and drawing only the name above where the bar should be.
+  return { ok: true, job };
 }
 
 /**
@@ -1570,7 +1584,8 @@ function sweep(force: boolean): SweepJob {
     return {
       ...getSweepJob(),
       status: "error",
-      error: "Jackett is not set up. Add its URL and API key on the Settings page.",
+      error:
+        "Jackett is not set up. Add its URL and API key on the Settings page.",
     };
   }
   return startSweep({ force });
@@ -1883,17 +1898,20 @@ export async function findUpgradesForMovie(
   const current = movie.scores.overall;
 
   try {
-    const search = await findUpgrades({
-      kind: "movie",
-      title: movie.tmdb?.title ?? movie.title,
-      year: movie.tmdb?.year ?? movie.year,
-      imdbId: movie.imdbId,
-      runtimeMinutes:
-        movie.tmdb?.runtimeMinutes ??
-        (movie.durationSec ? Math.round(movie.durationSec / 60) : undefined),
-      currentScore: current,
-      disc,
-    }, { term: query });
+    const search = await findUpgrades(
+      {
+        kind: "movie",
+        title: movie.tmdb?.title ?? movie.title,
+        year: movie.tmdb?.year ?? movie.year,
+        imdbId: movie.imdbId,
+        runtimeMinutes:
+          movie.tmdb?.runtimeMinutes ??
+          (movie.durationSec ? Math.round(movie.durationSec / 60) : undefined),
+        currentScore: current,
+        disc,
+      },
+      { term: query },
+    );
     return { ok: true, search, current };
   } catch (err) {
     return failed(err);
@@ -1947,9 +1965,7 @@ export async function findReleasesFor(
     title = title ?? movie.title;
     year =
       year ??
-      (movie.release_date
-        ? Number(movie.release_date.slice(0, 4))
-        : undefined);
+      (movie.release_date ? Number(movie.release_date.slice(0, 4)) : undefined);
   } catch {
     // Searchable without either; only the encode scores get vaguer.
   }
@@ -1971,14 +1987,17 @@ export async function findReleasesFor(
   }
 
   try {
-    const search = await findUpgrades({
-      kind: "movie",
-      title,
-      year,
-      imdbId,
-      runtimeMinutes,
-      disc,
-    }, { term: query });
+    const search = await findUpgrades(
+      {
+        kind: "movie",
+        title,
+        year,
+        imdbId,
+        runtimeMinutes,
+        disc,
+      },
+      { term: query },
+    );
     return { ok: true, search };
   } catch (err) {
     return failed(err);
@@ -2074,7 +2093,8 @@ export async function findReleasesForTmdbSeason(
   query?: string,
 ): Promise<UpgradeResponse> {
   const target = await tvTargetFor(tmdbId);
-  if (!target.title) return { ok: false, error: "Nothing known about this show." };
+  if (!target.title)
+    return { ok: false, error: "Nothing known about this show." };
 
   try {
     const search = await findUpgrades(
@@ -2095,7 +2115,8 @@ export async function findReleasesForTmdbEpisode(
   query?: string,
 ): Promise<UpgradeResponse> {
   const target = await tvTargetFor(tmdbId);
-  if (!target.title) return { ok: false, error: "Nothing known about this show." };
+  if (!target.title)
+    return { ok: false, error: "Nothing known about this show." };
 
   try {
     const search = await findUpgrades(
@@ -2167,14 +2188,17 @@ export async function findUpgradesForSeason(
     : undefined;
 
   try {
-    const search = await findUpgrades({
-      kind: "tv",
-      title: show.tmdb?.name ?? show.title,
-      season,
-      runtimeMinutes,
-      currentScore: current,
-      disc,
-    }, { term: query });
+    const search = await findUpgrades(
+      {
+        kind: "tv",
+        title: show.tmdb?.name ?? show.title,
+        season,
+        runtimeMinutes,
+        currentScore: current,
+        disc,
+      },
+      { term: query },
+    );
     return { ok: true, search, current };
   } catch (err) {
     return failed(err);
@@ -2228,18 +2252,20 @@ export async function findReleasesForEpisode(
   const current = have?.item.scores.overall;
 
   try {
-    const search = await findUpgrades({
-      kind: "tv",
-      title: show.tmdb?.name ?? show.title,
-      season,
-      episode,
-      runtimeMinutes,
-      currentScore: current,
-      disc,
-    }, { term: query });
+    const search = await findUpgrades(
+      {
+        kind: "tv",
+        title: show.tmdb?.name ?? show.title,
+        season,
+        episode,
+        runtimeMinutes,
+        currentScore: current,
+        disc,
+      },
+      { term: query },
+    );
     return { ok: true, search, current };
   } catch (err) {
     return failed(err);
   }
 }
-

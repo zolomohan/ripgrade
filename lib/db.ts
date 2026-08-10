@@ -251,6 +251,34 @@ CREATE TABLE IF NOT EXISTS cleanup_files (
   seen_at     INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS cleanup_files_dir ON cleanup_files (dir);
+
+-- Long jobs, after they have ended.
+--
+-- The rail deliberately keeps no history: it answers "what is happening now",
+-- and a list of what finished told you what you already watched finish. That
+-- holds for a corner of every screen and stops holding for a page you go to on
+-- purpose — a conversion that failed at four in the morning is exactly the
+-- thing nobody watched finish.
+--
+-- Nothing here is derived from the library, so it survives a rescan, and
+-- nothing else reads it: losing the file costs the log and nothing else.
+CREATE TABLE IF NOT EXISTS job_runs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT NOT NULL,
+  -- What it was, already in the words the list shows: a film's file name, or
+  -- the job's own name where it works on the library as a whole.
+  title       TEXT NOT NULL,
+  path        TEXT,
+  outcome     TEXT NOT NULL,
+  started_at  INTEGER,
+  finished_at INTEGER NOT NULL,
+  -- The closing sentence: what it did, or why it stopped.
+  detail      TEXT,
+  -- The tail of what the tool printed, as JSON. Kept for the runs where it is
+  -- the only account of what went wrong.
+  output      TEXT
+);
+CREATE INDEX IF NOT EXISTS job_runs_finished ON job_runs (finished_at DESC);
 `;
 
 const DB_PATH = path.join(process.cwd(), "data", "medlib.db");
@@ -270,6 +298,31 @@ function open(): Database.Database {
 const globalForDb = globalThis as unknown as { medlibDb?: Database.Database };
 
 export const db = globalForDb.medlibDb ?? open();
+
+/**
+ * `job_runs` had a previous life, and CREATE TABLE IF NOT EXISTS would leave it
+ * in it.
+ *
+ * An earlier process log kept the same table name with a different set of
+ * columns — `label` and `status` where this keeps `title` and `outcome`, and no
+ * room at all for the path or the tool's output. That feature was removed, and
+ * nothing has read the table since; every row left in it records a scan, which
+ * is the one job the Jobs page deliberately does not list.
+ *
+ * So it is dropped rather than migrated: there is no row in it that the new
+ * shape would have anything to say about. Checked by column rather than by
+ * existence, so this happens once and is a no-op afterwards.
+ *
+ * Before the schema below, or the CREATE would find the old table still there
+ * and leave it alone.
+ */
+const jobRunColumns = (
+  db.prepare("PRAGMA table_info(job_runs)").all() as { name: string }[]
+).map((column) => column.name);
+
+if (jobRunColumns.length > 0 && !jobRunColumns.includes("title")) {
+  db.exec("DROP TABLE job_runs");
+}
 
 // Applied on every module evaluation, not just on first open. Every statement
 // is CREATE TABLE IF NOT EXISTS, so it is idempotent — and it means a new table

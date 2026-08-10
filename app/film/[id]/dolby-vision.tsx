@@ -124,7 +124,7 @@ function verdictFor(
       ? {
           tone: "neutral" as const,
           headline: "No brightness expansion so far",
-          body: "Read every frame to settle it.",
+          body: "Check every frame to settle it.",
           detail: `The grade stays inside the base layer across the ${count(scan.frames)} frames read, but a sample only proves what it saw.`,
         }
       : {
@@ -572,14 +572,7 @@ export function DolbyVision({
                 setError(result.error);
                 return;
               }
-              apply({
-                convert: {
-                  status: "running",
-                  path: moviePath,
-                  step: 1,
-                  steps: 3,
-                },
-              });
+              apply({ convert: result.job });
             });
           } else {
             // Failed, or cancelled: either way the conversion it was the first
@@ -650,10 +643,11 @@ export function DolbyVision({
   /**
    * Reads every frame first, when every frame has not been read.
    *
-   * A conversion decided on a sample is a conversion decided on the frames the
-   * sample happened to cover, so the pass is the first step of converting
-   * rather than a chore to remember beforehand. The subscription above picks it
-   * up when it finishes and starts the conversion itself.
+   * Only reachable now on a film whose verdict the pass cannot change — a MEL,
+   * which the `gate` above explains. There the read is a step of converting
+   * rather than a decision to come back for, so it stays folded in here and the
+   * subscription starts the conversion when it lands. Anything whose answer the
+   * pass could still overturn is sent to the check instead.
    */
   async function runConvert() {
     setError(null);
@@ -677,9 +671,7 @@ export function DolbyVision({
       setError(result.error);
       return;
     }
-    apply({
-      convert: { status: "running", path: moviePath, step: 1, steps: 3 },
-    });
+    apply({ convert: result.job });
   }
 
   async function runRestore() {
@@ -722,8 +714,24 @@ export function DolbyVision({
    * restoring rather than falling back to offering a read.
    */
   const hasBackup = converted || (!present && justConverted);
-  const canConvert =
-    dvProfile === 7 && el?.kind !== "complex-fel" && !hasBackup;
+  /**
+   * Which of the two things a Profile 7 file has to offer: the conversion, or
+   * the check that decides whether the conversion is on offer at all.
+   *
+   * Reading every frame is a step of converting a MEL — nothing the pass can
+   * find changes the answer, so there is no decision to come back for and the
+   * read stays folded inside the one button. On a FEL it *is* the decision: the
+   * sample says "no expansion so far", and the full pass turns that into either
+   * verdict. Offering that as a button labelled Convert promised a rewrite the
+   * server then refused halfway through, which is what this splits apart. The
+   * check is its own action, and the conversion appears once it has passed.
+   */
+  const gate: "convert" | "check" | "none" =
+    dvProfile !== 7 || hasBackup || el?.kind === "complex-fel"
+      ? "none"
+      : el?.kind === "mel" || scan?.depth === "full"
+        ? "convert"
+        : "check";
   /** Set only when the drive is away, so it can override every other tooltip. */
   const offline = present ? undefined : "Drive not connected";
   // Reading and converting are one action now, so they are one busy state: the
@@ -746,26 +754,37 @@ export function DolbyVision({
         detail:
           "Every frame is read first, then the whole file is rewritten, so it takes a while. Leaving this page will not stop it.",
       }
-    : hasBackup
+    : // The verdict underneath is the one the check is in the middle of
+      // replacing, so leaving it up would have the card state an answer while
+      // the work that settles it is still on screen.
+      running && gate === "check"
       ? {
-          tone: "ok",
-          headline: "Converted to Profile 8.1",
-          body: (
-            <>
-              Original kept as{" "}
-              <code className="font-mono">
-                {fileName}
-                {BACKUP_SUFFIX}
-              </code>
-              {backupBytes !== undefined && <>, {size(backupBytes)}</>}.
-            </>
-          ),
+          tone: "neutral",
+          headline: "Checking every frame…",
+          body: "Nothing is written. The verdict below settles when it lands.",
           detail:
-            justConverted && convert?.summary
-              ? `${convert.summary} of enhancement layer discarded${convert.check ? `, ${convert.check}` : ""}.`
-              : undefined,
+            "One RPU parsed per frame, measuring the peak the Dolby Vision grade actually reaches — which is what decides whether discarding the enhancement layer would clip anything.",
         }
-      : verdict;
+      : hasBackup
+        ? {
+            tone: "ok",
+            headline: "Converted to Profile 8.1",
+            body: (
+              <>
+                Original kept as{" "}
+                <code className="font-mono">
+                  {fileName}
+                  {BACKUP_SUFFIX}
+                </code>
+                {backupBytes !== undefined && <>, {size(backupBytes)}</>}.
+              </>
+            ),
+            detail:
+              justConverted && convert?.summary
+                ? `${convert.summary} of enhancement layer discarded${convert.check ? `, ${convert.check}` : ""}.`
+                : undefined,
+          }
+        : verdict;
 
   const showMeter = Boolean(el && el.kind !== "mel");
 
@@ -827,28 +846,42 @@ export function DolbyVision({
         Restore original
       </button>
     </>
-  ) : canConvert ? (
+  ) : gate === "convert" ? (
     <button
       type="button"
       onClick={() => setConfirming(true)}
       disabled={!present}
-      title={offline ?? "Reads every frame first, then rewrites the file."}
+      title={
+        offline ??
+        (scan?.depth === "full"
+          ? "Rewrites the file, keeping the original beside it."
+          : "Reads every frame first, then rewrites the file.")
+      }
       className={BUTTON.primary}
     >
       Convert to Profile 8.1
     </button>
   ) : (
+    // The check and the plain re-read are the same pass. They are one button
+    // because they are one piece of work; only what the reader is waiting to
+    // learn from it differs, so only the label does.
     <button
       type="button"
       onClick={start}
       disabled={!present}
       title={
         offline ??
-        "Parses one RPU per frame — slower, but it measures the real peak."
+        (gate === "check"
+          ? "Reads every frame and settles the verdict. Nothing is written, and the conversion is offered here if it passes."
+          : "Parses one RPU per frame — slower, but it measures the real peak.")
       }
-      className={scan ? BUTTON.secondary : BUTTON.primary}
+      className={gate === "check" || !scan ? BUTTON.primary : BUTTON.secondary}
     >
-      {scan?.depth === "full" ? "Read again" : "Read every frame"}
+      {gate === "check"
+        ? "Check if it can be converted"
+        : scan?.depth === "full"
+          ? "Read again"
+          : "Read every frame"}
     </button>
   );
 
@@ -929,7 +962,9 @@ export function DolbyVision({
                     ? (convert?.label ?? "Working")
                     : readingToConvert
                       ? "Reading every frame before converting"
-                      : "Reading every frame"}
+                      : gate === "check"
+                        ? "Checking every frame"
+                        : "Reading every frame"}
                 </p>
                 <div className="flex items-baseline gap-3">
                   <p className="text-xs tabular-nums opacity-45">
@@ -955,9 +990,9 @@ export function DolbyVision({
                   </button>
                 </div>
               </div>
-              <div className="h-1 overflow-hidden rounded-full bg-surface-strong">
+              <div className="bar-track bar-track-thin">
                 <div
-                  className="h-full rounded-full bg-foreground/70 transition-[width] duration-500"
+                  className="bar-fill transition-[width] duration-500"
                   style={{
                     // Bytes written when they can be counted; otherwise the
                     // step is the only thing there is to show.
@@ -1024,8 +1059,8 @@ export function DolbyVision({
             <ul className="list-disc space-y-1.5 pl-5">
               {scan?.depth !== "full" && (
                 <li>
-                  Every frame is read first, to be sure the enhancement layer
-                  expands no brightness later in the film.
+                  Every frame is read first, so the conversion is decided on the
+                  whole film rather than on a sample of it.
                 </li>
               )}
               <li>

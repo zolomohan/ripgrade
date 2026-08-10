@@ -6,6 +6,7 @@ import { db, getSetting, setSetting } from "./db";
 import { duplicateKey } from "./derive";
 import { discIds, getDisc } from "./disc";
 import { notifyJobs } from "./job-events";
+import { ended, recordRun } from "./job-history";
 import { getMovies, type LibraryItem } from "./library";
 import { guessFromTitle } from "./release-title";
 import { bestUpgrade, type ScoredRelease } from "./upgrades";
@@ -90,7 +91,22 @@ const globalForSweep = globalThis as unknown as {
 const current = (): SweepJob => ({ ...IDLE, ...globalForSweep.medlibSweep });
 
 function setJob(next: SweepJob) {
+  const was = current();
   globalForSweep.medlibSweep = next;
+
+  if (was.status === "running" && ended(next.status)) {
+    recordRun({
+      kind: "sweep",
+      title: "Upgrade sweep",
+      outcome: next.status,
+      startedAt: next.startedAt,
+      finishedAt: next.finishedAt ?? Date.now(),
+      detail:
+        next.error ||
+        `${next.found} upgrades · ${next.done + next.wishDone} checked`,
+    });
+  }
+
   notifyJobs();
 }
 
@@ -141,7 +157,8 @@ export function trim(release: ScoredRelease): StoredHit {
     indexer: release.indexer,
     resolution: facts.resolution !== "unknown" ? facts.resolution : undefined,
     hdr: facts.hdr !== "SDR" ? facts.hdr : undefined,
-    releaseType: facts.releaseType !== "UNKNOWN" ? facts.releaseType : undefined,
+    releaseType:
+      facts.releaseType !== "UNKNOWN" ? facts.releaseType : undefined,
     scores: {
       video: scores.video,
       audio: scores.audio,
@@ -586,8 +603,8 @@ export function storedHitFor(paths: string[]): StoredHit | null {
 
 /** How many films have ever been checked, for the page to say so. */
 export function checkedCount(): number {
-  const row = db
-    .prepare("SELECT COUNT(*) AS n FROM upgrade_checks")
-    .get() as { n: number };
+  const row = db.prepare("SELECT COUNT(*) AS n FROM upgrade_checks").get() as {
+    n: number;
+  };
   return row.n;
 }

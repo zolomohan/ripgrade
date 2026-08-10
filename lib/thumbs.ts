@@ -9,6 +9,7 @@ import sharp from "sharp";
 
 import { db } from "./db";
 import { notifyJobs } from "./job-events";
+import { ended, recordRun } from "./job-history";
 
 /**
  * Downscaled artwork, cached on the internal disk.
@@ -234,7 +235,27 @@ const globalForThumbs = globalThis as unknown as {
 const currentJob = (): ThumbJob => globalForThumbs.medlibThumbs ?? IDLE_JOB;
 
 function setJob(next: ThumbJob) {
+  const was = currentJob();
   globalForThumbs.medlibThumbs = next;
+
+  if (was.status === "running" && ended(next.status)) {
+    recordRun({
+      kind: "thumbs",
+      title: "Thumbnail rebuild",
+      outcome: next.status,
+      startedAt: next.startedAt,
+      finishedAt: next.finishedAt ?? Date.now(),
+      detail:
+        next.error ||
+        [
+          `${next.ready} made`,
+          next.failed ? `${next.failed} unreadable` : undefined,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+    });
+  }
+
   notifyJobs();
 }
 

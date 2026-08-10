@@ -8,6 +8,8 @@ import path from "node:path";
 import { getSetting } from "./db";
 import { BACKUP_SUFFIX } from "./derive";
 import { scanDovi } from "./dovi";
+import { ended, recordRun } from "./job-history";
+import { appendOutput } from "./job-output";
 import { notifyJobs } from "./job-events";
 import { compareRuntime } from "./media";
 import { deriveAll } from "./library";
@@ -119,6 +121,10 @@ export type ConvertJob = {
   percent?: number;
   /** The tool's own closing summary, kept for the result line. */
   summary?: string;
+  /** The last lines dovi_convert printed — see `lib/job-output.ts`. */
+  output?: string[];
+  /** When it started, for the dialog's clock. An hour is a long time to guess. */
+  startedAt?: number;
   error?: string;
   finishedAt?: number;
 };
@@ -139,7 +145,34 @@ const globalForConvert = globalThis as unknown as {
 const current = (): ConvertJob => globalForConvert.medlibConvert ?? IDLE;
 
 function setJob(next: ConvertJob) {
+  const was = current();
   globalForConvert.medlibConvert = next;
+
+  // Every way this job can end passes through here, so the log is written in
+  // one place rather than at each of the four returns that finish it.
+  if (was.status === "running" && ended(next.status)) {
+    recordRun({
+      kind: "convert",
+      title: next.path ? path.basename(next.path) : "Conversion",
+      path: next.path,
+      outcome: next.status,
+      startedAt: next.startedAt,
+      finishedAt: next.finishedAt ?? Date.now(),
+      detail:
+        next.error ||
+        [
+          // Short enough to be read at a glance in a list. What was discarded is
+          // said by the job's own name a line above it.
+          next.summary && `${next.summary} discarded`,
+          next.check,
+        ]
+          .filter(Boolean)
+          .join(" · ") ||
+        undefined,
+      output: next.output,
+    });
+  }
+
   notifyJobs();
 }
 
@@ -267,6 +300,7 @@ export function startConvert(
     step: 1,
     steps: CHECK_STEP,
     percent: 0,
+    startedAt: Date.now(),
   });
 
   void (async () => {
@@ -279,36 +313,59 @@ export function startConvert(
       [
         "convert",
         path.basename(filePath),
+        // On a simple FEL the tool stops to warn that the layer carries data
+        // and asks whether to go on. This app has already answered that, and
+        // answered it better: its verdict comes from every frame of the RPU,
+        // where the question is raised on the tool's own head scan. Saying so
+        // up front is what keeps the two agreeing on a film.
+        //
+        // It does not touch the complex-FEL refusal above it, which still
+        // needs --force and is deliberately not given one — that second
+        // opinion is the reason this shells out rather than reimplementing.
+        "--include-simple",
         ...(tempDir ? ["--temp", tempDir] : []),
       ],
       {
         cwd: path.dirname(filePath),
         detached: true,
+        // No stdin at all, rather than the pipe `spawn` gives by default.
+        //
+        // Every prompt in the tool falls back to a safe answer on EOF, and can
+        // therefore be left to reach one. Handed a pipe instead, it blocks on a
+        // read that nothing will ever write to: the conversion sits at step 1
+        // with no output, no child processes and no way to finish, and the only
+        // thing the app can see is a job that has stopped moving.
+        stdio: ["ignore", "pipe", "pipe"],
       },
     );
     activeChild = child;
 
     let tail = "";
+    let output: string[] = [];
 
     const read = (chunk: Buffer) => {
       const text = chunk.toString().replace(ANSI, "");
       tail = (tail + text).slice(-4000);
+      output = appendOutput(output, text);
 
       // Every step is reprinted as it progresses, so the last match wins.
       let match: RegExpExecArray | null;
-      let latest: ConvertJob | undefined;
+      let step = current().step;
+      let label = current().label;
       STEP.lastIndex = 0;
       while ((match = STEP.exec(text)) !== null) {
-        latest = {
-          ...current(),
-          step: Number(match[1]),
-          // "Muxing (Cloning Metadata + 1142.5fps)" → "Muxing". The rate was
-          // worth showing when the step was all we had; the percentage says it
-          // better now.
-          label: match[3].split("(")[0].trim(),
-        };
+        step = Number(match[1]);
+        // "Muxing (Cloning Metadata + 1142.5fps)" → "Muxing". The rate was
+        // worth showing when the step was all we had; the percentage says it
+        // better now.
+        label = match[3].split("(")[0].trim();
       }
-      if (latest) setJob(latest);
+
+      // Unconditional now, where it used to wait for a step line: the output is
+      // the reason to publish, and it changes on every chunk. `notifyJobs`
+      // coalesces the burst, so ten spinner frames a second still cost one send
+      // per window rather than ten.
+      setJob({ ...current(), step, label, output });
     };
 
     child.stdout.on("data", read);
@@ -375,7 +432,11 @@ export function startConvert(
       percent: 100,
       check: check.message,
       error: check.ok ? undefined : `Conversion finished, but ${check.message}`,
-      summary: tail.match(/EL Discarded:\s*([^\n]+)/)?.[1]?.trim(),
+      // "EL Discarded:  6.38 GB (Space Saved)" → "6.38 GB". The parenthetical
+      // is the tool captioning its own column, and every line this ends up in
+      // already says what the figure is: "6.38 GB (Space Saved) of enhancement
+      // layer discarded" was the result line for a while.
+      summary: tail.match(/EL Discarded:\s*([^(\n]+)/)?.[1]?.trim(),
       finishedAt: Date.now(),
     });
   })();

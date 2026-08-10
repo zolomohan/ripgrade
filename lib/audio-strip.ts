@@ -15,6 +15,8 @@ import {
 } from "./audio-plan";
 import { AUDIO_BACKUP_SUFFIX } from "./derive";
 import { notifyJobs } from "./job-events";
+import { ended, recordRun } from "./job-history";
+import { appendOutput } from "./job-output";
 import { deriveAll } from "./library";
 import { compareRuntime } from "./media";
 import { reprobeFile } from "./scanner";
@@ -190,8 +192,12 @@ export type StripJob = {
   actualBytes?: number;
   percent?: number;
   label?: string;
+  /** The last lines mkvmerge printed — see `lib/job-output.ts`. */
+  output?: string[];
   /** What the runtime comparison found, pass or fail. */
   check?: string;
+  /** When it started, for the dialog's clock and the log's duration. */
+  startedAt?: number;
   error?: string;
   finishedAt?: number;
 };
@@ -208,7 +214,32 @@ const globalForStrip = globalThis as unknown as { medlibStripAudio?: StripJob };
 const current = (): StripJob => globalForStrip.medlibStripAudio ?? IDLE;
 
 function setJob(next: StripJob) {
+  const was = current();
   globalForStrip.medlibStripAudio = next;
+
+  if (was.status === "running" && ended(next.status)) {
+    recordRun({
+      kind: "strip",
+      title: next.path ? path.basename(next.path) : "Audio removal",
+      path: next.path,
+      outcome: next.status,
+      startedAt: next.startedAt,
+      finishedAt: next.finishedAt ?? Date.now(),
+      detail:
+        next.error ||
+        [
+          next.removed !== undefined && `${next.removed} tracks removed`,
+          next.actualBytes !== undefined &&
+            `${(next.actualBytes / 1e9).toFixed(1)} GB freed`,
+          next.check,
+        ]
+          .filter(Boolean)
+          .join(" · ") ||
+        undefined,
+      output: next.output,
+    });
+  }
+
   notifyJobs();
 }
 
@@ -288,6 +319,7 @@ export function startStripAudio(
     freedBytes: plan.freedBytes,
     percent: 0,
     label: "Reading the container",
+    startedAt: Date.now(),
   });
 
   void (async () => {
@@ -343,20 +375,27 @@ export function startStripAudio(
     activeChild = child;
 
     let tail = "";
+    let output: string[] = [];
     const read = (chunk: Buffer) => {
       const text = chunk.toString();
       tail = (tail + text).slice(-4000);
+      output = appendOutput(output, text);
 
       // Reprinted as it climbs, so the last match in the chunk wins.
       let match: RegExpExecArray | null;
-      let percent: number | undefined;
+      let percent = current().percent;
       PROGRESS.lastIndex = 0;
       while ((match = PROGRESS.exec(text)) !== null) percent = Number(match[1]);
-      // Held below 100 so the bar completes when the job does: the check and
-      // the swap still have to happen after the last byte lands.
-      if (percent !== undefined) {
-        setJob({ ...current(), percent: Math.min(99, percent) });
-      }
+
+      // Published on every chunk rather than only on a progress line, so the
+      // output reaches the dialog while it is being written rather than after.
+      setJob({
+        ...current(),
+        // Held below 100 so the bar completes when the job does: the check and
+        // the swap still have to happen after the last byte lands.
+        percent: percent === undefined ? undefined : Math.min(99, percent),
+        output,
+      });
     };
 
     child.stdout.on("data", read);

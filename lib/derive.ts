@@ -1352,6 +1352,37 @@ export function classifyEnhancementLayer(
     : { ...base, kind: "simple-fel", provisional: dovi.depth === "head" };
 }
 
+/**
+ * Why converting this film to Profile 8.1 would be refused, in a sentence, or
+ * undefined when nothing stands in the way.
+ *
+ * Pure, and exported rather than kept inside the server action, because the
+ * pages that offer the conversion have to reach the same answer the server
+ * will. A button that promises a rewrite the server then declines is the
+ * ambiguity this exists to remove — the pages ask this first and offer the
+ * check instead, and the action asks it again as the backstop.
+ */
+export function convertRefusal(
+  dvProfile: number | undefined,
+  el: ElVerdict | undefined,
+): string | undefined {
+  if (dvProfile !== 7) return "Only Profile 7 files need converting.";
+
+  if (el?.kind === "complex-fel") {
+    return "This film's enhancement layer reconstructs brightness — converting would clip it. Run dovi_convert with --force yourself if you want it anyway.";
+  }
+
+  // A full enhancement layer judged safe on a few hundred frames has only been
+  // judged on those frames: expansion anywhere later in the film would not have
+  // shown up. `provisional` is set for exactly that case, and converting on it
+  // is the one way to discard highlights while believing you checked.
+  if (el?.provisional) {
+    return "This is a full enhancement layer and only the start of it has been read. Read every frame first — a sample cannot rule out brightness expansion later in the film.";
+  }
+
+  return undefined;
+}
+
 const HDR_ORDER = ["SDR", "HDR10", "HDR10+", "Dolby Vision"];
 
 /**
