@@ -46,6 +46,29 @@
   --glow-over: rgba(255, 255, 255, 0.05);
 
   /*
+   * Frosted surfaces — see `.glass` and `.glass-panel` at the foot of this
+   * file.
+   *
+   * The page's own background and nothing else, held short of opaque. Which is
+   * the whole point: over a flat page these are the page, and the surface
+   * disappears into it. Glass is not a look the rail wears all the time — it is
+   * what happens when a shelf of posters passes underneath one, and a pane that
+   * announces itself while there is nothing behind it is a grey stripe down the
+   * side of the app.
+   *
+   * Two weights, because they are held against two different things: the rail
+   * stands over the page, and a dialog stands over the page *and* the veil that
+   * darkens it. A panel at the rail's alpha picks that veil up through itself,
+   * so it is the more solid of the two.
+   *
+   * Mixed from `--background` rather than written out, so there is one pair of
+   * these and not a pair per colour scheme — the dark block below only has to
+   * change the background they are made of.
+   */
+  --glass: color-mix(in srgb, var(--background) 85%, transparent);
+  --glass-panel: color-mix(in srgb, var(--background) 92%, transparent);
+
+  /*
    * A panel opening. Out is quicker than in, as everywhere else here: opening
    * is something you asked to watch, shutting is something you asked to be
    * over.
@@ -92,10 +115,28 @@
   --font-score: var(--font-score-face);
   --font-mono: var(--font-mono-face);
 
-  /* Three steps, chosen by element size rather than by whim. */
+  /* Four steps, chosen by element size rather than by whim. */
   --radius-chip: 0.375rem;
   --radius-control: 0.5rem;
   --radius-card: 0.875rem;
+  /*
+   * The largest, and the only one derived rather than picked: a panel whose
+   * first child is a pill held off its edge.
+   *
+   * Two rounded corners nested inside one another only look like one shape if
+   * the outer follows the inner — same centre, larger sweep. Concentric, the
+   * curve of the window and the curve of the field it frames are read as one
+   * radius seen twice; off by enough and the corner of the panel looks like a
+   * different corner from the corner of the thing sitting in it, which is what
+   * `--radius-card` looked like here. It is the card's radius because a card is
+   * a card, not because 14px was ever measured against what this one holds.
+   *
+   * The sum is the search field's own 1.25rem — a `h-10` pill, so half its
+   * height — plus the 1rem of panel padding it stands in. The panel's 1px
+   * border makes the true figure 37px; the pixel is spent on a number a person
+   * can hold in their head, and no eye has ever found it on a 2.25rem curve.
+   */
+  --radius-panel: 2.25rem;
 }
 
 body {
@@ -870,6 +911,58 @@ body {
   ::view-transition-new(*) {
     animation-duration: 0s !important;
     animation-delay: 0s !important;
+  }
+}
+
+/*
+ * Frosted glass: the one surface treatment for anything that stands in front of
+ * the page rather than in it.
+ *
+ * The rail had it, and only where the rail was a bar across the top of a narrow
+ * screen — which is the one place it was ever visible, because that is the one
+ * place the library scrolls underneath it. Everything else that floats — every
+ * dialog, every menu — was flat `bg-background`, so the app had a frosted edge
+ * on a phone and opaque cards everywhere else.
+ *
+ * It is the rail's own treatment, generalised rather than reinvented: the page
+ * background held at 85%, over a blur. On a flat page that is the page, and the
+ * surface is not there — it only becomes glass once something is behind it to
+ * be seen through it. Nothing here makes a pane visible for its own sake.
+ *
+ * Saturation as well as blur, which the rail did not have and is the one thing
+ * added: what you see through frosted glass is colour before it is shape. Blur
+ * alone gives a grey smear, and a shelf of posters passing under the rail
+ * should read as posters going by. With nothing behind it there is nothing to
+ * saturate, so it costs the flat case nothing.
+ *
+ * Unlayered, so these beat Tailwind's `bg-*` utilities without `!important` —
+ * every utility lives in `@layer utilities` and loses to a plain rule here. The
+ * call sites drop their `bg-background` all the same; a class that only works
+ * because of cascade order is a class the next edit breaks.
+ */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  backdrop-filter: blur(12px) saturate(180%);
+}
+
+.glass-panel {
+  background: var(--glass-panel);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+}
+
+/*
+ * Without the filter the translucency is just a washed-out surface with the
+ * page legible through it, which is worse than no effect at all — so where
+ * there is no blur to be had, these are simply the page's own background.
+ */
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .glass,
+  .glass-panel {
+    background: var(--background);
   }
 }
 

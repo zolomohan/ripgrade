@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { ScanButton } from "./scan-button";
 import { useSearchDialog } from "./search/dialog";
@@ -24,6 +24,18 @@ import { SidebarProcesses } from "./sidebar-processes";
  * column of nine labels at one size and one weight is a list you read from the
  * top every time, and a shape beside each one is what you actually aim at once
  * you know where things are. The words stay for the once you do not.
+ *
+ * Two shapes, and only one of them is a rail. Wide, it is the column described
+ * above, fixed down the left. Narrow, it is a drawer behind a button — the same
+ * column, off the side of the screen until it is asked for.
+ *
+ * It used to be a bar instead: the whole rail laid out as a wrapping row across
+ * the top. Nine links, a search, a scan button and a block that reports running
+ * jobs do not fit across a phone, so they wrapped — three or four lines of
+ * navigation above every page, taller than the content it was introducing, and
+ * a scan starting would push the page down another line. A drawer is what a
+ * list of this length wants when there is no room for it: one line of bar, and
+ * the column arrives at full height when you go looking for it.
  */
 
 /**
@@ -139,14 +151,15 @@ const isActive = (href: string, pathname: string) =>
  * both ends, because this rule belongs to the group under it the way that one
  * belongs to its heading.
  *
- * It turns with the rail: upright between two runs of links across the top of a
- * narrow screen, laid flat between two stacks in the column.
+ * One orientation now, where it used to have two: the rail is a column at every
+ * width, whether it is standing at the side of the page or has just slid in
+ * from it.
  */
 function Rule() {
   return (
     <span
       aria-hidden
-      className="mx-2 h-4 w-px shrink-0 bg-[linear-gradient(to_bottom,var(--line-strong),transparent)] md:mx-3 md:my-2.5 md:h-px md:w-auto md:bg-[linear-gradient(to_right,var(--line-strong),transparent)]"
+      className="mx-3 my-2.5 h-px shrink-0 bg-[linear-gradient(to_right,var(--line-strong),transparent)]"
     />
   );
 }
@@ -197,100 +210,267 @@ function SearchTrigger() {
   );
 }
 
+/**
+ * The skull and the name, which now stand in two places: at the head of the
+ * rail, and in the bar the rail hides behind on a narrow screen.
+ *
+ * A component rather than the copy it would otherwise be — the drawer covers
+ * the bar when it is out, so the two are never on screen together and are read
+ * as one thing appearing in one place. Two of them drifting apart would look
+ * like the app changing its name as you open the menu.
+ */
+function Brand({ className = "" }: { className?: string }) {
+  return (
+    <Link href="/" className={`flex items-center gap-2 ${className}`}>
+      {/* Decorative: the wordmark next to it already names the app. */}
+      <span
+        aria-hidden
+        className="brand-mark mark-skull h-7 w-[1.35rem] shrink-0"
+      />
+      {/* No weight class: the face has one weight, and asking for bold would
+          only get a synthetic one. */}
+      <span className="brand-word font-logo text-3xl leading-none lowercase">
+        ripgrade
+      </span>
+    </Link>
+  );
+}
+
+/**
+ * The one control on the narrow bar, and the only thing standing between a
+ * phone and the rail.
+ *
+ * Three lines and no word. This is the exception to the rule the rows below it
+ * follow — every one of those carries its label because a column of nine marks
+ * is a puzzle — and it is an exception on the same grounds: a hamburger is the
+ * one icon on the web that does not need its label, and a bar that spent a
+ * quarter of its width writing "Menu" would be a bar arguing with itself.
+ *
+ * At `h-10 w-10` rather than the size of the mark inside it: this is the only
+ * thing on the bar you are aiming a thumb at.
+ */
+function MenuButton({
+  open,
+  onClick,
+}: {
+  open: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Menu"
+      aria-expanded={open}
+      aria-controls="rail"
+      className="glow -mr-1.5 grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors hover:bg-surface"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        aria-hidden
+        className="h-5 w-5"
+      >
+        <path d="M4 7h16M4 12h16M4 17h16" />
+      </svg>
+    </button>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+
+  /*
+   * Anything that moves you closes it.
+   *
+   * The rail's own rows do it on the way out — see the `onClick` on the nav
+   * below — and this is for the navigations they do not cover: a link inside a
+   * dialog opened from the rail, the back button, a redirect. Following a link
+   * to the page you are already on is the one case the nav handles and this
+   * does not, since the path never changes.
+   *
+   * Adjusted during render rather than in an effect, the same way `useClosing`
+   * in app/modal.tsx does it: an effect would paint one frame of the new page
+   * with the drawer still over it and then re-render to take it away, which is
+   * the drawer flashing at the exact moment it is supposed to be leaving.
+   */
+  const [at, setAt] = useState(pathname);
+
+  if (at !== pathname) {
+    setAt(pathname);
+    if (open) setOpen(false);
+  }
+
+  /*
+   * Only while it is out, and all of it undone when it goes back in.
+   *
+   * Escape closes it, because a drawer is a thing standing over the page and
+   * that is the gesture for leaving one, the same as every dialog here. The
+   * page underneath stops scrolling for the same reason it does under a modal:
+   * a flick aimed at the drawer that scrolls the library behind it leaves you
+   * somewhere you never chose to be.
+   *
+   * And it closes itself if the window reaches the width that has a rail. A
+   * phone turned on its side is suddenly a screen with the column already on
+   * it, and the state left over from the drawer would otherwise sit there
+   * holding the page unscrollable behind a menu that is no longer a menu.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    // The `md:` this file is written against, as a number this file can ask
+    // about. Tailwind's own breakpoint, and the two have to agree.
+    const wide = window.matchMedia("(min-width: 48rem)");
+    const onWide = () => {
+      if (wide.matches) setOpen(false);
+    };
+
+    window.addEventListener("keydown", onKey);
+    wide.addEventListener("change", onWide);
+
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      wide.removeEventListener("change", onWide);
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
 
   return (
-    // One element, two shapes: a rail on a wide screen, a bar across the top
-    // when there is no room for one.
-    <aside className="sticky top-0 z-30 flex flex-wrap items-center gap-4 border-b border-line bg-background/85 px-4 py-3 backdrop-blur md:fixed md:inset-y-0 md:left-0 md:w-56 md:flex-col md:items-stretch md:gap-8 md:border-r md:border-b-0 md:px-4 md:py-6">
-      {/* px-3 rather than none, so the mark starts on the same vertical line as
-          the labels below it rather than hanging left of them. */}
-      <Link href="/" className="mt-2 flex items-center gap-2 px-3">
-        {/* Decorative: the wordmark next to it already names the app. */}
-        <span
-          aria-hidden
-          className="brand-mark mark-skull h-7 w-[1.35rem] shrink-0"
-        />
-        {/* No weight class: the face has one weight, and asking for bold would
-            only get a synthetic one. */}
-        <span className="brand-word font-logo text-3xl leading-none lowercase">
-          ripgrade
-        </span>
-      </Link>
-
-      <nav className="flex flex-1 items-center gap-1 md:flex-col md:items-stretch md:gap-0.5">
-        <SearchTrigger />
-
-        {[PAGES, ACQUIRING, TOOLS].map((group, g) => (
-          <Fragment key={g}>
-            <Rule />
-
-            {group.map((page) => {
-              const active = isActive(page.href, pathname);
-              return (
-                <Link
-                  key={page.href}
-                  href={page.href}
-                  aria-current={active ? "page" : undefined}
-                  className={`glow flex items-center gap-2.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                    active
-                      ? "bg-surface-strong font-medium"
-                      : "opacity-60 hover:bg-surface hover:opacity-100"
-                  }`}
-                >
-                  <NavIcon path={page.icon} />
-                  {page.label}
-                </Link>
-              );
-            })}
-          </Fragment>
-        ))}
-      </nav>
+    <>
+      {/*
+       * The narrow screen's whole header: who this is, and the way in. It is
+       * the only part of the rail that is ever in the flow of the page, which
+       * is what the content below it follows down — the drawer itself is fixed
+       * and takes up no room, so there is nothing else holding the page clear.
+       */}
+      <header className="glass sticky top-0 z-30 flex items-center justify-between border-b border-line px-4 py-3 md:hidden">
+        <Brand />
+        <MenuButton open={open} onClick={() => setOpen((was) => !was)} />
+      </header>
 
       {/*
-       * The foot of the rail: what is running, and the one verb that starts it.
+       * The page, dimmed behind the drawer, and a target for the tap that says
+       * "not this" — which on a touchscreen is the gesture, there being no
+       * Escape to press.
        *
-       * The scan button was on the dashboard, beside the greeting, which made
-       * the page that says what to do about the library also the only place you
-       * could ask it to go and look — and the rail is where this app keeps the
-       * things that are true from wherever you are standing. A scan is one of
-       * those: started from a page and finished somewhere else, already
-       * reporting itself here.
-       *
-       * Which is why the two are one group and not two things that happen to be
-       * last. The aside sets its parts `md:gap-8` apart, and at that distance
-       * the button read as unattached — the floor of the rail rather than the
-       * control belonging to the block above it. `gap-3` is the distance
-       * between a thing and its own progress.
-       *
-       * `display: contents` below `md:`, so the group exists only in the column.
-       * Across the top of a narrow screen the rail is a wrapping row, where the
-       * job block takes a line of its own and the button rides at the end of the
-       * first — two placements that a box around both would have to undo.
-       *
-       * The button is last within it, because a control that jumps down whenever
-       * a job starts is a control you have to look for.
+       * Always rendered and faded rather than mounted with the drawer, so it
+       * has something to animate on the way out as well as in.
+       * `pointer-events-none` while it is clear, or it would be an invisible
+       * sheet over the whole app.
        */}
-      <div className="contents md:flex md:flex-col md:gap-3">
-        {/* Renders nothing when nothing runs.
+      <div
+        aria-hidden
+        onClick={() => setOpen(false)}
+        className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 motion-reduce:transition-none md:hidden ${
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+      />
 
-            `w-full` at every width, never auto: the aside stays flex-wrap in
-            its column form, and a wrapping column sizes each line to its widest
-            item's own content — an auto-width job with a long subtitle would
-            take the whole rail with it. A definite width is what the truncation
-            inside actually truncates against; overflow-hidden is the backstop
-            for anything that forgets to. */}
-        <div className="order-last w-full min-w-0 overflow-hidden empty:hidden md:order-none">
-          <SidebarProcesses />
+      {/*
+       * One element, two shapes: the rail down the side of a wide screen, and
+       * the drawer that slides over a narrow one.
+       *
+       * `visibility` and not opacity or a conditional mount, because the thing
+       * that has to go away when it is shut is not the picture of it — it is
+       * the nine links, which a shut drawer would otherwise hand to anyone
+       * tabbing through the page from a phone, one invisible row at a time. It
+       * is also the one property that can be transitioned and still do that:
+       * the flip to hidden waits for the slide out to finish, where `hidden`
+       * would cut it off in the first frame.
+       */}
+      <aside
+        id="rail"
+        className={`glass fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-8 overflow-y-auto border-r border-line px-4 py-6 transition-[transform,visibility] duration-300 motion-reduce:transition-none md:visible md:z-30 md:w-56 md:translate-x-0 ${
+          open ? "visible translate-x-0" : "invisible -translate-x-full"
+        }`}
+      >
+        {/* px-3 rather than none, so the mark starts on the same vertical line
+            as the labels below it rather than hanging left of them. */}
+        <Brand className="mt-2 px-3" />
+
+        {/* Every row in here is a way out of the drawer, so the drawer shuts on
+            any of them rather than each one saying so for itself — the search
+            included, which is not a navigation but does put a window over the
+            page the drawer would otherwise be standing in front of. */}
+        <nav
+          onClick={() => setOpen(false)}
+          className="flex flex-1 flex-col gap-0.5"
+        >
+          <SearchTrigger />
+
+          {[PAGES, ACQUIRING, TOOLS].map((group, g) => (
+            <Fragment key={g}>
+              <Rule />
+
+              {group.map((page) => {
+                const active = isActive(page.href, pathname);
+                return (
+                  <Link
+                    key={page.href}
+                    href={page.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`glow flex items-center gap-2.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
+                      active
+                        ? "bg-surface-strong font-medium"
+                        : "opacity-60 hover:bg-surface hover:opacity-100"
+                    }`}
+                  >
+                    <NavIcon path={page.icon} />
+                    {page.label}
+                  </Link>
+                );
+              })}
+            </Fragment>
+          ))}
+        </nav>
+
+        {/*
+         * The foot of the rail: what is running, and the one verb that starts
+         * it.
+         *
+         * The scan button was on the dashboard, beside the greeting, which made
+         * the page that says what to do about the library also the only place
+         * you could ask it to go and look — and the rail is where this app
+         * keeps the things that are true from wherever you are standing. A scan
+         * is one of those: started from a page and finished somewhere else,
+         * already reporting itself here.
+         *
+         * Which is why the two are one group and not two things that happen to
+         * be last. The aside sets its parts `gap-8` apart, and at that distance
+         * the button read as unattached — the floor of the rail rather than the
+         * control belonging to the block above it. `gap-3` is the distance
+         * between a thing and its own progress.
+         *
+         * The button is last within it, because a control that jumps down
+         * whenever a job starts is a control you have to look for.
+         */}
+        <div className="flex flex-col gap-3">
+          {/* Renders nothing when nothing runs. `min-w-0` is what the
+              truncation inside actually truncates against, and
+              `overflow-hidden` is the backstop for anything that forgets to
+              — a job with a long subtitle should not be able to widen the
+              column it is reporting in. */}
+          <div className="min-w-0 overflow-hidden empty:hidden">
+            <SidebarProcesses />
+          </div>
+
+          {/* The rail's own width, at both of its widths: a button set short of
+              the edges of a stack reads as loose in it. It was the size of its
+              own word on a narrow screen, back when the rail there was a row —
+              in a drawer it is in a column like everything else. */}
+          <ScanButton className="w-full" />
         </div>
-
-        {/* `md:w-full` and not before: in the column it is the rail's width,
-            since a button set short of the edges of a stack reads as loose in
-            it. In the top bar a full-width button would be a second bar under
-            the first, so it stays the size of its own word. */}
-        <ScanButton className="md:w-full" />
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

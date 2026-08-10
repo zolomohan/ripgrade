@@ -63,7 +63,7 @@ export function ConfirmModal({
       onClose={onCancel}
       dismissible={!busy}
       label={title}
-      panelClassName="flex w-full max-w-md flex-col gap-3 rounded-card border border-line bg-background p-6 shadow-2xl"
+      panelClassName="flex w-full max-w-md flex-col gap-3 glass-panel rounded-card border border-line p-6 shadow-2xl"
     >
       <>
         <div className="flex items-start justify-between gap-4">

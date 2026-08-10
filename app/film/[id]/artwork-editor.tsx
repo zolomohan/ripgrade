@@ -216,7 +216,7 @@ export function ArtworkEditor({
         )}
 
         {menu && (
-          <div className="row-enter absolute right-0 bottom-full z-30 mb-2 w-40 overflow-hidden rounded-card border border-line bg-background py-1 shadow-2xl">
+          <div className="row-enter absolute right-0 bottom-full z-30 mb-2 w-40 overflow-hidden glass-panel rounded-card border border-line py-1 shadow-2xl">
             {(
               [
                 ["poster", "Poster"],
@@ -245,7 +245,7 @@ export function ArtworkEditor({
         open={open}
         onClose={() => setOpen(false)}
         label={`Choose ${KINDS[tab].label.toLowerCase()}`}
-        panelClassName="flex h-[min(80vh,44rem)] w-full max-w-5xl flex-col rounded-card border border-line bg-background shadow-2xl"
+        panelClassName="flex h-[min(80vh,44rem)] w-full max-w-5xl flex-col glass-panel rounded-card border border-line shadow-2xl"
       >
         <>
           <div className="flex shrink-0 flex-wrap items-center gap-3 px-5 pt-5 pb-4">

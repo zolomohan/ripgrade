@@ -105,7 +105,13 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
          * one, capped so a tall screen does not get a column of poster you
          * have to stand up to read.
          */
-        panelClassName="mt-[6vh] flex h-[min(78vh,46rem)] w-full max-w-4xl flex-col self-start overflow-hidden rounded-card border border-line bg-background p-4 shadow-2xl"
+        /*
+         * `rounded-panel` rather than the card's radius every other dialog
+         * takes: this is the one whose contents start with a pill, an inch from
+         * the corner, and the two curves have to agree. See `--radius-panel` in
+         * globals.css for the arithmetic.
+         */
+        panelClassName="mt-[6vh] flex h-[min(78vh,46rem)] w-full max-w-4xl flex-col self-start overflow-hidden glass-panel rounded-panel border border-line p-4 shadow-2xl"
       >
         <div ref={panel} className="flex min-h-0 flex-1 flex-col">
           <SearchView />

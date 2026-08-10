@@ -186,7 +186,7 @@ function RowMenu({
       </button>
 
       {open && (
-        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-56 overflow-hidden rounded-card border border-line bg-background py-1 shadow-2xl">
+        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-56 overflow-hidden glass-panel rounded-card border border-line py-1 shadow-2xl">
           {items.map((item) => (
             <button
               key={item.label}
@@ -575,7 +575,7 @@ export function DownloadsView({
           onClose={() => setConfirming(null)}
           dismissible={!pending}
           label="Confirm"
-          panelClassName="w-full max-w-md overflow-hidden rounded-card border border-line bg-background shadow-2xl"
+          panelClassName="w-full max-w-md overflow-hidden glass-panel rounded-card border border-line shadow-2xl"
         >
           <div className="flex flex-col gap-4 p-5">
             <div className="flex items-start justify-between gap-4">

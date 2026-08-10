@@ -339,7 +339,7 @@ export function MagnetAction({
           onClose={() => setOpen(false)}
           dismissible={!pending}
           label="Where should this download land?"
-          panelClassName="w-full max-w-lg overflow-hidden rounded-card border border-line bg-background shadow-2xl"
+          panelClassName="w-full max-w-lg overflow-hidden glass-panel rounded-card border border-line shadow-2xl"
         >
           <>
             <header className="flex items-center gap-3 px-5 pt-5 pb-4">

@@ -45,7 +45,7 @@ export function SettingDialog({
       dismissible={!busy}
       panelClassName={`flex max-h-[min(85vh,44rem)] w-full ${
         wide ? "max-w-2xl" : "max-w-lg"
-      } flex-col overflow-hidden rounded-card border border-line bg-background shadow-2xl`}
+      } flex-col overflow-hidden glass-panel rounded-card border border-line shadow-2xl`}
     >
       <header className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6 pb-4">
         <div className="min-w-0">

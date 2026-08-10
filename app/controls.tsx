@@ -400,7 +400,7 @@ export function Popover({
         <div
           className={`row-enter absolute top-full ${
             align === "left" ? "left-0" : "right-0"
-          } z-30 mt-2 ${width} overflow-hidden rounded-card border border-line bg-background shadow-2xl`}
+          } z-30 mt-2 ${width} overflow-hidden glass-panel rounded-card border border-line shadow-2xl`}
         >
           {children(() => setOpen(false))}
         </div>

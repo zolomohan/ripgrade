@@ -549,7 +549,7 @@ function SeasonUpgrade({
       </button>
 
       {open && (
-        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-64 overflow-hidden rounded-card border border-line bg-background py-1 shadow-2xl">
+        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-64 overflow-hidden glass-panel rounded-card border border-line py-1 shadow-2xl">
           {seasons.map((season) => {
             const score = seasonScore(season);
             const best = score >= 100;

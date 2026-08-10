@@ -106,8 +106,11 @@ export default function RootLayout({
                   search button opens the window that hangs over the page. */}
               <SearchProvider>
                 <Sidebar />
-                {/* Clears the rail once it is fixed; above that it is a top bar
-                    and the content simply follows it.
+                {/* Clears the rail at the width the rail is standing there.
+                    Below it the rail is a drawer, fixed and off the side of the
+                    screen, taking up no room to be cleared — what the content
+                    follows down there is the bar the drawer hides behind, which
+                    is the one part of it in the flow of the page.
 
                     `overflow-x-clip` so a full-bleed strip can run to the edges
                     of this column without the page gaining a sideways

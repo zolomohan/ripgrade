@@ -109,7 +109,7 @@ export function ProcessDetails({
       open={detail !== null}
       onClose={onClose}
       label={`${shown.title} — progress`}
-      panelClassName="flex w-full max-w-md flex-col gap-4 rounded-card border border-line bg-background p-6 shadow-2xl"
+      panelClassName="flex w-full max-w-md flex-col gap-4 glass-panel rounded-card border border-line p-6 shadow-2xl"
     >
       <>
         <header className="flex items-center justify-between gap-3">
