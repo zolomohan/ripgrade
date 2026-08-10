@@ -483,20 +483,38 @@ function WorkTile({
  * sideways is a layout bug, and this is the one piece of content wide enough to
  * cause it.
  *
- * It runs the full width of the column the rail leaves, not the width of the
- * reading measure. Stopping at 64rem left the shelf ending on a hard vertical
- * line with empty page either side of it — which reads as the row having run
- * out rather than as there being more of it. The margin is
- * `50% - 50vw + 7rem`: half the strip's own box, less half the viewport, plus
- * half the 14rem rail, which lands its edges exactly on the content column's.
- * Under `md:` the rail is a top bar and the page is already full width, so the
- * plain gutter cancellation is the whole job.
+ * It runs the full width of the viewport, not the width of the reading measure
+ * and not the width of the column either. Stopping at 64rem left the shelf
+ * ending on a hard vertical line with empty page either side of it — which
+ * reads as the row having run out rather than as there being more of it.
  *
- * The ends are masked rather than cut. A scrolling row that stops dead at a
+ * The margins are `50% - 50vw ∓ 7rem`: half the strip's own box, less half the
+ * viewport, and then the rail. The two sides differ by it and that is the whole
+ * reason they are written separately — the rail is what makes this column's
+ * centre sit 7rem right of the viewport's, so a single `mx` cannot land on both
+ * edges at once. It used to be one value, `+ 7rem`, which put the right edge on
+ * the viewport and the left edge exactly on the column's. That left edge is the
+ * one place it should not be: the shelf ended precisely where the rail began,
+ * so a poster leaving to the left dissolved *at* the rail rather than passing
+ * behind it. Nothing was ever under the rail to be seen through it, which is a
+ * frosted panel with nothing to frost. `- 7rem` on the left carries the strip
+ * the last 14rem to the viewport's own edge, under the rail, where the posters
+ * now go.
+ *
+ * Each padding cancels its own margin, so both ends still rest on the page's
+ * gutter. What changed is where the row can travel to, not where it sits.
+ *
+ * Under `md:` the rail is a drawer rather than a column and the page is already
+ * full width, so the plain gutter cancellation is the whole job.
+ *
+ * The right end is masked rather than cut. A scrolling row that stops dead at a
  * straight edge looks like a rendering fault; one that dissolves says there is
  * more of it that way. The fade is narrower than the padding, so at either
  * extreme of the scroll it falls on empty space — a poster is never sitting
- * half-faded while the row is stationary, only while it is on its way out.
+ * half-faded while the row is stationary, only while it is on its way out. The
+ * left end keeps its fade for the narrow screen, where there is no rail to
+ * arrive behind; in the column it falls under the rail, which is now the thing
+ * a poster disappears into.
  *
  * And no bar under it: the fade is already the affordance, and a scrollbar
  * drawn across a row of artwork is a rule through a picture. See `.no-scrollbar`
@@ -514,7 +532,7 @@ const nameOf = (item: Dashboard["recent"]["added"][number]) =>
 function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
   return (
     <ul
-      className={`no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 sm:-mx-8 sm:px-8 md:mx-[calc(50%-50vw+7rem)] md:px-[calc(50vw-50%-7rem)] ${SHELF_MASK}`}
+      className={`no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 sm:-mx-8 sm:px-8 md:mr-[calc(50%-50vw+7rem)] md:ml-[calc(50%-50vw-7rem)] md:pr-[calc(50vw-50%-7rem)] md:pl-[calc(50vw-50%+7rem)] ${SHELF_MASK}`}
     >
       {items.map((item, i) => (
         <li
