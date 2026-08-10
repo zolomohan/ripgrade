@@ -4,6 +4,7 @@ import { relativeToDisc, scoreDisc, titleKey } from "./derive";
 import type { DiscLookup } from "./disc";
 import { searchIndexers, type IndexerResult } from "./jackett";
 import { guessFromTitle, type ReleaseGuess } from "./release-title";
+import { shareTrackers } from "./torznab";
 
 /**
  * "Is there a better copy of this than the one I have?"
@@ -209,7 +210,10 @@ function matchesTarget(guess: ReleaseGuess, target: UpgradeTarget): boolean {
 function dedupe(results: ScoredRelease[]): ScoredRelease[] {
   const best = new Map<string, ScoredRelease>();
 
-  for (const result of results) {
+  // Trackers are pooled before any copy is dropped below: the one that loses
+  // on seeders still knew announce URLs the winner did not, and after this the
+  // surviving magnet carries them whichever copy that turns out to be.
+  for (const result of shareTrackers(results)) {
     const key = result.title.toLowerCase().replace(/[^a-z0-9]+/g, "");
     const existing = best.get(key);
 

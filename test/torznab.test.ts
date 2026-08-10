@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { feedError, parseCaps, parseTorznab } from "../lib/torznab";
+import {
+  feedError,
+  parseCaps,
+  parseTorznab,
+  shareTrackers,
+  trackersOf,
+  withTrackers,
+  type IndexerResult,
+} from "../lib/torznab";
 
 /**
  * The XML below is shaped like a real Jackett response, including the parts
@@ -218,4 +226,94 @@ test("caps with no searching block claim nothing", () => {
   assert.equal(caps.search.available, false);
   assert.equal(caps.movie.available, false);
   assert.deepEqual(caps.categories, []);
+});
+
+// ---------------------------------------------------------------------------
+// Trackers
+// ---------------------------------------------------------------------------
+
+/** A result carrying only what the tracker pooling actually reads. */
+const listing = (
+  indexer: string,
+  infoHash: string | undefined,
+  magnet: string | undefined,
+): IndexerResult => ({
+  title: "Dune.Part.Two.2024.2160p.UHD.BluRay.REMUX-FraMeSToR",
+  indexer,
+  infoHash,
+  magnet,
+  categories: [2045],
+});
+
+const OPEN = "udp://tracker.opentrackr.org:1337/announce";
+const TORRENT = "udp://open.demonii.com:1337/announce";
+
+test("a magnet's own trackers are read back out of it", () => {
+  assert.deepEqual(
+    trackersOf(
+      `magnet:?xt=urn:btih:AAAA&tr=${encodeURIComponent(OPEN)}&tr=${encodeURIComponent(TORRENT)}`,
+    ),
+    [OPEN, TORRENT],
+  );
+});
+
+test("a magnet with no trackers, and a string that is not one, read as none", () => {
+  assert.deepEqual(trackersOf("magnet:?xt=urn:btih:AAAA"), []);
+  assert.deepEqual(trackersOf(undefined), []);
+  assert.deepEqual(trackersOf("not a magnet at all"), []);
+});
+
+test("adding trackers leaves the parameters already there untouched", () => {
+  // The reason this appends text rather than rebuilding through `URL`: the
+  // serialiser would re-encode `xt` as `urn%3Abtih%3A...`, which some clients
+  // will not read.
+  const merged = withTrackers("magnet:?xt=urn:btih:AAAA&dn=Dune", [OPEN]);
+  assert.ok(merged.startsWith("magnet:?xt=urn:btih:AAAA&dn=Dune"));
+  assert.deepEqual(trackersOf(merged), [OPEN]);
+});
+
+test("a tracker a magnet already announces to is not added twice", () => {
+  const magnet = `magnet:?xt=urn:btih:AAAA&tr=${encodeURIComponent(OPEN)}`;
+  assert.equal(withTrackers(magnet, [OPEN]), magnet);
+  assert.deepEqual(trackersOf(withTrackers(magnet, [OPEN, TORRENT])), [
+    OPEN,
+    TORRENT,
+  ]);
+});
+
+test("copies of one release pool the trackers each indexer published", () => {
+  const [first, second] = shareTrackers([
+    listing("A", "aaaa", `magnet:?xt=urn:btih:AAAA&tr=${encodeURIComponent(OPEN)}`),
+    listing("B", "aaaa", `magnet:?xt=urn:btih:AAAA&tr=${encodeURIComponent(TORRENT)}`),
+  ]);
+
+  assert.deepEqual(trackersOf(first.magnet), [OPEN, TORRENT]);
+  assert.deepEqual(trackersOf(second.magnet), [TORRENT, OPEN]);
+});
+
+test("an indexer that published only a hash gains the others' trackers", () => {
+  // The case this is for: `parseTorznab` builds a magnet for these, and it has
+  // no trackers on it at all, so the swarm is only reachable over DHT.
+  const [hashOnly] = shareTrackers([
+    listing("hash-only", "aaaa", "magnet:?xt=urn:btih:AAAA&dn=Dune"),
+    listing("A", "aaaa", `magnet:?xt=urn:btih:AAAA&tr=${encodeURIComponent(OPEN)}`),
+  ]);
+
+  assert.deepEqual(trackersOf(hashOnly.magnet), [OPEN]);
+});
+
+test("trackers are never pooled across two different info hashes", () => {
+  // A re-upload under the same name is a different swarm, and these trackers
+  // have never been told about it.
+  const [reupload] = shareTrackers([
+    listing("A", "bbbb", "magnet:?xt=urn:btih:BBBB"),
+    listing("B", "aaaa", `magnet:?xt=urn:btih:AAAA&tr=${encodeURIComponent(OPEN)}`),
+  ]);
+
+  assert.deepEqual(trackersOf(reupload.magnet), []);
+});
+
+test("a result with no hash and no magnet survives pooling unchanged", () => {
+  const results = [listing("A", undefined, undefined)];
+  assert.deepEqual(shareTrackers(results), results);
 });

@@ -216,3 +216,79 @@ export function parseTorznab(xml: string): IndexerResult[] {
 
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Trackers
+// ---------------------------------------------------------------------------
+
+/** The tracker URLs a magnet announces to, in the order it lists them. */
+export function trackersOf(magnet: string | undefined): string[] {
+  if (!magnet) return [];
+  try {
+    return new URL(magnet).searchParams.getAll("tr");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The same magnet, announcing to its own trackers and to these as well.
+ *
+ * Appended as text rather than rebuilt through `URL`, whose serialiser would
+ * re-encode the parameters already present — `xt=urn:btih:…` comes back as
+ * `xt=urn%3Abtih%3A…`, which most clients decode and some do not. What an
+ * indexer published is left exactly as it published it.
+ */
+export function withTrackers(
+  magnet: string,
+  trackers: Iterable<string>,
+): string {
+  const already = new Set(trackersOf(magnet));
+  const extra = [...trackers].filter((tracker) => !already.has(tracker));
+  if (extra.length === 0) return magnet;
+
+  // Every real magnet carries at least `xt`, so the separator is all but
+  // always `&`; the other branch is for one that somehow arrived with no query.
+  const separator = magnet.includes("?") ? "&" : "?";
+
+  return (
+    magnet +
+    extra
+      .map(
+        (tracker, i) =>
+          `${i === 0 ? separator : "&"}tr=${encodeURIComponent(tracker)}`,
+      )
+      .join("")
+  );
+}
+
+/**
+ * Every copy of a release announcing to every tracker its other copies knew.
+ *
+ * One torrent listed on six indexers is one swarm, and each listing carries
+ * only whichever announce URLs its own site chose to publish. Pooling them
+ * costs nothing — a tracker that has never heard of the hash just answers with
+ * no peers — and it is the difference between finding the swarm and not for
+ * the indexers that publish an info hash and nothing else, whose magnet
+ * `parseTorznab` has to build from scratch with no trackers on it at all.
+ *
+ * Grouped on the info hash and never on the name: the hash is the thing a
+ * tracker is asked about, so trackers pooled across a re-upload sharing a
+ * title would be announcing about a swarm they were never told of.
+ */
+export function shareTrackers<T extends IndexerResult>(results: T[]): T[] {
+  const byHash = new Map<string, Set<string>>();
+
+  for (const result of results) {
+    if (!result.infoHash) continue;
+    const known = byHash.get(result.infoHash) ?? new Set<string>();
+    for (const tracker of trackersOf(result.magnet)) known.add(tracker);
+    byHash.set(result.infoHash, known);
+  }
+
+  return results.map((result) => {
+    const trackers = result.infoHash ? byHash.get(result.infoHash) : undefined;
+    if (!result.magnet || !trackers?.size) return result;
+    return { ...result, magnet: withTrackers(result.magnet, trackers) };
+  });
+}
