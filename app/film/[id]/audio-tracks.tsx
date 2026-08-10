@@ -446,7 +446,7 @@ export function AudioTracks({
           offline ??
           `Frees ${backupBytes !== undefined ? size(backupBytes) : "the space"} — the one step here that cannot be undone.`
         }
-        className={BUTTON.danger}
+        className={BUTTON.dangerStanding}
       >
         Delete backup
       </button>
@@ -488,40 +488,49 @@ export function AudioTracks({
     <Panel title="Audio tracks" summary={summary}>
       <div className="flex flex-col gap-6">
         {/* One console, in bands parted by the same hairline the Dolby Vision
-            card parts its own by: what the selection would cost, and the
-            button that acts on it. */}
+            card parts its own by: what the selection would cost, and — under
+            the rule — the button that acts on it.
+
+            The buttons sat on the same line as the reading until they were
+            asked to stand apart, and the hairline is the whole of what that
+            takes: `.card-band + .card-band` draws it, so a band that is only
+            ever added or dropped brings its own rule with it. Skipped entirely
+            when there is nothing to press, which is a real state here — a file
+            that is not Matroska, or has a single track, is a card that reads
+            and offers nothing — and an empty band under a rule would announce
+            a decision that was never on the table. */}
         <div className="overflow-hidden rounded-3xl border border-line">
-          <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 py-5">
+          <div className="card-band px-4 py-5">
             <div className="flex flex-col gap-0.5">
               <p className="text-sm font-medium">{banner.headline}</p>
               {banner.body && (
                 <p className="text-sm opacity-60">{banner.body}</p>
               )}
             </div>
-
-            {!running && (
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {selected.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelected(new Set())}
-                    className={BUTTON.text}
-                  >
-                    Clear
-                  </button>
-                )}
-                {actions}
-              </div>
-            )}
           </div>
+
+          {!running && actions && (
+            <div className="card-band flex flex-wrap items-center justify-end gap-2 px-4 py-4">
+              {selected.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelected(new Set())}
+                  className={BUTTON.text}
+                >
+                  Clear
+                </button>
+              )}
+              {actions}
+            </div>
+          )}
 
           {running && (
             <div className="card-band px-4 py-5">
               {/* The rail carries this too, but a film's own page is where the
                   removal was started and where its progress is being watched. */}
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-strong">
+              <div className="bar-track w-full">
                 <div
-                  className="h-full rounded-full bg-foreground transition-[width] duration-500"
+                  className="bar-fill transition-[width] duration-500"
                   style={{ width: `${Math.max(2, job.percent ?? 0)}%` }}
                 />
               </div>

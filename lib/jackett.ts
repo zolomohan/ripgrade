@@ -46,10 +46,15 @@ export type JackettConfig = { url: string; apiKey: string };
  * Environment wins over the stored value, so a deployment can pin it, but the
  * settings page is the expected route: the key is per-install and pasting it
  * into a field beats restarting the server.
+ *
+ * Empty counts as absent, not as an answer. Compose hands a container every
+ * variable it names whether or not the value was filled in, so `??` would let
+ * an unset one in `.env` beat a key that had been saved in Settings — and the
+ * failure looks like the key being wrong rather than being overruled.
  */
 export function getJackettConfig(): JackettConfig | undefined {
-  const url = process.env.JACKETT_URL ?? getSetting(URL_KEY);
-  const apiKey = process.env.JACKETT_API_KEY ?? getSetting(KEY_KEY);
+  const url = process.env.JACKETT_URL || getSetting(URL_KEY);
+  const apiKey = process.env.JACKETT_API_KEY || getSetting(KEY_KEY);
   if (!url || !apiKey) return undefined;
   return { url: url.replace(/\/+$/, ""), apiKey };
 }

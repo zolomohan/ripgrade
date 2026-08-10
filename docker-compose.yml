@@ -42,6 +42,26 @@ services:
       - gluetun:/gluetun
     restart: unless-stopped
 
+  # Writes the API key from .env into Jackett's config and exits, so that the
+  # app and the indexer proxy come up already knowing the same credential
+  # instead of one of them having to be told by hand. Node because the config
+  # holds the indexer setup and the admin password, and patching JSON with a
+  # regex is how you lose those. See docker/jackett-init.mjs.
+  jackett-init:
+    image: node:22-bookworm-slim
+    # Root to write into a volume LinuxServer's startup will expect to own; the
+    # script hands the files over to PUID:PGID before it exits.
+    user: "0:0"
+    environment:
+      JACKETT_API_KEY: ${JACKETT_API_KEY:-}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - jackett:/config
+      - ./docker/jackett-init.mjs:/jackett-init.mjs:ro
+    command: ["node", "/jackett-init.mjs"]
+    restart: "no"
+
   jackett:
     image: lscr.io/linuxserver/jackett:latest
     # Shares gluetun's network namespace. This is the whole point: Jackett
@@ -55,7 +75,12 @@ services:
     volumes:
       - jackett:/config
     depends_on:
-      - gluetun
+      gluetun:
+        condition: service_started
+      # The key has to be in the config before Jackett reads it. Afterwards is
+      # a restart, and a restart is the thing this exists to avoid.
+      jackett-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   ripgrade:
@@ -79,11 +104,13 @@ services:
     environment:
       TZ: ${TZ:-Europe/London}
       RIPGRADE_BROWSE_ROOT: ${RIPGRADE_BROWSE_ROOT:-/Volumes}
-      # JACKETT_URL and JACKETT_API_KEY are deliberately absent. The app reads
-      # the environment before it reads Settings, so a variable set to an empty
-      # string here would beat a good key saved in the UI — and the key does
-      # not exist until Jackett has booted once anyway. Configure it at
-      # Settings → Jackett, with the URL http://gluetun:9117.
+      # The other half of the arrangement: the same key jackett-init wrote into
+      # Jackett's config, and the address Jackett answers on — gluetun's, since
+      # that is whose network it is using. Set both and the integration is
+      # configured before the first page loads; set neither and the app falls
+      # back to Settings, which is what an empty value means here.
+      JACKETT_URL: ${JACKETT_URL:-}
+      JACKETT_API_KEY: ${JACKETT_API_KEY:-}
     depends_on:
       - jackett
     restart: unless-stopped

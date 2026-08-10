@@ -297,16 +297,18 @@ them already in it: MediaInfo and ffmpeg and mkvmerge from Debian, `dovi_tool` a
 release binary, and `dovi_convert` — which turns out to be one Python file with nothing but the
 standard library behind it — fetched at build time. Nothing to `brew install`.
 
-`docker-compose.yml` brings up three containers:
+`docker-compose.yml` brings up three containers and one that exits:
 
 | | What it is |
 |---|---|
 | **gluetun** | The VPN. Holds the credentials and the killswitch. |
+| **jackett-init** | Runs once, before Jackett, and puts the API key where both sides can find it. Then it is gone. |
 | **jackett** | Runs with `network_mode: service:gluetun` — it has no network stack of its own, so if the tunnel drops, its indexer traffic has nowhere to go rather than somewhere worse. |
 | **ripgrade** | The app, with the drive bound in. Outside the tunnel: it talks to TMDb and Blu-ray.com, and has no business in one. |
 
 ```bash
-cp .env.docker.example .env    # provider name and WireGuard key
+cat .env.docker.example >> .env   # append: .env may already hold something
+$EDITOR .env                      # VPN credentials, and a key you generate
 docker compose up -d --build
 ```
 
@@ -316,7 +318,7 @@ published by gluetun, because Jackett has no ports of its own to publish.
 Not 3000: that port belongs to `next dev`, and running the container and the dev server at the
 same time should not be a choice. `RIPGRADE_PORT` in `.env` moves it.
 
-### Two things worth knowing before you start
+### Three things worth knowing before you start
 
 **The drive is bound at the same path it has on the host.** `/Volumes:/Volumes`, not
 `/Volumes:/media` — so every absolute path already in the database still resolves, and a library
@@ -328,11 +330,29 @@ default; if you have narrowed that, it is Settings → Resources → File sharin
 > established when the container is, and Docker Desktop does not always propagate a later mount.
 > Mount the drive first, then `docker compose restart ripgrade`.
 
-**Jackett is at `http://gluetun:9117`, not `localhost`.** That is the address to paste into
-**Settings → Jackett** — container to container, by service name. `JACKETT_URL` and
-`JACKETT_API_KEY` are deliberately *not* set in the compose file: the app reads the environment
-before it reads Settings, so a variable set to an empty string would quietly beat a good key saved
-in the UI, and the key does not exist until Jackett has booted once anyway.
+**There is no API key to go and fetch.** Ordinarily Jackett invents one on first start and you
+open its dashboard to copy it out. Here you choose it instead:
+
+```bash
+openssl rand -hex 16      # into JACKETT_API_KEY in .env
+```
+
+`jackett-init` writes that key into Jackett's `ServerConfig.json` before Jackett has ever run, and
+Jackett — which only generates a key when it does not already have one — keeps it. The same value
+reaches the app as `JACKETT_API_KEY`, so the two come up already agreeing and **Settings → Jackett**
+reads *Set by the environment* on the first page load.
+
+It is safe on an existing install: the config is parsed and patched rather than rewritten, so the
+indexers and the admin password survive a key change. Leave `JACKETT_API_KEY` blank and the old
+behaviour is exactly what you get — Jackett generates its own, and you paste it into Settings.
+
+> [!NOTE]
+> `http://gluetun:9117` is the address, not `localhost` — Jackett is using gluetun's network, so
+> gluetun is the host it answers on. That is already in `.env.docker.example`.
+
+**What is still manual: the indexers.** A key gets the app talking to Jackett; it does not give
+Jackett anything to search. Trackers are added in its dashboard, and their logins and cookies are
+not something to keep in a repo. So one visit to <http://localhost:9117>, and then never again.
 
 If the searches hang rather than fail, it is gluetun's killswitch dropping the replies on the way
 back to the app. `DOCKER_SUBNETS` in `.env` is what opens that path.

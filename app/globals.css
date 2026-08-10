@@ -46,6 +46,17 @@
   --glow-over: rgba(255, 255, 255, 0.05);
 
   /*
+   * The light a filled progress bar throws onto what it is lying on — see
+   * `.bar-track` and `.bar-fill` further down.
+   *
+   * Held well back here, because on a white page this is not a glow at all: it
+   * is a dark blur under a dark bar, and read as a shadow rather than as light
+   * it goes muddy long before it goes bright. The dark block turns it up, where
+   * a pale fill really can throw light.
+   */
+  --bar-glow: color-mix(in srgb, var(--foreground) 32%, transparent);
+
+  /*
    * Frosted surfaces — see `.glass` and `.glass-panel` at the foot of this
    * file.
    *
@@ -98,6 +109,9 @@
 
     --glow: rgba(255, 255, 255, 0.07);
     --glow-over: rgba(255, 255, 255, 0.06);
+
+    /* Here it is light, so it can be one. */
+    --bar-glow: color-mix(in srgb, var(--foreground) 70%, transparent);
   }
 }
 
@@ -1564,6 +1578,79 @@ html {
 @keyframes spinner {
   to {
     transform: rotate(1turn);
+  }
+}
+
+/*
+ * Work under way where the distance *is* known — the travelled part of a
+ * progress bar, wherever one is drawn: the rail's little bars, the downloads
+ * and upgrades rows, a film's own remux, the job dialog.
+ *
+ * There is no gradient in this. A sheen was tried twice and the second one was
+ * decent metal, but the thing that makes a bar like this read is not what is
+ * painted on the fill — it is the fill being a separate object from its track
+ * and throwing light onto it.
+ *
+ * So: the track is a channel, and the fill lies *in* it rather than filling it.
+ * A gutter all the way round — a pixel at each end from the padding, a pixel
+ * above and below from a fill shorter than the channel it is centred in — and
+ * that gap is what stops the two reading as one shape. The proportion is the
+ * source's, three quarters the height of what holds it.
+ *
+ * Then the light. One soft shadow in the fill's own colour, dropped below and
+ * blurred well past the bar's height, spread pulled negative so it stays a
+ * pool underneath and never a halo around.
+ *
+ * The blur is not the source's figure scaled down with everything else. There
+ * the bar is forty pixels tall and the blur is forty wide, which at six pixels
+ * comes to eight and disappears — a glow has to be some absolute size before
+ * the eye reads it as light rather than as a slightly soft edge. Sixteen is
+ * where it starts to show without spilling into the line of text under it.
+ * That is the whole effect, and it is
+ * why nothing here may clip: the track carries no `overflow` and the fill keeps
+ * its own rounding, because a channel that hides its overflow crops the light
+ * off at the very edge it is supposed to fall on.
+ *
+ * Colour is left to whatever `bg-*` the element carries, so a paused download
+ * can still be dimmed — the utilities layer wins on `background-color`, and
+ * `shadow-none` alongside it puts the light out for a bar that has stopped.
+ */
+@layer components {
+  .bar-track {
+    display: flex;
+    align-items: center;
+    height: 0.5rem;
+    padding: 0 1px;
+    border-radius: 9999px;
+    background: var(--surface-strong);
+  }
+
+  /* The rail and a film's own row, where the bar is a footnote under a line of
+     text rather than the thing being watched. Same channel, one step down. */
+  .bar-track.bar-track-thin {
+    height: 0.375rem;
+  }
+
+  .bar-fill {
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: var(--foreground);
+    box-shadow: 0 3px 16px -2px var(--bar-glow);
+  }
+
+  .bar-track-thin .bar-fill {
+    height: 0.25rem;
+    box-shadow: 0 2px 12px -2px var(--bar-glow);
+  }
+
+  /* A bar that has stopped: still in its channel, still holding its place, but
+     the light is out. Written here as a modifier rather than left to a `bg-*`
+     and a `shadow-none` on the element, because that pair only works while the
+     utilities layer keeps winning against this one — a quiet dependency to
+     leave under something whose whole job is to look switched off. */
+  .bar-fill.bar-fill-idle {
+    background: color-mix(in srgb, var(--foreground) 30%, transparent);
+    box-shadow: none;
   }
 }
 

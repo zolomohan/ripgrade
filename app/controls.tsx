@@ -554,6 +554,22 @@ export const BUTTON = {
   // red belongs.
   danger:
     "inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-line px-4 py-1.5 text-sm transition-colors hover:border-red-500/40 hover:bg-red-500/[0.08] hover:text-red-700 disabled:opacity-40 dark:hover:text-red-300",
+  // `danger`'s hover state, worn standing.
+  //
+  // For the one place the rule above does not fit: a card whose whole subject
+  // is a file that is still on the drive, offering to delete it. There the
+  // destructive thing is not one option among several that happens to be
+  // reachable — it is half of what the card is for, and the other half is the
+  // button beside it. Neutral until you reach for it would be hiding what it
+  // does, which is the argument `confirm` makes below; but a card is not a
+  // dialog, so it stops at the outline and leaves the fill to the dialog that
+  // this button is going to open anyway.
+  //
+  // Written out in full for the reason `confirm` gives: two `border-*` colours
+  // in one class string are settled by Tailwind's emit order, not by which was
+  // written last.
+  dangerStanding:
+    "inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-red-500/40 px-4 py-1.5 text-sm text-red-700 transition-colors hover:bg-red-500/[0.08] disabled:opacity-40 dark:text-red-300",
   // Words rather than a box: what it offers is an alternative to the button
   // beside it, and a second bordered button would read as a second decision of
   // equal weight. The app's own link treatment, underline arriving on hover.

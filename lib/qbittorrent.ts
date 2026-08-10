@@ -306,11 +306,59 @@ async function torrentAction(
   }
 }
 
+/**
+ * Whether a state is one of the halted ones, under either generation's names.
+ *
+ * The same rename as `torrentAction` above: 4.x says `pausedUP`/`pausedDL`,
+ * 5.x says `stoppedUP`/`stoppedDL`. Matched on the prefix so this does not
+ * become a list of four that a third naming would walk straight past.
+ */
+export const isHalted = (state: string) =>
+  state.startsWith("paused") || state.startsWith("stopped");
+
+/** One torrent's state, or undefined once the client no longer has it. */
+export async function getTorrentState(
+  hash: string,
+): Promise<string | undefined> {
+  const response = await request(`/api/v2/torrents/info?hashes=${hash}`);
+  const [torrent] = (await response.json()) as QbTorrent[];
+  return torrent?.state;
+}
+
+/**
+ * Stop or start a torrent, and do not return until the client says so.
+ *
+ * The API answers 200 the moment it has taken the request, not when it has
+ * acted on it — a stop is queued into the session and the torrent keeps
+ * reporting `uploading` for a beat afterwards. Callers that re-read on the
+ * back of a resolved promise were therefore reading the old state and drawing
+ * it: press Stop seeding on a finished row and it went on saying "seeding",
+ * because that read raced the client and lost.
+ *
+ * So the wait belongs here, where the rename is already understood, rather
+ * than in every caller that needs to know it worked. Bounded, because this
+ * runs inside a click: if the client has not come round within it the promise
+ * resolves anyway, and the row is left to the page's own polling — a control
+ * that hangs on a slow client is worse than one that is briefly behind.
+ */
+async function settle(hash: string, halted: boolean): Promise<void> {
+  for (let attempt = 0; attempt < SETTLE_TRIES; attempt++) {
+    await new Promise((done) => setTimeout(done, SETTLE_MS));
+    const state = await getTorrentState(hash).catch(() => undefined);
+    // Gone from the client entirely is as settled as this gets.
+    if (state === undefined || isHalted(state) === halted) return;
+  }
+}
+
+const SETTLE_MS = 150;
+const SETTLE_TRIES = 12;
+
 export async function pauseTorrent(hash: string): Promise<void> {
   await torrentAction(
     ["/api/v2/torrents/stop", "/api/v2/torrents/pause"],
     `hashes=${hash}`,
   );
+  await settle(hash, true);
 }
 
 export async function resumeTorrent(hash: string): Promise<void> {
@@ -318,6 +366,7 @@ export async function resumeTorrent(hash: string): Promise<void> {
     ["/api/v2/torrents/start", "/api/v2/torrents/resume"],
     `hashes=${hash}`,
   );
+  await settle(hash, false);
 }
 
 /**

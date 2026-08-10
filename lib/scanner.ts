@@ -97,7 +97,11 @@ const IDLE: ScanState = {
  * A save mid-scan replaces this module while the scan is still running, and a
  * local copy would be frozen at whatever the progress was when that happened.
  */
-const globalForScan = globalThis as unknown as { medlibScan?: ScanState };
+const globalForScan = globalThis as unknown as {
+  medlibScan?: ScanState;
+  /** The timer set by `watchForRoots`; on globalThis for the reason above. */
+  medlibRootWatch?: ReturnType<typeof setInterval>;
+};
 
 /**
  * Laid over `IDLE` rather than returned bare, so a counter added to this type
@@ -144,11 +148,84 @@ export type FoundFile = { path: string; size: number; mtimeMs: number };
  * and `readdir` reports both as a failure to produce files.
  */
 async function reachable(root: string): Promise<boolean> {
+  return (await whyUnreachable(root)) === null;
+}
+
+/**
+ * Why a root cannot be walked, or null when it can.
+ *
+ * The reason used to be thrown away and every failure called "not reachable",
+ * which is the same phrase for a drive sitting on a desk unplugged and for one
+ * plugged in that this process is not allowed to read. Those are opposite
+ * problems — wait for the first, grant permission for the second — and a
+ * person reading "not reachable" about a drive they can see mounted has been
+ * told the one thing they already know.
+ */
+async function whyUnreachable(root: string): Promise<string | null> {
   try {
-    return (await stat(root)).isDirectory();
-  } catch {
-    return false;
+    return (await stat(root)).isDirectory() ? null : "not a folder";
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return "not plugged in";
+    if (code === "EACCES" || code === "EPERM") return "permission refused";
+    return code ? `unreadable (${code})` : "unreadable";
   }
+}
+
+/** How often the watcher below looks, and how long it keeps looking. */
+const WATCH_EVERY_MS = 20_000;
+const WATCH_FOR_MS = 30 * 60_000;
+
+/**
+ * Waits for a missing drive to turn up, and scans when it does.
+ *
+ * The scan on start-up races the drive and loses more often than not: the
+ * server is up seconds after login, an external disk mounts when it is ready,
+ * and the scan in between fails in under a fifth of a second having walked
+ * nothing. That failure then stood for the lifetime of the process — the state
+ * lives on globalThis, nothing re-ran it, and every page load since re-read
+ * the same frozen error and drew it. The drive had been plugged in the whole
+ * time; the app had simply asked once, at the only moment the answer was no.
+ *
+ * So the failure arms this: the roots that were missing are looked at again
+ * every so often, and the first time one of them answers, the scan is run for
+ * real. Bounded, because a folder that is gone for good is not worth a timer
+ * until the process ends — after that the button in Settings is the way back.
+ * Unreferenced, so a pending look never holds the process open by itself.
+ */
+function watchForRoots(missing: string[], roots: string[]): void {
+  if (globalForScan.medlibRootWatch || missing.length === 0) return;
+
+  let waited = 0;
+  const timer = setInterval(async () => {
+    waited += WATCH_EVERY_MS;
+
+    // Aged out first, and unconditionally. Checked after the two returns below
+    // it, a scan that never ends — or a folder that answers only sometimes —
+    // kept the timer alive past the limit it was given, which is the one thing
+    // a bounded watcher must not do.
+    if (waited >= WATCH_FOR_MS) return stopWatchingRoots();
+
+    // A scan already under way will report on these roots itself, and arms
+    // this again on its way out if any of them are still missing.
+    if (current().status === "scanning") return;
+
+    const back: boolean[] = await Promise.all(missing.map(reachable));
+    if (back.some(Boolean)) {
+      stopWatchingRoots();
+      startScan(roots);
+    }
+  }, WATCH_EVERY_MS);
+
+  timer.unref?.();
+  globalForScan.medlibRootWatch = timer;
+}
+
+function stopWatchingRoots(): void {
+  if (globalForScan.medlibRootWatch) {
+    clearInterval(globalForScan.medlibRootWatch);
+  }
+  globalForScan.medlibRootWatch = undefined;
 }
 
 async function* walk(
@@ -483,8 +560,9 @@ export function startScan(roots: string[]): ScanState {
         // returns nothing — which the prune below would read as "every file
         // you own has been deleted". It wiped a 416-file library once; the
         // whole probe cache went with it.
-        if (!(await reachable(root))) {
-          unreachable.push({ root, why: "not reachable" });
+        const why = await whyUnreachable(root);
+        if (why) {
+          unreachable.push({ root, why });
           continue;
         }
 
@@ -530,6 +608,14 @@ export function startScan(roots: string[]): ScanState {
           finishedAt: Date.now(),
         });
         sweepAfterScan();
+
+        // Said once, and then watched for rather than left standing: this is
+        // the answer at one instant, and the drive it is about is the kind of
+        // thing that turns up a minute later.
+        watchForRoots(
+          unreachable.map((u) => u.root),
+          roots,
+        );
         return;
       }
 
@@ -545,6 +631,20 @@ export function startScan(roots: string[]): ScanState {
         removed,
         skipped: unreachable.map((u) => `${u.root} (${u.why})`),
       });
+
+      // One folder of several missing is the same problem as all of them, and
+      // it goes stale the same way — the scan finishes, the banner names the
+      // folder that was left out, and it says so long after the drive holding
+      // it came back. Watched on the same terms; cleared when there is nothing
+      // left to wait for, so a clean scan never leaves a timer behind it.
+      if (unreachable.length > 0) {
+        watchForRoots(
+          unreachable.map((u) => u.root),
+          roots,
+        );
+      } else {
+        stopWatchingRoots();
+      }
 
       await probeAll(files);
       await indexArtwork(files);
