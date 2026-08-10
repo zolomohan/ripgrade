@@ -423,16 +423,59 @@ function Grid({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * What a tab says when it has nothing — the same card the library shows when
- * its filters match no film.
+ * The marks the four empty answers wear.
+ *
+ * There was one shape for all of them before this: a bordered box with a grey
+ * sentence lying along the top of it, left-aligned in a frame the width of the
+ * window and nothing like the height. It read as a card that had failed to load
+ * rather than as an answer — and it was the only card in here, three lines
+ * below the note explaining that the releases get no box because "a bordered
+ * box would say they are a different kind of thing rather than the same
+ * question asked somewhere else". A sentence saying there is nothing is not a
+ * different kind of thing either.
+ *
+ * So they are `EmptyState` now, like every other empty page in the app: mark,
+ * heading, sentence, centred in the space going spare. Which also means each
+ * one says what it is before it is read — four states that were four
+ * indistinguishable grey paragraphs.
+ *
+ * A mark each, and deliberately not four variations on a magnifying glass: what
+ * separates these is not that a search failed, it is *which* of the three
+ * places was asked, and a lens with a different squiggle in it four times says
+ * the opposite.
  */
-function Nothing({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
-      <p className="text-sm opacity-50">{children}</p>
-    </div>
-  );
-}
+/** Searched, and the lens came up empty. */
+const NO_MATCH_ICON = (
+  <>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5M8.5 11h5" />
+  </>
+);
+
+/** All present and accounted for — there was nothing new to bring back. */
+const ALL_HELD_ICON = (
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m8.4 12.2 2.4 2.4 4.8-5.4" />
+  </>
+);
+
+/** A chain with its two ends apart: the connection is the thing missing. */
+const UNLINKED_ICON = (
+  <>
+    <path d="m18.8 12.3 1.7-1.7a5 5 0 0 0-7-7l-1.7 1.7" />
+    <path d="m5.2 11.7-1.7 1.7a5 5 0 0 0 7 7l1.7-1.7" />
+  </>
+);
+
+/** Broadcast, for the one scope that is other people's machines answering. */
+const NO_RELEASES_ICON = (
+  <>
+    <path d="M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2" />
+    <path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4" />
+    <path d="M12 12h.01" />
+  </>
+);
 
 /**
  * What is being waited for, drawn where it will land: tiles the shape of the
@@ -801,7 +844,12 @@ export function SearchView() {
               )}
             </>
           ) : (
-            results && <Nothing>Nothing on the drive matches “{term}”.</Nothing>
+            results && (
+              <EmptyState icon={NO_MATCH_ICON} title="No match on the drive">
+                Nothing you have matches “{term}”. The other two scopes look
+                past your own shelves.
+              </EmptyState>
+            )
           ))}
 
         {mode === "tmdb" && (
@@ -843,20 +891,19 @@ export function SearchView() {
             {/* Only what is missing: anything TMDb turned up that is already on
                 the drive is on the first shelf rather than offered again here. */}
             {results?.tmdb && discover.length === 0 && (
-              <Nothing>
+              <EmptyState icon={ALL_HELD_ICON} title="Nothing new to add">
                 Nothing at TMDb matches “{term}” that you do not already have.
-              </Nothing>
+              </EmptyState>
             )}
 
             {results && !results.tmdb && (
-              <Nothing>
-                TMDb is not connected, so only your own library is searched.
-                Connect it on the{" "}
+              <EmptyState icon={UNLINKED_ICON} title="TMDb is not connected">
+                Only your own library is searched. Connect it on the{" "}
                 <Link href="/settings" className="underline underline-offset-4">
                   Settings page
                 </Link>{" "}
                 to reach everything else.
-              </Nothing>
+              </EmptyState>
             )}
           </>
         )}
@@ -896,11 +943,14 @@ export function SearchView() {
         )}
 
         {mode === INDEXER && search && showing.length === 0 && (
-          <Nothing>
+          <EmptyState
+            icon={NO_RELEASES_ICON}
+            title="Nothing from the indexers"
+          >
             No indexer returned a thing for “{search.query}”. Try fewer words —
             they match release names, and a name rarely says more than the title
             and the year.
-          </Nothing>
+          </EmptyState>
         )}
 
         {mode === INDEXER && response && !response.ok && (
