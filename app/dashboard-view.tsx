@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Art } from "./art";
 import { Bars, Card, Coverage, Stat } from "./charts";
 import { count, size } from "./format";
+import { useEntrance } from "./return-to";
 import { stagger } from "./stagger";
 import type { Dashboard } from "@/lib/dashboard";
 import { posterName } from "@/lib/routes";
@@ -530,6 +531,12 @@ const nameOf = (item: Dashboard["recent"]["added"][number]) =>
     : `${item.title} — ${count(item.episodes)} ${item.episodes === 1 ? "episode" : "episodes"}`;
 
 function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
+  /* The shelf is a place back returns to now, and a tile that replays its
+     arrival on the way back is a tile the poster is flying home to while it
+     fades in underneath. Same decision every other shelf makes — see
+     `useEntrance` in app/return-to.tsx. */
+  const entrance = useEntrance();
+
   return (
     <ul
       className={`no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 sm:-mx-8 sm:px-8 md:mr-[calc(50%-50vw+7rem)] md:ml-[calc(50%-50vw-7rem)] md:pr-[calc(50vw-50%-7rem)] md:pl-[calc(50vw-50%+7rem)] ${SHELF_MASK}`}
@@ -538,7 +545,7 @@ function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
         <li
           key={item.posterKey}
           style={stagger(i)}
-          className="row-enter w-24 shrink-0"
+          className={`${entrance} w-32 shrink-0`}
         >
           <Link
             href={item.href}
@@ -560,12 +567,18 @@ function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
                   // path, which is what `/library` and `/show` already do — so
                   // the tile travels into the page it opens either way.
                   transitionName={posterName(item.posterKey)}
-                  size="w185"
+                  // 128pt of poster is 256 device pixels on the screens these
+                  // are looked at on, which is the next bucket up — w185 was
+                  // the right ask at 96 and is a soft picture at this size.
+                  // It also puts the local file on the cached 640 thumbnail
+                  // rather than a full-resolution scan off the drive: `Art`
+                  // maps the two together, and w185 was in neither map.
+                  size="w342"
                   loading="lazy"
-                  className="h-36 w-24 rounded-control object-cover ring-1 ring-line"
+                  className="h-48 w-32 rounded-control object-cover ring-1 ring-line"
                 />
               ) : (
-                <span className="block h-36 w-24 rounded-control bg-surface-strong" />
+                <span className="block h-48 w-32 rounded-control bg-surface-strong" />
               )}
 
               {/* How many episodes this one poster is standing in for. Over the

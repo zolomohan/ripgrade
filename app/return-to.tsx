@@ -31,8 +31,15 @@ const SCROLL_KEY = "ripgrade:listingScroll";
  * is not somewhere you can be sent back to: opening a film from it closes it
  * and leaves the page underneath, which is the page this trail already holds.
  * See app/search/dialog.tsx.
+ *
+ * And the dashboard, which is not a shelf but carries one: the recently added
+ * strip is a row of posters that open films and shows like any other. Left out,
+ * it left no crumb — so back from something opened on the front page fell
+ * through to the fallback below and landed you in the library, on a shelf you
+ * had not been looking at. Somewhere you can arrive at a film from is somewhere
+ * back has to return you to.
  */
-const LISTINGS = ["/library", "/collections", "/wishlist", "/upgrades"];
+const LISTINGS = ["/", "/library", "/collections", "/wishlist", "/upgrades"];
 
 const isListing = (path: string) =>
   LISTINGS.includes(path) ||
