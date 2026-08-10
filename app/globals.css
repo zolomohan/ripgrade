@@ -129,10 +129,22 @@
   --font-score: var(--font-score-face);
   --font-mono: var(--font-mono-face);
 
-  /* Four steps, chosen by element size rather than by whim. */
+  /* Five steps, chosen by element size rather than by whim. */
   --radius-chip: 0.375rem;
   --radius-control: 0.5rem;
   --radius-card: 0.875rem;
+  /*
+   * A row in a list you can point at — the library's films, the queue's, the
+   * Jobs page's — which is a taller shape than a card and wants a rounder one.
+   *
+   * These are `py-4` rows carrying a 6rem poster, drawn as a lit block under
+   * the pointer rather than as an outline: the corner is the whole of what
+   * gives the highlight its shape, and the card's 14px on a 7rem-tall block
+   * reads as a rectangle with the corners chipped off. The figure is the pill
+   * field's own 1.25rem, so a row lights up on the same curve the search box
+   * is drawn on rather than on a sixth number nobody chose.
+   */
+  --radius-row: 1.25rem;
   /*
    * The largest, and the only one derived rather than picked: a panel whose
    * first child is a pill held off its edge.

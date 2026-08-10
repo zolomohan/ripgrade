@@ -25,9 +25,34 @@ export type Artefact = {
   fromStem: boolean;
 };
 
-/** What dovi_convert and mkvmerge leave behind when they are not allowed to
-    finish. Both write beside the film, under a name derived from its own. */
-const LEFTOVER_SUFFIXES = [".p81.hevc", ".p81.tmp", ".audio-strip.tmp"];
+/**
+ * What dovi_convert and mkvmerge leave behind when they are not allowed to
+ * finish. Both write beside the film, under a name derived from its own.
+ *
+ * The last five are a rebuild's: the base layer, the base layer with its
+ * Profile 8.1 metadata stripped, the enhancement layer unpacked out of the
+ * archive, the two of them interleaved, and the rebuilt film itself in the
+ * moment before it is renamed over the one it replaces. Every one of them is
+ * named from the stem with an underscore, which is dovi_convert's convention
+ * for a working file and not a name any film arrives with.
+ *
+ * The rebuilt file is the only one of these that is a playable film, and it is
+ * still rubbish: it exists only where a rebuild was killed between the mux and
+ * the rename, and the film it was rebuilt from is still sitting beside it.
+ */
+const LEFTOVERS: { suffix: string; fromStem: boolean }[] = [
+  // dovi_convert names its working files from the film with the extension
+  // replaced, so what is left when one is stripped off is the stem and not the
+  // file. mkvmerge's is appended to the whole name, extension and all.
+  { suffix: ".p81.hevc", fromStem: true },
+  { suffix: ".p81.tmp", fromStem: true },
+  { suffix: ".audio-strip.tmp", fromStem: false },
+  { suffix: "_bl.hevc", fromStem: true },
+  { suffix: "_bl_clean.hevc", fromStem: true },
+  { suffix: "_el.hevc", fromStem: true },
+  { suffix: "_restored.hevc", fromStem: true },
+  { suffix: ".restored.mkv", fromStem: true },
+];
 
 /** `<film>.restoring-4821` — the aside a restore renames the film through, and
     all that is left of one if the process dies between the two renames. */
@@ -80,16 +105,9 @@ export function artefactOf(name: string): Artefact | undefined {
     };
   }
 
-  for (const suffix of LEFTOVER_SUFFIXES) {
+  for (const { suffix, fromStem } of LEFTOVERS) {
     if (!name.endsWith(suffix)) continue;
-    return {
-      kind: "leftover",
-      base: name.slice(0, -suffix.length),
-      // dovi_convert names its working files from the film with the extension
-      // replaced, so what is left is the stem and not the file. mkvmerge's is
-      // appended to the whole name, extension and all.
-      fromStem: suffix.startsWith(".p81"),
-    };
+    return { kind: "leftover", base: name.slice(0, -suffix.length), fromStem };
   }
 
   return undefined;

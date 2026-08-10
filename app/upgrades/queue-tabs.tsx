@@ -91,6 +91,7 @@ export function QueueTabs({
   wantsChecked,
   jackettReady,
   dovi,
+  keepingEl,
   audio,
   cleanup,
 }: {
@@ -103,6 +104,8 @@ export function QueueTabs({
   wantsChecked: number;
   jackettReady: boolean;
   dovi: DoviTask[];
+  /** Whether a conversion started from here keeps the layer it discards. */
+  keepingEl: boolean;
   audio: AudioTask[];
   cleanup: CleanupFile[];
 }) {
@@ -262,7 +265,12 @@ export function QueueTabs({
         // page rather than sitting under the switch.
         <div className="flex flex-1 flex-col">
           {tab === "dovi" ? (
-            <DoviTasks tasks={dovi} sort={sort} group={group} />
+            <DoviTasks
+              tasks={dovi}
+              keepingEl={keepingEl}
+              sort={sort}
+              group={group}
+            />
           ) : tab === "audio" ? (
             <AudioTasks tasks={audio} sort={sort} group={group} />
           ) : (

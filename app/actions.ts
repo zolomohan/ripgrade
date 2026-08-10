@@ -39,9 +39,14 @@ import {
   backupBytes,
   cancelConvert,
   deleteBackup,
+  deleteElArchive,
+  elArchiveBytes,
   getConvertJob,
+  keepsEnhancementLayer,
   restoreOriginal as restore,
   startConvert,
+  startRebuild,
+  KEEP_EL_KEY,
   type ConvertJob,
 } from "@/lib/convert";
 import { classifyEnhancementLayer, convertRefusal } from "@/lib/derive";
@@ -1042,6 +1047,24 @@ export async function checkConvertible(
 }
 
 /**
+ * What the progress watcher measures against, read from the file we already
+ * know about. The video's share is worked out from its bitrate because
+ * MediaInfo reports no stream size for a Matroska track — near enough, and
+ * only ever used to weight one part of a bar against another.
+ */
+const workingSizes = (movie: {
+  sizeBytes: number;
+  videoBitrateKbps?: number;
+  durationSec?: number;
+}) => ({
+  sourceBytes: movie.sizeBytes,
+  videoBytes:
+    movie.videoBitrateKbps && movie.durationSec
+      ? (movie.videoBitrateKbps * 1000 * movie.durationSec) / 8
+      : undefined,
+});
+
+/**
  * Rewrites a Profile 7 file as Profile 8.1, in place, via dovi_convert.
  *
  * The only action in this app that changes a film rather than describing one,
@@ -1086,15 +1109,7 @@ export async function beginConvert(
   );
   if (refusal) return { ok: false, error: refusal };
 
-  // Read from the file we already know about, so the progress watcher has
-  // something to measure against.
-  const job = startConvert(moviePath, {
-    sourceBytes: movie.sizeBytes,
-    videoBytes:
-      movie.videoBitrateKbps && movie.durationSec
-        ? (movie.videoBitrateKbps * 1000 * movie.durationSec) / 8
-        : undefined,
-  });
+  const job = startConvert(moviePath, workingSizes(movie));
   // The job itself, not an `ok` for the caller to build one from. A page that
   // hand-wrote the running state got to leave a field out of it — and the one
   // it left out was `percent`, which is the difference between the rail drawing
@@ -1160,6 +1175,110 @@ export async function restoreOriginal(
 
   try {
     await restore(moviePath);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+/**
+ * Whether a conversion keeps the enhancement layer it discards.
+ *
+ * One setting rather than a question per film: the conversions this app starts
+ * come from the queue as often as from a film's own page, and a decision that
+ * only exists in a dialog is one the queue would have to invent an answer to.
+ */
+export async function getKeepEnhancementLayer(): Promise<boolean> {
+  return keepsEnhancementLayer();
+}
+
+export async function setKeepEnhancementLayer(on: boolean): Promise<void> {
+  setSetting(KEEP_EL_KEY, on ? "on" : "off");
+  refresh();
+}
+
+/**
+ * Rebuilds the Profile 7 file from the layer a conversion kept aside.
+ *
+ * Minutes of disk and a job of its own, unlike `restoreOriginal` — that one is
+ * two renames because the original file is still there. This one has only the
+ * enhancement layer, and has to put the film back together around it.
+ */
+export async function beginRebuildProfile7(
+  moviePath: string,
+): Promise<{ ok: true; job: ConvertJob } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  if (getConvertJob().status === "running") {
+    return { ok: false, error: "A conversion is already running." };
+  }
+  if (getDoviJob().status === "running") {
+    return { ok: false, error: "Wait for the current full pass to finish." };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "Wait for the track removal to finish." };
+  }
+  if (elArchiveBytes(moviePath) === undefined) {
+    return {
+      ok: false,
+      error:
+        "No enhancement layer is kept beside this film, so there is nothing to rebuild from.",
+    };
+  }
+  // Rebuilding when the original is still there would spend an hour arriving
+  // at a worse copy of a file already sitting beside it.
+  if (backupBytes(moviePath) !== undefined) {
+    return {
+      ok: false,
+      error:
+        "The Profile 7 original is still kept beside this film — restore that instead. It is the file itself, and it takes seconds.",
+    };
+  }
+  // The same rule converting has, for the same reason: two files each claiming
+  // to be what the film was before, and restoring either silently undoes the
+  // other.
+  if (audioBackupBytes(moviePath) !== undefined) {
+    return {
+      ok: false,
+      error:
+        "An original from a track removal is still kept beside this film. Restore it or delete it before rebuilding.",
+    };
+  }
+
+  const movie = getLibrary().find((m) => m.path === moviePath);
+  if (!movie) return { ok: false, error: "Film is no longer in the library." };
+
+  return { ok: true, job: startRebuild(moviePath, workingSizes(movie)) };
+}
+
+/**
+ * Throws away the kept enhancement layer.
+ *
+ * The last step of a conversion for anyone reclaiming space, and on a film
+ * whose original has already gone it is the point of no return: after this the
+ * Profile 7 version exists only on the disc it came from.
+ */
+export async function discardEnhancementLayer(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  if (getConvertJob().status === "running") {
+    return { ok: false, error: "A conversion is running — wait for it." };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "A track removal is running — wait for it." };
+  }
+
+  try {
+    await deleteElArchive(moviePath);
   } catch (err) {
     return {
       ok: false,

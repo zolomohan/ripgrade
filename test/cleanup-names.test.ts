@@ -58,6 +58,38 @@ test("mkvmerge's working file keeps the film's whole name", () => {
   assert.equal(found?.fromStem, false);
 });
 
+test("a rebuild's working files are named from the stem too", () => {
+  for (const name of [
+    "Dune.2021_bl.hevc",
+    "Dune.2021_bl_clean.hevc",
+    "Dune.2021_el.hevc",
+    "Dune.2021_restored.hevc",
+  ]) {
+    const found = artefactOf(name);
+    assert.equal(found?.kind, "leftover", name);
+    assert.equal(found?.base, "Dune.2021", name);
+    assert.equal(found?.fromStem, true, name);
+  }
+});
+
+test("a rebuilt film left unrenamed is wreckage, not a film", () => {
+  // The one leftover that is a playable Matroska file. It exists only where a
+  // rebuild was killed between the mux and the rename, and the film it was
+  // built from is still sitting beside it under its own name.
+  const found = artefactOf("Dune.2021.restored.mkv");
+
+  assert.equal(found?.kind, "leftover");
+  assert.equal(found?.base, "Dune.2021");
+  assert.equal(found?.fromStem, true);
+});
+
+test("the kept enhancement layer is never wreckage", () => {
+  // It is the point of the conversion being reversible, and it outlives the
+  // original on purpose. Offering it up for deletion beside the junk would be
+  // offering the only way back to Profile 7.
+  assert.equal(artefactOf("Dune.2021.dovi"), undefined);
+});
+
 test("a restore that died between its two renames leaves an aside", () => {
   const found = artefactOf(`${FILM}.restoring-4821`);
 
@@ -89,6 +121,10 @@ test("a film whose own name ends in a word we look for is still a film", () => {
     "Restoring.Hope.2019.restoring-12.mkv",
     "Backup.2020.bak.dovi_convert.mkv",
     "Something.audio-strip.tmp.mkv",
+    // A film with "restored" in its title, and one with the word as its own
+    // last segment but the wrong extension.
+    "The.Restored.2018.2160p.mkv",
+    "Dune.2021.restored.mp4",
   ]) {
     assert.equal(artefactOf(name), undefined, name);
   }
@@ -111,7 +147,10 @@ test("macOS metadata is never offered, whatever it is named after", () => {
 // ---------------------------------------------------------------------------
 
 test("a stem is the name without its final extension", () => {
-  assert.equal(stemOf("/films/Dune (2021)/Dune.2021.mkv"), "/films/Dune (2021)/Dune.2021");
+  assert.equal(
+    stemOf("/films/Dune (2021)/Dune.2021.mkv"),
+    "/films/Dune (2021)/Dune.2021",
+  );
   // Nothing to remove, rather than the folder losing its dotted segment.
   assert.equal(stemOf("/films/Dune (2021)/Dune"), "/films/Dune (2021)/Dune");
 });

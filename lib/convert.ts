@@ -6,7 +6,7 @@ import { rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { getSetting } from "./db";
-import { BACKUP_SUFFIX } from "./derive";
+import { BACKUP_SUFFIX, EL_ARCHIVE_SUFFIX } from "./derive";
 import { scanDovi } from "./dovi";
 import { ended, recordRun } from "./job-history";
 import { appendOutput } from "./job-output";
@@ -29,6 +29,14 @@ import { reprobeFile } from "./scanner";
  * app holds about that path describes a file that is no longer there — which is
  * what `refreshFileFacts` is for, and why both converting and restoring end
  * with a call to it.
+ *
+ * The same tool is also what walks the conversion back. Given `--backup` it
+ * writes the enhancement layer out to a `.dovi` archive beside the film before
+ * discarding it, and `dovi_convert restore` interleaves that archive back into
+ * the base layer to rebuild the Profile 7 file. That is the second job in this
+ * module, and it shares the first one's state deliberately: they rewrite the
+ * same film with the same tool on the same drive, and only one of them can be
+ * happening at a time.
  */
 
 export const backupPathFor = (filePath: string) => filePath + BACKUP_SUFFIX;
@@ -104,9 +112,94 @@ export async function restoreOriginal(filePath: string): Promise<void> {
   await refreshFileFacts(filePath);
 }
 
+// ---------------------------------------------------------------------------
+// The enhancement layer, kept aside
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the discarded enhancement layer lives, when it was kept.
+ *
+ * The extension is replaced rather than appended — dovi_convert's convention,
+ * and the one it looks the archive up under when restoring, so this has to
+ * match it exactly.
+ */
+export const elArchivePathFor = (filePath: string) =>
+  filePath.replace(/\.[^.]+$/, "") + EL_ARCHIVE_SUFFIX;
+
+/** How big the kept enhancement layer is, or undefined if there isn't one. */
+export const elArchiveBytes = (filePath: string) =>
+  sizeOf(elArchivePathFor(filePath));
+
+/** The setting behind it, and the one place its value is spelled. */
+export const KEEP_EL_KEY = "keepEnhancementLayer";
+
+/**
+ * Whether a conversion should keep the layer it is about to throw away.
+ *
+ * On unless it has been turned off, which is the one way round that fails
+ * safely. The cost of keeping it is a pass over the film and a tenth to a
+ * quarter of its size; the cost of not keeping it is a conversion that becomes
+ * irreversible the moment the 90 GB original is deleted — and deleting that
+ * original is the whole point of converting for anyone short of space. A
+ * default that quietly throws the layer away is one nobody discovers until
+ * they want it back.
+ *
+ * Read as "not off" rather than "is on" for that reason: an install that has
+ * never touched the setting keeps the layer.
+ */
+export const keepsEnhancementLayer = () => getSetting(KEEP_EL_KEY) !== "off";
+
+/**
+ * Throws away the kept enhancement layer.
+ *
+ * Irreversible in the way deleting the original is, and worse in one respect:
+ * on a film whose original has already gone, this is the last copy of the
+ * enhancement layer outside the disc it was pressed on.
+ */
+export async function deleteElArchive(filePath: string): Promise<void> {
+  const archive = elArchivePathFor(filePath);
+  if (!existsSync(archive)) {
+    throw new Error("No enhancement layer is kept beside this file.");
+  }
+  await rm(archive, { force: true });
+}
+
+/**
+ * What dovi_convert calls the rebuilt Profile 7 file it writes beside the
+ * film. It never lands under this name for long — the job renames it over the
+ * film once it has been checked — but a rebuild killed at the wrong moment
+ * leaves one, and both the sweep and the cleanup list need to know the name.
+ */
+export const restoredPathFor = (filePath: string) =>
+  filePath.replace(/\.[^.]+$/, "") + ".restored.mkv";
+
+/**
+ * The half-built files a rebuild leaves behind if it is interrupted: the base
+ * layer, the base layer with the Profile 8.1 metadata stripped out, the
+ * unpacked enhancement layer, and the two of them interleaved. All four are
+ * named from the film's stem, and all four go to the scratch folder when one
+ * is set.
+ */
+const rebuildWorkingFiles = (filePath: string, tempDir?: string) => {
+  const stem = path.basename(filePath).replace(/\.[^.]+$/, "");
+  const dir = tempDir ?? path.dirname(filePath);
+  return [
+    path.join(dir, `${stem}_bl.hevc`),
+    path.join(dir, `${stem}_bl_clean.hevc`),
+    path.join(dir, `${stem}_el.hevc`),
+    path.join(dir, `${stem}_restored.hevc`),
+  ];
+};
+
 export type ConvertJob = {
   status: "idle" | "running" | "done" | "cancelled" | "error";
   path?: string;
+  /**
+   * Which way this one is going. Both directions are dovi_convert rewriting
+   * the same film in place, so they share one job — but everything written
+   * about a running job, from the rail's line to the log's, has to say which.
+   */
+  mode?: "convert" | "rebuild";
   /** dovi_convert's three steps, then the runtime check this app adds. */
   step: number;
   steps: number;
@@ -121,6 +214,15 @@ export type ConvertJob = {
   percent?: number;
   /** The tool's own closing summary, kept for the result line. */
   summary?: string;
+  /**
+   * The command this job spawned, written out as it could be run by hand.
+   *
+   * Recorded from the argument list actually handed to `spawn` rather than
+   * composed for display, so it cannot drift from what ran — which is the only
+   * version of it worth showing. The film's page prints the recipe it *would*
+   * run; this is the one that did.
+   */
+  command?: string;
   /** The last lines dovi_convert printed — see `lib/job-output.ts`. */
   output?: string[];
   /** When it started, for the dialog's clock. An hour is a long time to guess. */
@@ -129,7 +231,21 @@ export type ConvertJob = {
   finishedAt?: number;
 };
 
+/**
+ * dovi_convert's three, then the runtime check this app adds — and, when the
+ * enhancement layer is being kept, the pass that extracts it before any of
+ * them. Held apart from the tool's own numbering, which is what `stepOffset`
+ * below translates.
+ */
 const CHECK_STEP = 4;
+const CHECK_STEP_WITH_EL = 5;
+
+/**
+ * A rebuild's four: pull the base layer out, put the two layers back together,
+ * mux, check. dovi_convert prints no step lines of its own for this one — it
+ * draws a spinner — so these are counted from the files it leaves growing.
+ */
+const REBUILD_STEPS = 4;
 
 const IDLE: ConvertJob = { status: "idle", step: 0, steps: CHECK_STEP };
 
@@ -151,9 +267,14 @@ function setJob(next: ConvertJob) {
   // Every way this job can end passes through here, so the log is written in
   // one place rather than at each of the four returns that finish it.
   if (was.status === "running" && ended(next.status)) {
+    const rebuild = next.mode === "rebuild";
     recordRun({
       kind: "convert",
-      title: next.path ? path.basename(next.path) : "Conversion",
+      title: next.path
+        ? path.basename(next.path)
+        : rebuild
+          ? "Profile 7 rebuild"
+          : "Conversion",
       path: next.path,
       outcome: next.status,
       startedAt: next.startedAt,
@@ -162,8 +283,12 @@ function setJob(next: ConvertJob) {
         next.error ||
         [
           // Short enough to be read at a glance in a list. What was discarded is
-          // said by the job's own name a line above it.
-          next.summary && `${next.summary} discarded`,
+          // said by the job's own name a line above it — except on a rebuild,
+          // where the direction is the whole of what happened and the film's
+          // name above says nothing about it.
+          rebuild
+            ? "back to Profile 7"
+            : next.summary && `${next.summary} discarded`,
           next.check,
         ]
           .filter(Boolean)
@@ -196,11 +321,22 @@ const workingFiles = (filePath: string, tempDir?: string) => {
 };
 
 /**
- * Stops a conversion and clears up after it.
+ * The enhancement layer as it is being pulled out, before it is packed into
+ * the archive. Beside the film unless there is a scratch folder, like every
+ * other working file here.
+ */
+const elTempFor = (filePath: string, tempDir?: string) =>
+  path.join(
+    tempDir ?? path.dirname(filePath),
+    `${path.basename(filePath).replace(/\.[^.]+$/, "")}_el.hevc`,
+  );
+
+/**
+ * Stops whichever direction is running, and clears up after it.
  *
- * Safe at any point, because dovi_convert does not touch the original until
- * everything else has succeeded — the film is still sitting where it was, and
- * all that has to go is the partial output.
+ * Safe at any point, because neither direction touches the film until
+ * everything else has succeeded — it is still sitting where it was, and all
+ * that has to go is the partial output.
  *
  * The process group rather than the process: dovi_convert drives ffmpeg and
  * dovi_tool of its own, and killing only the parent would leave those running
@@ -218,6 +354,24 @@ export function cancelConvert(): ConvertJob {
     }
   }
   return current();
+}
+
+/**
+ * One spawned command, written out as it could be pasted into a shell.
+ *
+ * Both jobs here run from the film's own folder and pass a bare filename, so
+ * the directory is the first line: without it the command below is one nobody
+ * could run, and film folders are exactly the paths with spaces and brackets
+ * in them.
+ *
+ * Quoted the way the film page's recipes are — `JSON.stringify`, which is a
+ * double-quoted shell string for everything a filename can hold, and which
+ * escapes the two characters (`"` and `\`) that would otherwise end it early.
+ */
+function commandLine(cwd: string, command: string, args: string[]): string {
+  const quote = (part: string) =>
+    /^[\w.,:=/@%+-]+$/.test(part) ? part : JSON.stringify(part);
+  return `cd ${quote(cwd)}\n${command} ${args.map(quote).join(" ")}`;
 }
 
 /** Progress is drawn with cursor moves and colour, none of which we want. */
@@ -248,11 +402,21 @@ async function refreshFileFacts(filePath: string): Promise<void> {
  * The two are summed against what each will end up holding, which weights the
  * steps by the work they actually do instead of by a guess: the video stream
  * for the first, very nearly the whole file for the second.
+ *
+ * The extraction that precedes them when the enhancement layer is being kept
+ * is the one stretch with no number in it. Its output is the layer itself, and
+ * how big that will be is exactly what nobody knows in advance — a tenth of
+ * the film for one disc and a quarter for the next. So it is left unmeasured
+ * and the bar falls back to the step, which is what the step is for; the
+ * moment the archive is closed its real size joins the sum and everything
+ * after it is measured against a total that includes it.
  */
 function watchProgress(
   filePath: string,
   sizes: ConvertSizes,
   tempDir?: string,
+  /** Set only while this run is the one creating the archive. */
+  archive?: string,
 ) {
   const stem = filePath.replace(/\.[^.]+$/, "");
   // Only the video goes to the temp drive; the remux always stays beside the
@@ -262,28 +426,43 @@ function watchProgress(
     ? path.join(tempDir, `${path.basename(stem)}.p81.hevc`)
     : `${stem}.p81.hevc`;
   const targets = [hevc, `${stem}.p81.tmp`];
-  const total = (sizes.videoBytes ?? sizes.sourceBytes) + sizes.sourceBytes;
+  const converting =
+    (sizes.videoBytes ?? sizes.sourceBytes) + sizes.sourceBytes;
 
   return setInterval(() => {
     if (current().status !== "running") return;
 
-    let written = 0;
+    // Nothing to say until the archive exists: the pass writing it is the one
+    // piece of this job whose size is not known until it has finished.
+    const kept = archive ? sizeOf(archive) : 0;
+    if (kept === undefined) return;
+
+    let written = kept;
     let found = false;
     for (const target of targets) {
-      try {
-        written += statSync(target).size;
-        found = true;
-      } catch {
-        // Not created yet, or already renamed into place.
-      }
+      const size = sizeOf(target);
+      if (size === undefined) continue;
+      written += size;
+      found = true;
     }
+
+    const total = converting + kept;
 
     // Held below 100 so the bar completes when the job does, not when the last
     // byte lands — the verify step still has to run.
-    if (found && total > 0) {
+    if ((found || kept > 0) && total > 0) {
       setJob({ ...current(), percent: Math.min(99, (written / total) * 100) });
     }
   }, 1000);
+}
+
+/** A file's size, or undefined where it has not been created or is already gone. */
+function sizeOf(filePath: string): number | undefined {
+  try {
+    return statSync(filePath).size;
+  } catch {
+    return undefined;
+  }
 }
 
 export type ConvertSizes = { sourceBytes: number; videoBytes?: number };
@@ -294,50 +473,78 @@ export function startConvert(
 ): ConvertJob {
   if (current().status === "running") return current();
 
+  const keepEl = keepsEnhancementLayer();
+  const archive = elArchivePathFor(filePath);
+  /**
+   * Whether this run is the one that extracts the layer. An archive already
+   * beside the film is reused — dovi_convert says so and moves on — which is
+   * what a film converted, restored and converted again ends up doing, and it
+   * saves a pass over the whole file.
+   */
+  const backing = keepEl && !existsSync(archive);
+
   setJob({
     status: "running",
+    mode: "convert",
     path: filePath,
     step: 1,
-    steps: CHECK_STEP,
-    percent: 0,
+    steps: backing ? CHECK_STEP_WITH_EL : CHECK_STEP,
+    label: backing ? "Keeping the enhancement layer" : undefined,
+    // Undefined rather than zero while the layer is being extracted, so the
+    // bar falls back to the step it is on. Zero is a measurement, and holding
+    // one at zero for the twenty minutes of a pass nobody can measure reads as
+    // a job that has stopped.
+    percent: backing ? undefined : 0,
     startedAt: Date.now(),
   });
 
   void (async () => {
     const tempDir = getSetting("convertTempDir");
-    const ticker = watchProgress(filePath, sizes, tempDir);
-    cancelling = false;
-    // Its own process group, so a cancel can take its children down with it.
-    const child = spawn(
-      "dovi_convert",
-      [
-        "convert",
-        path.basename(filePath),
-        // On a simple FEL the tool stops to warn that the layer carries data
-        // and asks whether to go on. This app has already answered that, and
-        // answered it better: its verdict comes from every frame of the RPU,
-        // where the question is raised on the tool's own head scan. Saying so
-        // up front is what keeps the two agreeing on a film.
-        //
-        // It does not touch the complex-FEL refusal above it, which still
-        // needs --force and is deliberately not given one — that second
-        // opinion is the reason this shells out rather than reimplementing.
-        "--include-simple",
-        ...(tempDir ? ["--temp", tempDir] : []),
-      ],
-      {
-        cwd: path.dirname(filePath),
-        detached: true,
-        // No stdin at all, rather than the pipe `spawn` gives by default.
-        //
-        // Every prompt in the tool falls back to a safe answer on EOF, and can
-        // therefore be left to reach one. Handed a pipe instead, it blocks on a
-        // read that nothing will ever write to: the conversion sits at step 1
-        // with no output, no child processes and no way to finish, and the only
-        // thing the app can see is a job that has stopped moving.
-        stdio: ["ignore", "pipe", "pipe"],
-      },
+    const ticker = watchProgress(
+      filePath,
+      sizes,
+      tempDir,
+      backing ? archive : undefined,
     );
+    cancelling = false;
+
+    const args = [
+      "convert",
+      path.basename(filePath),
+      // On a simple FEL the tool stops to warn that the layer carries data
+      // and asks whether to go on. This app has already answered that, and
+      // answered it better: its verdict comes from every frame of the RPU,
+      // where the question is raised on the tool's own head scan. Saying so
+      // up front is what keeps the two agreeing on a film.
+      //
+      // It does not touch the complex-FEL refusal above it, which still
+      // needs --force and is deliberately not given one — that second
+      // opinion is the reason this shells out rather than reimplementing.
+      "--include-simple",
+      // Pulls the enhancement layer out to a `.dovi` archive before
+      // discarding it, which is what makes the conversion reversible once
+      // the 90 GB original has been deleted. Passed even when the archive
+      // already exists: the tool finds it, says so and skips the pass.
+      ...(keepEl ? ["--backup"] : []),
+      ...(tempDir ? ["--temp", tempDir] : []),
+    ];
+
+    const cwd = path.dirname(filePath);
+    setJob({ ...current(), command: commandLine(cwd, "dovi_convert", args) });
+
+    // Its own process group, so a cancel can take its children down with it.
+    const child = spawn("dovi_convert", args, {
+      cwd,
+      detached: true,
+      // No stdin at all, rather than the pipe `spawn` gives by default.
+      //
+      // Every prompt in the tool falls back to a safe answer on EOF, and can
+      // therefore be left to reach one. Handed a pipe instead, it blocks on a
+      // read that nothing will ever write to: the conversion sits at step 1
+      // with no output, no child processes and no way to finish, and the only
+      // thing the app can see is a job that has stopped moving.
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     activeChild = child;
 
     let tail = "";
@@ -354,7 +561,9 @@ export function startConvert(
       let label = current().label;
       STEP.lastIndex = 0;
       while ((match = STEP.exec(text)) !== null) {
-        step = Number(match[1]);
+        // The tool counts its own three; the extraction that ran before them
+        // is this app's step and not one of them, so it shifts the rest along.
+        step = Number(match[1]) + (backing ? 1 : 0);
         // "Muxing (Cloning Metadata + 1142.5fps)" → "Muxing". The rate was
         // worth showing when the step was all we had; the percentage says it
         // better now.
@@ -379,9 +588,15 @@ export function startConvert(
     activeChild = undefined;
 
     if (cancelling) {
-      // Nothing to undo, only to sweep: the original was never moved.
+      // Nothing to undo, only to sweep: the original was never moved. The
+      // archive is swept only where this run was the one making it — an
+      // interrupted extraction leaves a truncated tar, while one that was
+      // already there is a good copy of an earlier film's layer.
       await Promise.all(
-        workingFiles(filePath, tempDir).map((f) => rm(f, { force: true })),
+        [
+          ...workingFiles(filePath, tempDir),
+          ...(backing ? [elTempFor(filePath, tempDir), archive] : []),
+        ].map((f) => rm(f, { force: true })),
       );
       setJob({ ...current(), status: "cancelled", finishedAt: Date.now() });
       return;
@@ -401,7 +616,7 @@ export function startConvert(
 
     setJob({
       ...current(),
-      step: CHECK_STEP,
+      step: current().steps,
       label: "Checking runtime",
       percent: 99,
     });
@@ -428,7 +643,7 @@ export function startConvert(
       // A file of the wrong length is a failed conversion however cleanly the
       // tool exited, so it is reported as one — with the original still there.
       status: check.ok ? "done" : "error",
-      step: CHECK_STEP,
+      step: current().steps,
       percent: 100,
       check: check.message,
       error: check.ok ? undefined : `Conversion finished, but ${check.message}`,
@@ -437,6 +652,297 @@ export function startConvert(
       // already says what the figure is: "6.38 GB (Space Saved) of enhancement
       // layer discarded" was the result line for a while.
       summary: tail.match(/EL Discarded:\s*([^(\n]+)/)?.[1]?.trim(),
+      finishedAt: Date.now(),
+    });
+  })();
+
+  return current();
+}
+
+// ---------------------------------------------------------------------------
+// Going back to Profile 7
+// ---------------------------------------------------------------------------
+
+/**
+ * Progress for a rebuild, counted the way the conversion's is: by watching the
+ * files the tool leaves growing beside itself.
+ *
+ * dovi_convert prints no step lines for this one, only a spinner, so these
+ * files are also the only evidence of which stage it is in — which is why each
+ * carries the sentence to show while it is the one being written.
+ *
+ * Sizes are remembered rather than read fresh each tick. The base layer is
+ * deleted the moment its stripped copy exists, which is a third of the work
+ * disappearing off the disk; summed live, the bar would run backwards through
+ * the longest stretch of the job.
+ */
+function watchRebuild(
+  filePath: string,
+  sizes: ConvertSizes,
+  elBytes: number,
+  tempDir?: string,
+) {
+  const dir = tempDir ?? path.dirname(filePath);
+  const stem = path.basename(filePath).replace(/\.[^.]+$/, "");
+  const video = sizes.videoBytes ?? sizes.sourceBytes;
+
+  const stages = [
+    {
+      file: path.join(dir, `${stem}_bl.hevc`),
+      bytes: video,
+      step: 1,
+      label: "Extracting the base layer",
+    },
+    {
+      file: path.join(dir, `${stem}_bl_clean.hevc`),
+      bytes: video,
+      step: 1,
+      label: "Taking the Profile 8.1 metadata back out",
+    },
+    {
+      file: path.join(dir, `${stem}_el.hevc`),
+      bytes: elBytes,
+      step: 2,
+      label: "Unpacking the enhancement layer",
+    },
+    {
+      file: path.join(dir, `${stem}_restored.hevc`),
+      bytes: video + elBytes,
+      step: 2,
+      label: "Interleaving the two layers",
+    },
+    {
+      file: restoredPathFor(filePath),
+      bytes: sizes.sourceBytes + elBytes,
+      step: 3,
+      label: "Muxing",
+    },
+  ];
+
+  const total = stages.reduce((sum, stage) => sum + stage.bytes, 0);
+  const peak = new Map<string, number>();
+
+  return setInterval(() => {
+    if (current().status !== "running") return;
+
+    let written = 0;
+    let step: number | undefined;
+    let label: string | undefined;
+
+    for (const stage of stages) {
+      const size = sizeOf(stage.file);
+      const most = Math.max(peak.get(stage.file) ?? 0, size ?? 0);
+      peak.set(stage.file, most);
+      written += most;
+      // The furthest one that is still on disk is the one being written.
+      if (size) {
+        step = stage.step;
+        label = stage.label;
+      }
+    }
+
+    if (written === 0 || total === 0) return;
+
+    setJob({
+      ...current(),
+      // Below 100 for the reason the conversion holds it there: the check and
+      // the swap still have to happen after the last byte lands.
+      percent: Math.min(99, (written / total) * 100),
+      step: step ?? current().step,
+      label: label ?? current().label,
+    });
+  }, 1000);
+}
+
+/**
+ * Puts the enhancement layer back and makes the film Profile 7 again.
+ *
+ * The counterpart to `restoreOriginal`, for after the original has gone: that
+ * one is two renames and gives back the exact bytes the disc was ripped to,
+ * while this one rebuilds them — base layer out of the converted file, its
+ * Profile 8.1 metadata stripped, the kept layer interleaved back in, and the
+ * whole thing remuxed with the film's own audio, subtitles and chapters.
+ * Minutes of disk and a couple of times the film in scratch space, which is
+ * why it is a job and not an action.
+ *
+ * The film is not touched until the rebuild has been written in full and its
+ * runtime checked. Everything before that point happens in files beside it, so
+ * a cancel, a failure or a power cut costs the time and nothing else.
+ */
+export function startRebuild(
+  filePath: string,
+  sizes: ConvertSizes,
+): ConvertJob {
+  if (current().status === "running") return current();
+
+  setJob({
+    status: "running",
+    mode: "rebuild",
+    path: filePath,
+    step: 1,
+    steps: REBUILD_STEPS,
+    label: "Extracting the base layer",
+    percent: 0,
+    startedAt: Date.now(),
+  });
+
+  void (async () => {
+    const tempDir = getSetting("convertTempDir");
+    const archive = elArchivePathFor(filePath);
+    const restored = restoredPathFor(filePath);
+    cancelling = false;
+
+    const fail = (error: string) =>
+      setJob({ ...current(), status: "error", error, finishedAt: Date.now() });
+
+    const elBytes = sizeOf(archive);
+    if (elBytes === undefined) {
+      fail(
+        "No enhancement layer is kept beside this film, so there is nothing to rebuild from.",
+      );
+      return;
+    }
+
+    // dovi_convert refuses to overwrite a rebuilt file, so anything left under
+    // that name from a run that died mid-way has to go first. It can only ever
+    // be this app's own leftover: the name is the tool's, and a finished
+    // rebuild is renamed over the film within a second of being written.
+    await Promise.all(
+      [restored, ...rebuildWorkingFiles(filePath, tempDir)].map((f) =>
+        rm(f, { force: true }),
+      ),
+    );
+
+    const ticker = watchRebuild(filePath, sizes, elBytes, tempDir);
+
+    const args = [
+      "restore",
+      path.basename(filePath),
+      ...(tempDir ? ["--temp", tempDir] : []),
+    ];
+
+    const cwd = path.dirname(filePath);
+    setJob({ ...current(), command: commandLine(cwd, "dovi_convert", args) });
+
+    // Its own process group, so a cancel takes the ffmpeg and dovi_tool runs
+    // it drives down with it. No stdin, for the reason the conversion gives.
+    const child = spawn("dovi_convert", args, {
+      cwd,
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    activeChild = child;
+
+    let tail = "";
+    let output: string[] = [];
+
+    const read = (chunk: Buffer) => {
+      const text = chunk.toString().replace(ANSI, "");
+      tail = (tail + text).slice(-4000);
+      output = appendOutput(output, text);
+      setJob({ ...current(), output });
+    };
+
+    child.stdout.on("data", read);
+    child.stderr.on("data", read);
+
+    const code = await new Promise<number>((resolve) => {
+      child.on("error", () => resolve(-1));
+      child.on("close", (value) => resolve(value ?? -1));
+    });
+    clearInterval(ticker);
+    activeChild = undefined;
+
+    const sweep = () =>
+      Promise.all(
+        [restored, ...rebuildWorkingFiles(filePath, tempDir)].map((f) =>
+          rm(f, { force: true }),
+        ),
+      );
+
+    if (cancelling) {
+      // The film was never renamed, and the archive was only ever read from.
+      await sweep();
+      setJob({ ...current(), status: "cancelled", finishedAt: Date.now() });
+      return;
+    }
+
+    if (code !== 0) {
+      await sweep();
+      fail(
+        tail.trim().split("\n").filter(Boolean).slice(-3).join(" ") ||
+          `dovi_convert exited ${code}`,
+      );
+      return;
+    }
+
+    setJob({
+      ...current(),
+      step: REBUILD_STEPS,
+      label: "Checking runtime",
+      percent: 99,
+    });
+
+    // Against the file it is about to replace, which is the same film — the
+    // conversion changed what the video stream carries and not how long it
+    // runs. Checked while the Profile 8.1 file is still under its own name, so
+    // a faulty mux costs the rebuilt file and nothing else.
+    const check = await compareRuntime(filePath, restored);
+    if (!check.ok) {
+      await sweep();
+      fail(`The rebuild finished, but ${check.message}`);
+      return;
+    }
+
+    // The swap, in the order every other one in this app makes it: the film
+    // aside first, so its own path is never the thing that is missing.
+    const aside = `${filePath}.restoring-${process.pid}`;
+    try {
+      await rename(filePath, aside);
+    } catch (err) {
+      await sweep();
+      fail(
+        `The converted file could not be moved aside: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    try {
+      await rename(restored, filePath);
+    } catch (err) {
+      await rename(aside, filePath).catch(() => {});
+      await sweep();
+      fail(
+        `The rebuilt file could not be put in place: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    await rm(aside, { force: true });
+
+    try {
+      await refreshFileFacts(filePath);
+    } catch (err) {
+      // The rebuild itself worked, so this is not a failed job — but the
+      // library is still describing the Profile 8.1 file that has just gone.
+      fail(
+        `Rebuilt, but re-reading the file failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    setJob({
+      ...current(),
+      status: "done",
+      step: REBUILD_STEPS,
+      percent: 100,
+      check: check.message,
       finishedAt: Date.now(),
     });
   })();

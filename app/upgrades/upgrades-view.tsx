@@ -257,7 +257,7 @@ function Row({
       }}
       aria-label={`Compare copies of ${item.title}`}
       style={stagger(index)}
-      className="glow row-enter group -mx-4 flex cursor-pointer items-center gap-5 rounded-card px-4 py-4 transition-colors hover:bg-surface"
+      className="glow row-enter group -mx-4 flex cursor-pointer items-center gap-5 rounded-row px-4 py-4 transition-colors hover:bg-surface"
     >
       <Link
         href={`/film/${movieId(item.path)}`}
@@ -459,7 +459,7 @@ function WishRow({
       }}
       aria-label={find.title}
       style={stagger(index)}
-      className="glow row-enter group -mx-4 flex cursor-pointer items-center gap-5 rounded-card px-4 py-4 transition-colors hover:bg-surface"
+      className="glow row-enter group -mx-4 flex cursor-pointer items-center gap-5 rounded-row px-4 py-4 transition-colors hover:bg-surface"
     >
       {/* Remote only: a film you do not have has no poster on the drive.
           Named the way the wishlist names it, so the row travels into the

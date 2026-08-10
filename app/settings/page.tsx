@@ -1,6 +1,7 @@
 import {
   getAudioLanguages,
   getConvertTempDir,
+  getKeepEnhancementLayer,
   getJackettStatus,
   getLibraryFolders,
   getQbStatus,
@@ -9,6 +10,7 @@ import {
   getTmdbStatus,
 } from "../actions";
 import { AudioLanguages } from "./audio-languages";
+import { EnhancementLayer } from "./el-backup";
 import { FolderSection } from "../folder-section";
 import { ScanButton } from "../scan-button";
 import { Jackett } from "./jackett";
@@ -71,6 +73,7 @@ const size = (bytes: number) =>
 export default async function SettingsPage() {
   const roots = await getLibraryFolders();
   const tempDir = await getConvertTempDir();
+  const keepingEl = await getKeepEnhancementLayer();
   const jackett = await getJackettStatus();
   const qb = await getQbStatus();
   const tmdb = await getTmdbStatus();
@@ -122,6 +125,15 @@ export default async function SettingsPage() {
       >
         <TempFolder current={tempDir} defaultPath={DEFAULT_ROOT} />
       </Setting>
+
+      <Setting
+        title="Going back to Profile 7"
+        summary={keepingEl ? "Enhancement layer kept" : "Nothing kept"}
+        hint="A conversion discards the enhancement layer, and the way back is the whole original it leaves beside the film — the first thing anyone deletes once the converted file plays. So the layer is packed into a small archive of its own first: a tenth to a quarter of the film, and enough to rebuild the Profile 7 version from the converted one years later. Turning it off saves a pass over the film before every conversion, and makes the conversion final once that original has gone."
+      >
+        <EnhancementLayer keeping={keepingEl} />
+      </Setting>
+
       <Setting
         title="TMDb"
         summary={tmdb.configured ? "Connected" : "Not connected"}

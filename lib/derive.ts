@@ -101,6 +101,25 @@ export const ASSUMED_BL_PEAK = 1000;
 export const BACKUP_SUFFIX = ".bak.dovi_convert";
 
 /**
+ * What dovi_convert calls the enhancement layer it sets aside — `Film.dovi`
+ * beside `Film.mkv`, the extension replaced rather than appended. Its
+ * convention too, and stated here for the same reason: the server that writes
+ * one, the server that rebuilds from one and the page that offers to have to
+ * agree on the name.
+ *
+ * Inside is an uncompressed tar holding a single `el.hevc`: the enhancement
+ * layer a conversion would otherwise discard, at a tenth to a quarter of the
+ * film for a FEL and a couple of gigabytes for a MEL. It is the difference
+ * between a conversion that can be walked back after the original is deleted
+ * and one that cannot.
+ */
+export const EL_ARCHIVE_SUFFIX = ".dovi";
+
+/** `Film.mkv` → `Film.dovi`. The extension goes; it is not appended to. */
+export const elArchiveNameOf = (fileName: string) =>
+  fileName.replace(/\.[^.]+$/, "") + EL_ARCHIVE_SUFFIX;
+
+/**
  * The same idea for a track removal, under its own name.
  *
  * Deliberately not the suffix above: that one is dovi_convert's, and a film

@@ -105,7 +105,7 @@ Installed with [Homebrew](https://brew.sh). The first is required; the rest unlo
 | **MediaInfo** | `brew install mediainfo` | **Yes** | The whole scan. Every codec, resolution, HDR format, audio track and encoder string comes from one `mediainfo --Output=JSON` call per file. Without it, nothing is graded. |
 | **ffmpeg** | `brew install ffmpeg` | Recommended | Demuxes the HEVC stream so the Dolby Vision RPU can be read. Without it, DV files are graded from the container's profile alone. |
 | **dovi_tool** | `brew install dovi_tool` | Recommended | Parses that RPU — the enhancement-layer type (MEL / simple FEL / complex FEL), CM version, L1 light levels and per-frame coverage. This is what decides whether a Profile 7 file can be safely flattened. |
-| **dovi_convert** | `brew install dovi_convert` | Optional | Runs the Profile 7 → 8.1 conversion from inside the app. It keeps the original beside the result and refuses a complex FEL on its own. |
+| **dovi_convert** | `brew install dovi_convert` | Optional | Runs the Profile 7 → 8.1 conversion from inside the app, and the rebuild back out of it. It keeps the original beside the result, refuses a complex FEL on its own, and — when asked — sets the discarded enhancement layer aside in an archive small enough to keep for good. |
 | **MKVToolNix** | `brew install mkvtoolnix` | Optional | Only for the by-hand conversion recipe the app prints (`mkvmerge`). Not called by the app itself. |
 
 All five in one go:
@@ -285,8 +285,17 @@ aside rather than deleting it and verifies the result before declaring success.
 **Settings → Conversion scratch space** picks where the working video file lands — a 90 GB remux
 needs somewhere to go, and that is not a decision an audit tool should make for you.
 
+**Settings → Going back to Profile 7** decides whether a conversion keeps the enhancement layer it
+discards. On by default, the layer is pulled out into a `Film.dovi` archive beside the film first — a
+tenth to a quarter of the film for a FEL, a couple of gigabytes for a MEL — and the film's page then
+offers **Rebuild Profile 7**, which puts the layer back into the base layer and remuxes the two into
+a Profile 7 file again. That is what makes deleting the 90 GB original a reversible decision rather
+than a final one. Turning it off saves a pass over the whole film before every conversion, at the
+price of a conversion that is final once that original has gone.
+
 Without it, the same page still prints both recipes (`dovi_convert`, and the by-hand
-`ffmpeg | dovi_tool` + `mkvmerge` pair) ready to copy into a terminal.
+`ffmpeg | dovi_tool` + `mkvmerge` pair) ready to copy into a terminal — and, on a film with its
+layer kept, the two that rebuild it.
 
 ---
 
@@ -443,7 +452,7 @@ ripgrade/
 │   ├── library.ts          #   Probes → graded library
 │   ├── tmdb.ts  disc.ts  bluray.ts  tv*.ts
 │   ├── jackett.ts  torznab.ts  qbittorrent.ts
-│   ├── convert.ts          #   dovi_convert orchestration
+│   ├── convert.ts          #   dovi_convert orchestration, both directions
 │   ├── thumbs.ts           #   sharp-backed poster cache
 │   └── db.ts               #   SQLite schema, one file, no migrations
 ├── test/                   # node:test suites over the pure logic

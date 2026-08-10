@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Art } from "@/app/art";
 import { useNow } from "@/app/clock";
 import { EmptyState } from "@/app/empty-state";
-import { jobRows } from "@/app/job-rows";
+import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
 import { ProcessDetails } from "@/app/process-details";
 import { SectionHeading } from "@/app/section-heading";
@@ -51,13 +51,17 @@ const OUTCOME: Record<string, { label: string; tone: string }> = {
   cancelled: { label: "Stopped", tone: "opacity-50" },
 };
 
-/** 4m 12s, or 1h 22m once it has been going long enough to need the hours. */
-function took(run: JobRun): string | undefined {
-  if (run.startedAt === undefined) return undefined;
-  const seconds = Math.max(
-    0,
-    Math.round((run.finishedAt - run.startedAt) / 1000),
-  );
+/**
+ * 4m 12s, or 1h 22m once it has been going long enough to need the hours.
+ *
+ * Two ends rather than a run, because a job that is still going has no
+ * finishing time to be measured against and the clock stands in for one — the
+ * same figure either way, which is the point: a conversion reads as forty
+ * minutes in whether it is running or over.
+ */
+function took(startedAt: number | undefined, endedAt: number) {
+  if (startedAt === undefined || !endedAt) return undefined;
+  const seconds = Math.max(0, Math.round((endedAt - startedAt) / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
@@ -180,6 +184,117 @@ function Detail({ run }: { run: LoggedRun }) {
   );
 }
 
+/**
+ * One job in progress, drawn as the run it is about to become.
+ *
+ * It used to be a title, a percentage and a bar — which said what was happening
+ * but not what it was happening *to*, so the film you started a conversion on
+ * was named only in the dialog behind a Details link, and the row above it in
+ * the history had its poster. One list, two ways of describing the same film.
+ *
+ * So the layout is the finished row's, fact for fact: the poster on the left,
+ * the film's title and file under it, and what the job is doing where the
+ * finished row says what it did. What differs is only what a running job can
+ * answer — a percentage rather than an outcome, the time so far rather than the
+ * time it took, and a bar under it all.
+ */
+function Running({
+  row,
+  film,
+  now,
+  index,
+  onDetails,
+}: {
+  row: JobRow;
+  film?: TaskFilm;
+  now: number;
+  index: number;
+  onDetails: () => void;
+}) {
+  const elapsed = took(row.detail.startedAt, now);
+  // The file's own name, which is what the log shows on the line under the
+  // title. A job with no film — a sweep, a thumbnail rebuild — has none, and
+  // the layout closes up around it rather than printing an empty line.
+  const fileName = row.path?.split("/").pop();
+
+  return (
+    // The whole row opens the dialog, drawn the way the queue draws a row that
+    // opens something: a Details link beside a poster and a title was a target
+    // the size of a word inside a target the size of the row, and only the word
+    // did anything.
+    <li
+      role="button"
+      tabIndex={0}
+      onClick={onDetails}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onDetails();
+        }
+      }}
+      aria-label={`${row.detail.title} — progress`}
+      style={stagger(index)}
+      className="glow row-enter group -mx-4 flex cursor-pointer items-start gap-4 rounded-row px-4 py-4 transition-colors hover:bg-surface"
+    >
+      <Poster film={film} />
+
+      <div className="flex min-h-24 min-w-0 flex-1 flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className="min-w-0 truncate text-sm font-medium">
+            {film?.title ?? fileName ?? row.detail.title}
+            {film?.year && (
+              <span className="ml-2 text-xs opacity-40">{film.year}</span>
+            )}
+          </p>
+          {fileName && (
+            <p
+              className="min-w-0 truncate font-mono text-xs opacity-55"
+              title={row.path}
+            >
+              {fileName}
+            </p>
+          )}
+          {/* The job's own name, where the finished row names its kind. It is
+              the more exact of the two — "Rebuilding Profile 7" and
+              "Converting to Profile 8.1" are one kind in the log. */}
+          <p className="text-xs opacity-45">
+            {row.detail.title}
+            {elapsed && ` · ${elapsed}`}
+          </p>
+        </div>
+
+        {/* Ranged off the bottom, so what the job is doing lands on the
+            poster's foot exactly where a finished row's facts do. */}
+        <div className="mt-auto flex flex-col gap-1.5">
+          {row.detail.stage && (
+            <p className="text-xs opacity-45">{row.detail.stage}</p>
+          )}
+
+          {/* The figure at the end of the bar rather than up in the corner: it
+              is a reading of the bar, and read beside it there is nothing to
+              carry across the row. A fixed column for it, so the bar does not
+              shorten by a character as the number passes ten and a hundred. */}
+          {row.percent !== undefined && (
+            <div className="flex items-center gap-3">
+              <div className="bar-track bar-track-thin flex-1">
+                <div
+                  className="bar-fill motion-safe:transition-[width] motion-safe:duration-300"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, row.percent))}%`,
+                  }}
+                />
+              </div>
+              <span className="w-9 shrink-0 text-right text-xs tabular-nums opacity-55">
+                {Math.round(row.percent)}%
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
 /** One finished run, with its output folded away until it is asked for. */
 function Run({
   run,
@@ -193,7 +308,7 @@ function Run({
   const [open, setOpen] = useState(false);
   const lines = visibleOutput(run.output);
   const outcome = OUTCOME[run.outcome] ?? OUTCOME.done;
-  const duration = took(run);
+  const duration = took(run.startedAt, run.finishedAt);
 
   return (
     <li
@@ -272,7 +387,14 @@ function Run({
   );
 }
 
-export function JobsView({ runs }: { runs: LoggedRun[] }) {
+export function JobsView({
+  runs,
+  films,
+}: {
+  runs: LoggedRun[];
+  /** What the library knows about the films the running jobs are working on. */
+  films: Record<string, TaskFilm>;
+}) {
   const { jobs, apply, subscribe } = useJobs();
   const router = useRouter();
   const [stopping, setStopping] = useState(false);
@@ -288,16 +410,23 @@ export function JobsView({ runs }: { runs: LoggedRun[] }) {
   // A run writes its row as it ends, so the log this page was rendered with is
   // one row short the moment anything finishes. Only the edge counts — see
   // `subscribe` for why a status alone cannot mean "just finished".
+  //
+  // A job *starting* matters for the same reason now: the running rows carry a
+  // poster and a title, and those come from the server rather than from the job
+  // stream. Without the second edge, a conversion started from a film's page
+  // while this one was open would arrive as a row with a grey block where its
+  // film should be.
   useEffect(
     () =>
       subscribe((next, prev) => {
-        const ending = (
+        const turned = (
           ["dovi", "convert", "strip", "sweep", "thumbs"] as const
         ).some(
           (key) =>
-            prev[key].status === "running" && next[key].status !== "running",
+            (prev[key].status === "running") !==
+            (next[key].status === "running"),
         );
-        if (ending) router.refresh();
+        if (turned) router.refresh();
       }),
     [subscribe, router],
   );
@@ -336,44 +465,14 @@ export function JobsView({ runs }: { runs: LoggedRun[] }) {
           <SectionHeading label="Running" />
           <ul className="ruled flex flex-col">
             {running.map((row, index) => (
-              <li
+              <Running
                 key={row.key}
-                style={stagger(index)}
-                className="row-enter -mx-4 flex flex-col gap-2 px-4 py-4"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <p className="text-sm font-medium">{row.detail.title}</p>
-                  <div className="flex shrink-0 items-baseline gap-3">
-                    {row.percent !== undefined && (
-                      <span className="text-sm tabular-nums opacity-55">
-                        {Math.round(row.percent)}%
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setOpen(row.key)}
-                      className="text-xs underline underline-offset-4 opacity-45 hover:opacity-100"
-                    >
-                      Details
-                    </button>
-                  </div>
-                </div>
-
-                {row.detail.stage && (
-                  <p className="text-xs opacity-45">{row.detail.stage}</p>
-                )}
-
-                {row.percent !== undefined && (
-                  <div className="bar-track bar-track-thin">
-                    <div
-                      className="bar-fill motion-safe:transition-[width] motion-safe:duration-300"
-                      style={{
-                        width: `${Math.min(100, Math.max(0, row.percent))}%`,
-                      }}
-                    />
-                  </div>
-                )}
-              </li>
+                row={row}
+                film={row.path ? films[row.path] : undefined}
+                now={now}
+                index={index}
+                onDetails={() => setOpen(row.key)}
+              />
             ))}
           </ul>
         </section>

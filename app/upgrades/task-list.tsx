@@ -119,7 +119,7 @@ function TaskRow({
       }}
       aria-label={task.title}
       style={stagger(index)}
-      className="glow row-enter group -mx-4 flex cursor-pointer items-center gap-5 rounded-card px-4 py-4 transition-colors hover:bg-surface"
+      className="glow row-enter group -mx-4 flex cursor-pointer items-center gap-5 rounded-row px-4 py-4 transition-colors hover:bg-surface"
     >
       {task.poster || task.posterRemote ? (
         <Art
@@ -280,10 +280,18 @@ type Errand = { path: string; fileName: string; then: "convert" | "report" };
 
 export function DoviTasks({
   tasks: unsorted,
+  keepingEl,
   sort,
   group,
 }: {
   tasks: DoviTask[];
+  /**
+   * Whether a conversion keeps the enhancement layer it discards. Not a
+   * per-film fact and not something this list can change — it is here so the
+   * confirmation says what the job will actually do, since keeping the layer
+   * puts a whole extra pass over the film in front of the conversion.
+   */
+  keepingEl: boolean;
   sort?: string;
   group?: string;
 }) {
@@ -349,7 +357,14 @@ export function DoviTasks({
         const errand = wants.current;
         const wasReading =
           prev.dovi.status === "running" && prev.dovi.path === errand?.path;
-        if (!wasReading || next.dovi.status === "running") return;
+        // Named endings rather than "no longer running": a snapshot already in
+        // flight when the pass started says idle, arrives just after the
+        // optimistic running one, and would read as the pass stopping.
+        const ended =
+          next.dovi.status === "done" ||
+          next.dovi.status === "error" ||
+          next.dovi.status === "cancelled";
+        if (!wasReading || !ended) return;
 
         if (next.dovi.status !== "done" || !errand) {
           // Failed or cancelled: whatever it was the first step of is off.
@@ -637,6 +652,8 @@ export function DoviTasks({
           <span className="font-mono">{asking.fileName}</span> is rewritten in
           place and the Profile 7 original is kept beside it, so this can be
           undone from the film&rsquo;s own page.{" "}
+          {keepingEl &&
+            "The enhancement layer is set aside in an archive of its own first, so it survives deleting that original. "}
           {asking.scanned
             ? "It takes a while — the whole file is rewritten."
             : "Every frame is read first, so it takes a while."}{" "}

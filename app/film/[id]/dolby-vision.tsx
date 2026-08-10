@@ -8,8 +8,10 @@ import { useEffect, useRef, useState } from "react";
 import {
   beginConvert,
   beginFullDoviScan,
+  beginRebuildProfile7,
   refreshAfterDoviScan,
   discardBackup,
+  discardEnhancementLayer,
   restoreOriginal,
   stopConvert,
   stopFullDoviScan,
@@ -19,6 +21,7 @@ import {
   BACKUP_SUFFIX,
   RPU_COVERAGE_TOLERANCE,
   classifyEnhancementLayer,
+  elArchiveNameOf,
   type DoviScan,
   type ElVerdict,
   type Hdr10Static,
@@ -486,6 +489,8 @@ export function DolbyVision({
   scan,
   hdr10,
   backupBytes,
+  elArchiveBytes,
+  keepingEl = false,
   present = true,
 }: {
   moviePath: string;
@@ -498,6 +503,14 @@ export function DolbyVision({
   /** Size of the pre-conversion original, when one is still sitting beside it. */
   backupBytes?: number;
   /**
+   * Size of the enhancement layer a conversion kept aside, when one was kept.
+   * The whole of what a Profile 7 rebuild has to work from once the original
+   * has been deleted.
+   */
+  elArchiveBytes?: number;
+  /** Whether a conversion started from here would keep that layer. */
+  keepingEl?: boolean;
+  /**
    * Whether the film itself could be found. False means its drive is away —
    * which is also why `backupBytes` is undefined, so without this the card
    * would read an unreachable converted film as an unconverted one.
@@ -509,10 +522,14 @@ export function DolbyVision({
   const [confirming, setConfirming] = useState(false);
   const [confirmingRestore, setConfirmingRestore] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingRebuild, setConfirmingRebuild] = useState(false);
+  const [confirmingDiscardEl, setConfirmingDiscardEl] = useState(false);
   // Each confirm outlives its flag by the length of its exit animation.
   const convertMounted = useClosing(confirming);
   const restoreMounted = useClosing(confirmingRestore);
   const deleteMounted = useClosing(confirmingDelete);
+  const rebuildMounted = useClosing(confirmingRebuild);
+  const discardElMounted = useClosing(confirmingDiscardEl);
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRecipes, setShowRecipes] = useState(false);
@@ -553,8 +570,30 @@ export function DolbyVision({
           }
         }
 
+        /**
+         * The pass this page is waiting on, and — the half that was missing —
+         * whether it has actually ended.
+         *
+         * The listener runs on every event, not only on the ones that end
+         * something: a pass pushes progress several times a second, and every
+         * one of those has a previous snapshot that was running too. Without
+         * the second test the first progress line of a read counted as the
+         * read stopping, and the branch below cleared the intent to convert
+         * that the button had just set — so a card that said Convert read
+         * every frame and then did nothing.
+         *
+         * Named endings rather than "no longer running", because idle is not
+         * an ending: a snapshot already in flight when the pass started says
+         * idle, and lands here just after the optimistic running one.
+         */
+        const ended =
+          next.dovi.status === "done" ||
+          next.dovi.status === "error" ||
+          next.dovi.status === "cancelled";
         const wasReading =
-          prev.dovi.status === "running" && prev.dovi.path === moviePath;
+          prev.dovi.status === "running" &&
+          prev.dovi.path === moviePath &&
+          ended;
         if (wasReading) {
           if (next.dovi.status === "done") {
             // The reading is stored against the probe; this is what folds it
@@ -609,7 +648,49 @@ export function DolbyVision({
   const dir = moviePath.replace(/\/[^/]+$/, "");
   const out = fileName.replace(/\.[^.]+$/, "");
 
-  const recipes: Recipe[] = [
+  /**
+   * On a converted film with its layer kept, the only rewrite left to describe
+   * is the one back — so the recipes are that, and the conversion's are not
+   * printed at all. Both halves are dovi_convert's own commands: the archive
+   * is its format, and reading it back by hand means unpacking a tar and
+   * driving dovi_tool through four steps.
+   */
+  const rebuildRecipes: Recipe[] = [
+    {
+      id: "restore",
+      title: "With dovi_convert",
+      blurb: `Reads ${elArchiveNameOf(fileName)} beside the film and writes ${out}.restored.mkv. The converted file is left where it is.`,
+      install: "brew install dovi_convert",
+      command: [`cd ${q(dir)}`, ``, `dovi_convert restore ${q(fileName)}`].join(
+        "\n",
+      ),
+    },
+    {
+      id: "restore-by-hand",
+      title: "By hand, with dovi_tool",
+      blurb:
+        "The same four steps. The archive is an uncompressed tar holding one file, so tar reads it.",
+      command: [
+        `cd ${q(dir)}`,
+        ``,
+        `# 1. base layer out of the converted file, without its 8.1 RPU`,
+        `ffmpeg -i ${q(fileName)} -map 0:v:0 -c copy -f hevc ${q(`${out}.bl.hevc`)}`,
+        `dovi_tool remove ${q(`${out}.bl.hevc`)} -o ${q(`${out}.bl-clean.hevc`)}`,
+        ``,
+        `# 2. the enhancement layer back out of the archive`,
+        `tar -xf ${q(elArchiveNameOf(fileName))} el.hevc`,
+        ``,
+        `# 3. interleave the two layers again`,
+        `dovi_tool mux --bl ${q(`${out}.bl-clean.hevc`)} --el el.hevc \\`,
+        `  -o ${q(`${out}.p7.hevc`)}`,
+        ``,
+        `# 4. back into a container, keeping every other track`,
+        `mkvmerge -o ${q(`${out}.P7.mkv`)} ${q(`${out}.p7.hevc`)} --no-video ${q(fileName)}`,
+      ].join("\n"),
+    },
+  ];
+
+  const convertRecipes: Recipe[] = [
     {
       id: "dovi_convert",
       title: "With dovi_convert",
@@ -617,7 +698,7 @@ export function DolbyVision({
       // against converting: the tool runs the same brightness check and will
       // refuse on its own, which is a second opinion worth having.
       blurb:
-        "Keeps the original, and refuses a complex FEL unless you add --force.",
+        "Keeps the original, and refuses a complex FEL unless you add --force. Add --backup to keep the enhancement layer as well, in an archive small enough to live with once the original is gone.",
       install: "brew install dovi_convert",
       command: [`cd ${q(dir)}`, ``, `dovi_convert convert ${q(fileName)}`].join(
         "\n",
@@ -700,6 +781,35 @@ export function DolbyVision({
     router.refresh();
   }
 
+  /**
+   * The long way back: no original to rename, so the film is built again from
+   * the layer that was kept. A job rather than an action, and followed the
+   * same way the conversion is.
+   */
+  async function runRebuild() {
+    setError(null);
+    setConfirmingRebuild(false);
+    const result = await beginRebuildProfile7(moviePath);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    apply({ convert: result.job });
+  }
+
+  async function runDiscardEl() {
+    setError(null);
+    setRestoring(true);
+    const result = await discardEnhancementLayer(moviePath);
+    setRestoring(false);
+    setConfirmingDiscardEl(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+  }
+
   // -------------------------------------------------------------------------
   // What the console says, and what it offers to do about it
   // -------------------------------------------------------------------------
@@ -707,6 +817,19 @@ export function DolbyVision({
   const converted = backupBytes !== undefined;
   const justConverted =
     convert?.status === "done" && convert.path === moviePath;
+  /**
+   * Whether the enhancement layer is sitting beside the film, and whether
+   * rebuilding from it is the thing to offer.
+   *
+   * Not on a film that is already Profile 7: after the original has been put
+   * back the archive is a spare copy of a layer the file holds inline, and the
+   * only thing worth offering about it is throwing it away.
+   */
+  const archive = elArchiveBytes !== undefined;
+  const canRebuild = archive && dvProfile !== 7;
+
+  /** Which set of commands "run it yourself" prints — see `manual` below. */
+  const recipes = canRebuild ? rebuildRecipes : convertRecipes;
   /**
    * Whether there is an original to go back to. The filesystem is the authority
    * whenever it can be read; only with the drive away does the conversion this
@@ -738,7 +861,9 @@ export function DolbyVision({
   // pass that precedes a conversion is a step of it, not a separate job the
   // card has to narrate on its own.
   const busy = converting || running;
-  const convertingNow = converting || readingToConvert;
+  /** The same job slot, going the other way — see `ConvertJob.mode`. */
+  const rebuilding = converting && convert?.mode === "rebuild";
+  const convertingNow = (converting && !rebuilding) || readingToConvert;
 
   /**
    * The one sentence at the top of the console. Whatever is happening to the
@@ -746,73 +871,122 @@ export function DolbyVision({
    * the original is still recoverable, the state of the file *is* the answer
    * to "is this safe".
    */
-  const banner: Verdict = convertingNow
+  const banner: Verdict = rebuilding
     ? {
         tone: "neutral",
-        headline: "Converting to Profile 8.1…",
-        body: "Cancelling never touches the original.",
+        headline: "Rebuilding Profile 7…",
+        body: "Cancelling never touches the file that is there.",
         detail:
-          "Every frame is read first, then the whole file is rewritten, so it takes a while. Leaving this page will not stop it.",
+          "The base layer comes out of the converted file, the kept enhancement layer goes back in beside it, and the two are remuxed with the film's own audio and subtitles. The Profile 8.1 file is replaced only once the result has been written in full and checked.",
       }
-    : // The verdict underneath is the one the check is in the middle of
-      // replacing, so leaving it up would have the card state an answer while
-      // the work that settles it is still on screen.
-      running && gate === "check"
+    : convertingNow
       ? {
           tone: "neutral",
-          headline: "Checking every frame…",
-          body: "Nothing is written. The verdict below settles when it lands.",
-          detail:
-            "One RPU parsed per frame, measuring the peak the Dolby Vision grade actually reaches — which is what decides whether discarding the enhancement layer would clip anything.",
+          headline: "Converting to Profile 8.1…",
+          body: "Cancelling never touches the original.",
+          detail: keepingEl
+            ? "The enhancement layer is pulled out and kept first, then every frame is read, then the whole file is rewritten — so it takes a while. Leaving this page will not stop it."
+            : "Every frame is read first, then the whole file is rewritten, so it takes a while. Leaving this page will not stop it.",
         }
-      : hasBackup
-        ? {
-            tone: "ok",
-            headline: "Converted to Profile 8.1",
-            body: (
-              <>
-                Original kept as{" "}
-                <code className="font-mono">
-                  {fileName}
-                  {BACKUP_SUFFIX}
-                </code>
-                {backupBytes !== undefined && <>, {size(backupBytes)}</>}.
-              </>
-            ),
-            detail:
-              justConverted && convert?.summary
-                ? `${convert.summary} of enhancement layer discarded${convert.check ? `, ${convert.check}` : ""}.`
-                : undefined,
-          }
-        : verdict;
+      : // Any pass over this film outranks the verdict about it, whether or not
+        // the pass could overturn one. It used to be only the check that did,
+        // and the hole that left was the read half of a conversion started
+        // somewhere else — the queue — which this page cannot tell from a plain
+        // re-read: the card said "Safe to convert" in the middle of converting.
+        running
+        ? gate === "check"
+          ? {
+              tone: "neutral",
+              headline: "Checking every frame…",
+              body: "Nothing is written. The verdict below settles when it lands.",
+              detail:
+                "One RPU parsed per frame, measuring the peak the Dolby Vision grade actually reaches — which is what decides whether discarding the enhancement layer would clip anything.",
+            }
+          : {
+              tone: "neutral",
+              headline: "Reading every frame…",
+              body: "Nothing is written.",
+              detail:
+                "One RPU parsed per frame, measuring what the stream carries across the whole film rather than across the sample the scan reads. A conversion started elsewhere reads the film this way first, so this is also what the first half of one looks like from here.",
+            }
+        : hasBackup
+          ? {
+              tone: "ok",
+              headline: "Converted to Profile 8.1",
+              body: (
+                <>
+                  Original kept as{" "}
+                  <code className="font-mono">
+                    {fileName}
+                    {BACKUP_SUFFIX}
+                  </code>
+                  {backupBytes !== undefined && <>, {size(backupBytes)}</>}.
+                  {/* Both, where both were kept: the original is the exact file
+                    and the archive is what survives deleting it, and anyone
+                    reclaiming space is about to need to know which is which. */}
+                  {archive && elArchiveBytes !== undefined && (
+                    <> Enhancement layer kept too, {size(elArchiveBytes)}.</>
+                  )}
+                </>
+              ),
+              detail:
+                justConverted && convert?.summary
+                  ? `${convert.summary} of enhancement layer discarded${convert.check ? `, ${convert.check}` : ""}.`
+                  : undefined,
+            }
+          : // Converted, and the original gone — but the layer it discarded is
+            // still here, which is the difference between a one-way conversion
+            // and a reversible one.
+            canRebuild && elArchiveBytes !== undefined
+            ? {
+                tone: "ok",
+                headline: "Converted to Profile 8.1",
+                body: (
+                  <>
+                    Enhancement layer kept as{" "}
+                    <code className="font-mono">
+                      {elArchiveNameOf(fileName)}
+                    </code>
+                    , {size(elArchiveBytes)} — enough to rebuild the Profile 7
+                    file.
+                  </>
+                ),
+                detail:
+                  "The rebuild takes the base layer back out of this file, puts the kept layer beside it and remuxes the two. It costs the same hour the conversion did, and scratch space for a couple of copies of the video while it runs.",
+              }
+            : verdict;
 
   const showMeter = Boolean(el && el.kind !== "mel");
 
   /**
    * The way out of the card's own offer, kept beside it.
    *
-   * Only a Profile 7 file has anything to convert, so only there is there a
-   * recipe worth printing. On a film this page is advising against converting
-   * it is not an alternative but a warning stepped past deliberately, and it
-   * says so.
+   * A Profile 7 file has a conversion to print, and a converted one with its
+   * layer kept has the rebuild — the two states where this card is offering to
+   * rewrite a film, and so the two where the commands are worth having. On a
+   * film this page is advising against converting the recipe is not an
+   * alternative but a warning stepped past deliberately, and it says so.
    */
-  const manual = dvProfile === 7 && (
+  const manual = (dvProfile === 7 || canRebuild) && (
     <button
       type="button"
       onClick={() => setShowRecipes(true)}
       title="Shows the commands. Nothing runs until you run it."
       className={BUTTON.text}
     >
-      {el?.kind === "complex-fel"
-        ? "Convert it anyway, by hand"
-        : "Run it yourself instead"}
+      {canRebuild
+        ? "Rebuild it yourself instead"
+        : el?.kind === "complex-fel"
+          ? "Convert it anyway, by hand"
+          : "Run it yourself instead"}
     </button>
   );
 
   /**
    * One decision per state, so the card has one thing to press: convert while
    * there is something to convert, put it back while the original is still
-   * there, and read the stream when neither applies.
+   * there, rebuild it while the layer it needs is still there, and read the
+   * stream when none of them applies.
    *
    * Every one of them reaches the file itself, so with the drive away they all
    * go grey together. Still shown rather than hidden: an unplugged drive is a
@@ -844,6 +1018,33 @@ export function DolbyVision({
         className={BUTTON.secondary}
       >
         Restore original
+      </button>
+    </>
+  ) : canRebuild ? (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirmingDiscardEl(true)}
+        disabled={!present}
+        title={
+          offline ??
+          `Frees ${elArchiveBytes !== undefined ? size(elArchiveBytes) : "the space"}, and gives up going back to Profile 7 for good.`
+        }
+        className={BUTTON.danger}
+      >
+        Discard layer
+      </button>
+      <button
+        type="button"
+        onClick={() => setConfirmingRebuild(true)}
+        disabled={!present}
+        title={
+          offline ??
+          "Puts the enhancement layer back and makes the film Profile 7 again. About as long as the conversion took."
+        }
+        className={BUTTON.secondary}
+      >
+        Rebuild Profile 7
       </button>
     </>
   ) : gate === "convert" ? (
@@ -923,10 +1124,11 @@ export function DolbyVision({
             </div>
 
             {/* Beside the verdict while there is one button and a short
-                sentence to sit next to. A restorable film has neither — two
-                buttons, and a line carrying the backup's full filename — so
-                there it takes a band of its own below. */}
-            {!busy && !hasBackup && (
+                sentence to sit next to. A film that can be put back has
+                neither — two buttons, and a line carrying the full filename of
+                whatever it would be put back from — so there it takes a band
+                of its own below. */}
+            {!busy && !hasBackup && !canRebuild && (
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {/* Leftmost, so the row reads as the alternative and then the
                     thing itself, and the primary button still ends the line. */}
@@ -936,7 +1138,7 @@ export function DolbyVision({
             )}
           </div>
 
-          {!busy && hasBackup && (
+          {!busy && (hasBackup || canRebuild) && (
             <div className="card-band flex flex-wrap items-center justify-end gap-2 px-4 py-5">
               {manual}
               {actions}
@@ -956,17 +1158,21 @@ export function DolbyVision({
             // a detail of how the work is done; what is being waited for is
             // the same thing throughout.
             <div className="card-band flex flex-col gap-2 px-4 py-5">
-              <div className="flex items-baseline justify-between gap-3">
+              {/* Centred rather than on a baseline: the row carries a button
+                  now, and a pill hung off the baseline of the caption beside
+                  it sits low by half its border. */}
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-sm">
                   {converting
-                    ? (convert?.label ?? "Working")
+                    ? (convert?.label ??
+                      (rebuilding ? "Rebuilding Profile 7" : "Working"))
                     : readingToConvert
                       ? "Reading every frame before converting"
                       : gate === "check"
                         ? "Checking every frame"
                         : "Reading every frame"}
                 </p>
-                <div className="flex items-baseline gap-3">
+                <div className="flex items-center gap-3">
                   <p className="text-xs tabular-nums opacity-45">
                     {converting
                       ? `${convert?.percent !== undefined ? `${Math.round(convert.percent)}% · ` : ""}step ${convert?.step ?? 1} of ${convert?.steps ?? 3}`
@@ -984,7 +1190,7 @@ export function DolbyVision({
                         apply({ dovi: await stopFullDoviScan() });
                       }
                     }}
-                    className="text-xs underline underline-offset-4 opacity-50 hover:opacity-100"
+                    className={BUTTON.secondary}
                   >
                     Cancel
                   </button>
@@ -1019,6 +1225,32 @@ export function DolbyVision({
             </div>
           )}
 
+          {/* A Profile 7 file with an archive beside it: the film was
+              converted, restored from its original, and the layer that was
+              kept for the conversion outlived it. Worth a sentence rather than
+              silence — it is several gigabytes of something this file already
+              holds — and worth keeping, because converting again reuses it
+              instead of spending another pass extracting it. */}
+          {!busy && archive && !canRebuild && !hasBackup && (
+            <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 py-5">
+              <p className="max-w-prose text-sm opacity-60">
+                An earlier conversion&rsquo;s enhancement layer is still kept as{" "}
+                <code className="font-mono">{elArchiveNameOf(fileName)}</code>,{" "}
+                {elArchiveBytes !== undefined && size(elArchiveBytes)}. This
+                file carries that layer itself — the archive only saves the
+                extraction if you convert again.
+              </p>
+              <button
+                type="button"
+                onClick={() => setConfirmingDiscardEl(true)}
+                disabled={!present}
+                className={BUTTON.text}
+              >
+                Discard layer
+              </button>
+            </div>
+          )}
+
           {error && (
             <div className="card-band px-4 py-5">
               <p className="font-mono text-sm text-red-600 dark:text-red-400">
@@ -1036,14 +1268,18 @@ export function DolbyVision({
           open={showRecipes}
           onClose={() => setShowRecipes(false)}
           title={
-            el?.kind === "complex-fel"
-              ? "Convert it anyway, by hand"
-              : "Run it yourself"
+            canRebuild
+              ? "Rebuild it yourself"
+              : el?.kind === "complex-fel"
+                ? "Convert it anyway, by hand"
+                : "Run it yourself"
           }
           lede={
-            el?.kind === "complex-fel"
-              ? "This film is the one case the card advises against converting — the enhancement layer is holding brightness the base layer cannot. The commands are here anyway."
-              : "The same conversion, on your own machine. Nothing here touches the file until you run it."
+            canRebuild
+              ? "The same rebuild, on your own machine. Nothing here touches the file until you run it."
+              : el?.kind === "complex-fel"
+                ? "This film is the one case the card advises against converting — the enhancement layer is holding brightness the base layer cannot. The commands are here anyway."
+                : "The same conversion, on your own machine. Nothing here touches the file until you run it."
           }
           recipes={recipes}
         />
@@ -1071,6 +1307,16 @@ export function DolbyVision({
                 </code>{" "}
                 and kept beside it, so this needs room for both.
               </li>
+              {keepingEl && (
+                <li>
+                  The enhancement layer is pulled out into{" "}
+                  <code className="font-mono text-xs">
+                    {elArchiveNameOf(fileName)}
+                  </code>{" "}
+                  first — a pass over the whole film before the conversion
+                  starts, and the one thing that survives deleting the original.
+                </li>
+              )}
               <li>
                 Secondary video tracks are dropped. Audio and subtitles are
                 kept.
@@ -1115,8 +1361,75 @@ export function DolbyVision({
             onCancel={() => setConfirmingDelete(false)}
           >
             Frees {size(backupBytes)} and leaves the Profile 8.1 file as the
-            only copy. Going back to Profile 7 after this means ripping the disc
-            again.
+            only copy.{" "}
+            {archive && elArchiveBytes !== undefined ? (
+              <>
+                The enhancement layer stays where it is, so the Profile 7 file
+                can still be rebuilt from it — an hour&rsquo;s work rather than
+                two renames.
+              </>
+            ) : (
+              <>
+                Going back to Profile 7 after this means ripping the disc again.
+              </>
+            )}
+          </ConfirmModal>
+        )}
+
+        {rebuildMounted && (
+          <ConfirmModal
+            open={confirmingRebuild}
+            title="Put this film back to Profile 7?"
+            confirmLabel="Rebuild"
+            onConfirm={runRebuild}
+            onCancel={() => setConfirmingRebuild(false)}
+          >
+            <ul className="list-disc space-y-1.5 pl-5">
+              <li>
+                The base layer comes back out of this file, the layer kept in{" "}
+                <code className="font-mono text-xs">
+                  {elArchiveNameOf(fileName)}
+                </code>{" "}
+                goes back beside it, and the two are remuxed with the
+                film&rsquo;s own audio, subtitles and chapters.
+              </li>
+              <li>
+                It needs scratch space for a couple of copies of the video while
+                it runs — the conversion&rsquo;s scratch folder, if one is set.
+              </li>
+              <li>
+                The Profile 8.1 file is replaced only once the rebuild has been
+                written in full and its runtime checked. Cancelling at any point
+                leaves it untouched.
+              </li>
+            </ul>
+          </ConfirmModal>
+        )}
+
+        {discardElMounted && elArchiveBytes !== undefined && (
+          <ConfirmModal
+            open={confirmingDiscardEl}
+            title="Delete the kept enhancement layer?"
+            confirmLabel={
+              restoring ? "Deleting…" : `Delete ${size(elArchiveBytes)}`
+            }
+            tone="danger"
+            busy={restoring}
+            onConfirm={runDiscardEl}
+            onCancel={() => setConfirmingDiscardEl(false)}
+          >
+            Frees {size(elArchiveBytes)}.{" "}
+            {hasBackup ? (
+              <>
+                The Profile 7 original is still beside this film, so this only
+                gives up the small way back and not the way back itself.
+              </>
+            ) : (
+              <>
+                This is the last copy of what the conversion discarded — after
+                it, going back to Profile 7 means ripping the disc again.
+              </>
+            )}
           </ConfirmModal>
         )}
       </div>

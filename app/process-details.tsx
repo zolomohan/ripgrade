@@ -47,6 +47,14 @@ export type ProcessDetail = {
   stage?: string;
   /** The job's facts, in the order they are worth reading. */
   rows: ProcessRow[];
+  /**
+   * The command the job spawned, as it could be run by hand.
+   *
+   * Not every job has one worth printing, and none of them has one worth
+   * printing as a *fact* — a command line is code, and set in a labelled row
+   * beside "Elapsed" it would be truncated to a third of itself.
+   */
+  command?: string;
   startedAt?: number;
   /** A closing word on what the job is for, when it needs one. */
   note?: string;
@@ -140,8 +148,11 @@ export function ProcessDetails({
           <CloseButton onClick={onClose} />
         </header>
 
-        {/* The floor the title stands on, as under every other dialog's. */}
-        <div aria-hidden className="rule-head" />
+        {/* The floor the title stands on, as under every other dialog's. The
+            extra room is below it rather than above: the rule belongs to the
+            header, and set evenly between the two it read as a divider between
+            equals rather than as the heading's own underline. */}
+        <div aria-hidden className="rule-head mb-4" />
 
         {(shown.percent !== undefined || shown.stage) && (
           <div className="flex flex-col gap-2">
@@ -161,7 +172,7 @@ export function ProcessDetails({
               )}
             </div>
             {shown.percent !== undefined && (
-              <div className="bar-track">
+              <div className="bar-track mb-4">
                 <div
                   className="bar-fill motion-safe:transition-[width] motion-safe:duration-300"
                   style={{
@@ -198,15 +209,28 @@ export function ProcessDetails({
           </dl>
         )}
 
+        {/* What was run, above what it is saying — the two belong together,
+            and in that order: the output below is this command's. Drawn in the
+            same code block the film page prints its recipes in, so a command
+            reads as a command wherever it appears, and left selectable rather
+            than given a copy button, which the recipes dialog is for. */}
+        {shown.command && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[10px] font-semibold tracking-[0.12em] uppercase opacity-40">
+              Command
+            </p>
+            <pre className="overflow-x-auto rounded-control border border-line bg-surface-strong p-3 font-mono text-[11px] leading-relaxed whitespace-pre">
+              {shown.command}
+            </pre>
+          </div>
+        )}
+
         {/* What the tool is actually saying, which is where the answer is
             whenever a job stops making sense. The same code block the app
             prints its commands in, and the scrolling element of the dialog —
             so the panel keeps its cap and this takes whatever is left. */}
         {lines.length > 0 && (
           <div className="flex min-h-0 flex-col gap-1.5">
-            <p className="text-[10px] tracking-wide uppercase opacity-40">
-              Output
-            </p>
             <div
               ref={log}
               onScroll={() => {

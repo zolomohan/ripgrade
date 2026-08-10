@@ -1,3 +1,4 @@
+import { keepsEnhancementLayer } from "@/lib/convert";
 import { hasJackett } from "@/lib/jackett";
 import { getLibrary } from "@/lib/library";
 import { alreadyFetching } from "@/lib/qbittorrent";
@@ -74,6 +75,7 @@ export default async function UpgradesPage() {
         wantsChecked={wishlistCheckedCount()}
         jackettReady={hasJackett()}
         dovi={dovi}
+        keepingEl={keepsEnhancementLayer()}
         audio={audio}
         cleanup={cleanup}
       />

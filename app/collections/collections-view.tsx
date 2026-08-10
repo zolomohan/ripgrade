@@ -118,7 +118,7 @@ export function CollectionsView({ sets }: { sets: CollectionSet[] }) {
             href={`/collections/${set.id}`}
             transitionTypes={["nav-forward"]}
             style={stagger(i)}
-            className="glow row-enter -mx-3 flex items-center gap-4 rounded-control px-3 py-3 transition-colors hover:bg-surface"
+            className="glow row-enter -mx-3 flex items-center gap-4 rounded-card px-3 py-3 transition-colors hover:bg-surface"
           >
             <div className="min-w-0 flex-1">
               <ViewTransition

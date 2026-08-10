@@ -131,7 +131,7 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
           anywhere on it is the same destination. */}
       <Link
         href={`/episode/${movieId(item.path)}`}
-        className="glow group -mx-5 flex flex-col gap-5 rounded-card px-5 py-5 transition-colors hover:bg-surface sm:flex-row"
+        className="glow group -mx-5 flex flex-col gap-5 rounded-row px-5 py-5 transition-colors hover:bg-surface sm:flex-row"
       >
         {/* The still leads: a picture is how you recognise which episode this is,
           and the rest of the card is numbers. */}

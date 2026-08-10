@@ -39,7 +39,7 @@ export function EpisodeList({
               episode, so anywhere on it is the same destination. */}
           <Link
             href={`/discover/tv/${tmdbId}/${episode.season}/${episode.number}`}
-            className="glow -mx-5 flex flex-col gap-5 rounded-card px-5 py-5 transition-colors hover:bg-surface sm:flex-row"
+            className="glow -mx-5 flex flex-col gap-5 rounded-row px-5 py-5 transition-colors hover:bg-surface sm:flex-row"
           >
             <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-card bg-surface-strong ring-1 ring-line sm:w-56">
               {episode.stillPath && (

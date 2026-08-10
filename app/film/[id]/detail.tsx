@@ -12,7 +12,12 @@ import {
 } from "@/lib/derive";
 import { getAudioPreference } from "@/lib/audio-prefs";
 import { audioBackupBytes } from "@/lib/audio-strip";
-import { backupBytes, filePresent } from "@/lib/convert";
+import {
+  backupBytes,
+  elArchiveBytes,
+  filePresent,
+  keepsEnhancementLayer,
+} from "@/lib/convert";
 import { getDisc } from "@/lib/disc";
 import { entryFromSpec, qualityLabel } from "@/lib/disc-entry";
 import { hasJackett } from "@/lib/jackett";
@@ -133,7 +138,10 @@ function Spec({ movie }: { movie: LibraryItem }) {
     ...(movie.edition
       ? ([["Edition", movie.edition]] as [string, string][])
       : []),
-    ["Subtitles", movie.subtitleLanguages.map(languageName).join(", ") || "none"],
+    [
+      "Subtitles",
+      movie.subtitleLanguages.map(languageName).join(", ") || "none",
+    ],
     ...(movie.imdbId ? ([["IMDb", movie.imdbId]] as [string, string][]) : []),
     ["Path", movie.path],
   ];
@@ -564,6 +572,8 @@ export async function DetailPage({
             scan={movie.dovi}
             hdr10={movie.hdr10}
             backupBytes={backupBytes(movie.path)}
+            elArchiveBytes={elArchiveBytes(movie.path)}
+            keepingEl={keepsEnhancementLayer()}
             present={filePresent(movie.path)}
           />
         )}

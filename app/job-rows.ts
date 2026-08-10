@@ -41,6 +41,16 @@ export type JobRow = {
   key: string;
   name: string;
   percent?: number;
+  /**
+   * The film it is working on, where it works on one — the same path the log
+   * writes against a finished run.
+   *
+   * Named separately rather than dug back out of `detail.rows`, because it is
+   * not being shown here: it is what the Jobs page looks the film up by, so
+   * that a job in progress can carry the poster and title the same job carries
+   * once it is history.
+   */
+  path?: string;
   detail: ProcessDetail;
   stop?: () => Promise<void>;
 };
@@ -57,6 +67,7 @@ export function jobRows(
       key: "dovi",
       name: `Reading DV · ${Math.round(dovi.percent)}%`,
       percent: dovi.percent,
+      path: dovi.path,
       detail: {
         title: "Reading Dolby Vision",
         percent: dovi.percent,
@@ -69,7 +80,6 @@ export function jobRows(
           { label: "Frames read", value: count(dovi.frames) },
         ],
         startedAt: dovi.startedAt,
-        note: "Every frame, rather than the first three hundred.",
       },
       stop: () => stopFullDoviScan().then((job) => apply({ dovi: job })),
     });
@@ -159,16 +169,22 @@ export function jobRows(
       convert.percent ??
       (convert.steps ? (convert.step / convert.steps) * 100 : 0);
 
+    // The same job slot runs the conversion and the rebuild back out of it, so
+    // the direction is the first thing the rail has to get right — the two
+    // leave the film in opposite states and neither is the other's progress.
+    const rebuild = convert.mode === "rebuild";
+
     rows.push({
       key: "convert",
+      path: convert.path,
       // What is being done to the file, not how far in it is: the bar under
       // the line already says that, and "step 2 of 4" says nothing about which
       // four. The dialog is where the steps are named, and where the profiles
       // either side of the conversion are spelled out.
-      name: "Dolby Vision Conversion",
+      name: rebuild ? "Dolby Vision Rebuild" : "Dolby Vision Conversion",
       percent,
       detail: {
-        title: "Converting to Profile 8.1",
+        title: rebuild ? "Rebuilding Profile 7" : "Converting to Profile 8.1",
         percent,
         // What it is doing and how far in, in one line beside the figure. It
         // was two facts under two captions, one of them called "Step" sitting
@@ -177,9 +193,12 @@ export function jobRows(
         rows: convert.path
           ? [{ label: "File", value: convert.path, mono: true }]
           : [],
+        command: convert.command,
         startedAt: convert.startedAt,
         output: convert.output,
-        note: "The original is kept beside it. Cancelling leaves it untouched.",
+        note: rebuild
+          ? "The converted file is replaced only once the rebuild has been checked. Cancelling leaves it untouched."
+          : "The original is kept beside it. Cancelling leaves it untouched.",
       },
       stop: () => stopConvert().then((job) => apply({ convert: job })),
     });
@@ -188,6 +207,7 @@ export function jobRows(
   if (strip.status === "running") {
     rows.push({
       key: "strip",
+      path: strip.path,
       // What is being done, in the fewest words that still say which tracks:
       // "Remuxing" alone would not distinguish this from the conversion's own
       // second step, and the rail has room for one line.

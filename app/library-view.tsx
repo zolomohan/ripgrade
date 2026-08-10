@@ -375,7 +375,7 @@ function Row({ movie, index }: { movie: LibraryItem; index: number }) {
     <Link
       href={`/film/${movieId(movie.path)}`}
       style={stagger(index)}
-      className={`${entrance} glow group flex items-center gap-4 rounded-card px-4 py-3 transition-colors hover:bg-surface-strong`}
+      className={`${entrance} glow group flex items-center gap-4 rounded-row px-4 py-3 transition-colors hover:bg-surface-strong`}
     >
       {movie.poster || movie.art.poster ? (
         <Art
