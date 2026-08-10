@@ -442,6 +442,64 @@ body {
 }
 
 /*
+ * The rail's marker, on its way to the row you just chose.
+ *
+ * The marker itself is one element that moves, and it moves on its own account
+ * — measured and slid by `useSlider`, the way the thumb in a switch is. This is
+ * about the page change happening around it.
+ *
+ * Every navigation crossfades a frozen picture of the old page over the new one
+ * for `--morph`, and the rail is in that picture. Unnamed, the marker would be
+ * in it twice: sliding down the live column, and sitting still at the row it
+ * left in the copy fading on top of it — two rows lit through the middle of the
+ * flight, which is precisely what a marker travelling between them exists to
+ * replace. Naming it lifts it out of that snapshot into a layer of its own, and
+ * the browser then carries the one marker between the two positions itself.
+ *
+ * 300ms, not `--morph`. That is the clock for a poster crossing the screen; this
+ * travels the height of one row, and 620ms of it was a marker drifting rather
+ * than answering — the click had registered and the rail was still thinking
+ * about it. The same 300ms and the same curve the live element uses, so it makes
+ * no difference which of the two the eye is actually being shown.
+ *
+ * The old snapshot is dropped rather than crossfaded, and the new one is
+ * stretched to the group's box: both are the same flat shape, so fading between
+ * them says nothing, and what crosses the gap should be exactly the shape that
+ * lands.
+ *
+ * `md:` only, and that is the whole reason this is a media query rather than a
+ * plain class. Below it the rail is a drawer that shuts on the same click that
+ * navigates, so the two ends of the flight are a row on screen and the same row
+ * translated off the left edge — a marker sailing out across the page on its way
+ * to somewhere nobody is looking. Unnamed, it stays in the drawer and slides
+ * inside it, which nobody sees either, and that is the right amount to see.
+ *
+ * Nothing under `reduce`, where the marker has no transition to hide and belongs
+ * in the page snapshot with everything else: it crossfades from one row to the
+ * next rather than travelling.
+ */
+@media (min-width: 48rem) and (prefers-reduced-motion: no-preference) {
+  .rail-here {
+    view-transition-name: rail-here;
+  }
+}
+
+::view-transition-group(rail-here) {
+  animation-duration: 300ms;
+  animation-timing-function: var(--morph-ease);
+}
+
+::view-transition-old(rail-here) {
+  display: none;
+}
+
+::view-transition-new(rail-here) {
+  height: 100%;
+  width: 100%;
+  animation: none;
+}
+
+/*
  * Text that travels between two sizes.
  *
  * `contain` is what makes this work: both snapshots are scaled uniformly into

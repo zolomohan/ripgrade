@@ -153,16 +153,32 @@ export function BarSearch({
  * declared, because the options are of different widths and those widths depend
  * on the face the browser has actually loaded: a hard-coded offset is right
  * until the webfont arrives.
+ *
+ * Down a column as well as along a row. The rail's marker is the same object
+ * doing the same job — one mark that moves between the choices rather than a
+ * background switched off here and on there — and it is a column of rows rather
+ * than a row of options, which is the whole of the difference. See
+ * `app/sidebar.tsx`.
  */
-export function useSlider(active: string) {
+export function useSlider(active: string, axis: "x" | "y" = "x") {
   const track = useRef<HTMLDivElement>(null);
   const options = useRef<Record<string, HTMLElement | null>>({});
-  const [thumb, setThumb] = useState<{ x: number; width: number } | null>(null);
+  const [thumb, setThumb] = useState<{ at: number; size: number } | null>(null);
 
   useLayoutEffect(() => {
     const measure = () => {
       const option = options.current[active];
-      if (option) setThumb({ x: option.offsetLeft, width: option.offsetWidth });
+      // Nothing chosen is a real state where the options are pages rather than
+      // the settings of one control: an address with no row of its own leaves
+      // the rail with nothing to mark, and a marker left on the last row it
+      // knew would be pointing at a page you are not on.
+      setThumb(
+        option
+          ? axis === "x"
+            ? { at: option.offsetLeft, size: option.offsetWidth }
+            : { at: option.offsetTop, size: option.offsetHeight }
+          : null,
+      );
     };
 
     measure();
@@ -173,7 +189,7 @@ export function useSlider(active: string) {
     const observer = new ResizeObserver(measure);
     if (track.current) observer.observe(track.current);
     return () => observer.disconnect();
-  }, [active]);
+  }, [active, axis]);
 
   const register = (key: string) => (node: HTMLElement | null) => {
     options.current[key] = node;
@@ -181,11 +197,18 @@ export function useSlider(active: string) {
 
   // Hidden until measured, so it arrives in place rather than sliding in from
   // the left edge on first paint.
-  const style = {
-    transform: `translateX(${thumb?.x ?? 0}px)`,
-    width: thumb?.width ?? 0,
-    opacity: thumb ? 1 : 0,
-  };
+  const style =
+    axis === "x"
+      ? {
+          transform: `translateX(${thumb?.at ?? 0}px)`,
+          width: thumb?.size ?? 0,
+          opacity: thumb ? 1 : 0,
+        }
+      : {
+          transform: `translateY(${thumb?.at ?? 0}px)`,
+          height: thumb?.size ?? 0,
+          opacity: thumb ? 1 : 0,
+        };
 
   // A tuple, so the ref reaches its element as a plain value: handed over as a
   // property of an object, it reads as a ref being dereferenced mid-render.
@@ -193,7 +216,7 @@ export function useSlider(active: string) {
 }
 
 export const SLIDE =
-  "transition-[transform,width,opacity] duration-300 ease-[cubic-bezier(0.2,0.7,0.3,1)] motion-reduce:transition-none";
+  "transition-[transform,width,height,opacity] duration-300 ease-[cubic-bezier(0.2,0.7,0.3,1)] motion-reduce:transition-none";
 
 /**
  * A named choice between a few things, as one track with the chosen one raised

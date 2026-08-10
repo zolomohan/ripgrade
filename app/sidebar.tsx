@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 
+import { SLIDE, useSlider } from "./controls";
 import { ScanButton } from "./scan-button";
 import { useSearchDialog } from "./search/dialog";
 import { SidebarProcesses } from "./sidebar-processes";
@@ -202,7 +203,7 @@ function SearchTrigger() {
       type="button"
       onClick={open}
       title="Search (⌘F)"
-      className="glow flex items-center gap-2.5 rounded-full px-3 py-1.5 text-left text-sm opacity-60 transition-colors hover:bg-surface hover:opacity-100"
+      className="glow flex items-center gap-2.5 rounded-full px-3 py-1.5 text-left text-sm opacity-60 transition-colors hover:opacity-100"
     >
       <NavIcon path="M17.6 17.6 21 21M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0" />
       Search
@@ -283,6 +284,23 @@ function MenuButton({
 export function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  /*
+   * Which row is lit, as an address rather than a flag on each row — the
+   * marker is one element for the whole rail now, and it has to be told which
+   * of them it is standing on.
+   *
+   * An empty string where nothing matches. Every page in the app is under one
+   * of these rows, so this is the state that should not arise; it arises the
+   * moment one is added that is not, and a rail that keeps its marker on the
+   * last row it recognised would be saying you are somewhere you are not.
+   */
+  const here =
+    [...PAGES, ...ACQUIRING, ...TOOLS].find((page) =>
+      isActive(page.href, pathname),
+    )?.href ?? "";
+
+  const [track, register, thumbStyle] = useSlider(here, "y");
 
   /*
    * Anything that moves you closes it.
@@ -403,9 +421,37 @@ export function Sidebar() {
             included, which is not a navigation but does put a window over the
             page the drawer would otherwise be standing in front of. */}
         <nav
+          ref={track}
           onClick={() => setOpen(false)}
-          className="flex flex-1 flex-col gap-0.5"
+          className="relative flex flex-1 flex-col gap-0.5"
         >
+          {/*
+           * The marker for the row you are on, and the one thing in the rail
+           * that moves: it slides from the row you were on to the row you
+           * chose, rather than going out at one and coming on at another. The
+           * same object the switches on the shelves raise out of their track,
+           * measured the same way and moving on the same clock — a column of
+           * pages is that control at another size, so it should not be another
+           * animation. See `useSlider` in app/controls.tsx.
+           *
+           * Ahead of the rows in the markup and under them in paint, because
+           * `.glow` gives every row a stacking context of its own; nothing has
+           * to be lifted above this to stay readable through it.
+           *
+           * It carries an edge, and the edge is what makes the movement worth
+           * watching. As a bare wash it was 5% ink and the pointer's own light
+           * on a row is about as much again — so the row you were about to
+           * click already looked chosen, and the marker landing on it changed
+           * nothing anyone could see. The two now differ in kind rather than in
+           * degree: the light under the pointer is a gradient with no boundary
+           * anywhere, and this is a shape.
+           */}
+          <span
+            aria-hidden
+            style={thumbStyle}
+            className={`rail-here absolute inset-x-0 top-0 rounded-full bg-surface-strong ring-1 ring-line ${SLIDE}`}
+          />
+
           <SearchTrigger />
 
           {[PAGES, ACQUIRING, TOOLS].map((group, g) => (
@@ -413,16 +459,22 @@ export function Sidebar() {
               <Rule />
 
               {group.map((page) => {
-                const active = isActive(page.href, pathname);
+                const active = page.href === here;
                 return (
                   <Link
                     key={page.href}
+                    ref={register(page.href)}
                     href={page.href}
                     aria-current={active ? "page" : undefined}
-                    className={`glow flex items-center gap-2.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                      active
-                        ? "bg-surface-strong font-medium"
-                        : "opacity-60 hover:bg-surface hover:opacity-100"
+                    /* Hover brings the label up to full strength and nothing
+                       else. `.glow` already lights the row under the pointer,
+                       and a wash laid on top of that light was a second answer
+                       to the same question — one that happened to look like
+                       the marker for the row you are on. Pointing at a row is
+                       not being on it, and only one of the two is a state of
+                       the app. */
+                    className={`glow relative flex items-center gap-2.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
+                      active ? "font-medium" : "opacity-60 hover:opacity-100"
                     }`}
                   >
                     <NavIcon path={page.icon} />
