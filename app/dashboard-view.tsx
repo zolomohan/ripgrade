@@ -239,7 +239,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
           {work.dovi.count > 0 && (
             <WorkTile
               index={2}
-              href="/upgrades?t=dovi"
+              href="/jobs"
               label="DV P7 to P8.1"
               value={work.dovi.count}
             />
@@ -248,7 +248,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
           {work.audio.count > 0 && (
             <WorkTile
               index={3}
-              href="/upgrades?t=audio"
+              href="/jobs?t=audio"
               label="Strip Audio"
               value={work.audio.count}
             />

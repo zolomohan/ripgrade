@@ -1,5 +1,9 @@
 /**
- * How the queue's four lists are ordered, and the shape they all declare it in.
+ * How a tabbed list is ordered, and the shape every one of them declares it in.
+ *
+ * At the app's root rather than beside one page's tabs, because the lists that
+ * declare these are on two pages now: the queue ranks what there is to fetch,
+ * and the jobs page ranks the work the library can do to its own files.
  *
  * Each list owns its own options, because what "best first" means is different
  * in each: a gain against your copy, a file about to be rewritten, the space a

@@ -1,8 +1,9 @@
 import { getStripJob } from "@/lib/audio-strip";
-import { getConvertJob } from "@/lib/convert";
+import { getConvertJob, keepsEnhancementLayer } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
 import { getJobRuns } from "@/lib/job-history";
-import { filmsByPath } from "@/lib/queue-tasks";
+import { getLibrary } from "@/lib/library";
+import { cleanupFiles, filmsByPath, libraryTasks } from "@/lib/queue-tasks";
 import { JobsView } from "./jobs-view";
 
 export const metadata = { title: "Jobs — RipGrade" };
@@ -13,6 +14,26 @@ export const dynamic = "force-dynamic";
 
 export default async function JobsPage() {
   const runs = getJobRuns();
+
+  /*
+   * The library, read once and handed to everything below it: the three lists
+   * of outstanding work are three questions about the same four hundred films,
+   * and the posters on the log are a fourth.
+   */
+  const library = getLibrary();
+
+  /*
+   * What is still to do, on every request rather than only for the tab being
+   * shown — the whole page is one request, and a tab that had to fetch its own
+   * list would be a tab that arrives empty and fills in.
+   *
+   * These came from the queue, which is where they were reachable from until
+   * the work and the record of the work were put on one page. Neither list
+   * touches anything but the database and a stat per candidate; the cleanup
+   * scan is one directory read per folder the library lives in.
+   */
+  const { dovi, audio } = libraryTasks(library);
+  const cleanup = cleanupFiles(library);
 
   /**
    * The film each of the three film-shaped jobs is working on, asked of the
@@ -35,6 +56,7 @@ export default async function JobsPage() {
     [...runs.map((run) => run.path), ...running].filter(
       (path): path is string => Boolean(path),
     ),
+    library,
   );
 
   return (
@@ -48,6 +70,12 @@ export default async function JobsPage() {
         // A plain object rather than the Map itself: this crosses to a client
         // component, and the running rows only ever look one path up at a time.
         films={Object.fromEntries(films)}
+        dovi={dovi}
+        // Not a per-film fact and not something the list can change: it is here
+        // so the confirmation says what the job will actually do.
+        keepingEl={keepsEnhancementLayer()}
+        audio={audio}
+        cleanup={cleanup}
       />
     </main>
   );

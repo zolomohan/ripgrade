@@ -12,10 +12,10 @@ import { BUTTON } from "@/app/controls";
 import { ConfirmModal } from "@/app/film/[id]/console";
 import type { CleanupFile, CleanupKind } from "@/lib/queue-tasks";
 import { movieId } from "@/lib/routes";
-import { Grouped, pickGroup, type GroupOption } from "./grouping";
+import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
 import { Stat } from "@/app/charts";
 import { Stats } from "./stats";
-import { byTitle, pickSort, type SortOption } from "./sorts";
+import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 
 /**
  * What is lying beside the films, and the one thing to do about it.

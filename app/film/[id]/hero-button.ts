@@ -10,9 +10,9 @@
  * moving them would jostle a corner that is meant to stay put.
  *
  * Round, because a pill of equal sides is a circle and every button in the app
- * is a pill now. It also puts these in the same family as the row actions on
- * the Downloads and Queue pages, which were already circles — one icon button,
- * whatever page it turns up on.
+ * is a pill now. It also puts these in the same family as the queue's own row
+ * actions, which were already circles — one icon button, whatever page it turns
+ * up on.
  *
  * Positioning is deliberately not included — the back button is anchored on its
  * own, the other two live in a flex group.

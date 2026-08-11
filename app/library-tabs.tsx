@@ -52,6 +52,7 @@ export function LibraryTabs({
       value={tab}
       onChange={(next) => select(next as "movies" | "tv")}
       options={options}
+      className="-ml-2"
     />
   );
 

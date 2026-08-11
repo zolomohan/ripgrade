@@ -1190,8 +1190,9 @@ export async function restoreOriginal(
  * Whether a conversion keeps the enhancement layer it discards.
  *
  * One setting rather than a question per film: the conversions this app starts
- * come from the queue as often as from a film's own page, and a decision that
- * only exists in a dialog is one the queue would have to invent an answer to.
+ * come from the Dolby Vision list as often as from a film's own page, and a
+ * decision that only exists in a dialog is one that list would have to invent
+ * an answer to.
  */
 export async function getKeepEnhancementLayer(): Promise<boolean> {
   return keepsEnhancementLayer();
@@ -1465,7 +1466,7 @@ export async function setAudioLanguages(
 // ---------------------------------------------------------------------------
 
 /**
- * Deletes originals and leftovers the queue's cleanup list found.
+ * Deletes originals and leftovers the jobs page's cleanup list found.
  *
  * Takes several at once because a run of leftovers is one decision, not one per
  * file. Which paths are acceptable is decided by `deleteCleanupFiles` against
@@ -1908,7 +1909,7 @@ export async function qbRemove(hash: string, deleteFiles: boolean) {
   return result;
 }
 
-/** The Downloads page's poll: the log wearing qBittorrent's present tense. */
+/** The transfer list's poll: the log wearing qBittorrent's present tense. */
 export async function listDownloadLog(): Promise<DownloadEntry[]> {
   return getDownloadLog();
 }

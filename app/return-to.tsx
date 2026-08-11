@@ -39,7 +39,17 @@ const SCROLL_KEY = "ripgrade:listingScroll";
  * had not been looking at. Somewhere you can arrive at a film from is somewhere
  * back has to return you to.
  */
-const LISTINGS = ["/", "/library", "/collections", "/wishlist", "/upgrades"];
+const LISTINGS = [
+  "/",
+  "/library",
+  "/collections",
+  "/wishlist",
+  "/upgrades",
+  // The jobs page, since the library's own work moved onto it: its rows open
+  // the film a conversion or a removal is waiting on, and back from one of
+  // those means back to the list you picked it off.
+  "/jobs",
+];
 
 const isListing = (path: string) =>
   LISTINGS.includes(path) ||

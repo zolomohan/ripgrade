@@ -8,7 +8,7 @@ import path from "node:path";
 import { getSetting } from "./db";
 import { BACKUP_SUFFIX, EL_ARCHIVE_SUFFIX } from "./derive";
 import { scanDovi } from "./dovi";
-import { ended, recordRun } from "./job-history";
+import { ended, recordDiscardedBackup, recordRun } from "./job-history";
 import { appendOutput, commandLine } from "./job-output";
 import { notifyJobs } from "./job-events";
 import { compareRuntime } from "./media";
@@ -71,13 +71,25 @@ export const filePresent = (filePath: string) => existsSync(filePath);
  * The one genuinely irreversible action here. Everything else this module does
  * can be undone by converting again or restoring; once this file is gone, the
  * Profile 7 version of the film only exists on the disc it came from.
+ *
+ * Which is why it is the one thing here that is not a job and is still written
+ * to the job log: it is over before the rail could draw it, and it is the thing
+ * you most want a record of a week later. See `recordDiscardedBackup`.
  */
 export async function deleteBackup(filePath: string): Promise<void> {
   const backup = backupPathFor(filePath);
   if (!existsSync(backup)) {
     throw new Error("No backup found beside this file.");
   }
+  // Asked while the file is still there to answer, so the row can say what the
+  // delete got back.
+  const bytes = backupBytes(filePath);
   await rm(backup, { force: true });
+  recordDiscardedBackup({
+    path: filePath,
+    name: path.basename(backup),
+    bytes,
+  });
 }
 
 /**

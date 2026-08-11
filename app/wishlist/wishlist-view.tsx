@@ -293,6 +293,7 @@ export function WishlistView({ entries }: { entries: WishlistEntry[] }) {
             { key: "movies", label: "Films" },
             { key: "tv", label: "Shows" },
           ]}
+          className="-ml-2"
         />
 
         {list.length > 0 && (

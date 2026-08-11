@@ -172,7 +172,7 @@ export default async function SettingsPage() {
         summary={
           audioSummary.length ? audioSummary.join(" · ") : "Nothing preferred"
         }
-        hint="Which languages are worth the space they take. On a remux the audio is routinely half the file, and a disc carries every language it was pressed with — so everything you do not keep is what the queue's Audio tracks tab offers to remove, one film at a time, original kept beside it."
+        hint="Which languages are worth the space they take. On a remux the audio is routinely half the file, and a disc carries every language it was pressed with — so everything you do not keep is what the Jobs page's Audio tracks tab offers to remove, one film at a time, original kept beside it."
       >
         <AudioLanguages
           preference={audio.preference}

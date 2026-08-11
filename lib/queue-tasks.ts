@@ -18,6 +18,7 @@ import { backupBytes, backupPathFor, filePresent } from "./convert";
 import { db, getSetting } from "./db";
 import { classifyEnhancementLayer } from "./derive";
 import type { ElVerdict, EpisodeInfo } from "./derive";
+import { recordDiscardedBackup } from "./job-history";
 import { getLibrary } from "./library";
 import type { LibraryItem } from "./library";
 import { reachabilityReader } from "./reach";
@@ -39,6 +40,11 @@ import { getShows } from "./shows";
  *
  * Both lists are read straight out of the derived rows the last scan wrote,
  * plus one stat per candidate. Neither spawns a tool.
+ *
+ * The module keeps the queue's name because that is the page these were written
+ * for and read on. They are drawn on the jobs page now, as the pending half of
+ * its tabs — above the job running on one of these films and the log of the
+ * ones that ran. The shape of the answer did not change with the address.
  */
 
 /** What both lists need to draw a row and open the film behind it. */
@@ -616,13 +622,18 @@ function knownBackups(): Set<string> {
  * could reclaim, because it is still on the drive taking up room, but the
  * folder it is in did not open on this pass — so there is nothing to check the
  * path against and nothing to delete.
+ *
+ * The originals among them are written to the job log as they go, the way the
+ * same delete from a film's own page is. Which of these rows is an original is
+ * this module's own reading of the name, and the answer decides whether
+ * anything was lost: see `recordDiscardedBackup`.
  */
 export async function deleteCleanupFiles(
   paths: string[],
 ): Promise<{ deleted: number; freed: number }> {
   const scan = cleanupFiles();
   const allowed = new Map(
-    scan.filter((file) => !file.offline).map((file) => [file.path, file.bytes]),
+    scan.filter((file) => !file.offline).map((file) => [file.path, file]),
   );
   const offline = new Set(
     scan.filter((file) => file.offline).map((file) => file.path),
@@ -631,8 +642,8 @@ export async function deleteCleanupFiles(
   let deleted = 0;
   let freed = 0;
   for (const target of paths) {
-    const bytes = allowed.get(target);
-    if (bytes === undefined) {
+    const file = allowed.get(target);
+    if (!file) {
       throw new Error(
         offline.has(target)
           ? `The drive this file lives on is not connected: ${target}`
@@ -650,8 +661,42 @@ export async function deleteCleanupFiles(
       },
     );
     deleted += 1;
-    freed += bytes;
+    freed += file.bytes;
+
+    // Written after the delete rather than before it, so the log holds what
+    // happened and not what was about to. A row that cannot be written is not a
+    // reason to stop halfway through a sweep — `recordRun` swallows its own
+    // errors for exactly this.
+    if (file.kind !== "leftover") {
+      recordDiscardedBackup({
+        path: filmPathOf(file),
+        name: file.name,
+        bytes: file.bytes,
+      });
+    }
   }
 
   return { deleted, freed };
+}
+
+/**
+ * The film an original was kept beside, as a path.
+ *
+ * Read back off the name rather than taken from `file.film`, which is only
+ * filled in when the library still holds that film. The two agree wherever both
+ * exist — the row was matched to its film by this same join — and where they do
+ * not, the name is the one that still answers: an original whose film has been
+ * renamed or removed is precisely the delete worth a record, and the log would
+ * rather say which file it stood beside than say nothing.
+ *
+ * Undefined for a leftover named from a stem, which is not a path to anything.
+ * No caller asks for one — only the originals are logged, and both of those are
+ * named from the whole filename — but a stem joined onto a folder is a path
+ * that looks real and points at nothing, which is worth refusing outright
+ * rather than leaving for the next reader to notice.
+ */
+function filmPathOf(file: CleanupFile): string | undefined {
+  const artefact = artefactOf(file.name);
+  if (!artefact || artefact.fromStem) return undefined;
+  return path.join(path.dirname(file.path), artefact.base);
 }

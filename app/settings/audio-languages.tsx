@@ -110,7 +110,7 @@ export function AudioLanguages({
 
       <Row
         title="The film's original language"
-        hint="Japanese on a Japanese film, Danish on a Danish one — the track that is the performance rather than a dub of it. Taken per film from TMDb, so a film nothing has matched is left out of the queue entirely rather than guessed at."
+        hint="Japanese on a Japanese film, Danish on a Danish one — the track that is the performance rather than a dub of it. Taken per film from TMDb, so a film nothing has matched is left out of the list entirely rather than guessed at."
       >
         <Toggle
           on={chosen.original}

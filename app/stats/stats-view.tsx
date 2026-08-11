@@ -258,6 +258,7 @@ export function StatsView({
             { key: "movies", label: "Films" },
             { key: "tv", label: "Shows" },
           ]}
+          className="-ml-2"
         />
       )}
 

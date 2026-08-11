@@ -15,7 +15,7 @@ import {
 } from "./audio-plan";
 import { AUDIO_BACKUP_SUFFIX } from "./derive";
 import { notifyJobs } from "./job-events";
-import { ended, recordRun } from "./job-history";
+import { ended, recordDiscardedBackup, recordRun } from "./job-history";
 import { appendOutput, commandLine } from "./job-output";
 import { deriveAll } from "./library";
 import { compareRuntime } from "./media";
@@ -136,14 +136,23 @@ async function planFor(
  * Throws away the original that still holds every track.
  *
  * Irreversible in the way the conversion's equivalent is: once this is gone,
- * the removed tracks exist only on the disc the film was ripped from.
+ * the removed tracks exist only on the disc the film was ripped from. And
+ * written to the job log for the same reason, in the same row — see
+ * `recordDiscardedBackup`.
  */
 export async function deleteAudioBackup(filePath: string): Promise<void> {
   const backup = audioBackupPathFor(filePath);
   if (!existsSync(backup)) {
     throw new Error("No backup found beside this file.");
   }
+  // While there is still a file to ask.
+  const bytes = audioBackupBytes(filePath);
   await rm(backup, { force: true });
+  recordDiscardedBackup({
+    path: filePath,
+    name: path.basename(backup),
+    bytes,
+  });
 }
 
 /**

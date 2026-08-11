@@ -11,7 +11,6 @@ import {
   qbResume,
 } from "@/app/actions";
 import { Art } from "@/app/art";
-import { EmptyState } from "@/app/empty-state";
 import { SectionHeading } from "@/app/section-heading";
 import { CloseButton, Modal, useLingering } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
@@ -28,6 +27,17 @@ import { posterName } from "@/lib/routes";
  * and releases qBittorrent has long forgotten, which only the app's own
  * record can still show. Polled quickly while anything moves, slowly while
  * anything is merely in the client, and not at all once nothing is.
+ *
+ * This was a page of its own, one click along the rail from the list of things
+ * to send. Which made a fetch a thing you did on one page and watched on
+ * another: you pressed Download on a wishlist find, the row vanished — it is
+ * being fetched, so it is no longer something to fetch — and where it went was
+ * somewhere else entirely. The two are one tab now, and the row leaves the
+ * list above and appears in the list below it.
+ *
+ * Called `Transfers` because `DownloadsView` was taken, by the list of releases
+ * this one receives from — see upgrades-view.tsx. Two things called downloads
+ * on one page was already the confusion; naming them apart is the fix.
  */
 const POLL_MS = 3000;
 
@@ -218,12 +228,26 @@ function RowMenu({
   );
 }
 
-export function DownloadsView({
+export function Transfers({
   initial,
-  configured,
+  between,
 }: {
   initial: DownloadEntry[];
-  configured: boolean;
+  /**
+   * The tab's own list, drawn between the two halves of this one.
+   *
+   * Threaded through rather than composed around it, because the order the tab
+   * reads in — what is moving, what is still to send, what has been sent —
+   * puts a section from outside this component in the middle of two that share
+   * one poll, one error banner and one confirmation dialog. Splitting those in
+   * half to get a section between them would be three components keeping one
+   * conversation with qBittorrent in step.
+   *
+   * Named for where it goes rather than what it is: `pending` is taken here by
+   * the transition flag, and this component has no business knowing that the
+   * list handed to it is the wishlist's.
+   */
+  between?: React.ReactNode;
 }) {
   const [entries, setEntries] = useState(initial);
   const [pending, startTransition] = useTransition();
@@ -312,52 +336,27 @@ export function DownloadsView({
     named.set(entry.hash, name);
   }
 
-  if (!configured && entries.length === 0) {
-    return (
-      <EmptyState
-        icon={
-          <>
-            <path d="M12 4v11" />
-            <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
-            <path d="M5 19h14" />
-          </>
-        }
-        title="No download client connected"
-        action={
-          <Link
-            href="/settings"
-            className="flex items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90"
-          >
-            Connect qBittorrent
-          </Link>
-        }
-      >
-        Connect qBittorrent in Settings and every Download button hands the
-        release over — progress, controls and history all land here.
-      </EmptyState>
-    );
-  }
-
-  if (entries.length === 0) {
-    return (
-      <EmptyState
-        icon={
-          <>
-            <path d="M12 4v11" />
-            <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
-            <path d="M5 19h14" />
-          </>
-        }
-        title="Nothing sent yet"
-      >
-        Every release sent from a Download button lands here — live progress
-        while it fetches, and the record of it afterwards.
-      </EmptyState>
-    );
-  }
+  /*
+   * Nothing sent, nothing drawn — not an empty state.
+   *
+   * Both halves of this were an empty state while it was a page, because a page
+   * cannot be blank: one for a client that was never connected, one for a
+   * client that has never been given anything. Under a list of releases to
+   * fetch, either would be a second empty state stacked below the first, saying
+   * the same thing about the same tab twice. A section that is not there is the
+   * emptier answer — the same argument the jobs page's history makes.
+   *
+   * Connecting the client is still said where it can be acted on: the Settings
+   * page, and the Download button itself, which is a plain magnet link until
+   * there is somewhere to hand a release to.
+   *
+   * The tab's own list still is: nothing sent is a fact about this component,
+   * not about the page it was handed.
+   */
+  if (entries.length === 0) return <>{between}</>;
 
   return (
-    <div className="flex flex-col gap-12">
+    <div className="flex flex-1 flex-col gap-12">
       {/* Above both lists rather than against the row that failed: a control
           can be clicked from the row menu, which is gone by the time there is
           anything to report, and a torrent removed from the client takes its
@@ -476,6 +475,8 @@ export function DownloadsView({
           </ul>
         </section>
       )}
+
+      {between}
 
       {past.length > 0 && (
         <section className="flex flex-col gap-1">

@@ -44,7 +44,7 @@ import { SidebarProcesses } from "./sidebar-processes";
  * grouped, what is missing from it, and what it all adds up to.
  *
  * These were one undifferentiated list with everything below, which made
- * "Stats" and "Downloads" look like the same kind of place.
+ * "Stats" and "Jobs" look like the same kind of place.
  */
 const PAGES = [
   // First, and the page the app opens on: everything below is an arrangement
@@ -85,18 +85,19 @@ const PAGES = [
  * are — the indexers are one of the places that window asks now.
  */
 const ACQUIRING = [
-  // Everything there is to go and fetch, ranked: better copies of what you
-  // have, and the wants something has turned up for. An arrow up off the
-  // shelf, because every row here is something rising above what you hold.
+  // Everything there is to go and fetch and everything being fetched, on one
+  // page now: better copies of what you have, the wants something has turned
+  // up for, and the transfers those two send.
+  //
+  // The arrow lands rather than rises. It was pointing up off the shelf while
+  // this was a list of things standing above what you hold, and the arrow that
+  // came down was the Downloads page's, one row below — with that page folded
+  // into this one, the mark that survives is the one for what actually happens
+  // here. A rail of two arrows in opposite directions for one destination is a
+  // rail that has to be read twice.
   {
     href: "/upgrades",
     label: "Queue",
-    icon: "M12 15V4m0 0L8 8m4-4 4 4M4 20h16",
-  },
-  // And the same arrow the other way, landing.
-  {
-    href: "/downloads",
-    label: "Downloads",
     icon: "M12 4v11m0 0 4-4m-4 4-4-4M4 20h16",
   },
   // The work itself, while it runs and after it has. A clock face: what this

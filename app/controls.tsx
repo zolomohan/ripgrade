@@ -227,18 +227,29 @@ export function Switch({
   value,
   onChange,
   options,
+  className = "",
 }: {
   value: string;
   onChange: (key: string) => void;
   /** A count says how much is behind an option without having to open it. */
   options: { key: string; label: string; count?: number }[];
+  /**
+   * Where the track sits, for the callers that have an opinion.
+   *
+   * The tab rows at the head of a page pass `-ml-2` through this: the track's
+   * own padding and the first label's stand between the word and the page's
+   * left edge, so a switch set flush reads as indented against the list under
+   * it. Passed in rather than built in, because that is a fact about a page's
+   * margins and not about the control.
+   */
+  className?: string;
 }) {
   const [track, register, thumbStyle] = useSlider(value);
 
   return (
     <div
       ref={track}
-      className={`relative flex ${CONTROL_H} shrink-0 items-stretch gap-1 self-start rounded-full border border-line bg-surface/60 p-1`}
+      className={`relative flex ${CONTROL_H} shrink-0 items-stretch gap-1 self-start rounded-full border border-line bg-surface/60 p-1 ${className}`}
     >
       <span
         aria-hidden

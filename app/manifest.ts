@@ -53,10 +53,14 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     // The pages worth a right-click on the dock icon. Deliberately short: the
     // three the app is opened *for*, not a copy of the rail.
+    //
+    // Jobs in place of Downloads, which is not a page any more: what is being
+    // fetched is on the queue with the things to fetch, and the third reason to
+    // open this app is the work it is doing to the files you already have.
     shortcuts: [
       { name: "Library", url: "/library" },
-      { name: "Upgrades", url: "/upgrades" },
-      { name: "Downloads", url: "/downloads" },
+      { name: "Queue", url: "/upgrades" },
+      { name: "Jobs", url: "/jobs" },
     ],
   };
 }

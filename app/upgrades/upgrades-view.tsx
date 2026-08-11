@@ -19,8 +19,8 @@ import { stagger } from "@/app/stagger";
 import { compareId, movieId, posterName } from "@/lib/routes";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import type { WishlistFind } from "@/lib/wishlist-search";
-import { Grouped, pickGroup, type GroupOption } from "./grouping";
-import { byTitle, pickSort, type SortOption } from "./sorts";
+import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
+import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 
 /**
  * What the sweep found, in the two kinds it finds.

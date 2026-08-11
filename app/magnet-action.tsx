@@ -18,11 +18,12 @@ import type { FilmContext } from "@/lib/qbittorrent";
  * With qBittorrent connected it is a real handover: the click opens a small
  * dialog asking where the download should land — qBittorrent's own default,
  * or any library folder, remembered for next time — and picking one sends it.
- * The mark turns into a tick; progress lives on the Downloads page. Without a
- * client, the same control is the plain magnet link it always was.
+ * The mark turns into a tick; progress lives under the queue's Downloads tab,
+ * in the same list the release was picked off. Without a client, the same
+ * control is the plain magnet link it always was.
  *
  * `film` rides along so the log knows which film the release was fetched
- * for — the Downloads page shows the poster, and a bare magnet could never
+ * for — the transfer list shows the poster, and a bare magnet could never
  * say.
  */
 

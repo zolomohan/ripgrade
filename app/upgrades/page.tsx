@@ -1,8 +1,6 @@
-import { keepsEnhancementLayer } from "@/lib/convert";
 import { hasJackett } from "@/lib/jackett";
 import { getLibrary } from "@/lib/library";
-import { alreadyFetching } from "@/lib/qbittorrent";
-import { cleanupFiles, libraryTasks } from "@/lib/queue-tasks";
+import { alreadyFetching, getDownloadLog } from "@/lib/qbittorrent";
 import {
   checkedCount,
   getUpgradeQueue,
@@ -17,17 +15,14 @@ import { QueueTabs } from "./queue-tabs";
 
 export const metadata = { title: "Queue — RipGrade" };
 
-// Reads the database on every request, like the library itself.
+// Reads the database and qBittorrent on every request, like the library itself.
 export const dynamic = "force-dynamic";
 
 export default async function UpgradesPage() {
   /*
-   * The library, read once for the whole page.
-   *
-   * Four of the questions below want it, and each used to fetch its own copy —
-   * four hundred rows of JSON parsed four times to answer four questions about
-   * the same four hundred films. Every one of them takes it as an argument now,
-   * defaulting to reading it themselves so nothing else had to change.
+   * The library, read once for the whole page — four hundred rows of JSON, and
+   * every question below takes it as an argument rather than reading its own
+   * copy.
    */
   const library = getLibrary();
   const movies = library.filter((item) => item.kind === "movie");
@@ -47,15 +42,18 @@ export default async function UpgradesPage() {
   );
 
   /*
-   * Both of the library's own lists, on every request rather than only for the
-   * tab being shown: the counts on the switch are what makes the other two tabs
-   * worth opening, and neither list touches anything but the database and a
-   * stat per candidate.
+   * And what has already been handed over, which is the other half of the same
+   * tab: a release leaves the list above the moment it is sent, and this is
+   * where it goes. Read on the server for the first paint only — the list polls
+   * itself from there, quickly while anything is moving.
+   *
+   * A second read of qBittorrent on top of `alreadyFetching`, and deliberately
+   * not folded into it: that one asks whether a magnet is already in the
+   * client and is answered by a set of hashes, while this is the log joined to
+   * what the client says about each row. Both are one round trip to a program
+   * on this machine.
    */
-  const { dovi, audio } = libraryTasks(library);
-  // One directory read per folder the library lives in, so it costs about what
-  // the two lists above do and is worth having a count for on every request.
-  const cleanup = cleanupFiles(library);
+  const transfers = await getDownloadLog();
 
   return (
     // min-h-dvh rather than flex-1: the layout's own column has no definite
@@ -74,10 +72,7 @@ export default async function UpgradesPage() {
         wants={wishlistCandidates().length}
         wantsChecked={wishlistCheckedCount()}
         jackettReady={hasJackett()}
-        dovi={dovi}
-        keepingEl={keepsEnhancementLayer()}
-        audio={audio}
-        cleanup={cleanup}
+        transfers={transfers}
       />
     </main>
   );

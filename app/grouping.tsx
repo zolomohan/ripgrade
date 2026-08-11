@@ -4,10 +4,10 @@
  * Grouping, in the shape the library shelf already uses.
  *
  * A sort answers "which of these first"; a group answers "which of these are
- * the same kind of thing" — and on a queue that is often the more useful
- * question. A hundred and eight episode rows are eight shows; a cleanup list is
- * two kinds of decision wearing the same row. Neither is visible in any order
- * you can put a flat list into.
+ * the same kind of thing" — and on a list of outstanding work that is often the
+ * more useful question. A hundred and eight episode rows are eight shows; a
+ * cleanup list is two kinds of decision wearing the same row. Neither is
+ * visible in any order you can put a flat list into.
  *
  * The same declaration the library's `GROUPS` uses — a key, a label, and what
  * bucket an item falls in — so the two behave alike and the menu is the same

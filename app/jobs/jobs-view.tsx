@@ -5,49 +5,135 @@ import { useRouter } from "next/navigation";
 
 import { Art } from "@/app/art";
 import { useNow } from "@/app/clock";
-import { EmptyState } from "@/app/empty-state";
 import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
+import { ListingBar, useListing, type Choice } from "@/app/listing";
 import { ProcessDetails, type ProcessDetail } from "@/app/process-details";
 import { SectionHeading } from "@/app/section-heading";
 import { stagger } from "@/app/stagger";
 import { visibleOutput } from "@/lib/job-output";
-import type { JobRun } from "@/lib/job-history";
-import type { TaskFilm } from "@/lib/queue-tasks";
+import type { JobKind, JobRun } from "@/lib/job-history";
+import type {
+  AudioTask,
+  CleanupFile,
+  DoviTask,
+  TaskFilm,
+} from "@/lib/queue-tasks";
 import { posterName } from "@/lib/routes";
+import { CLEANUP_GROUPS, CLEANUP_SORTS, CleanupList } from "./cleanup-list";
+import {
+  AUDIO_GROUPS,
+  AUDIO_SORTS,
+  AudioTasks,
+  DOVI_GROUPS,
+  DOVI_SORTS,
+  DoviTasks,
+} from "./task-list";
 
 /** A run, with whatever the library still knows about the file it worked on. */
 export type LoggedRun = JobRun & { film?: TaskFilm };
 
 /**
- * What the app is doing, and what it has done.
+ * Three kinds of work the library can do to its own files: what is outstanding,
+ * what is happening now, and what happened.
  *
- * The rail answers the first question in the corner of every screen, and
+ * Those were two pages. The queue listed the Profile 7 files worth converting,
+ * the audio nobody here will ever play and the originals both of those leave
+ * behind; this page listed the jobs that did something about them. Which meant
+ * the film you converted was on one page as a row to act on and on another as a
+ * row that had been acted on, and the question you actually arrive with — is
+ * this film done, and did it work — was answered half in each.
+ *
+ * So a tab is one subject end to end: what is left, then what is running, then
+ * what ran. The two lists that are genuinely about somewhere else — a better
+ * copy of a film you own, and a film you do not own — stay on the queue, which
+ * is now a page about fetching and nothing else.
+ *
+ * The rail answers "what is running" in the corner of every screen and
  * deliberately answers nothing else — it is a glance, not a record. This is the
- * page you come to on purpose, so it can afford the second question: a
- * conversion that failed at four in the morning is exactly the thing nobody was
- * watching the corner of the screen for.
+ * page you come to on purpose, so it can afford the rest: a conversion that
+ * failed at four in the morning is exactly the thing nobody was watching the
+ * corner of the screen for.
  *
  * The scan is not here, and neither is the upgrade sweep. Both run on a timer
  * as much as on a click — a sweep starts behind every scan, and a scan runs on
  * every boot — so a page listing them says "scanned 418 files" and "12
  * upgrades found" over and over, with the conversion that failed at four in the
  * morning somewhere underneath. Both are still in the rail while they run,
- * which is the right place for a job nobody asked for: a glance, not a record.
+ * which is the right place for a job nobody asked for.
  *
  * The sweep also has a better record of itself than a row here would be. What
  * it found is the queue, kept until something is done about it; the row only
  * ever said how many.
  *
+ * One kind of row was never in the running half at all: an original thrown away
+ * is over in the time it takes to unlink it, so there is nothing for the rail to
+ * have shown. It is here because this is the page that answers "what happened
+ * to that file", and it is the only answer this app cannot give a second time.
+ *
  * The running half is drawn from the same `jobRows` the rail uses, so the two
  * cannot end up describing the same job differently.
  */
+
+const TABS = [
+  { key: "dovi", label: "Dolby Vision" },
+  { key: "audio", label: "Audio tracks" },
+  { key: "cleanup", label: "Cleanup" },
+] as const;
+
+type Tab = (typeof TABS)[number]["key"];
+
+/** Each list's own orders and cuts; the first of each is what it opens in. */
+const SORTS: Record<Tab, Choice[]> = {
+  dovi: DOVI_SORTS,
+  audio: AUDIO_SORTS,
+  cleanup: CLEANUP_SORTS,
+};
+
+const GROUPS: Record<Tab, Choice[]> = {
+  dovi: DOVI_GROUPS,
+  audio: AUDIO_GROUPS,
+  cleanup: CLEANUP_GROUPS,
+};
+
+/**
+ * Which running job belongs to which tab, by the key `jobRows` gives it.
+ *
+ * The full Dolby Vision read sits with the conversions because it is the same
+ * subject asked one step earlier — it is what a row runs to find out whether it
+ * can be converted at all, and it is started from that list.
+ *
+ * The sweep is in neither, as it is in neither half of this page.
+ */
+const RUNNING: Record<Tab, string[]> = {
+  dovi: ["convert", "dovi"],
+  audio: ["strip"],
+  cleanup: ["thumbs"],
+};
+
+/**
+ * And which finished ones, by the kind the log wrote them under.
+ *
+ * Thumbnails are under Cleanup for want of a truer home: a rebuild is the one
+ * job here that is about this app's own cache rather than about the films, and
+ * a tab of its own for a job you run twice a year is a tab that is empty every
+ * other day of it. Cleanup is where the app's housekeeping already lives.
+ */
+const LOGGED: Record<Tab, JobKind[]> = {
+  dovi: ["convert", "dovi"],
+  audio: ["strip"],
+  cleanup: ["cleanup", "thumbs"],
+};
 
 const KIND_LABEL: Record<string, string> = {
   convert: "Dolby Vision conversion",
   strip: "Audio removal",
   dovi: "Dolby Vision read",
   thumbs: "Thumbnails",
+  // The only kind here that never had a running half. It is the name the queue
+  // tab that sweeps these files carries, because that is where most of them are
+  // deleted from and the word someone would come here looking for.
+  cleanup: "Cleanup",
 };
 
 /** The outcome, as a word and the colour that word is worth. */
@@ -433,11 +519,24 @@ function finished(run: LoggedRun, now: number): ProcessDetail {
 export function JobsView({
   runs,
   films,
+  dovi,
+  keepingEl,
+  audio,
+  cleanup,
 }: {
   runs: LoggedRun[];
   /** What the library knows about the films the running jobs are working on. */
   films: Record<string, TaskFilm>;
+  /** The three lists of outstanding work, one per tab. */
+  dovi: DoviTask[];
+  /** Whether a conversion started from here keeps the layer it discards. */
+  keepingEl: boolean;
+  audio: AudioTask[];
+  cleanup: CleanupFile[];
 }) {
+  const listing = useListing(TABS, SORTS, GROUPS);
+  const tab = listing.tab;
+
   const { jobs, apply, subscribe } = useJobs();
   const router = useRouter();
   const [stopping, setStopping] = useState(false);
@@ -452,11 +551,18 @@ export function JobsView({
   // rendered it some unknown time before it was read.
   const now = useNow();
 
-  // Every job the rail draws except the sweep, which this page leaves to the
-  // rail in both halves — see the note at the top. Filtered here rather than
-  // asked of `jobRows`, because the rail is the one that wants all of them and
-  // a shared list with a flag on it is two lists pretending to be one.
-  const running = jobRows(jobs, apply).filter((row) => row.key !== "sweep");
+  // The tab's own job, where it is running. Filtered here rather than asked of
+  // `jobRows`, because the rail is the one that wants all of them and a shared
+  // list with a flag on it is two lists pretending to be one. The sweep is in
+  // no tab's list, which is how this page leaves it to the rail — see the note
+  // at the top.
+  const running = jobRows(jobs, apply).filter((row) =>
+    RUNNING[tab].includes(row.key),
+  );
+
+  // And the tab's own history. A page-wide log would have put an audio removal
+  // between two conversions under a heading that says Dolby Vision.
+  const logged = runs.filter((run) => LOGGED[tab].includes(run.kind));
 
   // A run writes its row as it ends, so the log this page was rendered with is
   // one row short the moment anything finishes. Only the edge counts — see
@@ -489,30 +595,14 @@ export function JobsView({
 
   const read = runs.find((run) => run.id === reading) ?? null;
 
-  if (running.length === 0 && runs.length === 0) {
-    return (
-      <EmptyState
-        icon={
-          <>
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 7v5l3 2" />
-          </>
-        }
-        title="Nothing has run yet"
-      >
-        Conversions, audio removals, Dolby Vision reads and thumbnail rebuilds
-        are listed here while they run, and kept afterwards. Start one from a
-        film&rsquo;s page or the queue.
-      </EmptyState>
-    );
-  }
-
   return (
     <>
+      <ListingBar listing={listing} />
+
       {/* No page title and no count above the sections, the way the downloads
-          log has neither: the rail already says which page this is, and the two
+          log has neither: the tabs already say which list this is, and the
           headings below say what is on it. A section that is not there is the
-          emptier answer, and a count in front of both was a third way of
+          emptier answer, and a count in front of each was a third way of
           saying what they say. */}
       {running.length > 0 && (
         <section className="flex flex-col gap-1">
@@ -532,11 +622,36 @@ export function JobsView({
         </section>
       )}
 
-      {runs.length > 0 && (
+      {/* What is still to do, under the one running and above the ones that
+          ran. Always drawn, even when there is nothing in it: each list has its
+          own empty state, and "no tracks worth removing" is an answer — a tab
+          that showed only a history would leave you to infer it from the
+          absence of a list. */}
+      <section className="flex flex-col gap-1">
+        <SectionHeading label="Pending" />
+        {tab === "dovi" ? (
+          <DoviTasks
+            tasks={dovi}
+            keepingEl={keepingEl}
+            sort={listing.sort}
+            group={listing.group}
+          />
+        ) : tab === "audio" ? (
+          <AudioTasks tasks={audio} sort={listing.sort} group={listing.group} />
+        ) : (
+          <CleanupList
+            files={cleanup}
+            sort={listing.sort}
+            group={listing.group}
+          />
+        )}
+      </section>
+
+      {logged.length > 0 && (
         <section className="flex flex-col gap-1">
           <SectionHeading label="History" />
           <ul className="ruled flex flex-col">
-            {runs.map((run, index) => (
+            {logged.map((run, index) => (
               <Run
                 key={run.id}
                 run={run}

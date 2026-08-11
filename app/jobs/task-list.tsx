@@ -21,18 +21,24 @@ import { languageKey } from "@/lib/audio-plan";
 import { languageName } from "@/lib/derive";
 import type { AudioTask, DoviTask, TaskFilm } from "@/lib/queue-tasks";
 import { movieId, posterName } from "@/lib/routes";
-import { Grouped, pickGroup, type GroupOption } from "./grouping";
+import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
 import { Stat } from "@/app/charts";
 import { Stats } from "./stats";
-import { byTitle, pickSort, type SortOption } from "./sorts";
+import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 
 /**
  * The two lists of work the library can do to its own files.
  *
  * A row opens the film's page, where the console that reads the metadata,
- * explains the enhancement layer and offers the way back lives. What the queue
- * adds is the part a per-film page cannot: the whole library asked at once,
- * and ranked by what the work is worth.
+ * explains the enhancement layer and offers the way back lives. What these add
+ * is the part a per-film page cannot: the whole library asked at once, and
+ * ranked by what the work is worth.
+ *
+ * They are the pending half of the jobs page's first two tabs, under the job
+ * running and above the log of the ones that ran. They were the queue's for as
+ * long as the queue was "everything outstanding" — but what is outstanding here
+ * is a job this app runs and writes down, and the row you act on belongs above
+ * the record of what acting on it did.
  *
  * The conversions can also be started from here. Rewriting a film is one
  * decision made the same way whichever page asks it — the same confirmation,
@@ -573,7 +579,7 @@ export function DoviTasks({
                   progress={
                     active ? (
                       <>
-                        {/* The downloads page's own bar, because it answers the
+                        {/* The transfer list's own bar, because it answers the
                         same question about the same kind of wait: how far
                         through, read across the row rather than squinted at. */}
                         <div className="bar-track mt-2.5">

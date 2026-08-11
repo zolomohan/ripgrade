@@ -15,6 +15,19 @@ import { db } from "./db";
  * end passes through it: there is no path to a finished job that does not set
  * the job.
  *
+ * One kind of row is not a job at all. Throwing away the original a conversion
+ * or a track removal set aside is an `rm` and nothing else — there is nothing
+ * to watch while it happens, and the rail would never have time to draw it. It
+ * is also the only thing this app does that cannot be walked back, and the
+ * question it leaves is asked long afterwards and by someone with no way left
+ * to answer it: where did the ninety gigabytes go, and was that film's
+ * Profile 7 copy among them. So it is written down at the moment of the delete
+ * instead — see `recordDiscardedBackup`.
+ *
+ * The leftovers swept up beside those originals are not written down. Every one
+ * of them is half-written output that outlived a crash, nothing was lost when
+ * one went, and a row per file would bury the rows where something was.
+ *
  * The scan is not among them, on purpose. It runs on a timer as much as on a
  * click, it ends by describing itself in the rail's own closing line, and a
  * log filled with a hundred identical "scanned 418 files" rows is a log with
@@ -29,7 +42,7 @@ import { db } from "./db";
  * read below excludes the kind rather than trusting that nothing writes it.
  */
 
-export type JobKind = "convert" | "strip" | "dovi" | "thumbs";
+export type JobKind = "convert" | "strip" | "dovi" | "thumbs" | "cleanup";
 
 /** How it ended. "Running" is the rail's business, not this table's. */
 export type JobOutcome = "done" | "cancelled" | "error";
@@ -149,6 +162,56 @@ export function recordRun(run: Omit<JobRun, "id">): void {
   } catch {
     // See above: the job is what matters, not the note about it.
   }
+}
+
+/**
+ * Writes the row for an original that was thrown away.
+ *
+ * Called from all three places one can go — a film's own console has a button
+ * per kind of original, and the queue's cleanup list sweeps up both kinds
+ * together — because each of them is a different `rm` on a different path, and
+ * there is no single moment further down they all pass through. What they share
+ * is this row, so the wording of it lives here rather than three times over.
+ *
+ * Only a delete that happened. All three callers throw when the file is not
+ * there or will not go, and the caller of *those* puts the failure in front of
+ * whoever pressed the button — a log row saying an original could not be
+ * deleted describes a file that is still on the drive.
+ *
+ * The size is read before the delete rather than found afterwards, for the
+ * obvious reason. It is optional because a stat that fails is not a reason to
+ * lose the row: what the row is for is saying the file is gone.
+ *
+ * No `startedAt`, so the log prints no duration for it. It is one system call,
+ * and "0s" is not a fact anybody wants.
+ */
+export function recordDiscardedBackup(discard: {
+  /**
+   * The film the original was kept beside, which is what puts its poster and
+   * its title on the row. Absent where nothing in the library answers to it any
+   * more — an original outlives the film it was made from, and that is exactly
+   * the one worth a record.
+   */
+  path?: string;
+  /** The name of the file that is now gone. */
+  name: string;
+  /** How big it was, and so how much this got back. */
+  bytes?: number;
+}): void {
+  recordRun({
+    kind: "cleanup",
+    title: discard.name,
+    path: discard.path,
+    outcome: "done",
+    finishedAt: Date.now(),
+    // The same figure the audio removal's row closes with, in the same words:
+    // both are space this app gave back, and a log that called one "freed" and
+    // the other "reclaimed" would be inviting a distinction it does not mean.
+    detail:
+      discard.bytes === undefined
+        ? undefined
+        : `${(discard.bytes / 1e9).toFixed(1)} GB freed`,
+  });
 }
 
 /** The log, newest first. */
