@@ -7,23 +7,24 @@ import { CloseButton, Modal } from "@/app/modal";
 import { Spinner } from "@/app/spinner";
 
 /**
- * The parts a console on this page is built from.
+ * Every confirmation in the app, in one shape.
  *
- * A console is the shape the Dolby Vision card settled on and the audio card
- * then wanted too: a verdict band, an action band, and a dialog for anything
- * long or irreversible. Both sections rewrite a film that is tens of gigabytes,
- * both keep the original beside it, and both ask before they start — so the
- * buttons and the question live here rather than being written twice and
- * drifting apart at the first change to either.
- */
-
-/**
- * Every confirmation on this page, in one shape.
+ * This was the film page's own — the shape the Dolby Vision card settled on and
+ * the audio card then wanted too, for anything long or irreversible. It lives
+ * here because it turned out not to be about that page at all: the queue's
+ * lists ask the same question about the same rewrites, the cleanup list asks it
+ * about a delete, the transfer list about a download, and the progress dialog
+ * about stopping whatever is running. Asking in one shape is the point — a
+ * question that looks different depending on which page raised it is a question
+ * you have to read twice before you trust the button.
  *
- * These all commit to something long or irreversible, and asking inside the
- * card meant the question appeared wherever the card happened to be — sometimes
- * below the fold, and always by pushing the rest of the section around. A
- * dialog asks in one place and puts the page back exactly as it was.
+ * The rule those callers keep: nothing that interrupts running work, throws a
+ * file away, or cannot be undone happens on one click.
+ *
+ * Asking inside the card meant the question appeared wherever the card happened
+ * to be — sometimes below the fold, and always by pushing the rest of the
+ * section around. A dialog asks in one place and puts the page back exactly as
+ * it was.
  *
  * Same portal-and-backdrop construction as the score breakdown, so the two
  * behave alike: click outside or press Escape to dismiss.

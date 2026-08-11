@@ -28,7 +28,7 @@ import {
 } from "@/lib/derive";
 import { CloseButton, Modal, useClosing } from "@/app/modal";
 import { BUTTON } from "@/app/controls";
-import { ConfirmModal } from "./console";
+import { ConfirmModal } from "@/app/confirm";
 
 /**
  * What is inside the Dolby Vision stream, and for a Profile 7 file the one

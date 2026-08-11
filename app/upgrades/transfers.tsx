@@ -11,8 +11,9 @@ import {
   qbResume,
 } from "@/app/actions";
 import { Art } from "@/app/art";
+import { ConfirmModal } from "@/app/confirm";
 import { SectionHeading } from "@/app/section-heading";
-import { CloseButton, Modal, useLingering } from "@/app/modal";
+import { useLingering } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
 import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
@@ -94,7 +95,6 @@ const SEEDING_STATES = new Set([
   "checkingUP",
 ]);
 
-
 /**
  * The film the release was fetched for, when the send knew it.
  *
@@ -128,6 +128,42 @@ function Poster({
     <span className="h-24 w-16 shrink-0 rounded-control bg-surface-strong ring-1 ring-line" />
   );
 }
+
+/**
+ * Everything a row can be asked before it is done, in the words each one needs.
+ *
+ * Four questions rather than three: stopping the seeding is a stop, and the app
+ * asks before it interrupts anything that is running — a job in the rail, a
+ * download in flight, an upload other people are pulling from. Pausing a
+ * download is the one control here that does not ask, because a pause is not a
+ * stop: the same menu item resumes it, nothing is thrown away, and a
+ * confirmation on it would be a dialog in front of a toggle.
+ */
+const ASK: Record<
+  "cancel" | "remove" | "forget" | "seed",
+  { title: string; label: string; body: string }
+> = {
+  cancel: {
+    title: "Cancel this download?",
+    label: "Cancel download",
+    body: "The download stops and its partial files are deleted — half a file is no use to anyone. The history entry stays, marked as never finished.",
+  },
+  remove: {
+    title: "Remove from qBittorrent?",
+    label: "Remove",
+    body: "The torrent leaves qBittorrent. The downloaded files and this history entry both stay — the files are the point, and the record is the record.",
+  },
+  forget: {
+    title: "Clear from history?",
+    label: "Clear",
+    body: "Only the record is forgotten. Nothing on the drive or in qBittorrent is touched.",
+  },
+  seed: {
+    title: "Stop seeding?",
+    label: "Stop seeding",
+    body: "The torrent stops uploading and stays in qBittorrent with its files where they are. Resume it from this same menu whenever you like.",
+  },
+};
 
 const ROW_ACTION =
   "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong disabled:opacity-40";
@@ -259,7 +295,7 @@ export function Transfers({
    * and the history entry before anything does.
    */
   const [confirming, setConfirming] = useState<{
-    kind: "cancel" | "remove" | "forget";
+    kind: keyof typeof ASK;
     entry: DownloadEntry;
   } | null>(null);
   const confirmShown = useLingering(confirming);
@@ -404,7 +440,10 @@ export function Transfers({
                   style={stagger(i)}
                   className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-4"
                 >
-                  <Poster path={entry.posterPath} name={named.get(entry.hash)} />
+                  <Poster
+                    path={entry.posterPath}
+                    name={named.get(entry.hash)}
+                  />
 
                   <div className="min-w-0 flex-1">
                     {entry.filmTitle && (
@@ -468,7 +507,8 @@ export function Transfers({
                       },
                       {
                         label: "Cancel this download",
-                        onSelect: () => setConfirming({ kind: "cancel", entry }),
+                        onSelect: () =>
+                          setConfirming({ kind: "cancel", entry }),
                       },
                     ]}
                   />
@@ -552,7 +592,7 @@ export function Transfers({
                             {
                               label: "Stop seeding",
                               onSelect: () =>
-                                control(() => qbPause(entry.hash)),
+                                setConfirming({ kind: "seed", entry }),
                             },
                           ]
                         : []),
@@ -582,85 +622,41 @@ export function Transfers({
         </section>
       )}
 
+      {/* The app's own confirmation, rather than this list's copy of one.
+          It was a dialog of the same parts in a different order — its own
+          padding, its own heading size, "Keep it" where every other question
+          here says Cancel — and a question you have to read twice because it
+          is not shaped like the last one is the opposite of what asking is
+          for. What is left is what actually differs: the words. */}
       {confirmShown && (
-        <Modal
+        <ConfirmModal
           open={confirming !== null}
-          onClose={() => setConfirming(null)}
-          dismissible={!pending}
-          label="Confirm"
-          panelClassName="w-full max-w-md overflow-hidden glass-panel rounded-card border border-line shadow-2xl"
+          title={ASK[confirmShown.kind].title}
+          // Red for the one that deletes something. The other three are all
+          // undoable — a torrent can be sent again, seeding resumed, a record
+          // re-made by the next fetch.
+          tone={confirmShown.kind === "cancel" ? "danger" : "neutral"}
+          confirmLabel={ASK[confirmShown.kind].label}
+          busy={pending}
+          onConfirm={() => {
+            const { kind, entry } = confirmShown;
+            control(async () => {
+              if (kind === "cancel") return qbRemove(entry.hash, true);
+              if (kind === "remove") return qbRemove(entry.hash, false);
+              if (kind === "seed") return qbPause(entry.hash);
+              // The only one that touches nothing but our own table, and so
+              // the only one with no client to refuse it.
+              return forgetDownloadEntry(entry.hash);
+            });
+            setConfirming(null);
+          }}
+          onCancel={() => setConfirming(null)}
         >
-          <div className="flex flex-col gap-4 p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h2 className="text-lg font-semibold tracking-tight">
-                  {confirmShown.kind === "cancel"
-                    ? "Cancel this download?"
-                    : confirmShown.kind === "remove"
-                      ? "Remove from qBittorrent?"
-                      : "Clear from history?"}
-                </h2>
-                <p className="mt-1 truncate font-mono text-xs opacity-45">
-                  {confirmShown.entry.filmTitle ?? confirmShown.entry.title}
-                </p>
-              </div>
-              {/* Grey while the request is in flight, for the same reason the
-                  backdrop stops dismissing then. */}
-              <CloseButton
-                onClick={() => setConfirming(null)}
-                disabled={pending}
-              />
-            </div>
-
-            {/* The floor the title stands on, as under every other dialog's. */}
-            <div aria-hidden className="rule-head" />
-
-            <p className="text-sm opacity-70">
-              {confirmShown.kind === "cancel"
-                ? "The download stops and its partial files are deleted — half a file is no use to anyone. The history entry stays, marked as never finished."
-                : confirmShown.kind === "remove"
-                  ? "The torrent leaves qBittorrent. The downloaded files and this history entry both stay — the files are the point, and the record is the record."
-                  : "Only the record is forgotten. Nothing on the drive or in qBittorrent is touched."}
-            </p>
-
-            <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setConfirming(null)}
-                disabled={pending}
-                className="text-sm opacity-50 transition-opacity hover:opacity-100 disabled:opacity-30"
-              >
-                Keep it
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const { kind, entry } = confirmShown;
-                  control(async () => {
-                    if (kind === "cancel") return qbRemove(entry.hash, true);
-                    if (kind === "remove") return qbRemove(entry.hash, false);
-                    // The only one that touches nothing but our own table,
-                    // and so the only one with no client to refuse it.
-                    return forgetDownloadEntry(entry.hash);
-                  });
-                  setConfirming(null);
-                }}
-                disabled={pending}
-                className={`rounded-full px-4 py-1.5 text-sm transition-opacity hover:opacity-90 disabled:opacity-50 ${
-                  confirmShown.kind === "cancel"
-                    ? "bg-red-600 text-white"
-                    : "bg-foreground text-background"
-                }`}
-              >
-                {confirmShown.kind === "cancel"
-                  ? "Cancel download"
-                  : confirmShown.kind === "remove"
-                    ? "Remove"
-                    : "Clear"}
-              </button>
-            </div>
-          </div>
-        </Modal>
+          <p className="mb-2 truncate font-mono text-xs opacity-55">
+            {confirmShown.entry.filmTitle ?? confirmShown.entry.title}
+          </p>
+          {ASK[confirmShown.kind].body}
+        </ConfirmModal>
       )}
     </div>
   );

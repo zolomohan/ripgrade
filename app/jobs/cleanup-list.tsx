@@ -9,7 +9,7 @@ import { EmptyState } from "@/app/empty-state";
 import { useClosing } from "@/app/modal";
 import { stagger } from "@/app/stagger";
 import { BUTTON } from "@/app/controls";
-import { ConfirmModal } from "@/app/film/[id]/console";
+import { ConfirmModal } from "@/app/confirm";
 import type { CleanupFile, CleanupKind } from "@/lib/queue-tasks";
 import { movieId } from "@/lib/routes";
 import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";

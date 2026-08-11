@@ -23,7 +23,7 @@ import { AUDIO_BACKUP_SUFFIX, languageName } from "@/lib/derive";
 import type { AudioTrack } from "@/lib/derive";
 import { BUTTON } from "@/app/controls";
 import { Tick } from "@/app/tick";
-import { ConfirmModal } from "./console";
+import { ConfirmModal } from "@/app/confirm";
 
 /**
  * What a file's audio tracks are, and the one thing worth doing about them.

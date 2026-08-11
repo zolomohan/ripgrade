@@ -16,7 +16,7 @@ import { useClosing, useLingering } from "@/app/modal";
 import { rememberListing } from "@/app/return-to";
 import { stagger } from "@/app/stagger";
 import { BUTTON } from "@/app/controls";
-import { ConfirmModal } from "@/app/film/[id]/console";
+import { ConfirmModal } from "@/app/confirm";
 import { languageKey } from "@/lib/audio-plan";
 import { languageName } from "@/lib/derive";
 import type { AudioTask, DoviTask, TaskFilm } from "@/lib/queue-tasks";

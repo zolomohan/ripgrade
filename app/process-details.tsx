@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { visibleOutput } from "@/lib/job-output";
 import { useNow } from "./clock";
+import { ConfirmModal } from "./confirm";
 import { BUTTON } from "./controls";
-import { CloseButton, Modal } from "./modal";
+import { CloseButton, Modal, useClosing } from "./modal";
 import { Spinner } from "./spinner";
 
 /**
@@ -113,6 +114,25 @@ export function ProcessDetails({
   const lineCount = lines.length;
   const lastLine = lines[lineCount - 1] ?? "";
 
+  /**
+   * Whether Stop has been pressed and not yet answered.
+   *
+   * The button used to kill the job on the click, a centimetre under a moving
+   * bar — the one control in the app that threw away work in progress without
+   * asking. Every other interruption in the app asks first: a download will not
+   * be cancelled, a file will not be deleted and a rewrite will not be started
+   * without a dialog naming what happens. Stopping a job is the same kind of
+   * decision, and it is asked in the same shape.
+   *
+   * Here rather than in the two components that mount this dialog — the rail
+   * and the Jobs page — so that a caller cannot forget it, and so that a new
+   * job added to `jobRows` arrives already asking. What the callers pass is
+   * still what it was: the stop itself, and whether it is under way.
+   */
+  const [confirming, setConfirming] = useState(false);
+  // The question outlives its own flag by the length of the exit animation.
+  const askMounted = useClosing(confirming);
+
   const log = useRef<HTMLDivElement>(null);
   /**
    * Whether the log is being watched or read. New output follows the bottom
@@ -127,6 +147,12 @@ export function ProcessDetails({
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [lineCount, lastLine]);
 
+  // A job that ends takes the question with it: there is nothing left to stop,
+  // and a dialog asking about it would be asking about the past. Adjusted
+  // during render the way `useClosing` does it — an effect would paint the
+  // stale frame first.
+  if (confirming && detail === null) setConfirming(false);
+
   if (!shown) return null;
 
   // The clock is a fact about the job like any other, so it is a row like any
@@ -139,6 +165,9 @@ export function ProcessDetails({
     <Modal
       open={detail !== null}
       onClose={onClose}
+      // Escape belongs to the question while the question is up, or one press
+      // would answer it and close what it was asked about.
+      dismissible={!confirming && !busy}
       label={label ?? `${shown.title} — progress`}
       // Capped at the viewport, because the log below can be as tall as it
       // likes and a dialog taller than the screen has no way out of itself.
@@ -268,17 +297,40 @@ export function ProcessDetails({
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
-              onClick={onCancel}
+              onClick={() => setConfirming(true)}
               disabled={busy}
-              // The dialog's filled red, same as the confirmations on the film
-              // page — this is the thing the dialog is for, not one option in
-              // a row, so it does not wait for hover to say what it is.
+              // The dialog's filled red, same as the confirmations elsewhere —
+              // this is the thing the dialog is for, not one option in a row,
+              // so it does not wait for hover to say what it is.
               className={BUTTON.confirm}
             >
               {busy && <Spinner />}
               Stop
             </button>
           </div>
+        )}
+
+        {askMounted && onCancel && (
+          <ConfirmModal
+            open={confirming}
+            // The job's own name, which is already a gerund — "Removing audio
+            // tracks", "Sweeping for upgrades" — so the question is the name
+            // with a verb in front of it and reads as English in every case.
+            title={`Stop ${shown.title.charAt(0).toLowerCase()}${shown.title.slice(1)}?`}
+            tone="danger"
+            confirmLabel={busy ? "Stopping…" : "Stop"}
+            busy={busy}
+            onConfirm={onCancel}
+            onCancel={() => setConfirming(false)}
+          >
+            {/* The job's own closing word where it has one: those already say
+                what stopping costs — the checks a sweep keeps, the file a
+                conversion leaves untouched — which is the whole of what this
+                question is for. The general answer stands in where a job has
+                nothing particular to say. */}
+            {shown.note ??
+              "It stops where it is. What it has already done is kept; what is left is not done."}
+          </ConfirmModal>
         )}
       </>
     </Modal>
