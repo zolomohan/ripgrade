@@ -394,7 +394,10 @@ export function Transfers({
             {active.map((entry, i) => {
               const d = entry.live!;
               const paused = PAUSED_STATES.has(d.state);
-              const percent = Math.floor(d.progress * 100);
+              // Floored to the hundredth, not rounded: a download at 99.999%
+              // is not finished, and the one number the row shows should never
+              // say it is before the file is.
+              const percent = Math.floor(d.progress * 10000) / 100;
               return (
                 <li
                   key={entry.hash}
@@ -438,7 +441,7 @@ export function Transfers({
 
                     <p className="mt-2 text-xs tabular-nums opacity-45">
                       {[
-                        `${percent}% of ${gigabytes(d.sizeBytes)}`,
+                        `${percent.toFixed(2)}% of ${gigabytes(d.sizeBytes)}`,
                         !paused && d.speedBps > 0
                           ? speed(d.speedBps)
                           : undefined,
