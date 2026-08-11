@@ -31,6 +31,7 @@ you replace them.
 | **[Requirements](#requirements)** | Node, and five command-line tools |
 | **[Quick start](#quick-start)** | Four commands and a browser tab |
 | **[First run](#first-run)** | Point it at a drive, give it a TMDb token |
+| **[Installing it as an app](#installing-it-as-an-app)** | Add to Dock, and what works offline |
 | **[How your files should be laid out](#how-your-files-should-be-laid-out)** | Naming that the scanner can read |
 | **[Optional integrations](#optional-integrations)** | Jackett, qBittorrent, `dovi_convert` |
 | **[Running it in Docker](#running-it-in-docker)** | The tools, Jackett and a VPN, in one `up` |
@@ -187,6 +188,30 @@ changed.
 > **The app rescans itself on every start.** The drive changes while the app is not running, so
 > booting it is what refreshes it. The button in Settings is for when you have just moved a file
 > and do not want to wait.
+
+---
+
+## Installing it as an app
+
+RipGrade ships a web app manifest, so it can leave the browser and live in the dock with its own
+icon and its own window — no address bar, no tab strip, and a name in the menu bar.
+
+**macOS, Safari** — open the app, then **File → Add to Dock**. Safari picks up the name, the skull
+and the window shape from the manifest. This is the one that behaves most like a native app: it
+gets a Dock icon you can keep, and ⌘Q quits it.
+
+**Chrome, Edge, Arc** — an install button appears at the right of the address bar, or use
+**⋮ → Cast, save and share → Install page as app**. Right-clicking the resulting icon offers
+Library, Upgrades and Downloads directly.
+
+> [!NOTE]
+> Service workers — and so the offline page below — only run on a *secure* origin. `localhost`
+> counts as one; the same app opened from another machine at `http://your-nas.local:6969` does not,
+> unless you put it behind HTTPS. Installing to the dock works either way.
+
+The one thing cached is a fallback page shown when the server cannot be reached at all — the
+machine it runs on is asleep, or the laptop is off the network. Nothing about the library is stored
+offline, because none of it would still be true by the time you read it.
 
 ---
 
@@ -443,7 +468,9 @@ ripgrade/
 │   ├── settings/  how-it-works/
 │   ├── api/                #   Job event stream, artwork proxy
 │   ├── globals.css         #   Design tokens; every border and radius resolves here
+│   ├── manifest.ts         #   What makes it installable as an app
 │   └── layout.tsx          #   Fonts, sidebar, job providers
+├── public/                 # Icons, and `sw.js` — the offline fallback, nothing more
 ├── lib/                    # All server logic. `server-only` throughout.
 │   ├── scanner.ts          #   The scan, phase by phase
 │   ├── media.ts            #   MediaInfo

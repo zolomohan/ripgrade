@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   Inter,
   Instrument_Sans,
@@ -20,6 +20,7 @@ import { ScanProvider } from "./scan-provider";
 import { Glow } from "./glow";
 import { RememberListing } from "./return-to";
 import { SearchProvider } from "./search/dialog";
+import { ServiceWorker } from "./service-worker";
 import { Sidebar } from "./sidebar";
 import { Splash } from "./splash";
 
@@ -69,6 +70,26 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "RipGrade",
   description: "Audit the technical quality of a local film library",
+  // Installed as an app, this is the name under the dock icon and in the menu
+  // bar. `capable` is what tells Safari to open it in its own window rather
+  // than hand the link back to a tab; the manifest says the same thing, and
+  // both are read, so both say it.
+  appleWebApp: {
+    capable: true,
+    title: "RipGrade",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+// The colour the window's own chrome is painted — the title bar of the dock
+// app, the tab strip in a browser. Given per scheme so it is the page's
+// background either way and the seam between chrome and content disappears;
+// the two values are `--background` from globals.css.
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0b0d" },
+  ],
 };
 
 export default function RootLayout({
@@ -97,6 +118,7 @@ export default function RootLayout({
     >
       <body className="min-h-full">
         <Splash />
+        <ServiceWorker />
         <RememberListing />
         <Glow />
         <CapabilitiesProvider qb={hasQb()}>

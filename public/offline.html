@@ -1,0 +1,102 @@
+<!doctype html>
+<!--
+  Shown by public/sw.js when a page load cannot reach the server at all.
+
+  Deliberately one file with nothing linked from it but the icon the worker
+  caches alongside it: whatever it needs to render, it needs while the network
+  is unavailable. Which is also why the type is system fonts rather than the
+  app's — a webfont here would be a blank word.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0b0d" />
+    <title>RipGrade is not answering</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --background: #ffffff;
+        --foreground: #16161a;
+        --line: rgba(0, 0, 0, 0.1);
+        --mark: 1;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: #0b0b0d;
+          --foreground: #ededf0;
+          --line: rgba(255, 255, 255, 0.1);
+          /* The icon's own tile is this background, so in the dark only the
+             skull is left standing and it can be held back to the weight of
+             the text under it. On white the tile is the mark and stays whole. */
+          --mark: 0.6;
+        }
+      }
+      /* This file is on its own — no reset arrives with it, and the default
+         content-box would add the padding below to a full-height body and give
+         the page 4rem it cannot show without scrolling. */
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        /* `min-height` rather than `height`, and dvh rather than vh: the plate
+           sits in the middle of whatever the window actually is, and a phone
+           whose toolbars are out does not get the middle of a taller one. */
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        background: var(--background);
+        color: var(--foreground);
+        font: 400 0.875rem/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .plate {
+        max-width: 26rem;
+        text-align: center;
+      }
+      img {
+        width: 4.5rem;
+        height: 4.5rem;
+        border-radius: 1rem;
+        opacity: var(--mark);
+      }
+      h1 {
+        margin: 1.5rem 0 0.5rem;
+        font-size: 1.125rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0;
+        opacity: 0.6;
+      }
+      button {
+        margin-top: 1.75rem;
+        padding: 0.5rem 1.25rem;
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: currentColor;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="plate">
+      <img src="/icon-512.png" alt="" />
+      <h1>RipGrade is not answering</h1>
+      <p>
+        Nothing was reachable at this address. The machine it runs on may be
+        asleep, or this device may be off the network.
+      </p>
+      <button onclick="location.reload()">Try again</button>
+    </div>
+  </body>
+</html>
