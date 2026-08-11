@@ -161,10 +161,12 @@ export function jobRows(
   }
 
   if (convert.status === "running") {
-    // Bytes written when they can be counted, and the step it is on when they
-    // cannot — `--safe` mode and a temp directory both put the working files
-    // somewhere the watcher is not looking, and a conversion with no bar at all
-    // reads as one that is not running.
+    // Bytes written, which both directions now report from their first second
+    // — the step is only a backstop for a job that somehow arrives without a
+    // figure, since a conversion with no bar at all reads as one that is not
+    // running. It is deliberately not the primary: a step drawn as a fraction
+    // is a bar that holds still for a whole pass and then jumps, and it jumps
+    // *backwards* the moment a measured figure lands under it.
     const percent =
       convert.percent ??
       (convert.steps ? (convert.step / convert.steps) * 100 : 0);
@@ -189,7 +191,17 @@ export function jobRows(
         // What it is doing and how far in, in one line beside the figure. It
         // was two facts under two captions, one of them called "Step" sitting
         // directly under another called "Step".
-        stage: `${convert.label ?? "Starting"} · step ${convert.step} of ${convert.steps}`,
+        //
+        // The readout goes between the two, where a job has one: it is a
+        // measurement, so it belongs next to the percentage rather than tacked
+        // onto the end of the name of what is happening.
+        stage: [
+          convert.label ?? "Starting",
+          convert.readout,
+          `step ${convert.step} of ${convert.steps}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
         rows: convert.path
           ? [{ label: "File", value: convert.path, mono: true }]
           : [],
@@ -217,6 +229,7 @@ export function jobRows(
         title: "Removing audio tracks",
         percent: strip.percent,
         stage: strip.label ?? "Starting",
+        command: strip.command,
         output: strip.output,
         rows: [
           ...(strip.path

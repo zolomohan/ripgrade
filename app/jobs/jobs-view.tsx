@@ -8,7 +8,7 @@ import { useNow } from "@/app/clock";
 import { EmptyState } from "@/app/empty-state";
 import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
-import { ProcessDetails } from "@/app/process-details";
+import { ProcessDetails, type ProcessDetail } from "@/app/process-details";
 import { SectionHeading } from "@/app/section-heading";
 import { stagger } from "@/app/stagger";
 import { visibleOutput } from "@/lib/job-output";
@@ -28,9 +28,16 @@ export type LoggedRun = JobRun & { film?: TaskFilm };
  * conversion that failed at four in the morning is exactly the thing nobody was
  * watching the corner of the screen for.
  *
- * The scan is not here. It runs on a timer as much as on a click, and a log
- * whose every other row says "scanned 418 files" is a log with the interesting
- * rows buried in it.
+ * The scan is not here, and neither is the upgrade sweep. Both run on a timer
+ * as much as on a click — a sweep starts behind every scan, and a scan runs on
+ * every boot — so a page listing them says "scanned 418 files" and "12
+ * upgrades found" over and over, with the conversion that failed at four in the
+ * morning somewhere underneath. Both are still in the rail while they run,
+ * which is the right place for a job nobody asked for: a glance, not a record.
+ *
+ * The sweep also has a better record of itself than a row here would be. What
+ * it found is the queue, kept until something is done about it; the row only
+ * ever said how many.
  *
  * The running half is drawn from the same `jobRows` the rail uses, so the two
  * cannot end up describing the same job differently.
@@ -40,7 +47,6 @@ const KIND_LABEL: Record<string, string> = {
   convert: "Dolby Vision conversion",
   strip: "Audio removal",
   dovi: "Dolby Vision read",
-  sweep: "Upgrade sweep",
   thumbs: "Thumbnails",
 };
 
@@ -295,33 +301,61 @@ function Running({
   );
 }
 
-/** One finished run, with its output folded away until it is asked for. */
+/**
+ * One finished run, opening onto what it printed.
+ *
+ * The output used to unfold in place behind a Show output link, which is the
+ * same mistake the running rows made with their Details link: a target the size
+ * of a word inside a row that was doing nothing, and a log that pushed the rest
+ * of the history down the page to be read in a strip four lines high. The row
+ * is the target now, and the output is shown in the dialog a running job's is
+ * shown in — one panel, whether the job is going or finished.
+ *
+ * What the dialog holds that the row cannot: the command the run actually was,
+ * and the tail of what the tool said. A run with neither stays a row, because a
+ * row that opens an empty dialog is worse than a row that does nothing.
+ */
 function Run({
   run,
   now,
   index,
+  onOpen,
 }: {
   run: LoggedRun;
   now: number;
   index: number;
+  onOpen?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const lines = visibleOutput(run.output);
   const outcome = OUTCOME[run.outcome] ?? OUTCOME.done;
   const duration = took(run.startedAt, run.finishedAt);
 
   return (
     <li
+      {...(onOpen && {
+        role: "button",
+        tabIndex: 0,
+        onClick: onOpen,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        },
+        "aria-label": `${run.title} — output`,
+      })}
       style={stagger(index)}
-      className="row-enter -mx-4 flex items-start gap-4 px-4 py-4"
+      className={`row-enter -mx-4 flex items-start gap-4 rounded-row px-4 py-4 ${
+        onOpen
+          ? "glow group cursor-pointer transition-colors hover:bg-surface"
+          : ""
+      }`}
     >
       <Poster film={run.film} />
 
       {/* At least as tall as the poster, so the column has two edges to range
           against rather than one: what the row is starts at the poster's top,
           what the run did sits at its foot, and the space between them is the
-          poster rather than a gap. A row with its output open simply grows past
-          it and keeps both. */}
+          poster rather than a gap. */}
       <div className="flex min-h-24 min-w-0 flex-1 flex-col gap-2">
         <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
           <div className="flex min-w-0 flex-col gap-0.5">
@@ -360,31 +394,40 @@ function Run({
             the poster's bottom edge however short the lines above it are. */}
         <div className="mt-auto flex flex-col gap-1.5">
           {run.detail && <Detail run={run} />}
-
-          {/* Folded, because the output is the answer on the rare row where the
-              answer is not already in the line above it. */}
-          {lines.length > 0 && (
-            <>
-              <button
-                type="button"
-                onClick={() => setOpen((was) => !was)}
-                className="self-start text-xs underline underline-offset-4 opacity-45 hover:opacity-100"
-              >
-                {open ? "Hide output" : "Show output"}
-              </button>
-              {open && (
-                <div className="max-h-56 overflow-y-auto rounded-control border border-line bg-surface-strong">
-                  <pre className="p-3 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
-                    {lines.join("\n")}
-                  </pre>
-                </div>
-              )}
-            </>
-          )}
         </div>
       </div>
     </li>
   );
+}
+
+/**
+ * A finished run, said in the terms the running dialog says a job in.
+ *
+ * The same panel draws both, so the facts have to arrive in the same shape: the
+ * measurements as a table, the output as the block under it. What a run has and
+ * a job does not is an ending, so that is what the table leads with — and what
+ * it did, which is the row's own line of facts, closes it, since the row it was
+ * read on is behind the dialog now.
+ */
+function finished(run: LoggedRun, now: number): ProcessDetail {
+  const duration = took(run.startedAt, run.finishedAt);
+
+  return {
+    title: run.film?.title ?? run.title,
+    rows: [
+      { label: "Job", value: KIND_LABEL[run.kind] ?? run.kind },
+      { label: "Outcome", value: (OUTCOME[run.outcome] ?? OUTCOME.done).label },
+      { label: "Finished", value: when(run.finishedAt, now) },
+      ...(duration ? [{ label: "Took", value: duration }] : []),
+      { label: "File", value: run.title, mono: true },
+    ],
+    // What was run, above what it printed — the same order and the same block
+    // the running dialog puts them in, because they are the same two facts.
+    // Null on the older rows, which were written before the log kept it.
+    command: run.command,
+    output: run.output,
+    note: run.detail,
+  };
 }
 
 export function JobsView({
@@ -399,13 +442,21 @@ export function JobsView({
   const router = useRouter();
   const [stopping, setStopping] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  // The run whose output is being read, held by id: the log is re-fetched on
+  // every refresh, so the object this page was rendered with is not the one it
+  // will be holding a moment later.
+  const [reading, setReading] = useState<number | null>(null);
 
   // Zero until the browser has one, which `when` reads as "print a time rather
   // than a distance from now": "3m ago" has no meaning on a server that
   // rendered it some unknown time before it was read.
   const now = useNow();
 
-  const running = jobRows(jobs, apply);
+  // Every job the rail draws except the sweep, which this page leaves to the
+  // rail in both halves — see the note at the top. Filtered here rather than
+  // asked of `jobRows`, because the rail is the one that wants all of them and
+  // a shared list with a flag on it is two lists pretending to be one.
+  const running = jobRows(jobs, apply).filter((row) => row.key !== "sweep");
 
   // A run writes its row as it ends, so the log this page was rendered with is
   // one row short the moment anything finishes. Only the edge counts — see
@@ -419,9 +470,10 @@ export function JobsView({
   useEffect(
     () =>
       subscribe((next, prev) => {
-        const turned = (
-          ["dovi", "convert", "strip", "sweep", "thumbs"] as const
-        ).some(
+        // The sweep is not among them: nothing on this page changes when one
+        // starts or ends, and refreshing for it would re-render the log every
+        // time a scan finished.
+        const turned = (["dovi", "convert", "strip", "thumbs"] as const).some(
           (key) =>
             (prev[key].status === "running") !==
             (next[key].status === "running"),
@@ -435,6 +487,8 @@ export function JobsView({
   if (open !== null && !running.some((row) => row.key === open)) setOpen(null);
   const shown = running.find((row) => row.key === open) ?? null;
 
+  const read = runs.find((run) => run.id === reading) ?? null;
+
   if (running.length === 0 && runs.length === 0) {
     return (
       <EmptyState
@@ -446,9 +500,9 @@ export function JobsView({
         }
         title="Nothing has run yet"
       >
-        Conversions, audio removals, Dolby Vision reads, upgrade sweeps and
-        thumbnail rebuilds are listed here while they run, and kept afterwards.
-        Start one from a film&rsquo;s page or the queue.
+        Conversions, audio removals, Dolby Vision reads and thumbnail rebuilds
+        are listed here while they run, and kept afterwards. Start one from a
+        film&rsquo;s page or the queue.
       </EmptyState>
     );
   }
@@ -483,7 +537,20 @@ export function JobsView({
           <SectionHeading label="History" />
           <ul className="ruled flex flex-col">
             {runs.map((run, index) => (
-              <Run key={run.id} run={run} now={now} index={index} />
+              <Run
+                key={run.id}
+                run={run}
+                now={now}
+                index={index}
+                // Openable when the dialog would have something the row does
+                // not: what was run, or what it printed. A run with neither —
+                // a thumbnail rebuild, this app's own work — stays a row.
+                onOpen={
+                  run.command || visibleOutput(run.output).length > 0
+                    ? () => setReading(run.id)
+                    : undefined
+                }
+              />
             ))}
           </ul>
         </section>
@@ -503,6 +570,15 @@ export function JobsView({
             });
           })
         }
+      />
+
+      {/* The same panel, for a job that is over. Nothing to stop and nothing
+          left to count, so it arrives with neither — a table of what happened
+          and the log under it. */}
+      <ProcessDetails
+        detail={read ? finished(read, now) : null}
+        onClose={() => setReading(null)}
+        label={read ? `${read.title} — output` : undefined}
       />
     </>
   );

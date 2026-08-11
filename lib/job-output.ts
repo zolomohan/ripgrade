@@ -69,6 +69,32 @@ export function appendOutput(
 }
 
 /**
+ * One spawned command, written out as it could be pasted into a shell.
+ *
+ * The other half of what this module is for: a job is a tool that was run and
+ * the lines it printed, and a log holding only the second is a transcript of an
+ * answer with the question missing.
+ *
+ * Every job here runs from the film's own folder and passes a bare filename, so
+ * the directory is the first line: without it the command below is one nobody
+ * could run, and film folders are exactly the paths with spaces and brackets in
+ * them.
+ *
+ * Quoted the way the film page's recipes are — `JSON.stringify`, which is a
+ * double-quoted shell string for everything a filename can hold, and which
+ * escapes the two characters (`"` and `\`) that would otherwise end it early.
+ */
+export function commandLine(
+  cwd: string,
+  command: string,
+  args: string[],
+): string {
+  const quote = (part: string) =>
+    /^[\w.,:=/@%+-]+$/.test(part) ? part : JSON.stringify(part);
+  return `cd ${quote(cwd)}\n${command} ${args.map(quote).join(" ")}`;
+}
+
+/**
  * The held lines as they should be read: without the empty one at the end that
  * is not a blank line but the next line, not yet written to.
  */

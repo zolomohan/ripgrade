@@ -6,7 +6,6 @@ import { db, getSetting, setSetting } from "./db";
 import { duplicateKey } from "./derive";
 import { discIds, getDisc } from "./disc";
 import { notifyJobs } from "./job-events";
-import { ended, recordRun } from "./job-history";
 import { getMovies, type LibraryItem } from "./library";
 import { guessFromTitle } from "./release-title";
 import { bestUpgrade, type ScoredRelease } from "./upgrades";
@@ -90,23 +89,23 @@ const globalForSweep = globalThis as unknown as {
  */
 const current = (): SweepJob => ({ ...IDLE, ...globalForSweep.medlibSweep });
 
+/**
+ * Nothing is written to the job log here, and this is where it used to be.
+ *
+ * The sweep is the scan's case exactly, and the scan is kept out of that log
+ * for exactly these reasons: it runs on a timer as much as on a click —
+ * `sweepAfterScan` starts one behind every scan, and a scan runs on every boot
+ * — so the log filled with a row per start, all saying the same thing, and the
+ * conversions worth finding were pushed down the page by them and eventually
+ * out of the log's own cap.
+ *
+ * What a sweep did is not lost by not being logged: it is the queue. Every
+ * upgrade it found is a row on that page, kept until something is done about
+ * it, which is a better record of the pass than a line saying how many it
+ * found — and the one that is still true a week later.
+ */
 function setJob(next: SweepJob) {
-  const was = current();
   globalForSweep.medlibSweep = next;
-
-  if (was.status === "running" && ended(next.status)) {
-    recordRun({
-      kind: "sweep",
-      title: "Upgrade sweep",
-      outcome: next.status,
-      startedAt: next.startedAt,
-      finishedAt: next.finishedAt ?? Date.now(),
-      detail:
-        next.error ||
-        `${next.found} upgrades · ${next.done + next.wishDone} checked`,
-    });
-  }
-
   notifyJobs();
 }
 

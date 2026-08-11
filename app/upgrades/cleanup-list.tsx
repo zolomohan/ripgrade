@@ -246,7 +246,7 @@ export function CleanupList({
           <li
             key={file.path}
             style={stagger(offset + index)}
-            className="row-enter group -mx-4 flex items-center gap-5 rounded-card px-4 py-3.5 transition-colors hover:bg-surface"
+            className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-3.5 transition-colors hover:bg-surface"
           >
             <div className="min-w-0 flex-1">
               <p className="flex min-w-0 items-baseline gap-2">
@@ -326,10 +326,15 @@ export function CleanupList({
                   ? "The drive this file lives on is not connected"
                   : undefined
               }
-              // Arrives on hover like every other destructive action here, and
-              // stays put for a keyboard: focus-within on the row is what the
-              // opacity answers to as well.
-              className={`${BUTTON.danger} opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100`}
+              // Always there, where it used to arrive on hover. Hiding an
+              // action until the pointer finds it is right for one that is
+              // incidental to the row — this is the row's whole point. Every
+              // line in this list is a file whose only remaining question is
+              // whether to delete it, and a page of them with no visible way
+              // to do that reads as a list you cannot act on at all. It also
+              // put the count at the top ("Delete 6 leftovers") in front of
+              // six rows that appeared to offer nothing.
+              className={BUTTON.danger}
             >
               Delete
             </button>

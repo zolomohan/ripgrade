@@ -9,7 +9,7 @@ import { getSetting } from "./db";
 import { BACKUP_SUFFIX, EL_ARCHIVE_SUFFIX } from "./derive";
 import { scanDovi } from "./dovi";
 import { ended, recordRun } from "./job-history";
-import { appendOutput } from "./job-output";
+import { appendOutput, commandLine } from "./job-output";
 import { notifyJobs } from "./job-events";
 import { compareRuntime } from "./media";
 import { deriveAll } from "./library";
@@ -207,11 +207,19 @@ export type ConvertJob = {
   check?: string;
   label?: string;
   /**
-   * How far through, by bytes written. Undefined when the working files cannot
-   * be found — `--safe` mode puts them elsewhere — in which case the step is
-   * all there is to go on.
+   * How far through, by bytes written — every file this job creates, counted
+   * against what they will all come to. Set from the moment the job starts and
+   * only ever rising; see `watchProgress` for what is being weighed against
+   * what, and why the enhancement layer is on both sides of it.
    */
   percent?: number;
+  /**
+   * A second measurement, for the stretch where the percentage is true but not
+   * much use: what has actually landed on disk, in one phrase. Composed here
+   * rather than from a byte count in each place that draws it, so the rail, the
+   * Jobs page and the film's own card cannot end up phrasing it three ways.
+   */
+  readout?: string;
   /** The tool's own closing summary, kept for the result line. */
   summary?: string;
   /**
@@ -294,6 +302,10 @@ function setJob(next: ConvertJob) {
           .filter(Boolean)
           .join(" · ") ||
         undefined,
+      // The line this run actually was. The job has been carrying it for the
+      // dialog all along; it goes into the log now so the dialog can still
+      // answer "what did it run" a week later.
+      command: next.command,
       output: next.output,
     });
   }
@@ -356,24 +368,6 @@ export function cancelConvert(): ConvertJob {
   return current();
 }
 
-/**
- * One spawned command, written out as it could be pasted into a shell.
- *
- * Both jobs here run from the film's own folder and pass a bare filename, so
- * the directory is the first line: without it the command below is one nobody
- * could run, and film folders are exactly the paths with spaces and brackets
- * in them.
- *
- * Quoted the way the film page's recipes are — `JSON.stringify`, which is a
- * double-quoted shell string for everything a filename can hold, and which
- * escapes the two characters (`"` and `\`) that would otherwise end it early.
- */
-function commandLine(cwd: string, command: string, args: string[]): string {
-  const quote = (part: string) =>
-    /^[\w.,:=/@%+-]+$/.test(part) ? part : JSON.stringify(part);
-  return `cd ${quote(cwd)}\n${command} ${args.map(quote).join(" ")}`;
-}
-
 /** Progress is drawn with cursor moves and colour, none of which we want. */
 const ANSI = /\[[0-9;?]*[a-zA-Z]/g;
 const STEP = /\[(\d+)\/(\d+)\]\s*([^.\r\n]+)/g;
@@ -404,12 +398,27 @@ async function refreshFileFacts(filePath: string): Promise<void> {
  * for the first, very nearly the whole file for the second.
  *
  * The extraction that precedes them when the enhancement layer is being kept
- * is the one stretch with no number in it. Its output is the layer itself, and
- * how big that will be is exactly what nobody knows in advance — a tenth of
- * the film for one disc and a quarter for the next. So it is left unmeasured
- * and the bar falls back to the step, which is what the step is for; the
- * moment the archive is closed its real size joins the sum and everything
- * after it is measured against a total that includes it.
+ * is the one stretch whose *end* nobody knows in advance: its output is the
+ * layer itself, and how big that will be is a tenth of the film for one disc
+ * and a quarter for the next. It used to be left out of the sum until the
+ * archive was closed, which made it the worst-drawn stretch of the job — no
+ * measurement for twenty minutes, so the bar fell back to the step and sat at
+ * a fifth without moving, and then dropped to near nothing the moment a real
+ * number arrived. A bar that runs backwards says the job restarted.
+ *
+ * So the layer is counted while it is being written, against a total that
+ * grows with it: `written / (converting + kept)`, where `kept` is whatever has
+ * landed so far. Both ends move together, which is what makes it safe — the
+ * figure only ever rises, and it joins up with the conversion's own without a
+ * step in it, because at the moment the extraction ends the two are the same
+ * sum. It reads low while the layer is coming out, which is honest: the layer
+ * really is the small end of the bytes this job writes.
+ *
+ * Every file is remembered at its largest rather than read fresh. The tool
+ * deletes each working file the moment the next stage has consumed it — the
+ * layer as it is packed into the archive, the converted video as it is muxed —
+ * and summed live that is a third of the job disappearing off the disk under
+ * the bar. `watchRebuild` keeps the same tally for the same reason.
  */
 function watchProgress(
   filePath: string,
@@ -426,33 +435,49 @@ function watchProgress(
     ? path.join(tempDir, `${path.basename(stem)}.p81.hevc`)
     : `${stem}.p81.hevc`;
   const targets = [hevc, `${stem}.p81.tmp`];
+  // The layer under both the names it has: the loose stream while it is being
+  // pulled out, then the archive it is packed into. One thing, counted once —
+  // the larger of the two, which is also what stops the tally falling to zero
+  // in the seconds where the archive exists but is still empty.
+  const layer = archive ? [elTempFor(filePath, tempDir), archive] : [];
   const converting =
     (sizes.videoBytes ?? sizes.sourceBytes) + sizes.sourceBytes;
+
+  const peak = new Map<string, number>();
+  const largest = (file: string) => {
+    const most = Math.max(peak.get(file) ?? 0, sizeOf(file) ?? 0);
+    peak.set(file, most);
+    return most;
+  };
 
   return setInterval(() => {
     if (current().status !== "running") return;
 
-    // Nothing to say until the archive exists: the pass writing it is the one
-    // piece of this job whose size is not known until it has finished.
-    const kept = archive ? sizeOf(archive) : 0;
-    if (kept === undefined) return;
-
-    let written = kept;
-    let found = false;
-    for (const target of targets) {
-      const size = sizeOf(target);
-      if (size === undefined) continue;
-      written += size;
-      found = true;
-    }
-
+    const kept = layer.reduce((most, file) => Math.max(most, largest(file)), 0);
+    const converted = targets.reduce((sum, file) => sum + largest(file), 0);
+    const written = kept + converted;
     const total = converting + kept;
 
-    // Held below 100 so the bar completes when the job does, not when the last
-    // byte lands — the verify step still has to run.
-    if ((found || kept > 0) && total > 0) {
-      setJob({ ...current(), percent: Math.min(99, (written / total) * 100) });
-    }
+    // Nothing has landed yet — the first seconds, before the tool has opened
+    // its first output file. Zero is what the job was started at, and saying
+    // it again every second is not a reading.
+    if (written === 0 || total === 0) return;
+
+    setJob({
+      ...current(),
+      // Held below 100 so the bar completes when the job does, not when the
+      // last byte lands — the verify step still has to run.
+      percent: Math.min(99, (written / total) * 100),
+      // While the layer is the only thing being written the bar is honestly
+      // near its bottom for a long stretch, so the readouts beside it carry
+      // the figure that is visibly moving. Only for that stretch: once the
+      // conversion proper starts, the percentage is the better answer and a
+      // second measurement of the same thing beside it is just noise.
+      readout:
+        kept > 0 && converted === 0
+          ? `${(kept / 1e9).toFixed(1)} GB out`
+          : undefined,
+    });
   }, 1000);
 }
 
@@ -490,11 +515,12 @@ export function startConvert(
     step: 1,
     steps: backing ? CHECK_STEP_WITH_EL : CHECK_STEP,
     label: backing ? "Keeping the enhancement layer" : undefined,
-    // Undefined rather than zero while the layer is being extracted, so the
-    // bar falls back to the step it is on. Zero is a measurement, and holding
-    // one at zero for the twenty minutes of a pass nobody can measure reads as
-    // a job that has stopped.
-    percent: backing ? undefined : 0,
+    // Zero in both directions now. The extraction used to start with no
+    // measurement at all so the bar would fall back to the step it was on,
+    // which drew a fifth of a bar that then sat still for twenty minutes and
+    // fell back to nothing when the real figure arrived. It is counted from
+    // the first byte of the layer instead — see `watchProgress`.
+    percent: 0,
     startedAt: Date.now(),
   });
 

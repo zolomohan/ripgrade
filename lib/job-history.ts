@@ -19,9 +19,17 @@ import { db } from "./db";
  * click, it ends by describing itself in the rail's own closing line, and a
  * log filled with a hundred identical "scanned 418 files" rows is a log with
  * the interesting rows buried in it.
+ *
+ * Nor is the upgrade sweep, for the first of those reasons and one of its own:
+ * one starts behind every scan, so it wrote a row per boot, and what it found
+ * is the queue — a page that still holds the answer a week later, where the
+ * row only ever held the count. See `setJob` in lib/upgrade-sweep.ts.
+ *
+ * Rows written by the version that did log them are still in the table, so the
+ * read below excludes the kind rather than trusting that nothing writes it.
  */
 
-export type JobKind = "convert" | "strip" | "dovi" | "sweep" | "thumbs";
+export type JobKind = "convert" | "strip" | "dovi" | "thumbs";
 
 /** How it ended. "Running" is the rail's business, not this table's. */
 export type JobOutcome = "done" | "cancelled" | "error";
@@ -47,6 +55,17 @@ export type JobRun = {
   finishedAt: number;
   /** The closing sentence: what it did, or why it stopped. */
   detail?: string;
+  /**
+   * What was spawned, as it could be pasted into a shell — for the jobs that
+   * are a tool being driven rather than work this app does itself.
+   *
+   * Kept beside the output rather than left to the running job, because the
+   * question the log is asked afterwards is "what did it actually do to that
+   * file", and the tail of a tool's output only makes sense against the command
+   * that produced it. It is also the one thing here that can be acted on: a
+   * conversion that failed is a line you can run yourself and watch fail.
+   */
+  command?: string;
   /** The tail of what the tool printed, for the runs that had one. */
   output?: string[];
 };
@@ -67,6 +86,7 @@ type RunRow = {
   started_at: number | null;
   finished_at: number;
   detail: string | null;
+  command: string | null;
   output: string | null;
 };
 
@@ -79,6 +99,7 @@ const runOf = (row: RunRow): JobRun => ({
   startedAt: row.started_at ?? undefined,
   finishedAt: row.finished_at,
   detail: row.detail ?? undefined,
+  command: row.command ?? undefined,
   output: parseOutput(row.output),
 });
 
@@ -106,8 +127,8 @@ export function recordRun(run: Omit<JobRun, "id">): void {
   try {
     db.prepare(
       `INSERT INTO job_runs
-         (kind, title, path, outcome, started_at, finished_at, detail, output)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (kind, title, path, outcome, started_at, finished_at, detail, command, output)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       run.kind,
       run.title,
@@ -116,6 +137,7 @@ export function recordRun(run: Omit<JobRun, "id">): void {
       run.startedAt ?? null,
       run.finishedAt,
       run.detail ?? null,
+      run.command ?? null,
       run.output?.length ? JSON.stringify(run.output) : null,
     );
 
@@ -133,8 +155,9 @@ export function recordRun(run: Omit<JobRun, "id">): void {
 export function getJobRuns(limit = KEEP): JobRun[] {
   const rows = db
     .prepare(
-      `SELECT id, kind, title, path, outcome, started_at, finished_at, detail, output
+      `SELECT id, kind, title, path, outcome, started_at, finished_at, detail, command, output
          FROM job_runs
+        WHERE kind <> 'sweep'
         ORDER BY finished_at DESC, id DESC
         LIMIT ?`,
     )

@@ -86,12 +86,19 @@ export function ProcessDetails({
   onClose,
   onCancel,
   busy,
+  label,
 }: {
   /** Null once the job ends, which closes the dialog on its own. */
   detail: ProcessDetail | null;
   onClose: () => void;
   onCancel?: () => void;
   busy?: boolean;
+  /**
+   * What the dialog is, for a screen reader. "Progress" is right for the job
+   * this was built for and wrong for a run that ended hours ago, which opens
+   * the same panel to say what it printed.
+   */
+  label?: string;
 }) {
   // Held so the contents survive the closing animation; without it the panel
   // blanks out a frame before it has finished leaving.
@@ -132,7 +139,7 @@ export function ProcessDetails({
     <Modal
       open={detail !== null}
       onClose={onClose}
-      label={`${shown.title} — progress`}
+      label={label ?? `${shown.title} — progress`}
       // Capped at the viewport, because the log below can be as tall as it
       // likes and a dialog taller than the screen has no way out of itself.
       panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 glass-panel rounded-card border border-line p-6 shadow-2xl"

@@ -16,7 +16,7 @@ import {
 import { AUDIO_BACKUP_SUFFIX } from "./derive";
 import { notifyJobs } from "./job-events";
 import { ended, recordRun } from "./job-history";
-import { appendOutput } from "./job-output";
+import { appendOutput, commandLine } from "./job-output";
 import { deriveAll } from "./library";
 import { compareRuntime } from "./media";
 import { reprobeFile } from "./scanner";
@@ -192,6 +192,16 @@ export type StripJob = {
   actualBytes?: number;
   percent?: number;
   label?: string;
+  /**
+   * The mkvmerge this job spawned, written out as it could be run by hand.
+   *
+   * Recorded from the argument list actually handed to `spawn` rather than
+   * composed for display, as the conversion's is: a keep-list of track ids is
+   * the one thing about this job nobody can reconstruct afterwards, and it is
+   * exactly what you want in front of you when the result is not what you
+   * expected.
+   */
+  command?: string;
   /** The last lines mkvmerge printed — see `lib/job-output.ts`. */
   output?: string[];
   /** What the runtime comparison found, pass or fail. */
@@ -225,6 +235,7 @@ function setJob(next: StripJob) {
       outcome: next.status,
       startedAt: next.startedAt,
       finishedAt: next.finishedAt ?? Date.now(),
+      command: next.command,
       detail:
         next.error ||
         [
@@ -347,31 +358,31 @@ export function startStripAudio(
       return;
     }
 
+    const args = [
+      "--gui-mode",
+      "--output",
+      path.basename(working),
+      // Source-specific, so it has to precede the file it applies to. A keep
+      // list rather than mkvmerge's `!`-prefixed drop list: the IDs were
+      // resolved against this file a moment ago, and if any of them have
+      // moved since, keeping the wrong set fails a check below while
+      // dropping the wrong set would not.
+      "--audio-tracks",
+      resolved.keepIds.join(","),
+      path.basename(filePath),
+    ];
+    const cwd = path.dirname(filePath);
+
     setJob({
       ...current(),
       removed: resolved.removedAudio,
       kept: resolved.keptAudio,
       label: "Remuxing",
+      command: commandLine(cwd, "mkvmerge", args),
     });
 
     // Its own process group, so a cancel can take the whole of it down.
-    const child = spawn(
-      "mkvmerge",
-      [
-        "--gui-mode",
-        "--output",
-        path.basename(working),
-        // Source-specific, so it has to precede the file it applies to. A keep
-        // list rather than mkvmerge's `!`-prefixed drop list: the IDs were
-        // resolved against this file a moment ago, and if any of them have
-        // moved since, keeping the wrong set fails a check below while
-        // dropping the wrong set would not.
-        "--audio-tracks",
-        resolved.keepIds.join(","),
-        path.basename(filePath),
-      ],
-      { cwd: path.dirname(filePath), detached: true },
-    );
+    const child = spawn("mkvmerge", args, { cwd, detached: true });
     activeChild = child;
 
     let tail = "";

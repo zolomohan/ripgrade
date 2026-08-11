@@ -171,7 +171,12 @@ function TaskRow({
         )}
       </div>
 
-      <div className="flex w-24 shrink-0 flex-col items-end gap-0.5 text-right">
+      {/* A column rather than whatever the figure happens to measure, so a
+          list reads down its right edge as one. Wide enough for the widest
+          thing either list puts in it — a button labelled "Convert", which is
+          the one figure here that is a shape as well as a word and so cannot
+          be a few pixels narrower than the row above it without showing. */}
+      <div className="flex w-28 shrink-0 flex-col items-end gap-0.5 text-right">
         {figure}
       </div>
     </li>
@@ -627,7 +632,13 @@ export function DoviTasks({
                         // list is a column of black blobs, and the emphasis the
                         // console's own button earns comes from being the one
                         // thing on that page.
-                        className={BUTTON.secondary}
+                        //
+                        // The width comes from the column and not from the word
+                        // in it: a list where some rows say Check and some say
+                        // Convert was a ragged left edge of pills down the side
+                        // of the page, each one a different size for a reason
+                        // nobody reading a column of them can see.
+                        className={`${BUTTON.secondary} w-full`}
                       >
                         {checkFirst ? "Check" : "Convert"}
                       </button>

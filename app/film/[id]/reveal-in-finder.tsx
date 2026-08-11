@@ -47,7 +47,7 @@ export function RevealInFinder({ moviePath }: { moviePath: string }) {
       </button>
 
       {error && (
-        <span className="absolute top-full right-0 mt-1 rounded-chip bg-background px-2 py-1 text-[11px] whitespace-nowrap text-red-600 shadow dark:text-red-400">
+        <span className="glass-panel absolute top-full right-0 mt-1 rounded-chip border border-line px-2 py-1 text-[11px] whitespace-nowrap text-red-600 shadow dark:text-red-400">
           {error}
         </span>
       )}

@@ -274,6 +274,9 @@ CREATE TABLE IF NOT EXISTS job_runs (
   finished_at INTEGER NOT NULL,
   -- The closing sentence: what it did, or why it stopped.
   detail      TEXT,
+  -- What was spawned, as it could be pasted into a shell. Null for the jobs
+  -- that are this app's own work rather than a tool being driven.
+  command     TEXT,
   -- The tail of what the tool printed, as JSON. Kept for the runs where it is
   -- the only account of what went wrong.
   output      TEXT
@@ -322,6 +325,30 @@ const jobRunColumns = (
 
 if (jobRunColumns.length > 0 && !jobRunColumns.includes("title")) {
   db.exec("DROP TABLE job_runs");
+}
+
+/**
+ * Two changes to a log that already exists, both guarded on the same thing:
+ * `title` means the table is there *and* is this shape. Not on the table's mere
+ * existence — the branch above may have just dropped it — and not on the
+ * columns being empty, which is also what a database with no log at all looks
+ * like. Either way the schema below creates it correct and these do not run.
+ *
+ * The sweep's rows go: nothing writes them any more and the Jobs page no longer
+ * reads them, but the log is capped at its newest rows, so leaving them would
+ * let a hundred boots' worth of "12 upgrades · 418 checked" go on evicting the
+ * conversions the page exists to show.
+ *
+ * The command a run was is added in place rather than waiting for a fresh
+ * table, the same way the artwork columns below are: the rows already there are
+ * worth more than the column is, and they simply read null.
+ */
+if (jobRunColumns.includes("title")) {
+  db.exec("DELETE FROM job_runs WHERE kind = 'sweep'");
+
+  if (!jobRunColumns.includes("command")) {
+    db.exec("ALTER TABLE job_runs ADD COLUMN command TEXT");
+  }
 }
 
 // Applied on every module evaluation, not just on first open. Every statement

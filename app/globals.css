@@ -69,15 +69,19 @@
    *
    * Two weights, because they are held against two different things: the rail
    * stands over the page, and a dialog stands over the page *and* the veil that
-   * darkens it. A panel at the rail's alpha picks that veil up through itself,
-   * so it is the more solid of the two.
+   * darkens it. The panel is the thinner of the two for exactly that reason —
+   * the veil has already taken half the light out of everything behind it, so
+   * a dialog at the rail's alpha is a flat block with a rumour of the page in
+   * it. It was the more solid of the two on the reasoning that it had more to
+   * see through, which is the right observation and the wrong conclusion: what
+   * more to see through means is less in the way, not more.
    *
    * Mixed from `--background` rather than written out, so there is one pair of
    * these and not a pair per colour scheme — the dark block below only has to
    * change the background they are made of.
    */
   --glass: color-mix(in srgb, var(--background) 85%, transparent);
-  --glass-panel: color-mix(in srgb, var(--background) 92%, transparent);
+  --glass-panel: color-mix(in srgb, var(--background) 78%, transparent);
 
   /*
    * A panel opening. Out is quicker than in, as everywhere else here: opening
@@ -1071,9 +1075,22 @@ body {
  * The page does not just darken behind a dialog, it goes out of focus — which
  * is what makes the dialog read as being in front of it rather than on it. The
  * dim alone left the library legible enough to keep competing for attention.
+ *
+ * The blur is what does that work, so the dim is only as deep as it has to be.
+ * At a half it was doing the job twice: the page went dark as well as soft, and
+ * the panel over it had nothing left to be glass *of* — a frosted pane in front
+ * of a black wall is a black wall. The panel's own alpha is the other half of
+ * this pair; the two were tuned together and moving one alone undoes it.
+ *
+ * `.veil` is the same sheet without the arrival animation, for the one place
+ * that fades its own: the drawer's scrim on a narrow screen, which is mounted
+ * the whole time and transitions its opacity rather than being put there. It
+ * was a flat `bg-black/40` with no blur at all — the one thing in the app that
+ * covered the page without softening it.
  */
+.veil,
 .modal-veil {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.38);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
@@ -1170,6 +1187,70 @@ body {
     grid-template-rows: 0fr;
     opacity: 0;
     transform: translateY(10px);
+  }
+}
+
+/*
+ * A band that comes and goes while the card around it holds still.
+ *
+ * The brightness meter is the one part of the Dolby Vision card that is not
+ * always true: it is a measurement, so it leaves while a pass is measuring the
+ * film again and comes back carrying the answer. Snapped in and out it read as
+ * the card flinching — the verdict someone was reading jumped by the height of
+ * a meter at the moment the pass started, and again when it finished.
+ *
+ * The same one-track grid the rail's rows collapse with, and its clock, but as
+ * a transition rather than a pair of keyframes: this band is toggled rather
+ * than mounted, so both directions are one rule read either way and there is
+ * nothing to keep on screen while it plays out. The row closing is what makes
+ * the card itself grow and shrink — the band takes its height with it, so
+ * everything below follows the edge down instead of jumping after it.
+ */
+.band-reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+/* Clipped, or the contents of a band closing to nothing spill past its edges.
+   Whatever is put here must carry no padding of its own: `border-box` takes the
+   height to zero and leaves both ends of the padding standing, so a band with
+   its padding on this element shuts to a gap rather than to nothing. Pad the
+   element inside it, as `.job-row` does. */
+.band-reveal > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.band-reveal.is-shut {
+  grid-template-rows: 0fr;
+}
+
+/* Faded as well as closed, so the last frames of it going are not a squashed
+   picture of a meter. */
+.band-reveal.is-shut > * {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .band-reveal,
+  .band-reveal > * {
+    transition-duration: var(--job-in);
+    transition-timing-function: var(--morph-ease);
+  }
+
+  .band-reveal {
+    transition-property: grid-template-rows;
+  }
+
+  .band-reveal > * {
+    transition-property: opacity;
+  }
+
+  /* Out faster than in, as everything else in the app leaves faster than it
+     arrives: arriving is news and leaving is not. */
+  .band-reveal.is-shut,
+  .band-reveal.is-shut > * {
+    transition-duration: var(--job-out);
   }
 }
 
@@ -1426,6 +1507,27 @@ html {
 .rule-head {
   height: 1px;
   background: linear-gradient(to right, var(--line-strong), transparent);
+}
+
+/*
+ * A name cut at the front rather than the back, for use with `truncate`.
+ *
+ * Every long string in this app is a release name or a path, and both carry
+ * what tells them apart at the end. Cut the usual way,
+ * `…REMUX-FraMeSToR.mkv.bak.dovi_convert` and `…REMUX-FraMeSToR.dovi` become
+ * the same sixty characters twice, listed one above the other as though the
+ * app were naming one file in two rows.
+ *
+ * `direction: rtl` is what moves the ellipsis to the front. The name itself
+ * goes in a `<bdi>` at the call site, so the right-to-left context reaches the
+ * cut and not the text — without it the bidi algorithm is free to reorder the
+ * dots and dashes a release name ends on. `text-align: left` is for the names
+ * short enough to fit, which would otherwise hang off the right of a column
+ * every other row starts at the left of.
+ */
+.cut-start {
+  direction: rtl;
+  text-align: left;
 }
 
 /*

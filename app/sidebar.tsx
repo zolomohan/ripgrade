@@ -258,13 +258,7 @@ function Brand({ className = "" }: { className?: string }) {
  * At `h-10 w-10` rather than the size of the mark inside it: this is the only
  * thing on the bar you are aiming a thumb at.
  */
-function MenuButton({
-  open,
-  onClick,
-}: {
-  open: boolean;
-  onClick: () => void;
-}) {
+function MenuButton({ open, onClick }: { open: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -397,7 +391,7 @@ export function Sidebar() {
       <div
         aria-hidden
         onClick={() => setOpen(false)}
-        className={`fixed inset-0 z-40 bg-black/40 transition-opacity duration-200 motion-reduce:transition-none md:hidden ${
+        className={`veil fixed inset-0 z-40 transition-opacity duration-200 motion-reduce:transition-none md:hidden ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />

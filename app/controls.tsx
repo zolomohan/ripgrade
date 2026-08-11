@@ -511,7 +511,7 @@ export function HelpTip({ text }: { text: string }) {
       {open && (
         <span
           role="tooltip"
-          className="absolute top-full right-0 z-30 mt-1.5 w-60 rounded-control border border-line bg-background p-2.5 text-[11px] leading-relaxed shadow-lg"
+          className="absolute top-full right-0 z-30 mt-1.5 w-60 glass-panel rounded-control border border-line p-2.5 text-[11px] leading-relaxed shadow-lg"
         >
           {text}
         </span>

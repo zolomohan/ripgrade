@@ -1231,16 +1231,16 @@ export async function beginRebuildProfile7(
         "No enhancement layer is kept beside this film, so there is nothing to rebuild from.",
     };
   }
-  // Rebuilding when the original is still there would spend an hour arriving
-  // at a worse copy of a file already sitting beside it.
-  if (backupBytes(moviePath) !== undefined) {
-    return {
-      ok: false,
-      error:
-        "The Profile 7 original is still kept beside this film — restore that instead. It is the file itself, and it takes seconds.",
-    };
-  }
-  // The same rule converting has, for the same reason: two files each claiming
+  // Rebuilding while the original is still there was refused here, on the
+  // grounds that it spends an hour arriving at a worse copy of a file already
+  // sitting beside it. True, and not this function's call to make: the film's
+  // card offers both ways back now and says which is which, and the one reason
+  // anybody wants the long way round is to watch it work *before* deleting the
+  // file that makes it unnecessary. Nothing about it is unsafe — the rebuild
+  // swaps through a name of its own and never touches the kept original.
+  //
+  // The audio removal's original is a different matter, and still refused —
+  // the same rule converting has, for the same reason: two files each claiming
   // to be what the film was before, and restoring either silently undoes the
   // other.
   if (audioBackupBytes(moviePath) !== undefined) {

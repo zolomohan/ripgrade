@@ -147,6 +147,54 @@ function verdictFor(
   };
 }
 
+/**
+ * One file the conversion left beside the film: what it is, what it is called,
+ * and what it costs.
+ *
+ * These were sentences — "Original kept as
+ * 1917.2019.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR.mkv.bak.dovi_convert,
+ * 74.0 GB. Enhancement layer kept too, 6.5 GB." — and a release name is ninety
+ * characters with no space in it, so the prose wrapped around a block of
+ * monospace and the two figures anyone actually came for ended up on different
+ * lines of it. They are a table: two kept files, three facts each, and the
+ * question they answer is which of them is worth the room.
+ *
+ * The name is cut rather than wrapped, and carries the whole of itself on its
+ * hover. It is the least of the three: the film is named at the top of the page
+ * and both of these are that name with a suffix — what tells them apart is the
+ * word on the left, which is why that is what leads.
+ */
+function KeptFile({
+  label,
+  name,
+  bytes,
+}: {
+  label: string;
+  name: string;
+  /** Undefined with the drive away: the file is known of but cannot be sized. */
+  bytes?: number;
+}) {
+  return (
+    // Spans throughout: this goes inside the verdict's own paragraph, and a
+    // block element in a `<p>` is markup the browser silently rewrites.
+    <span className="flex items-baseline gap-3">
+      <span className="w-32 shrink-0">{label}</span>
+      {/* Cut at the front, or these two rows are the same sixty characters
+          twice — see `.cut-start`. The `bdi` is what keeps the right-to-left
+          context to the cut instead of letting it reach the text. */}
+      <span
+        className="cut-start min-w-0 flex-1 truncate font-mono text-xs"
+        title={name}
+      >
+        <bdi>{name}</bdi>
+      </span>
+      <span className="shrink-0 font-medium tabular-nums">
+        {bytes !== undefined ? size(bytes) : "—"}
+      </span>
+    </span>
+  );
+}
+
 type Recipe = {
   id: string;
   title: string;
@@ -524,13 +572,17 @@ export function DolbyVision({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingRebuild, setConfirmingRebuild] = useState(false);
   const [confirmingDiscardEl, setConfirmingDiscardEl] = useState(false);
+  const [confirmingStop, setConfirmingStop] = useState(false);
   // Each confirm outlives its flag by the length of its exit animation.
   const convertMounted = useClosing(confirming);
   const restoreMounted = useClosing(confirmingRestore);
   const deleteMounted = useClosing(confirmingDelete);
   const rebuildMounted = useClosing(confirmingRebuild);
   const discardElMounted = useClosing(confirmingDiscardEl);
+  const stopMounted = useClosing(confirmingStop);
   const [restoring, setRestoring] = useState(false);
+  /** Set between asking the job to stop and it having stopped. */
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRecipes, setShowRecipes] = useState(false);
   const router = useRouter();
@@ -797,6 +849,26 @@ export function DolbyVision({
     apply({ convert: result.job });
   }
 
+  /**
+   * Stops whichever pass is running.
+   *
+   * One function for both, because the card asks one question: the read that
+   * precedes a conversion is a step of it, so stopping there has to put the
+   * intention down as well, or the conversion would start the moment the read
+   * it was waiting on reported itself finished.
+   */
+  async function runStop() {
+    setStopping(true);
+    intend(false);
+    if (converting) {
+      apply({ convert: await stopConvert() });
+    } else {
+      apply({ dovi: await stopFullDoviScan() });
+    }
+    setStopping(false);
+    setConfirmingStop(false);
+  }
+
   async function runDiscardEl() {
     setError(null);
     setRestoring(true);
@@ -866,6 +938,41 @@ export function DolbyVision({
   const convertingNow = (converting && !rebuilding) || readingToConvert;
 
   /**
+   * The question behind Cancel, and the answer to the only thing anyone hesitating
+   * over it wants to know — what stopping costs, which is nothing.
+   *
+   * It was a line under the verdict, which is the one place on this card
+   * reserved for what is true of the film rather than of the controls beside
+   * it, and then a tooltip, which is not where a reassurance about pressing a
+   * button belongs either: nobody hovers a button they have already decided
+   * against. Asked at the moment of pressing, it is read.
+   *
+   * "Stopping" rather than "cancelling" now the sentence is inside a dialog
+   * whose own dismiss button says Cancel — there, cancelling is what leaves the
+   * job running, which is the opposite of what the sentence is about.
+   */
+  const stop = rebuilding
+    ? {
+        title: "Stop the rebuild?",
+        note: "Stopping never touches the file that is there.",
+      }
+    : convertingNow
+      ? {
+          title: "Stop the conversion?",
+          note: "Stopping never touches the original.",
+        }
+      : {
+          title: gate === "check" ? "Stop the check?" : "Stop reading?",
+          note: "Nothing is written by a read either way — the pass simply stops where it is.",
+        };
+
+  // A job that ends while the question is up takes the question with it: there
+  // is nothing left to stop, and answering it would be answering about a job
+  // that has already gone. Adjusted during render, the way the rail does it —
+  // an effect would paint the stale frame first.
+  if (confirmingStop && !busy) setConfirmingStop(false);
+
+  /**
    * The one sentence at the top of the console. Whatever is happening to the
    * file outranks the verdict about it — mid-conversion, and afterwards while
    * the original is still recoverable, the state of the file *is* the answer
@@ -875,7 +982,7 @@ export function DolbyVision({
     ? {
         tone: "neutral",
         headline: "Rebuilding Profile 7…",
-        body: "Cancelling never touches the file that is there.",
+        // What cancelling costs is on the Cancel button — see `stopNote`.
         detail:
           "The base layer comes out of the converted file, the kept enhancement layer goes back in beside it, and the two are remuxed with the film's own audio and subtitles. The Profile 8.1 file is replaced only once the result has been written in full and checked.",
       }
@@ -883,7 +990,6 @@ export function DolbyVision({
       ? {
           tone: "neutral",
           headline: "Converting to Profile 8.1…",
-          body: "Cancelling never touches the original.",
           detail: keepingEl
             ? "The enhancement layer is pulled out and kept first, then every frame is read, then the whole file is rewritten — so it takes a while. Leaving this page will not stop it."
             : "Every frame is read first, then the whole file is rewritten, so it takes a while. Leaving this page will not stop it.",
@@ -909,54 +1015,119 @@ export function DolbyVision({
               detail:
                 "One RPU parsed per frame, measuring what the stream carries across the whole film rather than across the sample the scan reads. A conversion started elsewhere reads the film this way first, so this is also what the first half of one looks like from here.",
             }
-        : hasBackup
+        : // An original beside the film says a conversion happened; the file's
+          // own profile says whether it still is what happened. A rebuild run
+          // while the original was kept leaves a Profile 7 file with a Profile
+          // 7 original next to it — a state only the rebuild can produce, since
+          // restoring takes the backup with it — and this is the sentence for
+          // it. "Converted to Profile 8.1" over the top of that would be the
+          // card describing the last thing it was asked to do rather than the
+          // film in front of it.
+          hasBackup && dvProfile === 7
           ? {
               tone: "ok",
-              headline: "Converted to Profile 8.1",
+              headline: "Rebuilt to Profile 7",
               body: (
                 <>
-                  Original kept as{" "}
-                  <code className="font-mono">
-                    {fileName}
-                    {BACKUP_SUFFIX}
-                  </code>
-                  {backupBytes !== undefined && <>, {size(backupBytes)}</>}.
-                  {/* Both, where both were kept: the original is the exact file
-                    and the archive is what survives deleting it, and anyone
-                    reclaiming space is about to need to know which is which. */}
-                  {archive && elArchiveBytes !== undefined && (
-                    <> Enhancement layer kept too, {size(elArchiveBytes)}.</>
-                  )}
+                  This file is the rebuild — the original is the disc&rsquo;s
+                  own bytes, where this one is those bytes taken apart and put
+                  back together.
+                  <span className="mt-2 flex flex-col gap-1 text-xs">
+                    <KeptFile
+                      label="Original"
+                      name={`${fileName}${BACKUP_SUFFIX}`}
+                      bytes={backupBytes}
+                    />
+                  </span>
                 </>
               ),
               detail:
-                justConverted && convert?.summary
-                  ? `${convert.summary} of enhancement layer discarded${convert.check ? `, ${convert.check}` : ""}.`
-                  : undefined,
+                "Restoring puts the original back under its own name and throws this rebuild away. Deleting it leaves the rebuild as the only Profile 7 copy.",
             }
-          : // Converted, and the original gone — but the layer it discarded is
-            // still here, which is the difference between a one-way conversion
-            // and a reversible one.
-            canRebuild && elArchiveBytes !== undefined
+          : hasBackup
             ? {
                 tone: "ok",
                 headline: "Converted to Profile 8.1",
                 body: (
-                  <>
-                    Enhancement layer kept as{" "}
-                    <code className="font-mono">
-                      {elArchiveNameOf(fileName)}
-                    </code>
-                    , {size(elArchiveBytes)} — enough to rebuild the Profile 7
-                    file.
-                  </>
+                  // Both, where both were kept: the original is the exact file
+                  // and the archive is what survives deleting it, and anyone
+                  // reclaiming space is about to need to know which is which —
+                  // which is the other half of why these are rows now. Ordered
+                  // as the buttons below are, and as they cost: the large one
+                  // that can go, then the small one that buys the way back.
+                  //
+                  // No caption over them. "Kept beside this film" was a line of
+                  // words introducing two rows that say what they are in their
+                  // own first column, under a headline that has already said a
+                  // conversion happened. The room it took is worth more empty.
+                  <span className="mt-2 flex flex-col gap-1 text-xs">
+                    <KeptFile
+                      label="Original"
+                      name={`${fileName}${BACKUP_SUFFIX}`}
+                      bytes={backupBytes}
+                    />
+                    {archive && (
+                      <KeptFile
+                        label="Enhancement layer"
+                        name={elArchiveNameOf(fileName)}
+                        bytes={elArchiveBytes}
+                      />
+                    )}
+                  </span>
                 ),
                 detail:
-                  "The rebuild takes the base layer back out of this file, puts the kept layer beside it and remuxes the two. It costs the same hour the conversion did, and scratch space for a couple of copies of the video while it runs.",
+                  justConverted && convert?.summary
+                    ? `${convert.summary} of enhancement layer discarded${convert.check ? `, ${convert.check}` : ""}.`
+                    : undefined,
               }
-            : verdict;
+            : // Converted, and the original gone — but the layer it discarded is
+              // still here, which is the difference between a one-way conversion
+              // and a reversible one.
+              canRebuild && elArchiveBytes !== undefined
+              ? {
+                  tone: "ok",
+                  headline: "Converted to Profile 8.1",
+                  // The row and nothing else, as the state above it. What the
+                  // kept layer is *for* is the rebuild, and the rebuild is a
+                  // button four inches to the right saying so — a sentence
+                  // explaining it was the card reading its own controls out.
+                  body: (
+                    <span className="mt-2 flex flex-col gap-1 text-xs">
+                      <KeptFile
+                        label="Enhancement layer"
+                        name={elArchiveNameOf(fileName)}
+                        bytes={elArchiveBytes}
+                      />
+                    </span>
+                  ),
+                  detail:
+                    "The rebuild takes the base layer back out of this file, puts the kept layer beside it and remuxes the two. It costs the same hour the conversion did, and scratch space for a couple of copies of the video while it runs.",
+                }
+              : verdict;
 
-  const showMeter = Boolean(el && el.kind !== "mel");
+  /**
+   * Whether this film has a meter at all. Only a FEL does: a MEL carries no
+   * picture data, so its brightness figures say nothing about what a conversion
+   * would cost, and a stream with no measured peak has nothing to draw.
+   */
+  const hasMeter = Boolean(el && el.kind !== "mel" && el.elPeak !== undefined);
+
+  /**
+   * Whether it is showing, which is not the same question — the band stays in
+   * the card and closes over it, so that it can open and shut rather than blink.
+   *
+   * The meter reads as a measurement of the film: a peak, a limit, and the
+   * distance between them to a nit. Off a head scan it is a measurement of the
+   * first few hundred frames drawn identically, and the figure moves once every
+   * frame has been read — so it waits for the full pass. It also stands down
+   * while any pass is running, because a number that is about to be replaced is
+   * worse than no number, and while the file is being rewritten, because by
+   * then it describes a film that is halfway to not existing.
+   *
+   * Which makes it the card's answer arriving: the meter opens when the read
+   * that earned it finishes.
+   */
+  const showMeter = hasMeter && scan?.depth === "full" && !busy;
 
   /**
    * The way out of the card's own offer, kept beside it.
@@ -983,10 +1154,80 @@ export function DolbyVision({
   );
 
   /**
-   * One decision per state, so the card has one thing to press: convert while
-   * there is something to convert, put it back while the original is still
-   * there, rebuild it while the layer it needs is still there, and read the
-   * stream when none of them applies.
+   * Throwing the kept layer away.
+   *
+   * Beside the rebuild, and in the same weight as it: the two are the whole of
+   * what this state can do about the layer, and they are the two directions —
+   * spend it, or give it up. Not red, though what it does cannot be undone. The
+   * red on this card is reserved for deleting the original, which is the one
+   * step that costs a film its exact bytes; this costs the *option* of Profile
+   * 7, and the dialog behind it is where that is spelled out and confirmed.
+   */
+  const discardLayer = canRebuild && !hasBackup && (
+    <button
+      type="button"
+      onClick={() => setConfirmingDiscardEl(true)}
+      disabled={!present}
+      title={
+        offline ??
+        `Frees ${elArchiveBytes !== undefined ? size(elArchiveBytes) : "the space"}, and gives up going back to Profile 7 for good.`
+      }
+      className={BUTTON.secondary}
+    >
+      Discard layer
+    </button>
+  );
+
+  /**
+   * The rebuild, wherever the layer to rebuild from is still on the drive.
+   *
+   * Written once and used in both converted states, because it is one action
+   * and the two states differ only in what else is on offer beside it. What the
+   * tooltip says does differ: with the original still there, this is the long
+   * way round to a file that is already sitting next to this one, and a button
+   * that does not say so is a button that costs an hour to learn from.
+   */
+  const rebuildAction = canRebuild && (
+    <button
+      type="button"
+      onClick={() => setConfirmingRebuild(true)}
+      disabled={!present}
+      title={
+        offline ??
+        (hasBackup
+          ? "Builds Profile 7 again out of the kept layer. The original beside this film is the same answer in two renames — this is for when you would rather have the rebuild than the file it came from."
+          : "Puts the enhancement layer back and makes the film Profile 7 again. About as long as the conversion took.")
+      }
+      className={BUTTON.secondary}
+    >
+      Rebuild Profile 7
+    </button>
+  );
+
+  /**
+   * What this state can do about the file, in one row.
+   *
+   * Before a conversion there is one decision and the card has one button:
+   * convert while there is something to convert, and read the stream when the
+   * verdict is not settled enough to offer that.
+   *
+   * Afterwards there are as many ways back as the conversion left behind, and
+   * the card used to show only the first it found — a film that kept both its
+   * original *and* its enhancement layer offered the two the original allows
+   * and hid the rebuild until the original had been deleted, which is exactly
+   * backwards: the rebuild is the thing you want to know works *before* you
+   * throw the original away. So each way back is offered whenever the thing it
+   * needs is still on the drive.
+   *
+   * Grouped by what each one is about rather than strung out in a row: the two
+   * that answer for the backup stand together, and the rebuild — which is about
+   * the kept layer and would still be there with no backup at all — stands
+   * apart behind a hairline. Three buttons in an even row read as three degrees
+   * of the same decision, which two of them are and the third is not.
+   *
+   * Within the pair, the irreversible one leads: it is furthest from where the
+   * pointer comes to rest at the end of the row, and the quickest and most
+   * exact way back is the one under it.
    *
    * Every one of them reaches the file itself, so with the drive away they all
    * go grey together. Still shown rather than hidden: an unplugged drive is a
@@ -1017,35 +1258,35 @@ export function DolbyVision({
         }
         className={BUTTON.secondary}
       >
-        Restore original
+        Restore backup
       </button>
+
+      {/* Parted rather than spaced: the two buttons on the left answer for the
+          file kept beside this one, and the one on the right answers for the
+          layer inside it. A gap alone does not say so.
+
+          `rule-l` is the app's own rule stood on its end — fading out at both
+          ends, the way every hairline here does — carried on a wrapper rather
+          than on the button, so it stands off the button's edge instead of
+          being ruled against it.
+
+          Room either side, and the same room: a rule set closer to one button
+          than the other belongs to that button rather than to the join. The
+          left is the row's own `gap-2` and this margin together, which is what
+          the padding on the right has to match. */}
+      {rebuildAction && (
+        <span className="rule-l ml-2 flex items-center pl-4">
+          {rebuildAction}
+        </span>
+      )}
     </>
   ) : canRebuild ? (
+    // The two things that can be done with a kept layer, in the order they
+    // cost: give it up, or spend it. No hairline between them — the rule above
+    // parts two subjects, and these are one.
     <>
-      <button
-        type="button"
-        onClick={() => setConfirmingDiscardEl(true)}
-        disabled={!present}
-        title={
-          offline ??
-          `Frees ${elArchiveBytes !== undefined ? size(elArchiveBytes) : "the space"}, and gives up going back to Profile 7 for good.`
-        }
-        className={BUTTON.danger}
-      >
-        Discard layer
-      </button>
-      <button
-        type="button"
-        onClick={() => setConfirmingRebuild(true)}
-        disabled={!present}
-        title={
-          offline ??
-          "Puts the enhancement layer back and makes the film Profile 7 again. About as long as the conversion took."
-        }
-        className={BUTTON.secondary}
-      >
-        Rebuild Profile 7
-      </button>
+      {discardLayer}
+      {rebuildAction}
     </>
   ) : gate === "convert" ? (
     <button
@@ -1112,11 +1353,26 @@ export function DolbyVision({
             Rounder than a card: at this size the corner is what tells you the
             bands inside are one object rather than a stack of them. */}
         <div className="overflow-hidden rounded-3xl border border-line">
-          {/* The verdict and the button that acts on it, on one line. */}
-          <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 py-5">
+          {/* The verdict and the button that acts on it, on one line.
+
+              More room above the sentence than under it: it is the first thing
+              in the card and the only band with an edge rather than a hairline
+              over it, and a rounded corner needs answering with space or the
+              text reads as having been pushed up against it. */}
+          <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 pt-6 pb-5">
             {/* The reasoning hangs off the sentence as a tooltip: it is worth
-                keeping and not worth reading every time the page opens. */}
-            <div className="flex flex-col gap-0.5" title={banner.detail}>
+                keeping and not worth reading every time the page opens.
+
+                `flex-1` so the column reaches the far edge of the band: the
+                kept files below are a table, and its last column is a set of
+                sizes that have to end where the buttons under them do. Left to
+                its content width the block stopped wherever the longest line
+                of prose stopped, which put the figures in a different place on
+                every film. */}
+            <div
+              className="flex min-w-0 flex-1 flex-col gap-0.5"
+              title={banner.detail}
+            >
               <p className="text-sm font-medium">{banner.headline}</p>
               {banner.body && (
                 <p className="text-sm opacity-60">{banner.body}</p>
@@ -1136,67 +1392,56 @@ export function DolbyVision({
                 {actions}
               </div>
             )}
-          </div>
 
-          {!busy && (hasBackup || canRebuild) && (
-            <div className="card-band flex flex-wrap items-center justify-end gap-2 px-4 py-5">
-              {manual}
-              {actions}
-            </div>
-          )}
+            {/* Where the card's buttons are when it has any: stopping is the
+                one thing on offer while a pass is running, so it stands in the
+                same place the offer it interrupted stood in — and the readings
+                lead into it from the left, exactly as the manual alternative
+                leads into the primary button on the row this replaces.
 
-          {/* The evidence, directly beneath the claim: only a FEL needs it — a
-              MEL is safe whatever the brightness figures say. */}
-          {showMeter && el && (
-            <div className="card-band px-4 py-5">
-              <BrightnessMeter el={el} />
-            </div>
-          )}
-
-          {busy && (
-            // One progress band for both jobs. Which of the two is running is
-            // a detail of how the work is done; what is being waited for is
-            // the same thing throughout.
-            <div className="card-band flex flex-col gap-2 px-4 py-5">
-              {/* Centred rather than on a baseline: the row carries a button
-                  now, and a pill hung off the baseline of the caption beside
-                  it sits low by half its border. */}
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm">
+                Every reading the job has, in the order they answer "how far
+                along": the fraction, whatever it has actually written where
+                that is the figure moving, what it is doing this second, and
+                the step that is in. The step name used to head the block as a
+                line of its own, which set the one changing word of it a column
+                away from the numbers it changes with. */}
+            {busy && (
+              <div className="flex shrink-0 items-center gap-3">
+                <p className="text-xs tabular-nums opacity-45">
                   {converting
-                    ? (convert?.label ??
-                      (rebuilding ? "Rebuilding Profile 7" : "Working"))
-                    : readingToConvert
-                      ? "Reading every frame before converting"
-                      : gate === "check"
-                        ? "Checking every frame"
-                        : "Reading every frame"}
+                    ? [
+                        convert?.percent !== undefined &&
+                          `${Math.round(convert.percent)}%`,
+                        convert?.readout,
+                        convert?.label ??
+                          (rebuilding ? "Rebuilding Profile 7" : undefined),
+                        `step ${convert?.step ?? 1} of ${convert?.steps ?? 3}`,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : `${Math.round(job?.percent ?? 0)}% · ${count(job?.frames ?? 0)} frames`}
                 </p>
-                <div className="flex items-center gap-3">
-                  <p className="text-xs tabular-nums opacity-45">
-                    {converting
-                      ? `${convert?.percent !== undefined ? `${Math.round(convert.percent)}% · ` : ""}step ${convert?.step ?? 1} of ${convert?.steps ?? 3}`
-                      : `${Math.round(job?.percent ?? 0)}% · ${count(job?.frames ?? 0)} frames`}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      // Cancelling the read cancels the conversion it was the
-                      // first step of.
-                      intend(false);
-                      if (converting) {
-                        apply({ convert: await stopConvert() });
-                      } else {
-                        apply({ dovi: await stopFullDoviScan() });
-                      }
-                    }}
-                    className={BUTTON.secondary}
-                  >
-                    Cancel
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingStop(true)}
+                  className={BUTTON.secondary}
+                >
+                  Cancel
+                </button>
               </div>
-              <div className="bar-track bar-track-thin">
+            )}
+
+            {/* One bar for both jobs, in the band the sentence it is measuring
+                is in. Which of the two is running is a detail of how the work
+                is done; what is being waited for is the same thing throughout,
+                and it was never a separate section — parted off behind a
+                hairline, the bar read as a second subject rather than as the
+                state of the line above it.
+
+                `w-full` is what puts it on its own line of the wrapping row,
+                under both the headline and the readings. */}
+            {busy && (
+              <div className="bar-track bar-track-thin w-full">
                 <div
                   className="bar-fill transition-[width] duration-500"
                   style={{
@@ -1210,6 +1455,51 @@ export function DolbyVision({
                     }%`,
                   }}
                 />
+              </div>
+            )}
+          </div>
+
+          {!busy && (hasBackup || canRebuild) && (
+            /* The two ends of the band, not a huddle at the right: what the
+               card will do sits where the buttons sit everywhere else, and the
+               way out of its offer is ranged against the other edge — it is
+               not one more button in the row, and packed in beside them it
+               read as the first of four. `ml-auto` rather than
+               `justify-between`, so the buttons stay right when there is no
+               link beside them to be spaced against. */
+            <div className="card-band flex flex-wrap items-center gap-3 px-4 py-5">
+              {manual}
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {actions}
+              </div>
+            </div>
+          )}
+
+          {/* The evidence, directly beneath the claim: only a FEL needs it — a
+              MEL is safe whatever the brightness figures say.
+
+              The band is the thing that opens and shuts, so it is the band
+              that carries `card-band`: hung on the inner element instead, the
+              wrapper would sit between two bands and take the hairline that
+              parts them with it. */}
+          {hasMeter && el && (
+            <div
+              className={`card-band band-reveal ${showMeter ? "" : "is-shut"}`}
+              // Shut, it is not absent — it is a section of the card that is
+              // not being claimed at the moment, and reading a stale peak out
+              // of a closed band is worse than not reaching it at all.
+              aria-hidden={!showMeter}
+            >
+              {/* Three deep, and it has to be: the middle element is the one
+                  clipped to the closing row, and padding on a clipped element
+                  survives the close — `border-box` takes the height to zero
+                  and leaves the two ends of the padding standing, which is a
+                  band that shuts to forty pixels of nothing. So the padding
+                  goes inside it, where there is nothing left to hold open. */}
+              <div>
+                <div className="px-4 py-5">
+                  <BrightnessMeter el={el} />
+                </div>
               </div>
             </div>
           )}
@@ -1232,7 +1522,7 @@ export function DolbyVision({
               holds — and worth keeping, because converting again reuses it
               instead of spending another pass extracting it. */}
           {!busy && archive && !canRebuild && !hasBackup && (
-            <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 py-5">
+            <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 pb-5 pt-3">
               <p className="max-w-prose text-sm opacity-60">
                 An earlier conversion&rsquo;s enhancement layer is still kept as{" "}
                 <code className="font-mono">{elArchiveNameOf(fileName)}</code>,{" "}
@@ -1333,7 +1623,7 @@ export function DolbyVision({
           <ConfirmModal
             open={confirmingRestore}
             title="Put the original Profile 7 file back?"
-            confirmLabel={restoring ? "Restoring…" : "Restore original"}
+            confirmLabel={restoring ? "Restoring…" : "Restore backup"}
             busy={restoring}
             onConfirm={runRestore}
             onCancel={() => setConfirmingRestore(false)}
@@ -1385,6 +1675,19 @@ export function DolbyVision({
             onCancel={() => setConfirmingRebuild(false)}
           >
             <ul className="list-disc space-y-1.5 pl-5">
+              {/* First, because it is the one thing that might make the rest
+                  not worth reading: with the original still on the drive this
+                  is an hour spent reaching a reconstruction of a file that is
+                  already there, and the reason to do it anyway is to see that
+                  it works while the file it replaces is still recoverable. */}
+              {hasBackup && (
+                <li>
+                  The Profile 7 original is still kept beside this film, and
+                  restoring that is the same film back in seconds. This builds
+                  it again from the kept layer instead — worth it to see the
+                  rebuild work before the original goes, and not otherwise.
+                </li>
+              )}
               <li>
                 The base layer comes back out of this file, the layer kept in{" "}
                 <code className="font-mono text-xs">
@@ -1393,6 +1696,12 @@ export function DolbyVision({
                 goes back beside it, and the two are remuxed with the
                 film&rsquo;s own audio, subtitles and chapters.
               </li>
+              {hasBackup && (
+                <li>
+                  The original is left exactly where it is — the rebuilt file
+                  takes this one&rsquo;s place, and you will have both.
+                </li>
+              )}
               <li>
                 It needs scratch space for a couple of copies of the video while
                 it runs — the conversion&rsquo;s scratch folder, if one is set.
@@ -1430,6 +1739,25 @@ export function DolbyVision({
                 it, going back to Profile 7 means ripping the disc again.
               </>
             )}
+          </ConfirmModal>
+        )}
+
+        {/* Asked, now, rather than acted on where the button is. Stopping is
+            the one control here that undoes rather than commits, which is
+            exactly why it is worth a question: an hour of a conversion is a
+            real thing to lose to a stray click, even when the file it was
+            working on is untouched by losing it. */}
+        {stopMounted && (
+          <ConfirmModal
+            open={confirmingStop}
+            title={stop.title}
+            confirmLabel={stopping ? "Stopping…" : "Stop"}
+            tone="danger"
+            busy={stopping}
+            onConfirm={runStop}
+            onCancel={() => setConfirmingStop(false)}
+          >
+            {stop.note}
           </ConfirmModal>
         )}
       </div>
