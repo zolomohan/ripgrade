@@ -402,10 +402,13 @@ export function DashboardView({ data }: { data: Dashboard }) {
  */
 function Welcome() {
   return (
-    // Standing off the top of the page rather than starting at it: a greeting
-    // pinned to the edge reads as a header bar, and this is the first thing
-    // said rather than a fixture the page hangs from.
-    <header className="row-enter mt-6 flex flex-col gap-5 sm:mt-10">
+    // No margin of its own. The page's `py-8` is the same 2rem the rail spends
+    // above its wordmark, so the greeting starts on the line the app's name
+    // starts on and the first thing said reads across the two columns. It also
+    // puts this page where every other one already began: theirs open straight
+    // into their first block, and the dashboard was the only one standing off
+    // the top.
+    <header className="row-enter flex flex-col gap-5">
       <h1 className="font-display text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
         Welcome back
       </h1>
