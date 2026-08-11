@@ -17,7 +17,7 @@ import type { CleanupKind } from "./cleanup-names";
 import { backupBytes, backupPathFor, filePresent } from "./convert";
 import { db, getSetting } from "./db";
 import { classifyEnhancementLayer } from "./derive";
-import type { ElVerdict, EpisodeInfo } from "./derive";
+import type { AudioTrack, ElVerdict, EpisodeInfo } from "./derive";
 import { recordDiscardedBackup } from "./job-history";
 import { getLibrary } from "./library";
 import type { LibraryItem } from "./library";
@@ -33,10 +33,12 @@ import { getShows } from "./shows";
  * because nobody opened its page, and eight gigabytes of Hungarian DTS-HD stay
  * on the drive for the same reason.
  *
- * This is that question asked of everything at once. Nothing here starts a job:
- * a row is a film worth opening, and the console on its page is still what does
- * the deciding — the rewrite is the same 90 GB either way, and the page is
- * where the caveats live.
+ * This is that question asked of everything at once. Nothing *here* starts a
+ * job — this module reads and answers, and the lists it feeds are what offer
+ * the work — but the answer has to carry enough for the decision to be made in
+ * front of the list: a Dolby Vision row needs to know whether every frame has
+ * been read, and an audio row carries the file's tracks, because which of them
+ * go is the whole question and it is now asked where the row is.
  *
  * Both lists are read straight out of the derived rows the last scan wrote,
  * plus one stat per candidate. Neither spawns a tool.
@@ -92,6 +94,27 @@ export type AudioTask = TaskFilm & {
   keeping: number;
   /** The language tags going, in the order the file lists them. */
   languages: string[];
+  /**
+   * Every audio track in the file, so the list can offer the choice rather
+   * than only the proposal.
+   *
+   * The row used to be a signpost — it said what the preference would remove
+   * and sent you to the film's own page to agree with it. But the queue is
+   * where you are when you want the removal, and the thing standing between a
+   * row and a rewrite is one question: which of these actually go. So the
+   * tracks travel with the row and the answer is given where it is asked.
+   *
+   * A dozen small objects per row, read from the same derived record the
+   * figures on the row already come from — no extra query, and no round trip
+   * at the moment a dialog opens.
+   */
+  tracks: AudioTrack[];
+  /**
+   * Which of them the preference would remove, by ordinal — what the row's
+   * "−4.2 GB freed" is the price of, and what the dialog opens with ticked.
+   * Ticking is still yours to change: this is a proposal, not a plan.
+   */
+  proposed: number[];
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -335,6 +358,8 @@ export function libraryTasks(items: LibraryItem[] = getLibrary()): {
             languages: unwanted.map(
               (ordinal) => item.audio[ordinal].language as string,
             ),
+            tracks: item.audio,
+            proposed: unwanted,
           });
         }
       }

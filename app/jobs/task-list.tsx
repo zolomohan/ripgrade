@@ -12,7 +12,7 @@ import {
 import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
 import { useJobs } from "@/app/jobs-provider";
-import { useClosing } from "@/app/modal";
+import { useClosing, useLingering } from "@/app/modal";
 import { rememberListing } from "@/app/return-to";
 import { stagger } from "@/app/stagger";
 import { BUTTON } from "@/app/controls";
@@ -23,16 +23,21 @@ import type { AudioTask, DoviTask, TaskFilm } from "@/lib/queue-tasks";
 import { movieId, posterName } from "@/lib/routes";
 import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
 import { Stat } from "@/app/charts";
+import { AudioPicker } from "./audio-picker";
 import { Stats } from "./stats";
 import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 
 /**
  * The two lists of work the library can do to its own files.
  *
- * A row opens the film's page, where the console that reads the metadata,
- * explains the enhancement layer and offers the way back lives. What these add
- * is the part a per-film page cannot: the whole library asked at once, and
- * ranked by what the work is worth.
+ * A Dolby Vision row opens the film's page, where the console that reads the
+ * metadata, explains the enhancement layer and offers the way back lives. What
+ * these add is the part a per-film page cannot: the whole library asked at
+ * once, and ranked by what the work is worth.
+ *
+ * An audio row opens a dialog instead, because its work is a question rather
+ * than a button — which of these tracks actually go — and the film's page was
+ * a walk taken only to answer it. See ./audio-picker.tsx.
  *
  * They are the pending half of the jobs page's first two tabs, under the job
  * running and above the log of the ones that ran. They were the queue's for as
@@ -40,11 +45,11 @@ import { byTitle, pickSort, type SortOption } from "@/app/sorts";
  * is a job this app runs and writes down, and the row you act on belongs above
  * the record of what acting on it did.
  *
- * The conversions can also be started from here. Rewriting a film is one
- * decision made the same way whichever page asks it — the same confirmation,
- * the same original kept beside it, the same single job at a time — so the
- * button offers it where the list of candidates already is, rather than sending
- * you into twelve pages to press the same button twelve times.
+ * Both jobs can be started from here. Rewriting a film is one decision made the
+ * same way whichever page asks it — the same original kept beside it, the same
+ * single job at a time — so the list of candidates is where it is offered,
+ * rather than sending you into twelve pages to press the same button twelve
+ * times.
  *
  * A row whose enhancement layer could still rule the film out offers the check
  * instead, for the same reason the film's own console does: the button says
@@ -96,6 +101,7 @@ function TaskRow({
   chips,
   figure,
   progress,
+  onOpen,
 }: {
   task: TaskFilm;
   index: number;
@@ -104,10 +110,23 @@ function TaskRow({
   figure: React.ReactNode;
   /** Shown under the chips while something is happening to this file. */
   progress?: React.ReactNode;
+  /**
+   * What the row does instead of opening the film.
+   *
+   * The Dolby Vision list has nothing to ask — a conversion is one decision
+   * made by a button — so its rows still go to the page. The audio list's whole
+   * question is which tracks, and that is asked here rather than a page away;
+   * see ./audio-picker.tsx, which keeps a way through to the film anyway.
+   */
+  onOpen?: () => void;
 }) {
   const router = useRouter();
 
   function open() {
+    if (onOpen) {
+      onOpen();
+      return;
+    }
     rememberListing();
     router.push(hrefFor(task));
   }
@@ -767,6 +786,50 @@ export function AudioTasks({
   const tasks = [...unsorted].sort(pickSort(AUDIO_SORTS, sort).compare);
   const grouping = pickGroup(AUDIO_GROUPS, group);
 
+  const { jobs, subscribe } = useJobs();
+  const { strip, convert, dovi: pass } = jobs;
+  const router = useRouter();
+
+  /** The file whose tracks are being chosen, or none. */
+  const [asking, setAsking] = useState<AudioTask | null>(null);
+  // Held past the click that closes it, so the dialog plays out rather than
+  // blanking a frame before it has finished leaving.
+  const held = useLingering(asking);
+  const [error, setError] = useState<string | null>(null);
+
+  // Only the edge out of a removal counts, for the reason the conversions give
+  // above: the server reports "done" forever after, so a status alone cannot
+  // mean "just finished".
+  useEffect(
+    () =>
+      subscribe((next, prev) => {
+        if (
+          prev.strip.status !== "running" ||
+          next.strip.status === "running"
+        ) {
+          return;
+        }
+        if (next.strip.status === "error") {
+          setError(next.strip.error ?? "Removing the tracks failed");
+          return;
+        }
+        // The job re-probes and re-derives the rewritten file itself, so the
+        // list only needs repainting — and the row leaves it, because what it
+        // proposed has happened and the original is now the cleanup tab's.
+        router.refresh();
+      }),
+    [subscribe, router],
+  );
+
+  // One rewrite at a time, which the server enforces anyway — the dialog says
+  // so rather than letting Continue find out.
+  const busy =
+    strip.status === "running" ||
+    convert.status === "running" ||
+    pass.status === "running"
+      ? "Something is already rewriting a file — wait for it"
+      : undefined;
+
   if (tasks.length === 0) {
     return (
       <EmptyState
@@ -796,6 +859,12 @@ export function AudioTasks({
 
   return (
     <section className="flex flex-col gap-8">
+      {error && (
+        <p className="font-mono text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+
       <Stats>
         <Stat
           label="To reclaim"
@@ -826,6 +895,13 @@ export function AudioTasks({
                 key={task.path}
                 task={task}
                 index={offset + index}
+                // The tracks are chosen here rather than on the film's page.
+                //
+                // No running state on these rows: a file being rewritten is not
+                // pending, so the jobs page takes it out of this list for as
+                // long as the removal lasts and draws it under Running instead.
+                // See `inFlight` in ./jobs-view.tsx.
+                onOpen={() => setAsking(task)}
                 chips={
                   // No count chip. What is going is named — the languages — and
                   // what it is worth is the figure on the right; "8 of 9 tracks"
@@ -855,6 +931,18 @@ export function AudioTasks({
           </ul>
         )}
       </Grouped>
+
+      {/* Keyed by the file, so choosing on one row and then another does not
+          hand the second film the first one's ticks. */}
+      {held && (
+        <AudioPicker
+          key={held.path}
+          task={held}
+          open={asking !== null}
+          onClose={() => setAsking(null)}
+          blocked={busy}
+        />
+      )}
     </section>
   );
 }

@@ -556,13 +556,65 @@ export function JobsView({
   // list with a flag on it is two lists pretending to be one. The sweep is in
   // no tab's list, which is how this page leaves it to the rail — see the note
   // at the top.
-  const running = jobRows(jobs, apply).filter((row) =>
-    RUNNING[tab].includes(row.key),
-  );
+  const jobbing = jobRows(jobs, apply);
+  const running = jobbing.filter((row) => RUNNING[tab].includes(row.key));
 
   // And the tab's own history. A page-wide log would have put an audio removal
   // between two conversions under a heading that says Dolby Vision.
   const logged = runs.filter((run) => LOGGED[tab].includes(run.kind));
+
+  /**
+   * The files something is being done to right now.
+   *
+   * The lists below were rendered by the server out of what the last scan
+   * derived, and nothing about a file changes at the moment a job starts on it
+   * — so a conversion or a removal left its film sitting in Pending, under a
+   * Running section drawing the same film with the same progress bar. Twice on
+   * one screen, and the second one saying it had not been started yet.
+   *
+   * Work that has started is not outstanding, so it leaves the list the instant
+   * it starts and comes back only if it fails. Taken from every running job
+   * rather than this tab's, because the answer is about the file: one rewrite
+   * runs at a time across the whole app, and a film being stripped is not
+   * pending anywhere.
+   *
+   * The gap between a Dolby Vision pass finishing and its conversion starting
+   * is deliberately not covered: nothing is running during that round trip, so
+   * the row stays where it is and says it is starting — see `DoviTasks`.
+   */
+  const inFlight = new Set(
+    jobbing.map((row) => row.path).filter((path) => path !== undefined),
+  );
+
+  const doviPending = dovi.filter((task) => !inFlight.has(task.path));
+  const audioPending = audio.filter((task) => !inFlight.has(task.path));
+
+  // How much outstanding work this tab has, which is the same question each
+  // list asks itself before deciding to draw its empty state instead. Asked
+  // here too so the heading above the list can go when the list does.
+  const pending =
+    tab === "dovi"
+      ? doviPending.length
+      : tab === "audio"
+        ? audioPending.length
+        : cleanup.length;
+
+  /**
+   * Everything this tab had to do is being done — the list is empty only
+   * because the last thing in it started.
+   *
+   * The section goes entirely rather than falling back to its empty state,
+   * which would be a flat lie for as long as the job took: "no tracks worth
+   * removing", printed under a row removing some. What would have been listed
+   * is on screen one section up.
+   */
+  const allBusy =
+    pending === 0 &&
+    (tab === "dovi"
+      ? dovi.length > 0
+      : tab === "audio"
+        ? audio.length > 0
+        : false);
 
   // A run writes its row as it ends, so the log this page was rendered with is
   // one row short the moment anything finishes. Only the edge counts — see
@@ -626,26 +678,45 @@ export function JobsView({
           ran. Always drawn, even when there is nothing in it: each list has its
           own empty state, and "no tracks worth removing" is an answer — a tab
           that showed only a history would leave you to infer it from the
-          absence of a list. */}
-      <section className="flex flex-col gap-1">
-        <SectionHeading label="Pending" />
-        {tab === "dovi" ? (
-          <DoviTasks
-            tasks={dovi}
-            keepingEl={keepingEl}
-            sort={listing.sort}
-            group={listing.group}
-          />
-        ) : tab === "audio" ? (
-          <AudioTasks tasks={audio} sort={listing.sort} group={listing.group} />
-        ) : (
-          <CleanupList
-            files={cleanup}
-            sort={listing.sort}
-            group={listing.group}
-          />
-        )}
-      </section>
+          absence of a list.
+
+          The heading goes when the list does, though. An empty state names its
+          own situation in bigger type than the heading above it, so the two
+          together said "Pending" over "Nothing left lying around" — a label for
+          a list that is not there, on top of the sentence explaining that it is
+          not. And with the heading gone the section can take the page's spare
+          height (`flex-1`), which is what the empty state's `my-auto` centres
+          itself in — otherwise it hangs under the running rows.
+
+          And the whole section goes when the only reason it is empty is that
+          its last row is the one running above — see `allBusy`. */}
+      {!allBusy && (
+        <section
+          className={`flex flex-col gap-1 ${pending === 0 ? "flex-1" : ""}`}
+        >
+          {pending > 0 && <SectionHeading label="Pending" />}
+          {tab === "dovi" ? (
+            <DoviTasks
+              tasks={doviPending}
+              keepingEl={keepingEl}
+              sort={listing.sort}
+              group={listing.group}
+            />
+          ) : tab === "audio" ? (
+            <AudioTasks
+              tasks={audioPending}
+              sort={listing.sort}
+              group={listing.group}
+            />
+          ) : (
+            <CleanupList
+              files={cleanup}
+              sort={listing.sort}
+              group={listing.group}
+            />
+          )}
+        </section>
+      )}
 
       {logged.length > 0 && (
         <section className="flex flex-col gap-1">
