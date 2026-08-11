@@ -321,7 +321,7 @@ $EDITOR .env                      # VPN credentials, and a key you generate
 docker compose up -d --build
 ```
 
-The app is on **<http://localhost:7979>**, Jackett's dashboard on **<http://localhost:9117>** —
+The app is on **<http://localhost:6969>**, Jackett's dashboard on **<http://localhost:9117>** —
 published by gluetun, because Jackett has no ports of its own to publish.
 
 Not 3000: that port belongs to `next dev`, and running the container and the dev server at the

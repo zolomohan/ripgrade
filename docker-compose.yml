@@ -88,10 +88,10 @@ services:
       context: .
     image: ripgrade:local
     ports:
-      # 7979 outside, because 3000 belongs to `next dev` and the two want to be
+      # 6969 outside, because 3000 belongs to `next dev` and the two want to be
       # runnable at once — the container is the library you keep, not the one
       # you are editing. Inside it is still 3000; nothing about the app cares.
-      - "${RIPGRADE_PORT:-7979}:3000"
+      - "${RIPGRADE_PORT:-6969}:3000"
     volumes:
       # Bound at the same path it has on the host, so every path already in the
       # database still resolves and a library scanned outside the container is
