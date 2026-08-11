@@ -44,7 +44,11 @@ import {
 
 const TABS = [
   { key: "upgrades", label: "Upgrades" },
-  { key: "downloads", label: "Downloads" },
+  // Labelled for what the list is *of* rather than what is happening to it:
+  // the rows are the wishlist's finds and the fetches they turn into, and the
+  // dashboard has always sent you here under the name "Wishlist finds". The
+  // key stays `downloads`, so existing links still open the right tab.
+  { key: "downloads", label: "Wishlist" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["key"];

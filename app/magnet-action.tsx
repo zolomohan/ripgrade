@@ -18,7 +18,7 @@ import type { FilmContext } from "@/lib/qbittorrent";
  * With qBittorrent connected it is a real handover: the click opens a small
  * dialog asking where the download should land — qBittorrent's own default,
  * or any library folder, remembered for next time — and picking one sends it.
- * The mark turns into a tick; progress lives under the queue's Downloads tab,
+ * The mark turns into a tick; progress lives under the queue's Wishlist tab,
  * in the same list the release was picked off. Without a client, the same
  * control is the plain magnet link it always was.
  *

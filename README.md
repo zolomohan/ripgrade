@@ -202,7 +202,7 @@ gets a Dock icon you can keep, and ⌘Q quits it.
 
 **Chrome, Edge, Arc** — an install button appears at the right of the address bar, or use
 **⋮ → Cast, save and share → Install page as app**. Right-clicking the resulting icon offers
-Library, Upgrades and Downloads directly.
+Library, Queue and Jobs directly.
 
 > [!NOTE]
 > Service workers — and so the offline page below — only run on a *secure* origin. `localhost`
@@ -281,7 +281,7 @@ below your score threshold, and the wishlist pass searches for the films you do 
 password are optional: qBittorrent's *bypass authentication for localhost* is common, and demanding
 credentials it will not ask for is a hurdle for nothing.
 
-Everything sent from the app is tagged with the category `ripgrade`, so the **Downloads** page only
+Everything sent from the app is tagged with the category `ripgrade`, so the queue's **Wishlist** tab only
 ever lists what it added. Your other torrents are none of its business.
 
 ### Environment overrides
