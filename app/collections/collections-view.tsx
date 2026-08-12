@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Fragment, ViewTransition } from "react";
+import {
+  Fragment,
+  useLayoutEffect,
+  useRef,
+  useState,
+  ViewTransition,
+} from "react";
 
 import type { CollectionFilm, CollectionSet } from "@/lib/collections";
 import type { CustomSet } from "@/lib/custom-collections";
@@ -51,6 +57,94 @@ export const pace = (index: number, total: number) => ({
   "nav-back": `morph-out-${(total - 1 - index) % PACE_STEPS}`,
 });
 
+/**
+ * The fan's geometry, in the units the classes below are written in: a poster
+ * is 2.35rem wide and tucks 1rem under the one before it, and the fan holds
+ * 1rem clear of the words on top of the row's own 1rem gap.
+ *
+ * Here rather than measured off the rendered tiles because there is a chicken
+ * and an egg otherwise — how many to draw is the question, and a drawn tile is
+ * the only thing there is to measure. Read against the root font size rather
+ * than assumed to be sixteen pixels, so a set browser text size moves the count
+ * along with everything else it moves.
+ */
+const POSTER_REM = 2.35;
+const TUCK_REM = 1;
+const CLEAR_REM = 2;
+
+/**
+ * How many posters fit in the row beside its name.
+ *
+ * The fan is what is left of a grid of every film in every collection, and it
+ * was still the size of the set: forty films made forty posters, which on any
+ * screen narrower than the fan itself squeezed the name it belongs to down to
+ * an ellipsis. The artwork is there to make the row recognisable, and a row
+ * whose name has been squeezed out is the opposite of recognisable.
+ *
+ * So the count is the answer to a question about this screen rather than about
+ * the set: the posters run back from the right and stop where the name ends.
+ * Which is not a number that can be written down — it depends on the width of
+ * the window, the length of the name, and the face it is set in — so it is
+ * measured, and measured again whenever any of the three changes.
+ *
+ * The name's *natural* width is what is reserved, not the width it has: the
+ * <p> is `truncate`, so left to itself it would take the whole row and report
+ * that as its due. `scrollWidth` is what it would like to be, which is the
+ * thing the posters have to stay out of the way of.
+ */
+function useFanRoom(films: number, name: string, meta: string) {
+  const row = useRef<HTMLAnchorElement>(null);
+  const words = useRef<HTMLDivElement>(null);
+  // Null until measured, drawn as none: a fan that arrives one frame too wide
+  // and snaps back is a row that flinches as the page settles.
+  const [shown, setShown] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const line = row.current;
+      const block = words.current;
+      if (!line || !block) return;
+
+      const rem =
+        parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const pad = getComputedStyle(line);
+      const inside =
+        line.clientWidth -
+        parseFloat(pad.paddingLeft) -
+        parseFloat(pad.paddingRight);
+
+      const wanted = Math.max(
+        ...[...block.querySelectorAll("p")].map((p) => p.scrollWidth),
+      );
+      const room = inside - wanted - CLEAR_REM * rem;
+
+      // The first poster costs its whole width and every one after it only the
+      // part that shows, which is what makes a fan cheaper than a row.
+      const fits =
+        Math.floor(
+          (room - POSTER_REM * rem) / ((POSTER_REM - TUCK_REM) * rem),
+        ) + 1;
+
+      // At least one, where there is one to draw. A name long enough to leave
+      // no room is already truncating against the full width of the row, and a
+      // single poster costs it two characters to keep the row a picture of
+      // something rather than a line of text.
+      setShown(Math.min(films, Math.max(1, fits)));
+    };
+
+    measure();
+
+    // The name is set in the display face, so its natural width changes under
+    // the measurement when that face arrives — and again on every resize.
+    document.fonts?.ready.then(measure);
+    const observer = new ResizeObserver(measure);
+    if (row.current) observer.observe(row.current);
+    return () => observer.disconnect();
+  }, [films, name, meta]);
+
+  return { row, words, shown: shown ?? 0 };
+}
+
 function Fan({ films }: { films: CollectionFilm[] }) {
   /*
    * How many of these are paired with a tile on the set's own page — the held
@@ -81,12 +175,13 @@ function Fan({ films }: { films: CollectionFilm[] }) {
                 version={film.owned?.artAt}
                 size="w92"
                 loading="lazy"
-                className={`h-full w-full object-cover ${
-                  // Held back the way the same film is held back on the set's
-                  // page, so a set that is half wish reads as half wish from
-                  // the list.
-                  film.owned ? "" : "opacity-40"
-                }`}
+                // At full strength whether or not the film is on a drive. The
+                // fan is what the set *is* — the artwork you recognise it by —
+                // and a poster held back to two-fifths reads as artwork that
+                // failed to load rather than as a film you have not got yet.
+                // Which of them are missing is a question the set's own page
+                // answers, in a layout with the room to answer it.
+                className="h-full w-full object-cover"
               />
             </div>
           );
@@ -138,14 +233,17 @@ function Row({
   transitionKey: number | string;
   index: number;
 }) {
+  const { row, words, shown } = useFanRoom(films.length, name, meta);
+
   return (
     <Link
+      ref={row}
       href={href}
       transitionTypes={["nav-forward"]}
       style={stagger(index)}
       className="glow row-enter -mx-3 flex items-center gap-4 rounded-card px-3 py-3 transition-colors hover:bg-surface"
     >
-      <div className="min-w-0 flex-1">
+      <div ref={words} className="min-w-0 flex-1">
         <ViewTransition
           name={collectionTitleName(transitionKey)}
           share="title"
@@ -172,7 +270,10 @@ function Row({
         </ViewTransition>
       </div>
 
-      <Fan films={films} />
+      {/* The first however-many, which are the held ones and then the rest —
+          the same order the set's own page lays them out in, so what travels
+          is the front of the fan into the front of the grid. */}
+      <Fan films={films.slice(0, shown)} />
     </Link>
   );
 }
