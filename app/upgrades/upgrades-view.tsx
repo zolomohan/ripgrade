@@ -2,11 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 
-import { retryUpgradeSweep } from "@/app/actions";
 import { Art } from "@/app/art";
-import { BUTTON } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
 import { useJobs } from "@/app/jobs-provider";
 import { MagnetAction } from "@/app/magnet-action";
@@ -14,7 +12,6 @@ import { useLingering } from "@/app/modal";
 import { ReleaseSearchModal } from "@/app/release-search";
 import { rememberListing } from "@/app/return-to";
 import { queueTheme, ScoreDial } from "@/app/score-circle";
-import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
 import { compareId, movieId, posterName } from "@/lib/routes";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
@@ -40,9 +37,9 @@ import { byTitle, pickSort, type SortOption } from "@/app/sorts";
  * Neither tab touches an indexer. The searching already happened — a sweep runs
  * at the end of every scan and a scan runs whenever the app is opened, so both
  * lists fill themselves and empty themselves: fetch a film, rescan, and its row
- * falls out because the question it stood for is answered. The one control
- * either tab carries is Try again on a failed sweep, which is the single state
- * neither can get out of by waiting.
+ * falls out because the question it stood for is answered. Neither tab carries a
+ * control of the sweep's own — Rescan starts another pass, and how the pass is
+ * getting on is the rail's to say.
  */
 
 const gigabytes = (bytes?: number) =>
@@ -594,44 +591,17 @@ function WishRow({
   );
 }
 
-/**
- * The one thing a sweep can leave behind that the page cannot fix by waiting.
+/*
+ * There was a failed-sweep notice here, on both tabs: the last error the sweep
+ * stopped on, with a Try again beside it.
  *
- * On both tabs, because both are filled by the one pass: the films you own are
- * checked and then the films you want, and a Jackett that was not running took
- * out both halves. The usual fix takes a minute — after which the line is
- * describing something that has stopped being true, with nothing to say so
- * until the next scan. Try again is how you find out.
- *
- * Everything else a sweep has to say is the rail's: the phase, the count, the
- * film in hand, and the way to stop it.
+ * It was the wrong place to say it. A sweep that gave up because Jackett was
+ * not running is a fact about a service, and it was being reported at the head
+ * of a list of films — where it outlived its own cause, since nothing clears a
+ * frozen job but the next pass, and where it was the first thing on a page you
+ * came to for the queue. Rescan is still the way to start another pass, and it
+ * is already on this page; the rail is where a job says how it is getting on.
  */
-function SweepError() {
-  const { jobs } = useJobs();
-  const sweep = jobs.sweep;
-  // Only covers the round trip that starts the sweep; the sweep's own progress
-  // is the rail's business, and the error clears itself when the job does.
-  const [retrying, startRetry] = useTransition();
-
-  if (sweep.status !== "error" || !sweep.error) return null;
-
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      <p className="font-mono text-sm text-red-600 dark:text-red-400">
-        {sweep.error}
-      </p>
-      <button
-        type="button"
-        disabled={retrying}
-        onClick={() => startRetry(async () => void retryUpgradeSweep())}
-        className={BUTTON.small}
-      >
-        {retrying && <Spinner className="h-3 w-3" />}
-        {retrying ? "Searching…" : "Try again"}
-      </button>
-    </div>
-  );
-}
 
 /** The sweep's own mark: a file coming up to something better. */
 const SWEEP_ICON = (
@@ -688,8 +658,6 @@ export function UpgradesView({
 
   return (
     <div className="flex flex-1 flex-col gap-6">
-      <SweepError />
-
       {rows.length > 0 ? (
         <Grouped items={rows} group={grouping} note={gainNote}>
           {(bucket, offset) => (
@@ -799,8 +767,6 @@ export function DownloadsView({
 
   return (
     <div className="flex flex-1 flex-col gap-6">
-      <SweepError />
-
       {rows.length > 0 ? (
         <Grouped items={rows} group={grouping} note={filmsNote}>
           {(bucket, offset) => (

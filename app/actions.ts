@@ -2111,22 +2111,13 @@ export async function stopUpgradeSweep(): Promise<SweepJob> {
   return cancelSweep();
 }
 
-/**
- * The way out of a sweep that gave up.
- *
- * ABORT_AFTER_FAILURES exists to stop a dead Jackett costing an hour of
- * attempts, and it works — but what it leaves behind is a job frozen at
- * `error`, and nothing on the page clears it. Start Jackett, search a film by
- * hand, watch it work, go back to the queue: the failure is still there,
- * describing a proxy that has been up for an hour. It outlives its own cause,
- * because the only thing that would overwrite it is the next scan.
- *
- * A resume rather than a redo: the films the failed pass got through are still
- * checked, and the point is to reach the ones it never asked about.
+/*
+ * There was a `retryUpgradeSweep` here — a resume for a sweep that gave up,
+ * called by a notice at the head of the queue page. The notice is gone, and
+ * with it the only thing that called this: `rescanUpgradeQueue` below is the
+ * page's way to start another pass, and it is the more useful of the two
+ * anyway, since it does not skip what the failed pass already got through.
  */
-export async function retryUpgradeSweep(): Promise<SweepJob> {
-  return sweep(false);
-}
 
 /**
  * The other way in: check it all again, now.
