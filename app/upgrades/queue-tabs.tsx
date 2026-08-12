@@ -5,6 +5,7 @@ import { SectionHeading } from "@/app/section-heading";
 import type { DownloadEntry } from "@/lib/qbittorrent";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import type { WishlistFind } from "@/lib/wishlist-search";
+import { RescanButton } from "./rescan-button";
 import { Transfers } from "./transfers";
 import {
   DOWNLOAD_SORTS,
@@ -102,7 +103,16 @@ export function QueueTabs({
 
   return (
     <>
-      <ListingBar listing={listing} />
+      {/* On both tabs, and the same button on both: a forced sweep asks the
+          indexers again about every film you own *and* every film you want —
+          see sweepWishlist in lib/upgrade-sweep.ts — so it is one control over
+          the whole queue rather than one per list. Moving it with the tab
+          would make it read as the tab's, and the second press would look like
+          a different pass. */}
+      <ListingBar
+        listing={listing}
+        action={<RescanButton jackettReady={jackettReady} />}
+      />
 
       {listing.tab === "upgrades" ? (
         /* `flex-1` on the section rather than only on the list inside it: the

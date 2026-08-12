@@ -1765,10 +1765,10 @@ export async function retryUpgradeSweep(): Promise<SweepJob> {
  * unasked and should stay cheap. This one was asked for, and the asking is what
  * pays for the searches.
  *
- * Nothing calls it at the moment: the Scan pill it was written for is off the
- * queue page, which now only reads what the sweep wrote. Kept because the need
- * it answers has not gone anywhere — a row checked 20 h ago and a release that
- * landed since — and whatever offers that next will want exactly this.
+ * Reached from the Scan pill at the end of the queue page's listing bar — see
+ * app/upgrades/rescan-button.tsx — which is the page's only way to ask for
+ * anything. Both halves of the queue are refreshed by one press: `startSweep`
+ * passes the force through to the wishlist pass as well.
  */
 export async function rescanUpgradeQueue(): Promise<SweepJob> {
   return sweep(true);

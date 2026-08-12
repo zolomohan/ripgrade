@@ -112,8 +112,17 @@ export function useListing<T extends string>(
 /** The row itself: the tabs on the left, the two questions on the right. */
 export function ListingBar<T extends string>({
   listing,
+  action,
 }: {
   listing: Listing<T>;
+  /**
+   * One control of the page's own, at the end of the row after the two menus.
+   *
+   * Not every tabbed list has something to do to itself — the jobs page reads
+   * work that is already queued — so it is a slot rather than a prop the bar
+   * knows the meaning of. The queue's is the pass that fills it.
+   */
+  action?: React.ReactNode;
 }) {
   const { tab, tabs, sorts, groups, current, grouping, update } = listing;
 
@@ -148,11 +157,12 @@ export function ListingBar<T extends string>({
         />
       </div>
 
-      {/* The two questions about the list, and nothing else. A filled Scan pill
-          used to end this row on the downloads tab, asking the indexers again
-          with the once-a-day rule off — the loudest control on a page whose
-          whole job is to be read, for a pass that already runs itself after
-          every scan. */}
+      {/* The two questions about the list, and then whatever the page can do to
+          it. The queue's Scan pill was taken off this row once for being the
+          loudest control on a page whose whole job is to be read — but the pass
+          it runs is the only one that ignores the once-a-day rule, and without
+          it a row that says "checked 20 h ago" is a fact with nothing to do
+          about it. It is back, as a slot the bar does not have to understand. */}
       <div className="flex flex-wrap items-center gap-3">
         {/* The library shelf's own two controls, in the library shelf's own
             bar: the same pair of questions asked of a list — in what order, and
@@ -211,6 +221,8 @@ export function ListingBar<T extends string>({
             )}
           </Popover>
         </Bar>
+
+        {action}
       </div>
     </div>
   );
