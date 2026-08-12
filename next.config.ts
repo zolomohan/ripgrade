@@ -7,6 +7,15 @@ const nextConfig: NextConfig = {
     // <ViewTransition> does the pairing; this flag is what makes navigation
     // trigger it. See app/art.tsx and the morph rules in app/globals.css.
     viewTransition: true,
+    serverActions: {
+      // Artwork you upload travels as a server action, and one of those carries
+      // 1MB by default — under a single 4K backdrop, so the feature would fail
+      // on almost every file worth uploading. This is `MAX_UPLOAD_BYTES` in
+      // lib/artwork.ts plus room for the multipart framing around it, so the
+      // file that gets refused is refused by the app, with a sentence saying
+      // how big it was, rather than by the body parser with nothing.
+      bodySizeLimit: "34mb",
+    },
   },
   async headers() {
     return [

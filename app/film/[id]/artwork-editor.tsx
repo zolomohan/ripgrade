@@ -7,6 +7,8 @@ import {
   chooseArtwork,
   chooseShowArtwork,
   listArtwork,
+  uploadArtwork,
+  uploadShowArtwork,
   type ArtworkChoice,
 } from "@/app/actions";
 import { BUTTON, FIELD } from "@/app/controls";
@@ -53,6 +55,13 @@ const KINDS: Record<
 type Sort = "default" | "largest";
 
 /**
+ * Stands where a TMDb file path stands in `saving` and `saved`, for the one
+ * image in the dialog that has no TMDb path: the one you supplied. Every real
+ * path begins with a slash, so it cannot be mistaken for a tile.
+ */
+const UPLOAD = "upload";
+
+/**
  * Either a film — identified by its file — or a show, identified by its key.
  * The two differ in where the image lands and which TMDb endpoint it comes
  * from; everything between the button and the download is the same.
@@ -94,8 +103,16 @@ export function ArtworkEditor({
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * How deep the pointer is into the drop zone, rather than whether it is in
+   * it: dragging over the grid crosses into and out of every tile it passes,
+   * and a boolean set by the last event to fire spends the whole drag
+   * flickering. Enter adds, leave subtracts, and zero means gone.
+   */
+  const [dragDepth, setDragDepth] = useState(0);
   const [pending, startTransition] = useTransition();
   const trigger = useRef<HTMLDivElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
   // Escape closes the modal, as expected of a dialog.
@@ -106,6 +123,29 @@ export function ArtworkEditor({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  /**
+   * A file dropped anywhere but the zone below is swallowed rather than
+   * obeyed. The browser's default for a dropped file is to open it, which
+   * would replace the app with a picture of a poster — a harsh answer to
+   * missing the target by an inch, and one only worth guarding against
+   * because this dialog is the thing that invited the drag.
+   *
+   * The zone's own handler runs first on the way up, so it is unaffected.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const swallow = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+      // A drag abandoned by closing the dialog leaves its count behind, and
+      // the next opening would come up already showing the drop overlay.
+      setDragDepth(0);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -148,22 +188,67 @@ export function ArtworkEditor({
     });
   }
 
-  function save(filePath: string) {
+  /**
+   * Runs one write and lets the control that started it say so. `key` is the
+   * tile's file path, or `UPLOAD` for the button — either way the spinner and
+   * the tick land where you clicked, which is where you are already looking.
+   */
+  function write(
+    key: string,
+    work: () => Promise<{ ok: true } | { ok: false; error: string }>,
+  ) {
     setError(null);
     setSaved(null);
-    setSaving(filePath);
+    setSaving(key);
     startTransition(async () => {
-      const result = showKey
-        ? await chooseShowArtwork(showKey, tab, filePath)
-        : await chooseArtwork(moviePath!, tab, filePath);
+      // A write that fails inside the action returns `{ ok: false }`. One that
+      // fails before it ever runs — the request refused for its size, the
+      // server restarting under you — rejects instead, and a rejection nobody
+      // catches is a dialog that sits there having said nothing while the
+      // failure goes to the console. To the person waiting they are one thing:
+      // it did not work, and here is why.
+      const result = await work().catch((err: unknown) => ({
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      }));
       setSaving(null);
       if (result.ok) {
-        setSaved(filePath);
+        setSaved(key);
         router.refresh();
       } else {
         setError(result.error);
       }
     });
+  }
+
+  function save(filePath: string) {
+    write(filePath, () =>
+      showKey
+        ? chooseShowArtwork(showKey, tab, filePath)
+        : chooseArtwork(moviePath!, tab, filePath),
+    );
+  }
+
+  /**
+   * An image of your own, saved under the name TMDb's would have taken. It is
+   * the same write with a different source, so it shows the same way and the
+   * page behind it refreshes the same way.
+   */
+  function upload(chosen: File) {
+    const form = new FormData();
+    form.set("file", chosen);
+    write(UPLOAD, () =>
+      showKey
+        ? uploadShowArtwork(showKey, tab, form)
+        : uploadArtwork(moviePath!, tab, form),
+    );
+  }
+
+  function drop(event: React.DragEvent) {
+    event.preventDefault();
+    setDragDepth(0);
+    const dropped = event.dataTransfer.files[0];
+    if (dropped) upload(dropped);
   }
 
   const listed = images
@@ -277,7 +362,67 @@ export function ArtworkEditor({
               saves as {KINDS[tab].file}
             </span>
 
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-3">
+              {/* Sits in the header rather than among the tiles: TMDb having
+                  nothing for this film is the case that most wants an image of
+                  your own, and a control in the grid would be missing from
+                  exactly that grid. */}
+              <input
+                ref={picker}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const chosen = e.target.files?.[0];
+                  // Cleared so that picking the same file again counts as a
+                  // change again — which is what you do after one fails.
+                  e.target.value = "";
+                  if (chosen) upload(chosen);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => picker.current?.click()}
+                // Only while something is being written — not on `pending`,
+                // which the tiles use and which also covers the wait for
+                // TMDb's list. Owing nothing to TMDb is the point of this
+                // button, and it is worth least when that request is slowest.
+                disabled={saving !== null}
+                className={BUTTON.small}
+              >
+                {saving === UPLOAD ? (
+                  <Spinner className="h-3.5 w-3.5" />
+                ) : saved === UPLOAD ? (
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                    className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
+                  >
+                    <path d="m4 12.5 5 5 11-11" />
+                  </svg>
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                    className="h-3.5 w-3.5"
+                  >
+                    <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" />
+                    <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                  </svg>
+                )}
+                Upload
+              </button>
+
               <CloseButton onClick={() => setOpen(false)} />
             </div>
           </div>
@@ -286,109 +431,134 @@ export function ArtworkEditor({
               rule the panel edge to edge — a thing no other line here does. */}
           <div aria-hidden className="rule-head mx-5 shrink-0" />
 
-          <div className="flex-1 overflow-y-auto p-5">
-            {!images && !error && (
-              <div className={`grid gap-3 ${KINDS[tab].grid}`}>
-                {Array.from({ length: KINDS[tab].count }, (_, i) => (
-                  <div
-                    key={i}
-                    className={`skeleton w-full ${KINDS[tab].shape}`}
-                  />
-                ))}
-              </div>
-            )}
-
-            {images && choices.length === 0 && (
-              <p className="text-sm opacity-50">
-                TMDb has no{" "}
-                {tab === "poster"
-                  ? "posters"
-                  : tab === "fanart"
-                    ? "backdrops"
-                    : "logos"}{" "}
-                for this film.
-              </p>
-            )}
-
-            {choices.length > 0 && (
-              <div className={`grid gap-3 ${KINDS[tab].grid}`}>
-                {choices.map((choice) => (
-                  <button
-                    key={choice.filePath}
-                    type="button"
-                    onClick={() => save(choice.filePath)}
-                    disabled={pending}
-                    // The same shape the placeholder held. Without it a tile
-                    // has no height until its image arrives, so the grid
-                    // collapsed to a row of lines between the skeletons
-                    // disappearing and the pictures landing.
-                    className={`group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40 ${KINDS[tab].shape} ${
-                      // Logos are cut out against transparency and are
-                      // usually white, so they need something behind them to
-                      // be visible at all — and something dark, since that is
-                      // what they are drawn to sit on.
-                      tab === "logo"
-                        ? "grid place-items-center bg-black p-4"
-                        : ""
-                    }`}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={imageUrl(
-                        choice.filePath,
-                        tab === "poster" ? "w185" : "w300",
-                      )}
-                      alt=""
-                      loading="lazy"
-                      className={
-                        tab === "logo"
-                          ? "max-h-full w-auto object-contain"
-                          : "h-full w-full object-cover"
-                      }
+          {/* Dropping a file here is the same act as picking one above, so it
+              writes the same way. The zone is the grid rather than the whole
+              dialog: the header holds a select and a close button, and a drag
+              that swallows those is a drag you cannot get out of. */}
+          <div
+            className="relative flex-1 overflow-hidden"
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setDragDepth((depth) => depth + 1);
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDragLeave={() => setDragDepth((depth) => Math.max(0, depth - 1))}
+            onDrop={drop}
+          >
+            <div className="h-full overflow-y-auto p-5">
+              {!images && !error && (
+                <div className={`grid gap-3 ${KINDS[tab].grid}`}>
+                  {Array.from({ length: KINDS[tab].count }, (_, i) => (
+                    <div
+                      key={i}
+                      className={`skeleton w-full ${KINDS[tab].shape}`}
                     />
-                    <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
-                      {choice.width}×{choice.height}
-                      {!choice.language && " · textless"}
-                    </span>
+                  ))}
+                </div>
+              )}
 
-                    {/* The tile you clicked says what it is doing, so the
-                          answer to "did that work?" is where you were already
-                          looking. */}
-                    {saving === choice.filePath && (
-                      <span className="absolute inset-0 grid place-items-center bg-black/60 text-white">
-                        <Spinner className="h-7 w-7" />
+              {images && choices.length === 0 && (
+                <p className="text-sm opacity-50">
+                  TMDb has no{" "}
+                  {tab === "poster"
+                    ? "posters"
+                    : tab === "fanart"
+                      ? "backdrops"
+                      : "logos"}{" "}
+                  for this film.
+                </p>
+              )}
+
+              {choices.length > 0 && (
+                <div className={`grid gap-3 ${KINDS[tab].grid}`}>
+                  {choices.map((choice) => (
+                    <button
+                      key={choice.filePath}
+                      type="button"
+                      onClick={() => save(choice.filePath)}
+                      disabled={pending}
+                      // The same shape the placeholder held. Without it a tile
+                      // has no height until its image arrives, so the grid
+                      // collapsed to a row of lines between the skeletons
+                      // disappearing and the pictures landing.
+                      className={`group relative overflow-hidden rounded-control ring-1 ring-line transition-transform hover:scale-[1.02] disabled:opacity-40 ${KINDS[tab].shape} ${
+                        // Logos are cut out against transparency and are
+                        // usually white, so they need something behind them to
+                        // be visible at all — and something dark, since that is
+                        // what they are drawn to sit on.
+                        tab === "logo"
+                          ? "grid place-items-center bg-black p-4"
+                          : ""
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={imageUrl(
+                          choice.filePath,
+                          tab === "poster" ? "w185" : "w300",
+                        )}
+                        alt=""
+                        loading="lazy"
+                        className={
+                          tab === "logo"
+                            ? "max-h-full w-auto object-contain"
+                            : "h-full w-full object-cover"
+                        }
+                      />
+                      <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
+                        {choice.width}×{choice.height}
+                        {!choice.language && " · textless"}
                       </span>
-                    )}
-                    {saved === choice.filePath && (
-                      <span className="absolute inset-0 grid place-items-center bg-emerald-600/75 text-white">
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-7 w-7"
-                        >
-                          <path d="m4 12.5 5 5 11-11" />
-                        </svg>
-                      </span>
-                    )}
-                  </button>
-                ))}
+
+                      {/* The tile you clicked says what it is doing, so the
+                            answer to "did that work?" is where you were already
+                            looking. */}
+                      {saving === choice.filePath && (
+                        <span className="absolute inset-0 grid place-items-center bg-black/60 text-white">
+                          <Spinner className="h-7 w-7" />
+                        </span>
+                      )}
+                      {saved === choice.filePath && (
+                        <span className="absolute inset-0 grid place-items-center bg-emerald-600/75 text-white">
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-7 w-7"
+                          >
+                            <path d="m4 12.5 5 5 11-11" />
+                          </svg>
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {error && (
+                <p className="mt-4 font-mono text-sm text-red-600 dark:text-red-400">
+                  {error}
+                </p>
+              )}
+            </div>
+
+            {dragDepth > 0 && (
+              // Not a drop target itself — it is drawn over the one, and a
+              // child that accepts the pointer would fire the leave that
+              // removes it.
+              <div className="pointer-events-none absolute inset-3 grid place-items-center rounded-card border-2 border-dashed border-line-strong bg-background/85 text-sm">
+                Drop to save as {KINDS[tab].file}
               </div>
-            )}
-
-            {error && (
-              <p className="mt-4 font-mono text-sm text-red-600 dark:text-red-400">
-                {error}
-              </p>
             )}
           </div>
 
           <p className="shrink-0 border-t border-line px-5 py-3 text-xs opacity-45">
-            The full-resolution image is downloaded into the film&rsquo;s own
-            folder. Any existing file of the same name is replaced.
+            The full-resolution image is written into the film&rsquo;s own
+            folder. Any existing file of the same name is replaced. Drop a file
+            here, or use Upload, to save one of your own instead.
           </p>
         </>
       </Modal>

@@ -3,6 +3,8 @@ import "server-only";
 import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import sharp from "sharp";
+
 import { db } from "./db";
 
 export type Artwork = { poster?: string; fanart?: string; logo?: string };
@@ -132,11 +134,15 @@ export async function reindexDir(dir: string): Promise<Artwork> {
  * whether or not the internet is. This is only so the app has something to show
  * when the drive is unplugged, which is the one case where a local file is
  * worse than a URL.
+ *
+ * `null` clears it, which is what an upload records: an image of your own has
+ * no TMDb path, and leaving the last one there would mean that unplugging the
+ * drive brings back the poster you replaced.
  */
 export function recordArtworkSource(
   dir: string,
   kind: keyof typeof SAVED_NAMES,
-  tmdbPath: string,
+  tmdbPath: string | null,
 ): void {
   const column = `${kind}_src`;
   db.prepare(
@@ -162,5 +168,82 @@ export async function saveArtwork(
 
   const target = path.join(dir, SAVED_NAMES[kind]);
   await writeFile(target, Buffer.from(await response.arrayBuffer()));
+  return target;
+}
+
+/**
+ * The format each saved name promises. `SAVED_NAMES` says it in its
+ * extensions, but an extension is a string to compare against and this is the
+ * thing to compare it to.
+ */
+const ENCODED_AS: Record<keyof typeof SAVED_NAMES, "jpeg" | "png"> = {
+  poster: "jpeg",
+  fanart: "jpeg",
+  logo: "png",
+};
+
+/**
+ * The largest upload accepted, and the reason `serverActions.bodySizeLimit` in
+ * next.config.ts is set above it. A 4K backdrop as PNG runs to twenty-odd
+ * megabytes; past this it is not artwork, it is a mistake.
+ */
+export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Writes an image of your own into the folder, under the same name TMDb's
+ * would have taken — so everything downstream (the folder index, the art
+ * route, Kodi and the *arr tools reading the same drive) finds it without
+ * being told an upload is a different kind of thing.
+ *
+ * The format is sniffed rather than taken from the browser's word for it: the
+ * filename and the Content-Type are both the client's to invent, and what has
+ * to be true here is that the bytes are an image — which is the same question
+ * as "can this be re-encoded", asked once.
+ *
+ * A file already in the format its name promises is written through untouched.
+ * Re-encoding a JPEG as a JPEG only spends detail, and the point of uploading
+ * is that this file, exactly, is the one you want.
+ */
+export async function saveUploadedArtwork(
+  dir: string,
+  kind: keyof typeof SAVED_NAMES,
+  bytes: Buffer,
+): Promise<string> {
+  let format: string | undefined;
+  try {
+    format = (await sharp(bytes).metadata()).format;
+  } catch {
+    // Fall through to the same error an unrecognised format gets: to a person
+    // handing over a file, "sharp could not parse this" and "this is not an
+    // image" are one answer.
+  }
+  if (!format) throw new Error("That file is not an image.");
+
+  const want = ENCODED_AS[kind];
+  const target = path.join(dir, SAVED_NAMES[kind]);
+
+  if (format === want) {
+    await writeFile(target, bytes);
+    return target;
+  }
+
+  // `rotate()` bakes in any EXIF orientation, for the reason lib/thumbs.ts
+  // gives: the tag survives a re-encode and the browser would then apply a
+  // turn that is already in the pixels.
+  const image = sharp(bytes).rotate();
+
+  await writeFile(
+    target,
+    want === "jpeg"
+      ? // JPEG has no transparency to carry a cut-out PNG's into, and sharp's
+        // default fill is white — which is the one colour a poster is likely
+        // to disappear against on this app's dark surfaces.
+        await image
+          .flatten({ background: "#000000" })
+          .jpeg({ quality: 92 })
+          .toBuffer()
+      : await image.png().toBuffer(),
+  );
+
   return target;
 }

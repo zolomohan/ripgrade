@@ -6,7 +6,13 @@ import path from "node:path";
 
 import { listDirectory, type DirListing } from "@/lib/browse";
 import { getSetting, setSetting } from "@/lib/db";
-import { recordArtworkSource, reindexDir, saveArtwork } from "@/lib/artwork";
+import {
+  MAX_UPLOAD_BYTES,
+  recordArtworkSource,
+  reindexDir,
+  saveArtwork,
+  saveUploadedArtwork,
+} from "@/lib/artwork";
 import { db } from "@/lib/db";
 import {
   candidateFromUrl,
@@ -1641,6 +1647,76 @@ export async function chooseArtwork(
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Writes an uploaded image into a folder, and forgets where the last one came
+ * from.
+ *
+ * The tail of `chooseArtwork` with a different first step: once the file is on
+ * the drive, an image of your own and an image of TMDb's are the same thing to
+ * everything downstream, and the only difference is that this one has no
+ * source to record.
+ */
+async function acceptUpload(
+  dir: string,
+  kind: "poster" | "fanart" | "logo",
+  file: unknown,
+): Promise<{ ok: true; saved: string } | { ok: false; error: string }> {
+  // What arrives is whatever the caller put in the form. `Blob` covers the
+  // `File` a picker yields and the one a drop yields, and is the only part of
+  // it this needs — the bytes. The name it came with is not used: what the
+  // file is called says nothing about what is inside it.
+  if (!(file instanceof Blob) || file.size === 0) {
+    return { ok: false, error: "No image was uploaded." };
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return {
+      ok: false,
+      error: `That image is ${Math.round(file.size / 1024 / 1024)}MB; the limit is ${MAX_UPLOAD_BYTES / 1024 / 1024}MB.`,
+    };
+  }
+
+  try {
+    const saved = await saveUploadedArtwork(
+      dir,
+      kind,
+      Buffer.from(await file.arrayBuffer()),
+    );
+    await reindexDir(dir);
+    recordArtworkSource(dir, kind, null);
+    deriveAll();
+    refresh();
+    return { ok: true, saved };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** Writes an image you supplied into the film's own folder. */
+export async function uploadArtwork(
+  moviePath: string,
+  kind: "poster" | "fanart" | "logo",
+  form: FormData,
+): Promise<{ ok: true; saved: string } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  return acceptUpload(path.dirname(moviePath), kind, form.get("file"));
+}
+
+/** Writes an image you supplied into the show's own folder. */
+export async function uploadShowArtwork(
+  showKey: string,
+  kind: "poster" | "fanart" | "logo",
+  form: FormData,
+): Promise<{ ok: true; saved: string } | { ok: false; error: string }> {
+  const show = getShow(showKey);
+  if (!show) return { ok: false, error: `Unknown show: ${showKey}` };
+  return acceptUpload(show.dir, kind, form.get("file"));
 }
 
 // ---------------------------------------------------------------------------
