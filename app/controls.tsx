@@ -280,63 +280,6 @@ export function Switch({
   );
 }
 
-/** A segmented pair inside the bar, for a choice with two icons and no name. */
-export function BarSegments({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (key: string) => void;
-  options: { key: string; label: string; path: string }[];
-}) {
-  const [track, register, thumbStyle] = useSlider(value);
-
-  // Only the outer end follows the bar round. A thumb curved on both sides
-  // would be a lozenge floating in a slot it does not fill; curved on the side
-  // that meets the bar's own cap, it reads as part of the bar.
-  const atEnd = value === options[options.length - 1]?.key;
-
-  return (
-    <div ref={track} className="relative flex shrink-0 items-stretch">
-      <span
-        aria-hidden
-        className={`absolute inset-y-0 left-0 bg-surface-strong ${
-          atEnd ? "rounded-r-full" : ""
-        } ${SLIDE}`}
-        style={thumbStyle}
-      />
-
-      {options.map((option) => (
-        <button
-          key={option.key}
-          ref={register(option.key)}
-          type="button"
-          onClick={() => onChange(option.key)}
-          aria-label={`${option.label} view`}
-          aria-pressed={value === option.key}
-          title={`${option.label} view`}
-          className={`glow relative grid w-11 place-items-center transition-opacity last:rounded-r-full ${
-            value === option.key ? "" : "opacity-40 hover:opacity-100"
-          }`}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4"
-          >
-            <path d={option.path} />
-          </svg>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export const ICONS = {
   filter: "M3 5h18l-7 8.2V19l-4 2v-7.8z",
   sort: "M3 6h13M3 12h9M3 18h5",

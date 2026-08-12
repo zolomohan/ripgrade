@@ -2,20 +2,13 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Fragment, ViewTransition } from "react";
+import { ViewTransition } from "react";
 
 import { openIssues, titleKey } from "@/lib/derive";
 import type { LibraryItem } from "@/lib/library";
 import { Art } from "./art";
-import {
-  Bar,
-  BarSegments,
-  HelpTip,
-  ICONS,
-  MenuItem,
-  Popover,
-} from "./controls";
-import { ScoreCircle, STATUS_THEME } from "./score-circle";
+import { Bar, HelpTip, ICONS, MenuItem, Popover } from "./controls";
+import { STATUS_THEME } from "./score-circle";
 import { useEntrance } from "./return-to";
 import { stagger } from "./stagger";
 import { movieId, posterName } from "@/lib/routes";
@@ -312,138 +305,10 @@ const SORTS: {
   },
 ];
 
-/**
- * MediaInfo's `format` is too blunt for a chip — DTS-HD Master Audio reports as
- * plain "DTS", which reads as the lossy codec. Shorten the commercial name.
- */
-function audioLabel(track: { label: string; format: string }) {
-  const short: [RegExp, string][] = [
-    [/DTS-HD Master/i, "DTS-HD MA"],
-    [/DTS-HD High/i, "DTS-HD HRA"],
-    [/TrueHD/i, "TrueHD"],
-    [/Digital Plus/i, "DD+"],
-    [/Dolby Digital/i, "DD"],
-    [/\bPCM\b/i, "PCM"],
-    [/FLAC/i, "FLAC"],
-  ];
-  return (
-    short.find(([pattern]) => pattern.test(track.label))?.[1] ?? track.format
-  );
-}
-
 function size(bytes: number) {
   return bytes >= 1e12
     ? `${(bytes / 1e12).toFixed(2)} TB`
     : `${(bytes / 1e9).toFixed(1)} GB`;
-}
-
-/**
- * Spec tags. Every chip shares one outline shape and differs only in hue, so a
- * row reads as a set rather than as scattered blobs. Colour is reserved for
- * problems — with most of the library carrying DV and Atmos, tinting those too
- * turned every row into a rainbow and buried the thing worth noticing.
- */
-function Chip({
-  children,
-  tone = "neutral",
-}: {
-  children: React.ReactNode;
-  tone?: "neutral" | "warn" | "danger";
-}) {
-  const tones = {
-    neutral: "text-foreground/55 ring-line",
-    warn: "bg-amber-500/[0.08] text-amber-700 ring-amber-500/30 dark:text-amber-300",
-    danger: "bg-red-500/[0.08] text-red-700 ring-red-500/30 dark:text-red-300",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-chip px-1.5 text-[11px] leading-[18px] font-medium whitespace-nowrap ring-1 ring-inset ${tones[tone]}`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function Row({ movie, index }: { movie: LibraryItem; index: number }) {
-  const entrance = useEntrance();
-  const object = movie.audio.find((a) => a.atmos || a.dtsx);
-  const lossless = movie.audio.find((a) => a.lossless);
-  const open = openIssues(movie);
-  const critical = open.some((i) => i.severity === "critical");
-
-  return (
-    <Link
-      href={`/film/${movieId(movie.path)}`}
-      style={stagger(index)}
-      className={`${entrance} glow group flex items-center gap-4 rounded-row px-4 py-3 transition-colors hover:bg-surface-strong`}
-    >
-      {movie.poster || movie.art.poster ? (
-        <Art
-          src={movie.poster}
-          remote={movie.art.poster}
-          version={movie.artAt}
-          transitionName={posterName(movie.path)}
-          size="w92"
-          loading="lazy"
-          className="h-[72px] w-12 shrink-0 rounded-chip object-cover ring-1 ring-line"
-        />
-      ) : (
-        <div className="h-[72px] w-12 shrink-0 rounded-chip bg-surface-strong" />
-      )}
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium" title={movie.title}>
-          {movie.title}
-          {movie.year && (
-            <span className="ml-1.5 font-normal opacity-40">{movie.year}</span>
-          )}
-          {movie.edition && (
-            <span className="ml-2 text-xs opacity-50">{movie.edition}</span>
-          )}
-        </p>
-
-        <p className="mt-0.5 truncate text-xs opacity-50">
-          {[
-            movie.resolution,
-            movie.videoCodec,
-            movie.bitDepth ? `${movie.bitDepth}-bit` : null,
-            movie.releaseType,
-            size(movie.sizeBytes),
-          ]
-            .filter(Boolean)
-            .join("  · ")}
-        </p>
-
-        <div className="mt-1.5 flex flex-wrap items-center gap-1">
-          {movie.hdr !== "SDR" && (
-            <Chip>
-              {movie.hdr === "Dolby Vision"
-                ? `DV P${movie.dvProfile ?? "?"}`
-                : movie.hdr}
-            </Chip>
-          )}
-          {object && <Chip>{object.atmos ? "Atmos" : "DTS:X"}</Chip>}
-          {lossless && <Chip>{audioLabel(lossless)}</Chip>}
-          {!lossless && movie.audio[0] && (
-            <>
-              <Chip>{audioLabel(movie.audio[0])}</Chip>
-              <Chip>lossy</Chip>
-            </>
-          )}
-          {movie.tmdb && movie.tmdb.confidence !== "high" && (
-            <Chip tone="warn">match?</Chip>
-          )}
-          {open.length > 0 && (
-            <Chip tone={critical ? "danger" : "warn"}>
-              {open.length} {open.length === 1 ? "issue" : "issues"}
-            </Chip>
-          )}
-        </div>
-      </div>
-
-      <ScoreCircle movie={movie} />
-    </Link>
-  );
 }
 
 /**
@@ -510,56 +375,16 @@ function Card({ movie, index }: { movie: LibraryItem; index: number }) {
   );
 }
 
-/** Whichever shape is selected, for the whole list or for one bucket of it. */
-function Films({ films, view }: { films: LibraryItem[]; view: string }) {
-  return view === "grid" ? (
+/** The shelf, for the whole library or for one bucket of it. */
+function Films({ films }: { films: LibraryItem[] }) {
+  return (
     <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
       {films.map((movie, i) => (
         <Card key={movie.path} movie={movie} index={i} />
       ))}
     </div>
-  ) : (
-    // Ruled apart rather than fenced in, like every other list here: the rows
-    // are already a column, and a box drawn round them says nothing the space
-    // does not. The rule fades at both ends so it marks where a row stops
-    // without ruling a line across the page.
-    <div className="flex flex-col">
-      {films.map((movie, i) => (
-        <Fragment key={movie.path}>
-          {i > 0 && (
-            <div
-              aria-hidden
-              className="h-px bg-gradient-to-r from-transparent via-line to-transparent"
-            />
-          )}
-          <Row movie={movie} index={i} />
-        </Fragment>
-      ))}
-    </div>
   );
 }
-
-/**
- * Posters first. The list is the better shape for reading specs, but the
- * library is mostly browsed, and browsing is what artwork is for.
- *
- * Named rather than taken from VIEWS[0] so the toggle can keep list on the
- * left, where the pair reads in the order people expect.
- */
-const DEFAULT_VIEW = "grid";
-
-const VIEWS = [
-  {
-    key: "list",
-    label: "List",
-    path: "M4 6h16M4 12h16M4 18h16",
-  },
-  {
-    key: "grid",
-    label: "Grid",
-    path: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
-  },
-];
 
 export function LibraryView({
   movies,
@@ -580,14 +405,8 @@ export function LibraryView({
   const selection = parseSelection(rawFilters);
   const sort = searchParams.get("sort") ?? SORTS[0].key;
   const group = searchParams.get("g") ?? GROUPS[0].key;
-  const view = searchParams.get("v") ?? DEFAULT_VIEW;
 
-  function update(next: {
-    f?: string[];
-    sort?: string;
-    g?: string;
-    v?: string;
-  }) {
+  function update(next: { f?: string[]; sort?: string; g?: string }) {
     const params = new URLSearchParams(searchParams.toString());
 
     if (next.f !== undefined) {
@@ -602,10 +421,6 @@ export function LibraryView({
     if (next.g !== undefined) {
       if (next.g !== GROUPS[0].key) params.set("g", next.g);
       else params.delete("g");
-    }
-    if (next.v !== undefined) {
-      if (next.v !== DEFAULT_VIEW) params.set("v", next.v);
-      else params.delete("v");
     }
 
     const qs = params.toString();
@@ -623,7 +438,6 @@ export function LibraryView({
   }
   const setSort = (s: string) => update({ sort: s });
   const setGroup = (g: string) => update({ g });
-  const setView = (v: string) => update({ v });
 
   // Plain computation rather than useMemo: at this library size the whole
   // group/filter/sort pass is well under a millisecond, and memoising a Map
@@ -704,7 +518,7 @@ export function LibraryView({
       {/* One line: which shelf on the left, what to do with this one on the
           right. The bar is only as wide as the controls it holds — with the
           field gone there is nothing to stretch, and a bar drawn the width of
-          the page with four buttons huddled at one end is mostly frame. */}
+          the page with three buttons huddled at one end is mostly frame. */}
       <div className="flex flex-wrap items-center gap-3">
         {tabs}
 
@@ -821,6 +635,8 @@ export function LibraryView({
               icon={ICONS.group}
               label="Group by"
               value={(GROUPS.find((o) => o.key === group) ?? GROUPS[0]).label}
+              // The bar's last slot, so the fill follows its rounded end.
+              buttonClassName="rounded-r-full"
             >
               {(close) => (
                 <div className="py-1">
@@ -839,16 +655,6 @@ export function LibraryView({
                 </div>
               )}
             </Popover>
-
-            {/* A segmented pair rather than a third dropdown: two options, and
-                the icons say which is which faster than their names would. */}
-            <BarSegments
-              value={view}
-              onChange={(next) =>
-                setView(next as (typeof VIEWS)[number]["key"])
-              }
-              options={VIEWS}
-            />
           </Bar>
         </div>
       </div>
@@ -877,7 +683,7 @@ export function LibraryView({
           space a header and its rule would have taken is kept anyway. */}
       {shown.length > 0 && grouping.key === "none" && (
         <div className="pt-13">
-          <Films films={shown} view={view} />
+          <Films films={shown} />
         </div>
       )}
 
@@ -900,7 +706,7 @@ export function LibraryView({
                   the films on, and the space that comes with it. */}
               <div aria-hidden className="rule-head" />
             </div>
-            <Films films={films} view={view} />
+            <Films films={films} />
           </section>
         ))}
 
