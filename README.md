@@ -259,8 +259,10 @@ folders — is where artwork is looked for.
 
 ## Optional integrations
 
-Both are read from the environment **first**, falling back to whatever is stored in Settings. The
-environment is there so a deployment can pin them; the Settings page is the expected route.
+Both can be named in the environment. For **Jackett** that is a default rather than a lock: the
+Settings page wins, so a stack that ships its own Jackett works on the first page load and you can
+still paste a new key when one rotates — **Use the environment** puts it back. **qBittorrent** is
+still read from the environment first, falling back to Settings.
 
 ### Jackett — finding better releases
 
@@ -284,9 +286,9 @@ credentials it will not ask for is a hurdle for nothing.
 Everything sent from the app is tagged with the category `ripgrade`, so the queue's **Wishlist** tab only
 ever lists what it added. Your other torrents are none of its business.
 
-### Environment overrides
+### Environment defaults
 
-Create `.env` in the project root if you want to pin these instead:
+Create `.env` in the project root to have these set for you:
 
 ```bash
 JACKETT_URL=http://localhost:9117
@@ -296,6 +298,9 @@ QBITTORRENT_URL=http://localhost:8080
 QBITTORRENT_USERNAME=admin
 QBITTORRENT_PASSWORD=your-password
 ```
+
+The Jackett pair is a starting point: connecting Jackett from Settings replaces it, and
+disconnecting there goes back to it. The qBittorrent trio still overrides Settings.
 
 > [!IMPORTANT]
 > The TMDb token is **deliberately** not readable from the environment. It lives in the database and
@@ -335,19 +340,18 @@ standard library behind it — fetched at build time. Nothing to `brew install`.
 
 | | What it is |
 |---|---|
-| **gluetun** | The VPN. Holds the credentials and the killswitch. |
-| **jackett-init** | Runs once, before Jackett, and puts the API key where both sides can find it. Then it is gone. |
-| **jackett** | Runs with `network_mode: service:gluetun` — it has no network stack of its own, so if the tunnel drops, its indexer traffic has nowhere to go rather than somewhere worse. |
-| **ripgrade** | The app, with the drive bound in. Outside the tunnel: it talks to TMDb and Blu-ray.com, and has no business in one. |
+| **dns** | CoreDNS, forwarding every lookup over TLS to Cloudflare. Not a VPN, and that is the point — see below. |
+| **jackett-init** | Runs once, before Jackett, and puts the API key and a starter set of indexers where both sides can find them. Then it is gone. |
+| **jackett** | The indexer proxy, told to resolve through `dns` and nothing else. |
+| **ripgrade** | The app, with the drive bound in. On the default resolver: TMDb and Blu-ray.com are not names anybody is blocking. |
 
 ```bash
-cat .env.docker.example >> .env   # append: .env may already hold something
-$EDITOR .env                      # VPN credentials, and a key you generate
+cp .env.docker.example .env    # a key you generate, and where Jackett keeps its config
 docker compose up -d --build
 ```
 
 The app is on **<http://localhost:6969>**, Jackett's dashboard on **<http://localhost:9117>** —
-published by gluetun, because Jackett has no ports of its own to publish.
+on its own port, on the network it shares with the app.
 
 Not 3000: that port belongs to `next dev`, and running the container and the dev server at the
 same time should not be a choice. `RIPGRADE_PORT` in `.env` moves it.
@@ -381,15 +385,27 @@ indexers and the admin password survive a key change. Leave `JACKETT_API_KEY` bl
 behaviour is exactly what you get — Jackett generates its own, and you paste it into Settings.
 
 > [!NOTE]
-> `http://gluetun:9117` is the address, not `localhost` — Jackett is using gluetun's network, so
-> gluetun is the host it answers on. That is already in `.env.docker.example`.
+> `http://jackett:9117` is the address, not `localhost` — container to container, by service name.
+> That is already in `.env.docker.example`.
 
-**What is still manual: the indexers.** A key gets the app talking to Jackett; it does not give
-Jackett anything to search. Trackers are added in its dashboard, and their logins and cookies are
-not something to keep in a repo. So one visit to <http://localhost:9117>, and then never again.
+**Three indexers come pre-configured**, for the same reason and by the same route: The Pirate Bay,
+TorrentDownload and LimeTorrents. All three are public, so a configured one is nothing but a site
+address and a sort preference — no login, nothing encrypted, nothing tied to the machine that
+wrote it. The files in `docker/jackett-indexers/` are Jackett's own output, captured once, and
+`jackett-init` copies them in before Jackett starts. The Queue works on the first page load.
 
-If the searches hang rather than fail, it is gluetun's killswitch dropping the replies on the way
-back to the app. `DOCKER_SUBNETS` in `.env` is what opens that path.
+Only ever into a *fresh* Jackett. Once it has indexers of its own, the set is yours — dropping one
+you did not want should not be undone by the next `up`. `JACKETT_SEED_INDEXERS=0` starts empty.
+
+**Private trackers stay manual**, and should: their configs carry logins, passkeys and cookies,
+which is not something to keep in a repo. Add those at <http://localhost:9117>.
+
+**No VPN, deliberately.** The trackers are blocked by name, not by address: the ISP answers one
+sinkhole for `torrentdownload.info`, `1337x.to` and `thepiratebay.org` alike, and TLS then fails
+against a block page. So the stack runs CoreDNS forwarding over TLS instead, and Jackett resolves
+through it — a fix scoped to the one container that needed it, with no subscription and nothing
+else on the machine rerouted. The diagnosis is in
+[docs/Indexer_Connectivity_Fix.md](docs/Indexer_Connectivity_Fix.md).
 
 ### What you lose
 
@@ -403,6 +419,11 @@ On **macOS**, every byte the app reads travels through Docker Desktop's file sha
 only reads headers and barely notices. A `dovi_convert` run is a 90 GB remux through that same
 mount, and it will be meaningfully slower than running the app natively. On Linux, where the drive
 is just mounted, none of this applies.
+
+### The rest of it
+
+Rebuild costs, what survives a `down`, running the container and `next dev` side by side, and the
+failures in the order they happen: **[docs/Docker_Runbook.md](docs/Docker_Runbook.md)**.
 
 ---
 

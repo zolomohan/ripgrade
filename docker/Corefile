@@ -1,0 +1,19 @@
+# Every lookup, forwarded over TLS to Cloudflare.
+#
+# tls_servername is the load-bearing line. Port 853 is reachable here, but
+# reachable is not the same as honest — the ISP forges answers on port 53 and
+# could just as well answer on 853. Naming the certificate it must present makes
+# that impossible: anything that is not really Cloudflare fails the handshake,
+# so this either returns the true address or returns nothing. It cannot be
+# talked into returning a sinkhole.
+.:53 {
+    forward . tls://1.1.1.1 tls://1.0.0.1 {
+        tls_servername cloudflare-dns.com
+        health_check 10s
+    }
+
+    # An indexer search resolves the same handful of trackers over and over.
+    cache 3600
+
+    errors
+}

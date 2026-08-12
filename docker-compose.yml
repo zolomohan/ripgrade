@@ -1,81 +1,83 @@
-# RipGrade, Jackett, and the tunnel Jackett lives inside.
+# RipGrade, Jackett, and a resolver the ISP cannot answer for.
 #
-# Three containers and two networks' worth of intent:
+# Four services, one of which exits:
 #
-#   gluetun   holds the VPN. Nothing else in this file has an unprotected route
-#             out except RipGrade itself, which only ever talks to TMDb and
-#             Blu-ray.com and has no business in a tunnel.
-#   jackett   has no network stack of its own — it borrows gluetun's, so if the
-#             VPN drops, its indexer traffic has nowhere to go rather than
-#             somewhere worse.
-#   ripgrade  the app and its five command-line tools, with the drive bound in.
+#   dns           CoreDNS, forwarding every lookup over TLS to Cloudflare.
+#   jackett-init  Writes the API key, and seeds indexers into a fresh install.
+#                 Runs to completion before Jackett starts, then exits.
+#   jackett       The indexer proxy, told to resolve through dns and nothing
+#                 else.
+#   ripgrade      The app and its five command-line tools, with the drive
+#                 bound in.
+#
+# Why a resolver and not a VPN: the trackers are not blocked by address, they
+# are blocked by name. The ISP answers 49.205.171.201 for torrentdownload.info,
+# 1337x.to and thepiratebay.org alike — one sinkhole standing in for every
+# blocked name — and TLS then fails against a box serving a block page. Aiming
+# at 1.1.1.1 does not help, because port 53 is intercepted whatever you aim it
+# at. An encrypted query cannot be read, and so cannot be answered for.
+#
+# A VPN would also have worked, at the cost of a subscription, throughput, and
+# signing the machine out of everything else. See docs/Indexer_Connectivity_Fix.md
+# for how that was diagnosed, and docs/Docker_Runbook.md for running this.
 #
 # Copy .env.docker.example to .env and fill it in before the first up.
 
 services:
-  gluetun:
-    image: qmcgaw/gluetun:latest
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    ports:
-      # Jackett's dashboard. Published here rather than on the jackett service
-      # because jackett has no ports of its own to publish — this container is
-      # its network.
-      - "9117:9117"
-    environment:
-      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER}
-      VPN_TYPE: ${VPN_TYPE:-wireguard}
-      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:-}
-      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES:-}
-      OPENVPN_USER: ${OPENVPN_USER:-}
-      OPENVPN_PASSWORD: ${OPENVPN_PASSWORD:-}
-      SERVER_COUNTRIES: ${SERVER_COUNTRIES:-}
-      TZ: ${TZ:-Europe/London}
-      # The killswitch drops every packet not bound for the tunnel, and a reply
-      # to RipGrade on the Docker bridge is one of those. Without this line the
-      # app's searches hang until they time out and Jackett looks broken when
-      # it is only unreachable.
-      FIREWALL_OUTBOUND_SUBNETS: ${DOCKER_SUBNETS:-172.16.0.0/12}
+  dns:
+    image: coredns/coredns:latest
+    command: -conf /etc/coredns/Corefile
     volumes:
-      - gluetun:/gluetun
+      - ./docker/Corefile:/etc/coredns/Corefile:ro
+    networks:
+      ripgrade-net:
+        # Fixed, because Jackett's `dns:` below is a plain address and has no
+        # way to look up the name of the thing that does the looking up. The
+        # .53 is a mnemonic for the port.
+        ipv4_address: 172.28.0.53
     restart: unless-stopped
 
-  # Writes the API key from .env into Jackett's config and exits, so that the
-  # app and the indexer proxy come up already knowing the same credential
-  # instead of one of them having to be told by hand. Node because the config
-  # holds the indexer setup and the admin password, and patching JSON with a
-  # regex is how you lose those. See docker/jackett-init.mjs.
+  # Runs once, before Jackett, and gives it the API key from .env plus a
+  # starter set of public indexers — the two things that otherwise mean opening
+  # the dashboard before the app can search anything. Node because these are
+  # JSON files holding the whole indexer setup, and patching those with a regex
+  # is how you lose them. See docker/jackett-init.mjs.
   jackett-init:
     image: node:22-bookworm-slim
-    # Root to write into a volume LinuxServer's startup will expect to own; the
-    # script hands the files over to PUID:PGID before it exits.
+    # Root to write into a config directory it does not own. On a bind mount
+    # from macOS the chown afterwards is a no-op, and the script treats it as
+    # one rather than failing.
     user: "0:0"
     environment:
       JACKETT_API_KEY: ${JACKETT_API_KEY:-}
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
+      JACKETT_SEED_INDEXERS: ${JACKETT_SEED_INDEXERS:-}
+      PUID: ${PUID:-501}
+      PGID: ${PGID:-20}
     volumes:
-      - jackett:/config
+      - ${JACKETT_CONFIG:-./docker/jackett-config}:/config
       - ./docker/jackett-init.mjs:/jackett-init.mjs:ro
+      - ./docker/jackett-indexers:/indexers:ro
     command: ["node", "/jackett-init.mjs"]
     restart: "no"
 
   jackett:
     image: lscr.io/linuxserver/jackett:latest
-    # Shares gluetun's network namespace. This is the whole point: Jackett
-    # cannot reach an indexer except through the VPN, by construction rather
-    # than by configuration.
-    network_mode: "service:gluetun"
+    # The whole point. Every name Jackett looks up goes to CoreDNS over TLS;
+    # nothing here consults the resolver the ISP hands out.
+    dns:
+      - 172.28.0.53
+    ports:
+      - "9117:9117"
     environment:
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
       TZ: ${TZ:-Europe/London}
     volumes:
-      - jackett:/config
+      # The config you already have, so the indexers and the key survive. The
+      # default is for a machine that has none.
+      - ${JACKETT_CONFIG:-./docker/jackett-config}:/config
+    networks:
+      - ripgrade-net
     depends_on:
-      gluetun:
+      dns:
         condition: service_started
       # The key has to be in the config before Jackett reads it. Afterwards is
       # a restart, and a restart is the thing this exists to avoid.
@@ -105,17 +107,26 @@ services:
       TZ: ${TZ:-Europe/London}
       RIPGRADE_BROWSE_ROOT: ${RIPGRADE_BROWSE_ROOT:-/Volumes}
       # The other half of the arrangement: the same key jackett-init wrote into
-      # Jackett's config, and the address Jackett answers on — gluetun's, since
-      # that is whose network it is using. Set both and the integration is
-      # configured before the first page loads; set neither and the app falls
-      # back to Settings, which is what an empty value means here.
+      # Jackett's config, and the address Jackett answers on. Set both and the
+      # integration is configured before the first page loads; set neither and
+      # the app falls back to Settings, which is what an empty value means.
+      #
+      # Deliberately not given the CoreDNS resolver: TMDb and Blu-ray.com are
+      # not the names anybody is blocking, and the fix stays scoped to the
+      # container that needed it.
       JACKETT_URL: ${JACKETT_URL:-}
       JACKETT_API_KEY: ${JACKETT_API_KEY:-}
+    networks:
+      - ripgrade-net
     depends_on:
       - jackett
     restart: unless-stopped
 
+networks:
+  ripgrade-net:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
 volumes:
-  gluetun:
-  jackett:
   ripgrade-data:

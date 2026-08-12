@@ -1,0 +1,53 @@
+[
+  {
+    "id": "sitelink",
+    "type": "inputstring",
+    "name": "Site Link",
+    "value": "https://thepiratebay.org/"
+  },
+  {
+    "id": "cookieheader",
+    "type": "hiddendata",
+    "name": "CookieHeader",
+    "value": null
+  },
+  {
+    "id": "lasterror",
+    "type": "hiddendata",
+    "name": "LastError",
+    "value": null
+  },
+  {
+    "id": "apiurl",
+    "type": "inputstring",
+    "name": "API URL",
+    "value": "apibay.org"
+  },
+  {
+    "id": "top100",
+    "type": "inputselect",
+    "name": "Top100",
+    "value": "recent",
+    "options": {
+      "recent": "All",
+      "100": "Audio",
+      "200": "Movies/TV",
+      "300": "Apps",
+      "400": "Games",
+      "500": "XXX",
+      "600": "Books"
+    }
+  },
+  {
+    "id": "filterbyuploader",
+    "type": "inputstring",
+    "name": "Filter by Uploader",
+    "value": null
+  },
+  {
+    "id": "tags",
+    "type": "inputtags",
+    "name": "Tags",
+    "value": ""
+  }
+]
