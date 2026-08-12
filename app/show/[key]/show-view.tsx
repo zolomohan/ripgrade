@@ -935,7 +935,7 @@ export function ShowView({
         <BackButton />
       </div>
 
-      <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-5xl flex-col px-6 sm:px-8">
+      <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-6xl flex-col px-6 sm:px-8">
         <header className="relative mb-10 flex flex-col gap-5 sm:flex-row sm:items-end">
           {show.poster || show.art.poster ? (
             <Art

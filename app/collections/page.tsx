@@ -13,7 +13,7 @@ export default async function CollectionsPage() {
   const sets = await getCollectionSets(getMovies(), false);
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-8 sm:px-8">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 sm:px-8">
       <CollectionsView sets={sets} />
     </main>
   );

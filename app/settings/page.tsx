@@ -101,7 +101,7 @@ export default async function SettingsPage() {
    * three settings at a time.
    */
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col px-6 py-8 sm:px-8">
+    <main className="mx-auto flex w-full max-w-6xl flex-col px-6 py-8 sm:px-8">
       <SettingsTabs
         groups={[
           {

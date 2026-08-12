@@ -154,7 +154,7 @@ export function DiscoverView({
         <BackButton label="Back" />
       </div>
 
-      <div className="relative z-10 mx-auto -mt-28 w-full max-w-5xl px-6 sm:px-8">
+      <div className="relative z-10 mx-auto -mt-28 w-full max-w-6xl px-6 sm:px-8">
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end">
           {art.posterPath ? (
             <Art

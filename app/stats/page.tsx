@@ -14,7 +14,7 @@ export default async function StatsPage() {
   const shows = computeShowStats(getShows());
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8 sm:px-8">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 sm:px-8">
       {stats.totals.films === 0 && shows.totals.shows === 0 ? (
         <p className="rounded-card border border-line bg-surface px-4 py-12 text-center text-sm opacity-50">
           Nothing scanned yet — run a scan and the numbers appear here.

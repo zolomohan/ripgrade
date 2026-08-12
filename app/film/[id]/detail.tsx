@@ -332,7 +332,7 @@ export async function DetailPage({
       {/* relative + z-10: the hero above is positioned, so without its own
           stacking position this content would paint underneath it and the
           poster overlapping the backdrop would be clipped. */}
-      <div className="relative z-10 mx-auto -mt-28 w-full max-w-5xl px-6 sm:px-8">
+      <div className="relative z-10 mx-auto -mt-28 w-full max-w-6xl px-6 sm:px-8">
         {/* Title block */}
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end">
           <Art
