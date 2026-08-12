@@ -30,10 +30,6 @@ export const PRIMARY =
 export const QUIET =
   "inline-flex shrink-0 items-center gap-1.5 text-xs opacity-50 transition-opacity hover:opacity-100 disabled:opacity-30";
 
-/** Undoing something, which is quiet too but says so in red at the last step. */
-export const DANGER =
-  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/[0.08] px-3 py-1 text-xs text-red-700 transition-opacity hover:opacity-80 disabled:opacity-40 dark:text-red-300";
-
 /**
  * Whether a thing is on, as a dot and a word.
  *

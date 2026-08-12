@@ -3,9 +3,10 @@
 import { useEffect, useState, useTransition } from "react";
 
 import { addLibraryFolder, browse, removeLibraryFolder } from "./actions";
+import { ConfirmModal } from "./confirm";
 import { FolderPicker } from "./folder-picker";
-import { Spinner } from "./spinner";
-import { DANGER, Failure, PRIMARY, QUIET } from "./settings/parts";
+import { useLingering } from "./modal";
+import { Failure, PRIMARY, QUIET } from "./settings/parts";
 import type { DirListing } from "@/lib/browse";
 
 /**
@@ -32,6 +33,10 @@ export function FolderSection({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // The folder the question is about, kept for the frames the dialog spends
+  // leaving — otherwise the path blanks out of the sentence mid-exit.
+  const asking = useLingering(confirming);
+
   useEffect(() => {
     if (!open || listing) return;
     startTransition(async () => {
@@ -57,53 +62,17 @@ export function FolderSection({
           {roots.map((root) => (
             <li
               key={root}
-              className="flex flex-col gap-2 rounded-card px-4 py-2.5 transition-colors hover:bg-surface"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-card px-4 py-2.5 transition-colors hover:bg-surface"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="min-w-0 truncate font-mono text-xs">
-                  {root}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setConfirming(confirming === root ? null : root)
-                  }
-                  disabled={pending}
-                  className={`${QUIET} ${
-                    confirming === root
-                      ? ""
-                      : "text-red-700 dark:text-red-300"
-                  }`}
-                >
-                  {confirming === root ? "Cancel" : "Remove"}
-                </button>
-              </div>
-
-              {/* The consequence, said only once you have asked for it: what
-                  goes with the folder is every film scanned from it, and that
-                  is not something to learn from an undo. */}
-              {confirming === root && (
-                <div className="flex flex-wrap items-center gap-3 pb-1">
-                  <p className="min-w-0 flex-1 text-[11px] opacity-55">
-                    Removing it also forgets every film scanned from it. The
-                    files themselves are untouched.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      startTransition(async () => {
-                        await removeLibraryFolder(root);
-                        setConfirming(null);
-                      })
-                    }
-                    disabled={pending}
-                    className={DANGER}
-                  >
-                    {pending && <Spinner className="h-3 w-3" />}
-                    Remove folder
-                  </button>
-                </div>
-              )}
+              <span className="min-w-0 truncate font-mono text-xs">{root}</span>
+              <button
+                type="button"
+                onClick={() => setConfirming(root)}
+                disabled={pending}
+                className={`${QUIET} text-red-700 dark:text-red-300`}
+              >
+                Remove
+              </button>
             </li>
           ))}
         </ul>
@@ -142,6 +111,32 @@ export function FolderSection({
             ))}
           </div>
         ))}
+
+      {/* Asked in the app's one confirmation shape, as every other irreversible
+          thing here is. The consequence is the whole reason to ask: what goes
+          with the folder is every film scanned from it, and that is not
+          something to learn from an undo that does not exist. */}
+      {asking !== null && (
+        <ConfirmModal
+          open={confirming !== null}
+          title="Remove this library folder?"
+          confirmLabel={pending ? "Removing…" : "Remove folder"}
+          tone="danger"
+          busy={pending}
+          onConfirm={() =>
+            startTransition(async () => {
+              await removeLibraryFolder(asking);
+              setConfirming(null);
+            })
+          }
+          onCancel={() => setConfirming(null)}
+        >
+          <code className="font-mono text-xs">{asking}</code> is dropped from
+          the library, and every film scanned from it is forgotten with it. The
+          files themselves are untouched — adding the folder back and scanning
+          finds them again.
+        </ConfirmModal>
+      )}
     </div>
   );
 }
