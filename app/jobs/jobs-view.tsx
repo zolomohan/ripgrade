@@ -18,11 +18,18 @@ import type {
   DoviTask,
   TaskFilm,
 } from "@/lib/queue-tasks";
-import { CLEANUP_GROUPS, CLEANUP_SORTS, CleanupList } from "./cleanup-list";
+import {
+  CLEANUP_GROUPS,
+  CLEANUP_SORTS,
+  CleanAll,
+  CleanupList,
+  CleanupStats,
+} from "./cleanup-list";
 import { Poster } from "./poster";
 import {
   AUDIO_GROUPS,
   AUDIO_SORTS,
+  AudioStats,
   AudioTasks,
   DOVI_GROUPS,
   DOVI_SORTS,
@@ -625,7 +632,24 @@ export function JobsView({
 
   return (
     <>
-      <ListingBar listing={listing} />
+      {/* The cleanup tab is the one that can act on the whole of itself, so it
+          is the one that fills the bar's slot. The other two propose a rewrite
+          per file, and there is no answering those in one click. */}
+      <ListingBar
+        listing={listing}
+        action={tab === "cleanup" ? <CleanAll files={cleanup} /> : undefined}
+      />
+
+      {/* Above the sections rather than inside one: these figures are the
+          tab's, and under the "Pending" heading they read as that section's
+          own — which is wrong on the cleanup tab in particular, where the total
+          counts rows the drive is currently hiding. Each returns nothing on an
+          empty tab, where the list's empty state is the whole answer. */}
+      {tab === "audio" ? (
+        <AudioStats tasks={audioPending} />
+      ) : tab === "cleanup" ? (
+        <CleanupStats files={cleanup} />
+      ) : null}
 
       {/* No page title and no count above the sections, the way the downloads
           log has neither: the tabs already say which list this is, and the

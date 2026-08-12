@@ -774,6 +774,53 @@ export const AUDIO_GROUPS: GroupOption<AudioTask>[] = [
 const freedNote = (tasks: AudioTask[]) =>
   `${tasks.length} · ${size(tasks.reduce((n, t) => n + t.freedBytes, 0))} freed`;
 
+/**
+ * What the audio tab adds up to, drawn above the pending list rather than
+ * inside it.
+ *
+ * Split out of `AudioTasks` for where it has to sit: the figures describe the
+ * whole tab, and reading them under the heading of one of its sections said
+ * they belonged to that section. Its own component rather than a slot, because
+ * the page that places it does not otherwise know what an audio task is.
+ *
+ * Nothing to say about an empty tab — the list's own empty state is the answer
+ * there, and a row of zeroes above it would be a second one.
+ */
+export function AudioStats({ tasks }: { tasks: AudioTask[] }) {
+  if (tasks.length === 0) return null;
+
+  const total = tasks.reduce((sum, task) => sum + task.freedBytes, 0);
+  const anyEstimated = tasks.some((task) => task.estimated);
+  const trackCount = tasks.reduce((sum, task) => sum + task.removing, 0);
+  // Canonical, so the "fre" on one rip and the "fr" on the next are one
+  // language here as they are in the setting that decided both.
+  const languages = new Set(
+    tasks.flatMap((task) => task.languages.map(languageKey)),
+  );
+
+  return (
+    <Stats>
+      <Stat
+        label="To reclaim"
+        gain
+        value={`${anyEstimated ? "≈" : ""}${size(total)}`}
+        title={
+          anyEstimated
+            ? "Part of this total is worked out from bitrate rather than counted"
+            : undefined
+        }
+      />
+      <Stat label="Files" value={tasks.length.toLocaleString("en-GB")} />
+      <Stat label="Tracks" value={trackCount.toLocaleString("en-GB")} />
+      <Stat
+        label={languages.size === 1 ? "Language" : "Languages"}
+        value={languages.size.toLocaleString("en-GB")}
+        title={[...new Set([...languages].map(languageName))].sort().join(", ")}
+      />
+    </Stats>
+  );
+}
+
 export function AudioTasks({
   tasks: unsorted,
   sort,
@@ -848,15 +895,6 @@ export function AudioTasks({
     );
   }
 
-  const total = tasks.reduce((sum, task) => sum + task.freedBytes, 0);
-  const anyEstimated = tasks.some((task) => task.estimated);
-  const trackCount = tasks.reduce((sum, task) => sum + task.removing, 0);
-  // Canonical, so the "fre" on one rip and the "fr" on the next are one
-  // language here as they are in the setting that decided both.
-  const languages = new Set(
-    tasks.flatMap((task) => task.languages.map(languageKey)),
-  );
-
   return (
     <section className="flex flex-col gap-8">
       {error && (
@@ -864,28 +902,6 @@ export function AudioTasks({
           {error}
         </p>
       )}
-
-      <Stats>
-        <Stat
-          label="To reclaim"
-          gain
-          value={`${anyEstimated ? "≈" : ""}${size(total)}`}
-          title={
-            anyEstimated
-              ? "Part of this total is worked out from bitrate rather than counted"
-              : undefined
-          }
-        />
-        <Stat label="Files" value={tasks.length.toLocaleString("en-GB")} />
-        <Stat label="Tracks" value={trackCount.toLocaleString("en-GB")} />
-        <Stat
-          label={languages.size === 1 ? "Language" : "Languages"}
-          value={languages.size.toLocaleString("en-GB")}
-          title={[...new Set([...languages].map(languageName))]
-            .sort()
-            .join(", ")}
-        />
-      </Stats>
 
       <Grouped items={tasks} group={grouping} note={freedNote}>
         {(rows, offset) => (

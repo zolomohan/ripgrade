@@ -21,7 +21,22 @@ import { posterName } from "@/lib/routes";
  * imports the cleanup list, so leaving it there would have made a cycle of a
  * component none of them owns.
  */
-export function Poster({ film }: { film?: TaskFilm }) {
+export function Poster({
+  film,
+  transition = true,
+}: {
+  film?: TaskFilm;
+  /**
+   * Whether this poster is the one a click is aimed at.
+   *
+   * A transition name has to be unique among everything mounted, and these
+   * lists share a page: the log sits under the pending lists, and a film with
+   * work queued is exactly the film the log is likely to be talking about. Two
+   * posters of one film claiming one name abort the transition outright, so a
+   * list that is not the one worth animating from says so here.
+   */
+  transition?: boolean;
+}) {
   if (film && (film.poster || film.posterRemote)) {
     return (
       <Art
@@ -29,7 +44,7 @@ export function Poster({ film }: { film?: TaskFilm }) {
         remote={film.posterRemote}
         version={film.artAt}
         // Named so it travels into the film's page, as the queue's rows do.
-        transitionName={posterName(film.path)}
+        transitionName={transition ? posterName(film.path) : undefined}
         size="w92"
         loading="lazy"
         className="h-24 w-16 shrink-0 rounded-control object-cover ring-1 ring-line"

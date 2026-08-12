@@ -8,7 +8,7 @@ import { discardCleanup } from "@/app/actions";
 import { EmptyState } from "@/app/empty-state";
 import { useClosing } from "@/app/modal";
 import { stagger } from "@/app/stagger";
-import { BUTTON } from "@/app/controls";
+import { BUTTON, CONTROL_H } from "@/app/controls";
 import { ConfirmModal } from "@/app/confirm";
 import type { CleanupFile, CleanupKind } from "@/lib/queue-tasks";
 import { movieId } from "@/lib/routes";
@@ -124,78 +124,166 @@ const CONSEQUENCE: Record<CleanupKind, string> = {
     "The half-built output of a job that was cancelled or killed. Nothing points at it and nothing can be recovered from it.",
 };
 
-export function CleanupList({
-  files: unsorted,
-  sort,
-  group,
-}: {
-  files: CleanupFile[];
-  sort?: string;
-  group?: string;
-}) {
+/**
+ * The one call every delete on this page makes, and the repaint after it.
+ *
+ * Three places ask now — a row, the leftover sweep, and the button in the
+ * page's header — and they sit in three different parts of the tree, so each
+ * keeps its own question. What they share is this: the call, whether it is in
+ * flight, and what it said if it failed.
+ */
+function useDiscard() {
   const router = useRouter();
-  const files = [...unsorted].sort(pickSort(CLEANUP_SORTS, sort).compare);
-  const grouping = pickGroup(CLEANUP_GROUPS, group);
-
-  /** The row being asked about, or "leftovers" for the sweep-all button. */
-  const [asking, setAsking] = useState<CleanupFile | "leftovers" | null>(null);
-  const shown = useClosing(asking !== null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const leftovers = files.filter((file) => file.kind === "leftover");
-  // What the sweep-all button is actually allowed to take. A remembered file
-  // is on a drive that is not plugged in: it is real, it is counted in the
-  // total, and it cannot be deleted from here.
-  const sweepable = leftovers.filter((file) => !file.offline);
-  const total = files.reduce((sum, file) => sum + file.bytes, 0);
-  const awayBytes = files
-    .filter((file) => file.offline)
-    .reduce((sum, file) => sum + file.bytes, 0);
-
-  async function run(targets: CleanupFile[]) {
+  async function run(targets: CleanupFile[]): Promise<boolean> {
     setError(null);
     setBusy(true);
     const result = await discardCleanup(targets.map((file) => file.path));
     setBusy(false);
-    setAsking(null);
     if (!result.ok) {
       setError(result.error);
-      return;
+      return false;
     }
     // The action revalidates; this is what repaints the list it came from.
     router.refresh();
+    return true;
   }
 
-  if (files.length === 0) {
-    return (
-      <EmptyState
-        icon={
-          <>
-            <path d="M4 7h16" />
-            <path d="M9 7V5h6v2" />
-            <path d="M6 7l1 12h10l1-12" />
-          </>
-        }
-        title="Nothing left lying around"
-      >
-        No originals from a conversion or a track removal, and nothing half
-        written by a job that stopped early. Every rewrite you undo or accept
-        takes its own copy off the drive.
-      </EmptyState>
-    );
-  }
+  return { busy, error, run };
+}
+
+/** Everything on the tab that this page is actually allowed to delete. */
+const deletableIn = (files: CleanupFile[]) =>
+  files.filter((file) => !file.offline);
+
+/**
+ * Empty the whole tab, from the page's own header.
+ *
+ * Up there rather than over the list because it is the page's action and not
+ * the list's, and primary because on a tab whose every row is a file waiting to
+ * be deleted it is what the tab is for. No red on it: this app puts that in the
+ * dialog, and the dialog is where what it costs gets said.
+ *
+ * Stays on the page when there is nothing it may take, off and saying why,
+ * exactly as each row's own Delete does — rows that all refuse with a reason,
+ * under a header with no button at all, would read as a page with no bulk
+ * action rather than one whose drive is unplugged.
+ */
+export function CleanAll({ files }: { files: CleanupFile[] }) {
+  const [asking, setAsking] = useState(false);
+  const shown = useClosing(asking);
+  const { busy, error, run } = useDiscard();
+
+  const deletable = deletableIn(files);
+  const bytes = deletable.reduce((sum, file) => sum + file.bytes, 0);
+  const originals = deletable.filter((file) => file.kind !== "leftover").length;
+
+  if (files.length === 0) return null;
 
   return (
-    <section className="flex flex-col gap-8">
+    <>
+      <button
+        type="button"
+        onClick={() => setAsking(true)}
+        disabled={busy || deletable.length === 0}
+        title={
+          deletable.length === 0
+            ? "Every row here is on a drive that is not connected"
+            : undefined
+        }
+        // The bar's height rather than the button's own. `BUTTON.primary` sizes
+        // itself from its padding, which is right in a row of buttons and wrong
+        // on this line: the tabs and the sort-and-cut bar are both a stated
+        // `CONTROL_H`, and a third control coming to eight pixels less reads as
+        // something that wandered in. The padding stays and simply sits inside
+        // the taller box. Same swap the upgrades page makes for its rescan
+        // button, which fills this slot on that page.
+        className={`${BUTTON.primary} ${CONTROL_H}`}
+      >
+        Clean all
+      </button>
+
+      {shown && (
+        <ConfirmModal
+          open={asking}
+          title={`Delete all ${deletable.length} files?`}
+          confirmLabel={`Delete ${size(bytes)}`}
+          tone="danger"
+          busy={busy}
+          onConfirm={async () => {
+            if (await run(deletable)) setAsking(false);
+          }}
+          onCancel={() => setAsking(false)}
+        >
+          {/* The one dialog here that has to argue against itself: the button
+              behind it says two words, and the originals it would take are the
+              only irreversible thing in the app. So the count of those leads,
+              ahead of the figure anybody pressed it for. */}
+          {originals > 0 && (
+            <>
+              {originals === 1
+                ? "One of these is an original"
+                : `${originals} of these are originals`}{" "}
+              kept beside a film so its rewrite could be undone. Deleting them
+              ends that: what they hold exists only on the discs the films were
+              ripped from, and no conversion or track removal among them can be
+              walked back.{" "}
+            </>
+          )}
+          {size(bytes)} comes back.
+          {files.length > deletable.length &&
+            " The rows whose drive is not connected are left where they are."}
+          {/* A failure holds the dialog open. The button that raised it is up
+              in the header, and a message printed down the page beside a list
+              that did not change would be nowhere near what was asked. */}
+          {error && (
+            <span className="mt-3 block font-mono text-sm text-red-600 dark:text-red-400">
+              {error}
+            </span>
+          )}
+        </ConfirmModal>
+      )}
+    </>
+  );
+}
+
+/**
+ * What the cleanup tab adds up to, drawn above the pending list rather than
+ * inside it.
+ *
+ * Split out of the list for where it has to sit: the figures describe the whole
+ * tab, and reading them under the heading of one of its sections said they
+ * belonged to that section. The leftover sweep travels with them, because that
+ * button is a caption on the Leftovers figure more than it is a control of the
+ * list — and because the originals are now the header's to offer.
+ */
+export function CleanupStats({ files }: { files: CleanupFile[] }) {
+  const [asking, setAsking] = useState(false);
+  const shown = useClosing(asking);
+  const { busy, error, run } = useDiscard();
+
+  const leftovers = files.filter((file) => file.kind === "leftover");
+  // A remembered file is on a drive that is not plugged in: it is real, it is
+  // counted in the total, and it cannot be deleted from here.
+  const sweepable = leftovers.filter((file) => !file.offline);
+  const total = files.reduce((sum, file) => sum + file.bytes, 0);
+  const sweptBytes = sweepable.reduce((sum, file) => sum + file.bytes, 0);
+
+  if (files.length === 0) return null;
+
+  return (
+    <>
       <Stats
         action={
-          // Only the wreckage goes in one click. An original is an undo somebody
-          // is still holding, and there is no bulk answer to that question.
+          // Only the wreckage goes in one click from here. An original is an
+          // undo somebody is still holding, and the header's button is the one
+          // that asks about those.
           sweepable.length > 1 ? (
             <button
               type="button"
-              onClick={() => setAsking("leftovers")}
+              onClick={() => setAsking(true)}
               disabled={busy}
               className={BUTTON.danger}
             >
@@ -220,14 +308,70 @@ export function CleanupList({
         )}
       </Stats>
 
-      {awayBytes > 0 && (
-        <p className="text-xs opacity-45">
-          {size(awayBytes)} of this was found the last time its folder could be
-          read. The drive is not connected now, so those rows are counted but
-          cannot be deleted.
-        </p>
+      {shown && (
+        <ConfirmModal
+          open={asking}
+          title={`Delete ${sweepable.length} leftovers?`}
+          confirmLabel={`Delete ${size(sweptBytes)}`}
+          tone="danger"
+          busy={busy}
+          onConfirm={async () => {
+            if (await run(sweepable)) setAsking(false);
+          }}
+          onCancel={() => setAsking(false)}
+        >
+          Every one of these is the half-built output of a job that was
+          cancelled or killed. Nothing points at them, no film depends on them,
+          and {size(sweptBytes)} comes back.
+          {error && (
+            <span className="mt-3 block font-mono text-sm text-red-600 dark:text-red-400">
+              {error}
+            </span>
+          )}
+        </ConfirmModal>
       )}
+    </>
+  );
+}
 
+export function CleanupList({
+  files: unsorted,
+  sort,
+  group,
+}: {
+  files: CleanupFile[];
+  sort?: string;
+  group?: string;
+}) {
+  const files = [...unsorted].sort(pickSort(CLEANUP_SORTS, sort).compare);
+  const grouping = pickGroup(CLEANUP_GROUPS, group);
+
+  /** The row being asked about. The bulk answers are asked elsewhere now. */
+  const [asking, setAsking] = useState<CleanupFile | null>(null);
+  const shown = useClosing(asking !== null);
+  const { busy, error, run } = useDiscard();
+
+  if (files.length === 0) {
+    return (
+      <EmptyState
+        icon={
+          <>
+            <path d="M4 7h16" />
+            <path d="M9 7V5h6v2" />
+            <path d="M6 7l1 12h10l1-12" />
+          </>
+        }
+        title="Nothing left lying around"
+      >
+        No originals from a conversion or a track removal, and nothing half
+        written by a job that stopped early. Every rewrite you undo or accept
+        takes its own copy off the drive.
+      </EmptyState>
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-8">
       {error && (
         <p className="font-mono text-sm text-red-600 dark:text-red-400">
           {error}
@@ -253,8 +397,13 @@ export function CleanupList({
                 was set aside from — and the same poster on the same left edge
                 is what says which. Absent on the rows whose film has been
                 renamed or removed, where the block stands in and keeps the
-                edge straight. */}
-            <Poster film={file.film} />
+                edge straight.
+
+                Unnamed, alone among the lists that draw this: one film can
+                hold two rows here — the Profile 7 original and the audio one,
+                both beside the same film — and a transition name is a promise
+                that only one thing on the page is wearing it. */}
+            <Poster film={file.film} transition={false} />
 
             <div className="min-w-0 flex-1">
               <p className="flex min-w-0 items-baseline gap-2">
@@ -356,36 +505,20 @@ export function CleanupList({
         <ConfirmModal
           open={asking !== null}
           title={
-            asking === "leftovers"
-              ? `Delete ${sweepable.length} leftovers?`
-              : asking.kind === "leftover"
-                ? "Delete this leftover?"
-                : "Delete this original?"
+            asking.kind === "leftover"
+              ? "Delete this leftover?"
+              : "Delete this original?"
           }
-          confirmLabel={
-            asking === "leftovers"
-              ? `Delete ${size(sweepable.reduce((s, f) => s + f.bytes, 0))}`
-              : `Delete ${size(asking.bytes)}`
-          }
+          confirmLabel={`Delete ${size(asking.bytes)}`}
           tone="danger"
           busy={busy}
-          onConfirm={() => run(asking === "leftovers" ? sweepable : [asking])}
+          onConfirm={async () => {
+            if (await run([asking])) setAsking(null);
+          }}
           onCancel={() => setAsking(null)}
         >
-          {asking === "leftovers" ? (
-            <>
-              Every one of these is the half-built output of a job that was
-              cancelled or killed. Nothing points at them, no film depends on
-              them, and{" "}
-              {size(sweepable.reduce((sum, file) => sum + file.bytes, 0))} comes
-              back.
-            </>
-          ) : (
-            <>
-              {CONSEQUENCE[asking.kind]}{" "}
-              <span className="font-mono">{asking.name}</span>
-            </>
-          )}
+          {CONSEQUENCE[asking.kind]}{" "}
+          <span className="font-mono">{asking.name}</span>
         </ConfirmModal>
       )}
     </section>
