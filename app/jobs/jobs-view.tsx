@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Art } from "@/app/art";
 import { useNow } from "@/app/clock";
 import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
@@ -19,8 +18,8 @@ import type {
   DoviTask,
   TaskFilm,
 } from "@/lib/queue-tasks";
-import { posterName } from "@/lib/routes";
 import { CLEANUP_GROUPS, CLEANUP_SORTS, CleanupList } from "./cleanup-list";
+import { Poster } from "./poster";
 import {
   AUDIO_GROUPS,
   AUDIO_SORTS,
@@ -188,37 +187,6 @@ function when(at: number, now: number): string {
 }
 
 /**
- * The film's poster, drawn the way every other list in the app draws one — the
- * same component, the same fallback block, so a job about a film is recognised
- * by the same picture the film is recognised by everywhere else.
- *
- * The block stands in for a job with no film as well as for a film with no
- * poster: a sweep is about the whole library and has no picture to show, and a
- * ragged left edge down the list would say something about those rows that is
- * not true of them.
- */
-function Poster({ film }: { film?: TaskFilm }) {
-  if (film && (film.poster || film.posterRemote)) {
-    return (
-      <Art
-        src={film.poster}
-        remote={film.posterRemote}
-        version={film.artAt}
-        // Named so it travels into the film's page, as the queue's rows do.
-        transitionName={posterName(film.path)}
-        size="w92"
-        loading="lazy"
-        className="h-24 w-16 shrink-0 rounded-control object-cover ring-1 ring-line"
-      />
-    );
-  }
-
-  return (
-    <div className="h-24 w-16 shrink-0 rounded-control bg-surface-strong" />
-  );
-}
-
-/**
  * The figure a fact leads with, split from the words around it.
  *
  * "6.38 GB discarded" is a number and a caption for it, and the number is the
@@ -332,12 +300,27 @@ function Running({
 
       <div className="flex min-h-24 min-w-0 flex-1 flex-col gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="min-w-0 truncate text-sm font-medium">
-            {film?.title ?? fileName ?? row.detail.title}
-            {film?.year && (
-              <span className="ml-2 text-xs opacity-40">{film.year}</span>
+          {/* The clock rides the title line, at the far end of it. It was a
+              line of its own under the file name, behind the job's own name —
+              "Converting to Profile 8.1 · 4m 12s" — which put the one figure
+              that changes while you watch at the end of a sentence that never
+              does. The name went with it: what the job is doing is said twice
+              more in this row, by the stage under the bar and by the dialog
+              the row opens, and a third telling in smaller type was the row
+              explaining itself rather than reporting. */}
+          <div className="flex min-w-0 items-baseline justify-between gap-3">
+            <p className="min-w-0 truncate text-sm font-medium">
+              {film?.title ?? fileName ?? row.detail.title}
+              {film?.year && (
+                <span className="ml-2 text-xs opacity-40">{film.year}</span>
+              )}
+            </p>
+            {elapsed && (
+              <span className="shrink-0 text-xs tabular-nums opacity-45">
+                {elapsed}
+              </span>
             )}
-          </p>
+          </div>
           {fileName && (
             <p
               className="min-w-0 truncate font-mono text-xs opacity-55"
@@ -346,13 +329,6 @@ function Running({
               {fileName}
             </p>
           )}
-          {/* The job's own name, where the finished row names its kind. It is
-              the more exact of the two — "Rebuilding Profile 7" and
-              "Converting to Profile 8.1" are one kind in the log. */}
-          <p className="text-xs opacity-45">
-            {row.detail.title}
-            {elapsed && ` · ${elapsed}`}
-          </p>
         </div>
 
         {/* Ranged off the bottom, so what the job is doing lands on the

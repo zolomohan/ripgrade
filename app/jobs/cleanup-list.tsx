@@ -14,6 +14,7 @@ import type { CleanupFile, CleanupKind } from "@/lib/queue-tasks";
 import { movieId } from "@/lib/routes";
 import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
 import { Stat } from "@/app/charts";
+import { Poster } from "./poster";
 import { Stats } from "./stats";
 import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 
@@ -248,6 +249,13 @@ export function CleanupList({
             style={stagger(offset + index)}
             className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-3.5 transition-colors hover:bg-surface"
           >
+            {/* The rows here are files, but a file is recognised by the film it
+                was set aside from — and the same poster on the same left edge
+                is what says which. Absent on the rows whose film has been
+                renamed or removed, where the block stands in and keeps the
+                edge straight. */}
+            <Poster film={file.film} />
+
             <div className="min-w-0 flex-1">
               <p className="flex min-w-0 items-baseline gap-2">
                 {file.film ? (
