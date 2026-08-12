@@ -7,6 +7,7 @@ import {
   computeGrowth,
   computeIssues,
   computeMatchCoverage,
+  computeStats,
 } from "../lib/stats";
 
 /**
@@ -32,9 +33,25 @@ const film = (over: Partial<LibraryItem> = {}): LibraryItem =>
     addedAt: 0,
     acknowledged: false,
     issues: [],
+    audio: [],
     art: {},
     ...over,
   }) as LibraryItem;
+
+/** A high-confidence match, which is all these tests need a TMDb id to be. */
+const id = (n: number) => ({
+  id: n,
+  title: String(n),
+  confidence: "high" as const,
+});
+
+/**
+ * A scored ceiling, named by the one field the coverage split reads. Cast for
+ * the same reason `film` is: `DiscFacts` describes a whole release, and none
+ * of the rest of it changes which bucket a film lands in.
+ */
+const ceiling = (discScore: number) =>
+  ({ discScore }) as NonNullable<LibraryItem["disc"]>;
 
 const issue = (code: string, severity: Issue["severity"]): Issue => ({
   code,
@@ -250,4 +267,61 @@ test("an empty library reports three zeroes rather than nothing", () => {
     computeMatchCoverage([]).map((s) => s.count),
     [0, 0, 0],
   );
+});
+
+// ---------------------------------------------------------------------------
+// Quality comparison
+// ---------------------------------------------------------------------------
+
+test("a ceiling typed in is counted apart from one that was found", () => {
+  // Both scored the same way and neither film can tell you which it got — the
+  // set of ids is the only thing that separates them, which is exactly why
+  // this is worth pinning.
+  const stats = computeStats(
+    [
+      film({ path: "/a", tmdb: id(1), disc: ceiling(90) }),
+      film({ path: "/b", tmdb: id(2), disc: ceiling(80) }),
+      film({ path: "/c", tmdb: id(3), disc: ceiling(70) }),
+      film({ path: "/d", tmdb: id(4) }),
+      film({ path: "/e" }),
+    ],
+    new Set([3]),
+  );
+
+  assert.deepEqual(stats.qualityCoverage, [
+    { label: "Disc", count: 2 },
+    { label: "Manual", count: 1 },
+    { label: "None", count: 2 },
+  ]);
+});
+
+test("an entered id for a film with no ceiling counts as neither", () => {
+  // The entry exists but nothing came of it, and the card is about what the
+  // verdicts rest on rather than about what was typed.
+  const stats = computeStats([film({ path: "/a", tmdb: id(1) })], new Set([1]));
+
+  assert.deepEqual(
+    stats.qualityCoverage.map((s) => s.count),
+    [0, 0, 1],
+  );
+});
+
+test("the films with no ceiling say which problem they are", () => {
+  const stats = computeStats([
+    film({ path: "/a", tmdb: id(1) }),
+    film({ path: "/b" }),
+  ]);
+
+  assert.deepEqual(stats.uncomparedReasons, [
+    { label: "Identified, no disc found", count: 1 },
+    { label: "Not identified yet", count: 1 },
+  ]);
+});
+
+test("a reason nobody has is left out rather than drawn at zero", () => {
+  const stats = computeStats([film({ path: "/a", tmdb: id(1) })]);
+
+  assert.deepEqual(stats.uncomparedReasons, [
+    { label: "Identified, no disc found", count: 1 },
+  ]);
 });

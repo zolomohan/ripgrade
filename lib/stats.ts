@@ -65,11 +65,19 @@ export type LibraryStats = {
   /** Films with no disc to measure against, kept out of that ranking. */
   uncompared: { total: number; byStatus: { status: Status; count: number }[] };
   /**
-   * How much of the library has a disc to be judged against — and for the rest,
-   * which step it stalled at, since "no disc exists" and "we never identified
-   * the film" are different problems with different fixes.
+   * Where each film's ceiling came from: a disc that was found, one that was
+   * typed in, or none at all. The three carry different weight — a library
+   * measured against pressed discs is measured against something checkable,
+   * and one measured against specs somebody remembered is not — so they are
+   * counted apart rather than added up into "compared".
    */
-  discCoverage: { label: string; count: number }[];
+  qualityCoverage: { label: string; count: number }[];
+  /**
+   * How the films with no ceiling break down: identified but no disc found,
+   * against never matched at all. Two different problems with two different
+   * fixes, and the coverage bar has no room to say so.
+   */
+  uncomparedReasons: { label: string; count: number }[];
   decades: Slice[];
   resolution: Slice[];
   hdr: Slice[];
@@ -212,7 +220,17 @@ function tally(
 
 const COLLECTION_LIMIT = 8;
 
-export function computeStats(items: LibraryItem[]): LibraryStats {
+/**
+ * `entered` is the set of TMDb ids whose ceiling was typed in by hand. Passed
+ * in rather than read here for the reason at the top of this file: everything
+ * in it takes what it is given and returns numbers, so a fixture is enough to
+ * test it. An empty set is honest — it says every ceiling was found, which is
+ * true of a library nobody has typed one into.
+ */
+export function computeStats(
+  items: LibraryItem[],
+  entered: Set<number> = new Set(),
+): LibraryStats {
   const totals = {
     films: items.length,
     bytes: items.reduce((n, m) => n + m.sizeBytes, 0),
@@ -243,11 +261,29 @@ export function computeStats(items: LibraryItem[]): LibraryStats {
     })).filter((b) => b.count > 0),
   };
 
-  const discCoverage = [
+  // A ceiling typed in is still an ordinary spec by the time it is scored, so
+  // the film itself carries no trace of where it came from — the set of ids
+  // does, and it is the only thing separating these two counts.
+  const enteredCount = compared.filter(
+    (m) => m.tmdb?.id !== undefined && entered.has(m.tmdb.id),
+  ).length;
+
+  const qualityCoverage = [
     {
-      label: "Compared to a disc",
-      count: compared.length,
+      label: "Disc",
+      count: compared.length - enteredCount,
     },
+    {
+      label: "Manual",
+      count: enteredCount,
+    },
+    {
+      label: "None",
+      count: uncomparedItems.length,
+    },
+  ];
+
+  const uncomparedReasons = [
     {
       label: "Identified, no disc found",
       count: uncomparedItems.filter((m) => m.tmdb?.id).length,
@@ -256,7 +292,7 @@ export function computeStats(items: LibraryItem[]): LibraryStats {
       label: "Not identified yet",
       count: uncomparedItems.filter((m) => !m.tmdb?.id).length,
     },
-  ];
+  ].filter((r) => r.count > 0);
 
   const decades = tally(items, [], (m) =>
     m.year ? `${Math.floor(m.year / 10) * 10}s` : undefined,
@@ -315,7 +351,8 @@ export function computeStats(items: LibraryItem[]): LibraryStats {
     totals,
     scores,
     uncompared,
-    discCoverage,
+    qualityCoverage,
+    uncomparedReasons,
     decades,
     resolution,
     hdr,

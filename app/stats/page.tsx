@@ -1,3 +1,4 @@
+import { enteredDiscIds } from "@/lib/disc";
 import { getMovies } from "@/lib/library";
 import { getShows } from "@/lib/shows";
 import { computeShowStats, computeStats } from "@/lib/stats";
@@ -9,7 +10,7 @@ export const metadata = { title: "Stats — RipGrade" };
 export const dynamic = "force-dynamic";
 
 export default async function StatsPage() {
-  const stats = computeStats(getMovies());
+  const stats = computeStats(getMovies(), enteredDiscIds());
   const shows = computeShowStats(getShows());
 
   return (

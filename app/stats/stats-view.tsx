@@ -104,8 +104,24 @@ export function StatsView({
         )}
       </Card>
 
-      <Card title="Disc comparison" hint="what the verdicts rest on" index={2}>
-        <Coverage segments={stats.discCoverage} />
+      <Card
+        title="Quality comparison"
+        hint="where each ceiling came from"
+        index={2}
+      >
+        <Coverage segments={stats.qualityCoverage} />
+        {stats.uncomparedReasons.length > 0 && (
+          // The bar says how many have no ceiling; this says why, and the two
+          // answers have different fixes — one is a disc that was never
+          // pressed, the other a film the scan could not name.
+          <p className="text-xs opacity-45">
+            Of those with none,{" "}
+            {stats.uncomparedReasons
+              .map((r) => `${count(r.count)} ${r.label.toLowerCase()}`)
+              .join(", ")}
+            .
+          </p>
+        )}
       </Card>
 
       <div className="grid gap-10 lg:grid-cols-2">

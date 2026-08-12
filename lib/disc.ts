@@ -52,6 +52,27 @@ export function discIds(): Set<number> {
   return new Set(rows.map((r) => r.tmdb_id));
 }
 
+/**
+ * Every film whose ceiling was typed in rather than found.
+ *
+ * Nothing scores differently for it — a hand-entered ceiling is an ordinary
+ * `DiscSpec` by the time the scorer sees one, deliberately. This is for saying
+ * where the ceiling came from, which is a question about the library's
+ * coverage rather than about any one film: a shelf compared mostly against
+ * specs somebody typed is a shelf resting on their memory.
+ *
+ * `entered` and not `manual`: picking which release to scrape is still the
+ * disc's own numbers, and only the typed-in ones are anybody's word for it.
+ */
+export function enteredDiscIds(): Set<number> {
+  const rows = db
+    .prepare(
+      "SELECT tmdb_id FROM disc WHERE json_extract(lookup, '$.entered') = 1",
+    )
+    .all() as { tmdb_id: number }[];
+  return new Set(rows.map((r) => r.tmdb_id));
+}
+
 export function hasDisc(tmdbId: number): boolean {
   return Boolean(
     db.prepare("SELECT 1 FROM disc WHERE tmdb_id = ?").get(tmdbId),
