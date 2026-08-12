@@ -86,6 +86,17 @@ const STATE_LABEL: Record<string, string> = {
 
 const PAUSED_STATES = new Set(["pausedDL", "stoppedDL"]);
 
+/**
+ * Listed, but not arriving and not going to without a person.
+ *
+ * A finished torrent whose files have since been moved or deleted reads as
+ * `missingFiles` with its progress back at zero, which is the client saying
+ * something about the drive rather than about a download. Under "Downloading"
+ * that row is a fetch starting over — it is not one, and nothing is coming. It
+ * belongs in history, where the record of it already is.
+ */
+const LOST_STATES = new Set(["error", "missingFiles"]);
+
 /** Still uploading to peers — the states worth an explicit stop. */
 const SEEDING_STATES = new Set([
   "uploading",
@@ -164,6 +175,10 @@ const ASK: Record<
     body: "The torrent stops uploading and stays in qBittorrent with its files where they are. Resume it from this same menu whenever you like.",
   },
 };
+
+/** The one-word mark a history row can carry, where it has earned one. */
+const CHIP =
+  "rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-60 ring-1 ring-line-strong ring-inset";
 
 const ROW_ACTION =
   "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong disabled:opacity-40";
@@ -344,8 +359,11 @@ export function Transfers({
       setEntries(await listDownloadLog());
     });
 
-  const active = entries.filter((e) => e.live && !e.live.done);
-  const past = entries.filter((e) => !e.live || e.live.done);
+  const inFlight = (e: DownloadEntry) =>
+    Boolean(e.live && !e.live.done && !LOST_STATES.has(e.live.state));
+
+  const active = entries.filter(inFlight);
+  const past = entries.filter((e) => !inFlight(e));
 
   /**
    * Which rows name their poster, by hash.
@@ -529,6 +547,21 @@ export function Transfers({
             {past.map((entry, i) => {
               const d = entry.live;
               const finished = Boolean(entry.completedAt || d?.done);
+
+              /*
+               * What is exceptional about this row, if anything. A torrent
+               * qBittorrent has lost the files for says so — otherwise a film
+               * that finished, went missing and is quietly no longer offered
+               * on the queue is a row that looks perfectly well and a queue
+               * that seems to have forgotten it.
+               */
+              const mark =
+                d && LOST_STATES.has(d.state)
+                  ? (STATE_LABEL[d.state] ?? d.state).toUpperCase()
+                  : finished
+                    ? undefined
+                    : "REMOVED";
+
               return (
                 <li
                   key={entry.hash}
@@ -557,14 +590,10 @@ export function Transfers({
                       {entry.title}
                     </p>
 
-                    {/* Being here says it finished; only the exception — a
-                        download that never did — earns a mark. */}
+                    {/* Being here says it finished; only the exceptions earn
+                        a mark. */}
                     <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                      {!finished && (
-                        <span className="rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-60 ring-1 ring-line-strong ring-inset">
-                          REMOVED
-                        </span>
-                      )}
+                      {mark && <span className={CHIP}>{mark}</span>}
                       {d && SEEDING_STATES.has(d.state) && (
                         <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
                           seeding

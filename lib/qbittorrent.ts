@@ -661,7 +661,10 @@ export function forgetDownload(hash: string): void {
 /**
  * qBittorrent's words for a torrent that has stopped being a download. Not the
  * same as gone: the entry is still listed, still yours to resume or delete —
- * but nothing is arriving, so the film is worth offering again.
+ * but nothing is arriving, so a film that never finished is worth offering
+ * again. Only where it never finished: `missingFiles` is also what a long-done
+ * torrent says once its files have been moved or deleted, and that is a fact
+ * about the drive rather than about the fetch.
  */
 const FAILED_STATES = new Set(["error", "missingFiles"]);
 
@@ -674,9 +677,9 @@ const FAILED_STATES = new Set(["error", "missingFiles"]);
  * is the one mistake the client will not catch for you. So the page asks this
  * first and drops the rows that answer yes.
  *
- * Yes means: qBittorrent is holding it, or it finished and was tidied away
- * afterwards. No means the torrent was cancelled, deleted or errored — the
- * fetch did not happen, so the row comes back exactly as it was. That is the
+ * Yes means: it finished at some point, or qBittorrent is holding it now. No
+ * means the fetch never happened — cancelled, deleted, or stopped on an error
+ * before it completed — so the row comes back exactly as it was. That is the
  * whole reason this is asked of the client at read time rather than written
  * down at send time: a send is not an arrival, and only the client knows the
  * difference.
@@ -722,10 +725,17 @@ export async function alreadyFetching(): Promise<
     const held =
       live === undefined
         ? true
-        : current
-          ? !FAILED_STATES.has(current.state)
-          : // Not listed any more: finished and cleared away, or cancelled.
-            row.completed_at !== null;
+        : // A fetch that finished once is finished for good. What became of
+          // the files afterwards — deleted, moved to the library, the drive
+          // unplugged — is not a reason to fetch them again: the film either
+          // scans in or it does not, and the queue is answered by the library,
+          // not by whether qBittorrent can still see what it downloaded. So a
+          // stamped row outranks whatever the client says about it now.
+          row.completed_at !== null ||
+          (current
+            ? !FAILED_STATES.has(current.state)
+            : // Never finished and no longer listed: cancelled.
+              false);
 
     if (!held) continue;
     hashes.add(row.hash);
