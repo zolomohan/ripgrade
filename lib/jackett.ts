@@ -43,20 +43,46 @@ const TIMEOUT_MS = 60_000;
 export type JackettConfig = { url: string; apiKey: string };
 
 /**
- * Environment wins over the stored value, so a deployment can pin it, but the
- * settings page is the expected route: the key is per-install and pasting it
- * into a field beats restarting the server.
+ * What Settings saved wins; the environment is the default under it.
  *
- * Empty counts as absent, not as an answer. Compose hands a container every
- * variable it names whether or not the value was filled in, so `??` would let
- * an unset one in `.env` beat a key that had been saved in Settings — and the
- * failure looks like the key being wrong rather than being overruled.
+ * It used to be the other way round, which made the environment a lock rather
+ * than a default: a compose file that named these two turned the Settings page
+ * into a sentence explaining why the field you were looking at could not be
+ * used. A deployment naming a starting point is worth honouring — pointing an
+ * install at the Jackett in the same compose file is the whole reason the
+ * variables exist — but the key is per-install and rotates, and pasting the
+ * new one into a field beats editing a file and restarting the server. So the
+ * saved value is the one in force, and disconnecting falls back to the
+ * environment rather than to nothing.
+ *
+ * Empty counts as absent on both sides, not as an answer. Compose hands a
+ * container every variable it names whether or not the value was filled in, so
+ * `??` would let an unset one in `.env` stand as a real setting — and the
+ * failure looks like the key being wrong rather than being blank.
  */
 export function getJackettConfig(): JackettConfig | undefined {
-  const url = process.env.JACKETT_URL || getSetting(URL_KEY);
-  const apiKey = process.env.JACKETT_API_KEY || getSetting(KEY_KEY);
+  const url = getSetting(URL_KEY) || process.env.JACKETT_URL;
+  const apiKey = getSetting(KEY_KEY) || process.env.JACKETT_API_KEY;
   if (!url || !apiKey) return undefined;
   return { url: url.replace(/\/+$/, ""), apiKey };
+}
+
+/** Whether the environment names a whole config for Settings to fall back to. */
+export function hasEnvJackett(): boolean {
+  return Boolean(process.env.JACKETT_URL && process.env.JACKETT_API_KEY);
+}
+
+/**
+ * Only what Settings stored, ignoring the environment behind it — what a save
+ * that fails its live check has to put back. Restoring the *effective* config
+ * would write the environment's own values into the settings table, quietly
+ * pinning them to whatever they happened to be at the moment of a typo.
+ */
+export function getStoredJackettConfig(): JackettConfig | undefined {
+  const url = getSetting(URL_KEY);
+  const apiKey = getSetting(KEY_KEY);
+  if (!url || !apiKey) return undefined;
+  return { url, apiKey };
 }
 
 export function hasJackett(): boolean {

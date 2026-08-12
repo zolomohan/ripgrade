@@ -20,15 +20,25 @@ import { Failure, Field, Note, PRIMARY, QUIET, Status } from "./parts";
  * the address it reaches and whether it answers — which is what you came to
  * look at; the two fields that change it are a job of their own and now wait to
  * be asked for.
+ *
+ * An address named in the environment is a default here, not a lock: this used
+ * to render as a sentence saying the setting could not be changed, which is a
+ * page refusing to do the one thing it exists for. It is offered the same way
+ * as any other connection, with the environment named as what disconnecting
+ * goes back to.
  */
 export function Jackett({
   configured,
   url,
-  managed,
+  env,
+  overriding,
 }: {
   configured: boolean;
   url?: string;
-  managed: boolean;
+  /** The environment names a whole config, so there is one to fall back to. */
+  env: boolean;
+  /** …and something saved here is being used instead of it. */
+  overriding: boolean;
 }) {
   const fallbackUrl = url ?? "http://localhost:9117";
 
@@ -63,44 +73,59 @@ export function Jackett({
     });
   }
 
-  // Set outside the app, so there is nothing here to change — only the fact of
-  // it, said in the same shape as a connection you made yourself.
-  if (managed) {
-    return (
-      <div className="flex flex-col gap-3">
-        <Status on label="Set by the environment" detail={url} />
-        <Note>
-          JACKETT_URL and JACKETT_API_KEY are set, so this cannot be changed
-          here.
-        </Note>
-      </div>
-    );
-  }
+  // The environment is only in force while nothing has been saved over it.
+  const fromEnv = env && !overriding;
+
+  // Nothing to drop unless something was saved here — where the environment
+  // holds the connection, there is no "off" to disconnect to.
+  const stored = configured && !fromEnv;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <Status
-        on={configured}
-        label={configured ? "Connected" : "Not connected"}
-        detail={configured ? url : undefined}
-      />
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Status
+          on={configured}
+          label={
+            fromEnv
+              ? "Set by the environment"
+              : configured
+                ? "Connected"
+                : "Not connected"
+          }
+          detail={configured ? url : undefined}
+        />
 
-      <div className="flex shrink-0 items-center gap-3">
-        {configured && (
+        <div className="flex shrink-0 items-center gap-3">
+          {stored && (
+            <button
+              type="button"
+              onClick={() => startTransition(async () => disconnectJackett())}
+              disabled={pending}
+              className={QUIET}
+            >
+              {env ? "Use the environment" : "Disconnect"}
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={() => startTransition(async () => disconnectJackett())}
-            disabled={pending}
-            className={QUIET}
+            onClick={() => setOpen(true)}
+            className={PRIMARY}
           >
-            Disconnect
+            {configured ? "Change" : "Connect"}
           </button>
-        )}
-
-        <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
-          {configured ? "Change" : "Connect"}
-        </button>
+        </div>
       </div>
+
+      {/* Only while the environment is the thing answering searches. Once you
+          have saved over it there is nothing to explain: the status says
+          Connected, and the button beside it says what going back would do. */}
+      {fromEnv && (
+        <Note>
+          JACKETT_URL and JACKETT_API_KEY are set. Anything saved here is used
+          instead of them.
+        </Note>
+      )}
 
       <SettingDialog
         open={open}

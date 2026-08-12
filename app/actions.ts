@@ -68,6 +68,8 @@ import { fetchAndCache, setManualMatch } from "@/lib/enrich";
 import {
   clearJackettConfig,
   getJackettConfig,
+  getStoredJackettConfig,
+  hasEnvJackett,
   hasJackett,
   setJackettConfig,
   testJackett,
@@ -1996,16 +1998,26 @@ export async function forgetDownloadEntry(hash: string): Promise<void> {
   refresh();
 }
 
+/**
+ * What the settings page needs to know, which is never the key itself.
+ *
+ * The environment is reported as a fallback rather than as a lock: `env` says
+ * there is one to go back to, `overriding` says something saved here is being
+ * used instead of it.
+ */
 export async function getJackettStatus(): Promise<{
   configured: boolean;
   url?: string;
-  managed: boolean;
+  env: boolean;
+  overriding: boolean;
 }> {
   const config = getJackettConfig();
+  const env = hasEnvJackett();
   return {
     configured: Boolean(config),
     url: config?.url,
-    managed: Boolean(process.env.JACKETT_URL && process.env.JACKETT_API_KEY),
+    env,
+    overriding: env && Boolean(getStoredJackettConfig()),
   };
 }
 
@@ -2021,7 +2033,9 @@ export async function saveJackett(
     };
   }
 
-  const previous = getJackettConfig();
+  // The stored half only: putting the environment's values back would store
+  // them, turning a failed save into a pin.
+  const previous = getStoredJackettConfig();
   setJackettConfig({ url, apiKey });
 
   try {
@@ -2041,6 +2055,11 @@ export async function saveJackett(
   }
 }
 
+/**
+ * Drops what was saved here. Where the environment names a config, that is
+ * what the app goes back to rather than to nothing — which is why the button
+ * reads "Use the environment" in that case.
+ */
 export async function disconnectJackett(): Promise<void> {
   clearJackettConfig();
   refresh();
