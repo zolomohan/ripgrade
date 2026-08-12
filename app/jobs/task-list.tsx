@@ -181,16 +181,12 @@ function TaskRow({
         </p>
 
         {progress ?? (
+          /* No "Drive away" chip here any more. An unplugged drive is not a
+             property of the film — it is a reason the one thing this row offers
+             cannot be done, and the button already says so, greyed out with the
+             sentence on it. Said twice it was a label on a row that reads as a
+             judgement about the file. */
           <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            {/* Both lists want this and it says the same thing in each, so it
-                is drawn here rather than passed in twice. First, because it is
-                the fact that decides whether the rest of the row can be acted
-                on at all. */}
-            {task.offline && (
-              <Chip title="The drive this file lives on is not connected, so nothing can be rewritten on it yet">
-                Drive away
-              </Chip>
-            )}
             {chips}
           </div>
         )}
