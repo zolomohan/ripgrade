@@ -119,12 +119,16 @@ export default async function SettingsPage() {
             settings: <Jobs />,
           },
           {
-            key: "fetching",
-            // Not "Queue", which is one of the two lists this feeds — the
-            // wishlist is the other, and both are fetched through the same two
-            // services.
-            label: "Fetching",
-            settings: <Fetching />,
+            key: "downloads",
+            // The app's own word for what all three of these are about, and a
+            // noun like the two before it — "Fetching" named the act rather
+            // than the subject, and read as the odd word on the line.
+            //
+            // Not "Queue": that is one of the two lists these settings feed,
+            // and the wishlist is the other. Both arrive the same way, through
+            // the same two services, judged by the same bar.
+            label: "Downloads",
+            settings: <Downloads />,
           },
         ]}
       />
@@ -226,7 +230,7 @@ export default async function SettingsPage() {
 
   /** Where more files come from: what finds them, what fetches them, and how
    *  good a find has to be before you hear about it. */
-  function Fetching() {
+  function Downloads() {
     return (
       <>
         {/* The two services next to each other, which the one column never let
