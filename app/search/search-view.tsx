@@ -16,9 +16,11 @@ import {
 import { Art } from "@/app/art";
 import { Bar, BarSearch, ICONS, MenuItem, Popover } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
+import { Heart } from "@/app/heart";
 import { Result, SORTS, type Sort } from "@/app/release-search";
 import { scoreTheme, STATUS_THEME } from "@/app/score-circle";
 import { stagger } from "@/app/stagger";
+import { OVER_ART, WANTED_ART } from "@/app/tile-button";
 import { posterName } from "@/lib/routes";
 
 /**
@@ -191,23 +193,6 @@ function remember<T>(cache: Map<string, T>, term: string, value: T) {
   }
 }
 
-function Heart({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill={filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="h-3.5 w-3.5"
-    >
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
-  );
-}
-
 /** The frame both halves are drawn in, so a film reads the same either side. */
 function Tile({
   index,
@@ -334,12 +319,16 @@ function DiscoverTile({
 }) {
   return (
     <Tile index={index}>
-      {/* The heart is a sibling of the link rather than a child of it: a button
-          inside an anchor is invalid, and one gesture would fire both. */}
-      <div className="relative">
+      {/* The heart is inside the frame rather than pinned beside it, because
+          the frame is what lifts under the pointer: a control anchored outside
+          it sits still while the picture it belongs to moves, which reads as
+          two objects that happen to overlap. That puts the link inside too —
+          an anchor cannot hold a button, so the anchor is what gives way. */}
+      <div className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
         <Link
           href={`/discover/${hit.kind}/${hit.id}`}
-          className="glow glow-over tilt relative block aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line"
+          aria-label={hit.title}
+          className="block h-full"
         >
           {hit.posterPath && (
             <Art
@@ -367,10 +356,14 @@ function DiscoverTile({
             wanted ? `Remove ${hit.title} from wishlist` : `Want ${hit.title}`
           }
           title={wanted ? "On the wishlist" : "Add to wishlist"}
-          className={`absolute top-2 right-2 grid h-7 w-7 place-items-center rounded-full bg-background/85 backdrop-blur transition-opacity disabled:opacity-30 ${
+          /* Off the plate it used to sit on, and larger for it: a mark drawn
+             white over its own shadow carries on a poster without a disc under
+             it, and the disc was most of what made the heart small. See
+             OVER_ART. */
+          className={`absolute top-1 right-1 z-10 grid h-9 w-9 place-items-center transition-opacity disabled:opacity-30 ${
             wanted
-              ? "text-red-600 dark:text-red-400"
-              : "opacity-0 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-70"
+              ? WANTED_ART
+              : `${OVER_ART} opacity-0 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-70`
           }`}
         >
           <Heart filled={wanted} />
@@ -634,7 +627,12 @@ export function SearchView() {
    * and walks them one by one.
    */
   function onFieldKey(event: React.KeyboardEvent) {
-    if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    if (
+      event.key === "Tab" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
       event.preventDefault();
       cycle(event.shiftKey ? -1 : 1);
       return;
@@ -764,7 +762,8 @@ export function SearchView() {
             icon={ICONS.sort}
             label="Sort"
             value={
-              (SORT_OPTIONS.find((o) => o.key === sort) ?? SORT_OPTIONS[0]).label
+              (SORT_OPTIONS.find((o) => o.key === sort) ?? SORT_OPTIONS[0])
+                .label
             }
             // The bar's last slot, so the fill follows its rounded end.
             buttonClassName="rounded-r-full"
@@ -824,20 +823,34 @@ export function SearchView() {
           (library.length > 0 ? (
             <>
               {heldFilms.length > 0 && (
-                <Section title="Films" note={`${heldFilms.length} on the drive`}>
+                <Section
+                  title="Films"
+                  note={`${heldFilms.length} on the drive`}
+                >
                   <Grid>
                     {heldFilms.map((hit, i) => (
-                      <OwnedTile key={`${hit.kind}:${hit.id}`} hit={hit} index={i} />
+                      <OwnedTile
+                        key={`${hit.kind}:${hit.id}`}
+                        hit={hit}
+                        index={i}
+                      />
                     ))}
                   </Grid>
                 </Section>
               )}
 
               {heldShows.length > 0 && (
-                <Section title="Shows" note={`${heldShows.length} on the drive`}>
+                <Section
+                  title="Shows"
+                  note={`${heldShows.length} on the drive`}
+                >
                   <Grid>
                     {heldShows.map((hit, i) => (
-                      <OwnedTile key={`${hit.kind}:${hit.id}`} hit={hit} index={i} />
+                      <OwnedTile
+                        key={`${hit.kind}:${hit.id}`}
+                        hit={hit}
+                        index={i}
+                      />
                     ))}
                   </Grid>
                 </Section>
@@ -943,10 +956,7 @@ export function SearchView() {
         )}
 
         {mode === INDEXER && search && showing.length === 0 && (
-          <EmptyState
-            icon={NO_RELEASES_ICON}
-            title="Nothing from the indexers"
-          >
+          <EmptyState icon={NO_RELEASES_ICON} title="Nothing from the indexers">
             No indexer returned a thing for “{search.query}”. Try fewer words —
             they match release names, and a name rarely says more than the title
             and the year.

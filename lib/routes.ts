@@ -35,11 +35,51 @@ export const posterName = (key: string) => `poster-${encodeId(key)}`;
 /**
  * The same idea for a collection's name: the title in the list and the heading
  * on the set's own page are one piece of text, and this is what says so.
+ *
+ * Takes a key rather than a number, because there are two kinds of set now and
+ * they number themselves separately: TMDb's id 10 and your tenth collection are
+ * different sets, and a name they shared would pair the wrong two headings.
+ * `collectionKey` below is what keeps them apart.
  */
-export const collectionTitleName = (id: number) => `collection-title-${id}`;
+export const collectionTitleName = (key: number | string) =>
+  `collection-title-${key}`;
 
 /** And the line under it, which says the same thing in both places. */
-export const collectionMetaName = (id: number) => `collection-meta-${id}`;
+export const collectionMetaName = (key: number | string) =>
+  `collection-meta-${key}`;
+
+/** A set of your own, named apart from the TMDb set that shares its number. */
+export const customCollectionKey = (id: number) => `c${id}`;
+
+/**
+ * What names a film inside a set — a React key on both shelves, and the key a
+ * set of your own files its membership under.
+ *
+ * TMDb's number wherever there is one, so a film keeps its place in a set
+ * through a rescan, a re-rip, and a move to another drive. A film TMDb never
+ * matched falls back to its path, which is the only other thing it has — and a
+ * film that is nothing but a path is one the app cannot say anything about
+ * anyway.
+ *
+ * A set of your own hands its own key down rather than letting this work it
+ * out: a film added off the shelf and since gone from it has neither a number
+ * nor a copy left to read a path off, and only the row it was written into
+ * still remembers which film the line is about.
+ *
+ * Here rather than beside `CollectionFilm` because the tiles that call it are
+ * in the browser and lib/collections.ts is server-only — the same reason
+ * `posterName` above lives here. Typed by the shape it reads rather than by
+ * that type, so this module goes on importing nothing.
+ */
+export const filmKey = (film: {
+  key?: string;
+  tmdbId?: number;
+  owned?: { path: string };
+}): string =>
+  film.key ??
+  (film.tmdbId !== undefined
+    ? `t${film.tmdbId}`
+    : `p${film.owned?.path ?? ""}`);
 
 /**
  * Route id for a film. The absolute path is the natural key but contains

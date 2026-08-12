@@ -24,12 +24,14 @@ import { hasJackett } from "@/lib/jackett";
 import { getMovie, type LibraryItem } from "@/lib/library";
 import { canRevealInFinder } from "@/lib/system";
 import { Art } from "@/app/art";
+import { HERO_BOX, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { DiscHeading } from "@/app/disc-heading";
 import { FormatBadges } from "@/app/format-badges";
 import { UpgradeButton } from "@/app/release-search";
 import { NoDisc } from "@/app/no-disc";
 import { Panel } from "@/app/panel";
 import { ScoreRing, SubScore } from "@/app/score-card";
+import { AddToCollection } from "./add-to-collection";
 import { ArtworkEditor } from "./artwork-editor";
 import { AudioTracks } from "./audio-tracks";
 import { BackButton } from "./back-button";
@@ -293,7 +295,7 @@ export async function DetailPage({
   return (
     <main className="flex flex-col pb-16">
       {/* Hero */}
-      <div className="relative h-96 w-full overflow-hidden sm:h-[32rem]">
+      <div className={HERO_BOX}>
         {backdrop || backdropRemote ? (
           <>
             <Art
@@ -301,9 +303,9 @@ export async function DetailPage({
               remote={backdropRemote}
               version={artAt(movie.fanart)}
               size="original"
-              className="enter-veil absolute inset-0 h-full w-full object-cover"
+              className={HERO_ART}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
+            <div className={HERO_VEIL} />
           </>
         ) : (
           <div className="absolute inset-0 bg-surface-strong" />
@@ -395,6 +397,12 @@ export async function DetailPage({
               movie.tmdb && (
                 <ArtworkEditor moviePath={movie.path} tmdbId={movie.tmdb.id} />
               )
+            )}
+            {/* Films only. A set of your own is a set of films, exactly as
+                TMDb's are — an episode belongs to a season, which is a set
+                somebody has already drawn up. */}
+            {movie.kind === "movie" && (
+              <AddToCollection moviePath={movie.path} />
             )}
             {/* Last, so the primary action ends the row rather than leading it.
 

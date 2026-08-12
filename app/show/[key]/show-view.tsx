@@ -13,6 +13,7 @@ import { useClosing, useLingering } from "@/app/modal";
 import { NoDisc } from "@/app/no-disc";
 import { Panel } from "@/app/panel";
 import { Art } from "@/app/art";
+import { HERO_BOX_SHORT, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { DiscReview } from "@/app/film/[id]/disc-review";
 import { ReleaseSearchModal } from "@/app/release-search";
 import { stagger } from "@/app/stagger";
@@ -905,7 +906,7 @@ export function ShowView({
     <>
       {/* The same hero a film gets: a show earns it more, if anything, since
           this page stands in for every episode below it. */}
-      <div className="relative h-72 w-full overflow-hidden sm:h-96">
+      <div className={HERO_BOX_SHORT}>
         {show.fanart || show.art.fanart ? (
           <>
             <Art
@@ -913,9 +914,9 @@ export function ShowView({
               remote={show.art.fanart}
               version={show.artAt}
               size="original"
-              className="enter-veil absolute inset-0 h-full w-full object-cover"
+              className={HERO_ART}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
+            <div className={HERO_VEIL} />
           </>
         ) : (
           <div className="absolute inset-0 bg-surface-strong" />

@@ -5,8 +5,10 @@ import { useState, useTransition } from "react";
 
 import { addWish, removeWish } from "@/app/actions";
 import { Art } from "@/app/art";
+import { HERO_BOX, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { BackButton } from "@/app/film/[id]/back-button";
 import { HERO_BUTTON } from "@/app/film/[id]/hero-button";
+import { Heart } from "@/app/heart";
 import { posterName } from "@/lib/routes";
 import type { WishKind } from "@/lib/wishlist";
 import { Downloads, type DiscoverSubject } from "./downloads";
@@ -43,23 +45,6 @@ export type Wish = {
   overview?: string;
   wanted: boolean;
 };
-
-function Heart({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill={filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="h-4 w-4"
-    >
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
-  );
-}
 
 export function DiscoverView({
   subject,
@@ -125,15 +110,15 @@ export function DiscoverView({
     <>
       {/* Hero. The same one a film gets, drawn from TMDb rather than from a
           folder on the drive — there is no folder. */}
-      <div className="relative h-96 w-full overflow-hidden sm:h-[32rem]">
+      <div className={HERO_BOX}>
         {art.backdropPath ? (
           <>
             <Art
               remote={art.backdropPath}
               size="original"
-              className="enter-veil absolute inset-0 h-full w-full object-cover"
+              className={HERO_ART}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
+            <div className={HERO_VEIL} />
           </>
         ) : (
           <div className="absolute inset-0 bg-surface-strong" />
@@ -233,7 +218,10 @@ export function DiscoverView({
                   wanted ? "text-red-600 dark:text-red-400" : ""
                 }`}
               >
-                <Heart filled={wanted} />
+                {/* Smaller than the one on a poster: this one sits on a
+                    bordered button among other bordered buttons, and is sized
+                    to them rather than to the artwork behind them. */}
+                <Heart filled={wanted} className="h-4 w-4" />
               </button>
             </div>
           )}

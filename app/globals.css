@@ -1696,6 +1696,98 @@ html {
 }
 
 /*
+ * A heart being filled. The moving half of `app/heart.tsx`, which decides when
+ * it plays; this is only what playing looks like.
+ *
+ * Squash, overshoot, settle. The squash is what makes it read as a press rather
+ * than a growth — the mark gives under the finger before it answers — and the
+ * overshoot past full size is what makes the answer emphatic instead of merely
+ * complete. Two smaller bounces after it, each about a third of the last, which
+ * is what a thing with mass does when it stops.
+ *
+ * Fast, because it is confirming something instant. Past about half a second a
+ * flourish stops being a reply and becomes an interruption, and this fires on a
+ * poster you may be about to click.
+ *
+ * The origin is stated rather than left to the default, which is the one thing
+ * about this that has to be right: a heart scaled from a corner does not swell,
+ * it lunges. It goes on the drawing as a whole — the element scales, taking its
+ * own viewport with it — so nothing is scaled past an edge that would clip it.
+ */
+@layer components {
+  .heart-pop {
+    transform-origin: center;
+    animation: heart-pop 420ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+}
+
+@keyframes heart-pop {
+  0% {
+    transform: scale(1);
+  }
+  16% {
+    transform: scale(0.78);
+  }
+  42% {
+    transform: scale(1.28);
+  }
+  66% {
+    transform: scale(0.94);
+  }
+  84% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/*
+ * The same heart being emptied — the pop's opposite number.
+ *
+ * It collapses and rebounds, and it never grows past the size it started: an
+ * overshoot is what makes the pop emphatic, and there is nothing to be emphatic
+ * about in taking something off a list. Where the pop pushes back against the
+ * press, this one gives way to it.
+ *
+ * Quicker than the pop by a third, for the same reason. A yes is worth watching
+ * land; a no is worth being over.
+ */
+@layer components {
+  .heart-off {
+    transform-origin: center;
+    animation: heart-off 280ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+}
+
+@keyframes heart-off {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(0.72);
+  }
+  72% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/*
+ * Nothing to slow down here, only to drop. Both are decoration on a change the
+ * colour has already made plain — an outline going solid red, and back — so
+ * where motion is unwanted the heart simply fills and empties.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .heart-pop,
+  .heart-off {
+    animation: none;
+  }
+}
+
+/*
  * Work under way where the distance *is* known — the travelled part of a
  * progress bar, wherever one is drawn: the rail's little bars, the downloads
  * and upgrades rows, a film's own remux, the job dialog.

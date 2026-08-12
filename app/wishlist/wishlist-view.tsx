@@ -15,6 +15,7 @@ import { Art } from "@/app/art";
 import { Bar, ICONS, MenuItem, Popover, Switch } from "@/app/controls";
 import { movieId, posterName, showId } from "@/lib/routes";
 import { stagger } from "@/app/stagger";
+import { RemoveButton } from "@/app/tile-button";
 import type { WishlistEntry } from "@/lib/wishlist";
 
 /**
@@ -117,14 +118,18 @@ function Tile({
         className="row-enter group relative flex flex-col gap-2"
       >
         {/* The poster opens its page — the same page the search opens, which is
-            where what a want *is* and every release of it now live. The two
-            marks over it are siblings rather than children: a link and a button
-            nested inside another link are invalid, and one click would fire
-            both. */}
-        <div className="relative">
+            where what a want *is* and every release of it now live.
+
+            Everything drawn on the poster is inside the frame, because the
+            frame is what lifts under the pointer: a cross pinned outside it
+            hangs still while the picture it belongs to moves. That puts the
+            link inside as well — an anchor cannot hold a button, so the anchor
+            is what gives way. */}
+        <div className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
           <Link
             href={`/discover/${entry.kind}/${entry.tmdbId}`}
-            className="glow glow-over tilt relative block aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line"
+            aria-label={entry.title}
+            className="block h-full"
           >
             {entry.posterPath && (
               <Art
@@ -142,27 +147,15 @@ function Tile({
 
           {entry.owned && <Held owned={entry.owned} />}
 
-          {/* Only on hover: a grid of posters should read as posters until you
-              reach for one. */}
-          <button
-            type="button"
-            onClick={onRemove}
-            disabled={busy}
-            aria-label={`Remove ${entry.title}`}
+          {/* The app's one cross, in the corner it keeps everywhere — see
+              app/tile-button.tsx. This tile had a cross of its own before it,
+              on a plate, half the size, in the other corner. */}
+          <RemoveButton
+            label={`Remove ${entry.title} from the wishlist`}
             title="Remove from wishlist"
-            className="absolute top-2 right-2 grid h-7 w-7 place-items-center rounded-full bg-background/85 opacity-0 backdrop-blur transition-opacity hover:text-red-700 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-30 dark:hover:text-red-300"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className="h-3 w-3"
-            >
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
+            disabled={busy}
+            onClick={onRemove}
+          />
         </div>
 
         <div className="min-w-0">

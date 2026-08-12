@@ -14,7 +14,22 @@ import { getCollection, hasCredentials, type TmdbCollection } from "./tmdb";
  * bandwidth.
  */
 export type CollectionFilm = {
-  tmdbId: number;
+  /**
+   * TMDb's number for the film, which is what a set is held together by:
+   * a part you do not own becomes the copy on your drive the moment one is
+   * scanned and matched to the same number.
+   *
+   * Absent only in a set of your own making — a film you added off the shelf
+   * that TMDb never matched has no number to be known by, and is remembered by
+   * its path instead. See `filmKey`.
+   */
+  tmdbId?: number;
+  /**
+   * What a set of your own filed this film under, carried through so the tile
+   * can ask for it to be taken out again. Absent on a TMDb set, where the
+   * number above is the only name a film has.
+   */
+  key?: string;
   title: string;
   year?: number;
   posterPath?: string;

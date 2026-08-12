@@ -1,7 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { stat } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { listDirectory, type DirListing } from "@/lib/browse";
@@ -55,6 +55,18 @@ import {
   KEEP_EL_KEY,
   type ConvertJob,
 } from "@/lib/convert";
+import {
+  addToCustomSet,
+  collectionDir,
+  createCustomSet,
+  customSetExists,
+  customSetKeys,
+  deleteCustomSet,
+  getCustomSetsHolding,
+  removeFromCustomSet,
+  renameCustomSet,
+  type CollectionMember,
+} from "@/lib/custom-collections";
 import { classifyEnhancementLayer, convertRefusal } from "@/lib/derive";
 import { getDiscoverEpisodes, type DiscoverEpisode } from "@/lib/discover";
 import { deleteCleanupFiles } from "@/lib/queue-tasks";
@@ -1664,6 +1676,13 @@ async function acceptUpload(
   dir: string,
   kind: "poster" | "fanart" | "logo",
   file: unknown,
+  /**
+   * Whether the library has to be re-derived after this. It does when the
+   * folder holds a film or a show, and it does not when the folder is a
+   * collection's — nothing on any shelf changed, and re-running every heuristic
+   * over every probe to say so is seconds of work to reach the same numbers.
+   */
+  rederive = true,
 ): Promise<{ ok: true; saved: string } | { ok: false; error: string }> {
   // What arrives is whatever the caller put in the form. `Blob` covers the
   // `File` a picker yields and the one a drop yields, and is the only part of
@@ -1687,7 +1706,7 @@ async function acceptUpload(
     );
     await reindexDir(dir);
     recordArtworkSource(dir, kind, null);
-    deriveAll();
+    if (rederive) deriveAll();
     refresh();
     return { ok: true, saved };
   } catch (err) {
@@ -1719,6 +1738,363 @@ export async function uploadShowArtwork(
   const show = getShow(showKey);
   if (!show) return { ok: false, error: `Unknown show: ${showKey}` };
   return acceptUpload(show.dir, kind, form.get("file"));
+}
+
+// ---------------------------------------------------------------------------
+// Collections of your own
+// ---------------------------------------------------------------------------
+
+/**
+ * A name, as a set will actually be listed under: trimmed, and not empty.
+ *
+ * Collapsing the inner whitespace too, because a name is a heading and a
+ * heading with two spaces in it is a typo that survives every time you read
+ * past it.
+ */
+const NAME_LIMIT = 80;
+
+function cleanName(name: string): string {
+  return name.replace(/\s+/g, " ").trim().slice(0, NAME_LIMIT);
+}
+
+/** Makes a set. The id comes back so the page can open the set you just made. */
+export async function createCollection(
+  name: string,
+): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
+  const clean = cleanName(name);
+  if (!clean) return { ok: false, error: "Give the collection a name." };
+
+  const id = createCustomSet(clean);
+  refresh();
+  return { ok: true, id };
+}
+
+export async function renameCollection(
+  id: number,
+  name: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!customSetExists(id)) return { ok: false, error: "No such collection." };
+
+  const clean = cleanName(name);
+  if (!clean) return { ok: false, error: "Give the collection a name." };
+
+  renameCustomSet(id, clean);
+  refresh();
+  return { ok: true };
+}
+
+/**
+ * Throws a set away, and the backdrop with it. Nothing on any drive is touched:
+ * a set names films, it does not hold them.
+ */
+export async function deleteCollection(
+  id: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!customSetExists(id)) return { ok: false, error: "No such collection." };
+
+  deleteCustomSet(id);
+  // The folder after the rows, and forgiving of a folder that was never made:
+  // a set given no backdrop has nothing on disk to remove.
+  await rm(collectionDir(id), { recursive: true, force: true }).catch(() => {});
+
+  refresh();
+  return { ok: true };
+}
+
+/**
+ * A film joining a set, named the way it was found.
+ *
+ * From the shelf it is a path, and everything else is read off the record this
+ * app already holds. From TMDb it is the search hit itself, stored as it
+ * stands — the same bargain the wishlist makes, and for the same reason: the
+ * row has to draw with TMDb unreachable, so what it needs has to be in it.
+ */
+export type CollectionAdd =
+  | { from: "library"; path: string }
+  | {
+      from: "tmdb";
+      id: number;
+      title: string;
+      year?: number;
+      posterPath?: string;
+      overview?: string;
+    };
+
+/**
+ * The key a membership row is stored under: TMDb's number wherever the film has
+ * one, the path otherwise. Mirrors `filmKey` in lib/collections.ts, which reads
+ * the same key back off a set that has been assembled.
+ */
+const memberKey = (tmdbId: number | undefined, filePath: string) =>
+  tmdbId !== undefined ? `t${tmdbId}` : `p${filePath}`;
+
+/**
+ * A film off the shelf, as the row that will remember it.
+ *
+ * Everything a membership row holds is read from the record this app already
+ * keeps, so the caller hands over a path and nothing else — which is also what
+ * makes the path the only thing that has to be checked.
+ */
+function memberFromLibrary(moviePath: string): CollectionMember | string {
+  // The same guard every write here keeps: not a security boundary — this app
+  // is local-only — but it stops a malformed call writing a row about a file
+  // nobody has scanned.
+  if (!knownMoviePath(moviePath)) return `Unknown file: ${moviePath}`;
+
+  const item = getMovies().find((movie) => movie.path === moviePath);
+  if (!item) return `Not a film: ${moviePath}`;
+
+  return {
+    key: memberKey(item.tmdb?.id, item.path),
+    tmdbId: item.tmdb?.id,
+    // The path is kept only where there is no number to keep instead: it is the
+    // weaker key of the two, and holding both would leave two answers to "which
+    // film is this" the day one of them moves.
+    path: item.tmdb?.id === undefined ? item.path : undefined,
+    title: item.tmdb?.title ?? item.title,
+    year: item.tmdb?.year ?? item.year,
+    posterPath: item.tmdb?.posterPath,
+    overview: item.tmdb?.overview,
+  };
+}
+
+export async function addToCollection(
+  id: number,
+  film: CollectionAdd,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!customSetExists(id)) return { ok: false, error: "No such collection." };
+
+  if (film.from === "library") {
+    const member = memberFromLibrary(film.path);
+    if (typeof member === "string") return { ok: false, error: member };
+    addToCustomSet(id, member);
+  } else {
+    addToCustomSet(id, {
+      key: memberKey(film.id, ""),
+      tmdbId: film.id,
+      title: film.title,
+      year: film.year,
+      posterPath: film.posterPath,
+      overview: film.overview,
+    });
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+/** Every set of your own, and whether this film is in it. */
+export type FilmCollection = { id: number; name: string; holds: boolean };
+
+/**
+ * The sets a film could be in, answered from the film's own page.
+ *
+ * The collections page asks "what is in this set"; this is the same question
+ * from the other end, which is the one you have when you are looking at a film
+ * and thinking where it belongs. Cheap enough to ask on opening the menu: it is
+ * one read of a table you wrote by hand.
+ */
+export async function collectionsForFilm(
+  moviePath: string,
+): Promise<FilmCollection[]> {
+  const member = memberFromLibrary(moviePath);
+  if (typeof member === "string") return [];
+
+  return getCustomSetsHolding(member.key);
+}
+
+/**
+ * Puts a film in a set or takes it out, said as the state you want rather than
+ * as the act — which is what a row with a tick on it means when you click it.
+ */
+export async function setFilmInCollection(
+  id: number,
+  moviePath: string,
+  member: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!customSetExists(id)) return { ok: false, error: "No such collection." };
+
+  const film = memberFromLibrary(moviePath);
+  if (typeof film === "string") return { ok: false, error: film };
+
+  if (member) addToCustomSet(id, film);
+  else removeFromCustomSet(id, film.key);
+
+  refresh();
+  return { ok: true };
+}
+
+export async function removeFromCollection(
+  id: number,
+  key: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!customSetExists(id)) return { ok: false, error: "No such collection." };
+
+  removeFromCustomSet(id, key);
+  refresh();
+  return { ok: true };
+}
+
+/**
+ * The set's own backdrop, uploaded.
+ *
+ * A TMDb set arrives with artwork; one of yours has nobody to get it from, so
+ * this is the only way it gets a hero — and it is the same write a film's
+ * backdrop takes, into a folder of the set's own. The folder is made here
+ * rather than at creation: a set that never gets a picture should leave nothing
+ * on disk behind it.
+ */
+export async function uploadCollectionBackdrop(
+  id: number,
+  form: FormData,
+): Promise<{ ok: true; saved: string } | { ok: false; error: string }> {
+  if (!customSetExists(id)) return { ok: false, error: "No such collection." };
+
+  const dir = collectionDir(id);
+  try {
+    await mkdir(dir, { recursive: true });
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // Saved under the same name a film's backdrop takes, which is what lets the
+  // art route, the thumbnail cache and the folder index all handle it without
+  // being told a collection is a different kind of thing.
+  return acceptUpload(dir, "fanart", form.get("file"), false);
+}
+
+/** A film a set could have in it, as the picker draws it. */
+export type CollectionCandidate = {
+  /** Its membership key, so the picker knows what is already in the set. */
+  key: string;
+  add: CollectionAdd;
+  title: string;
+  year?: number;
+  /** Artwork on the drive, and the TMDb path to fall back to; see app/art.tsx. */
+  poster?: string;
+  posterPath?: string;
+  artAt?: number;
+  /** A film you hold has a standing; one you do not, does not. */
+  score?: number;
+};
+
+export type CollectionSearch = {
+  /** What matched on the drive. */
+  library: CollectionCandidate[];
+  /** What matched at TMDb and is not on the drive. */
+  discover: CollectionCandidate[];
+  /** Which of these are in the set already, by key. */
+  inSet: string[];
+  /** Without TMDb there is no second half — the local half still works. */
+  tmdb: boolean;
+  error?: string;
+};
+
+/** How many owned films one search offers before it stops listing. */
+const PICKER_LIMIT = 12;
+
+/**
+ * What you could put in a set, asked of both halves of the app at once.
+ *
+ * The same question the universal search asks, narrowed to films — a collection
+ * here is a set of films, the way TMDb's are — and answered with what a picker
+ * needs rather than what a result page needs: the key membership is stored
+ * under, and enough to draw a poster with a name under it.
+ *
+ * A TMDb hit the library already holds is moved into the owned half rather than
+ * offered twice. It is one film either way, and the copy on the drive is the
+ * one worth showing you.
+ */
+export async function searchFilmsForCollection(
+  id: number,
+  query: string,
+): Promise<CollectionSearch> {
+  const term = query.trim();
+  const tmdb = hasCredentials();
+  const inSet = [...customSetKeys(id)];
+  if (!term) return { library: [], discover: [], inSet, tmdb };
+
+  const needle = term.toLowerCase();
+  const movies = getMovies();
+
+  // Keyed by path so a film found by title and again by TMDb id is one entry.
+  const owned = new Map<string, LibraryItem>();
+  for (const movie of movies) {
+    if (
+      movie.title.toLowerCase().includes(needle) ||
+      movie.fileName.toLowerCase().includes(needle)
+    ) {
+      owned.set(movie.path, movie);
+    }
+  }
+
+  // Best copy per film: a film ripped twice is one film to a set, and the
+  // better copy is the one its tile should carry.
+  const byTmdbId = new Map<number, LibraryItem>();
+  for (const movie of movies) {
+    if (movie.tmdb?.id === undefined) continue;
+    const best = byTmdbId.get(movie.tmdb.id);
+    if (!best || movie.scores.overall > best.scores.overall) {
+      byTmdbId.set(movie.tmdb.id, movie);
+    }
+  }
+
+  const discover: CollectionCandidate[] = [];
+  let error: string | undefined;
+
+  if (tmdb) {
+    try {
+      for (const hit of await searchTmdb(term)) {
+        const held = byTmdbId.get(hit.id);
+        if (held) {
+          owned.set(held.path, held);
+          continue;
+        }
+        discover.push({
+          key: memberKey(hit.id, ""),
+          add: {
+            from: "tmdb",
+            id: hit.id,
+            title: hit.title,
+            year: hit.year ? Number(hit.year) : undefined,
+            posterPath: hit.posterPath,
+            overview: hit.overview,
+          },
+          title: hit.title,
+          year: hit.year ? Number(hit.year) : undefined,
+          posterPath: hit.posterPath,
+        });
+      }
+    } catch (err) {
+      // TMDb being unreachable is no reason to stop offering the shelf.
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // A title that starts with what you typed is more likely the one you meant
+  // than one that merely contains it somewhere.
+  const library = [...owned.values()]
+    .map((movie) => ({
+      key: memberKey(movie.tmdb?.id, movie.path),
+      add: { from: "library" as const, path: movie.path },
+      title: movie.tmdb?.title ?? movie.title,
+      year: movie.tmdb?.year ?? movie.year,
+      poster: movie.poster,
+      posterPath: movie.art.poster,
+      artAt: movie.artAt,
+      score: movie.scores.overall,
+    }))
+    .sort((a, b) => {
+      const starts = (hit: CollectionCandidate) =>
+        hit.title.toLowerCase().startsWith(needle) ? 0 : 1;
+      return starts(a) - starts(b) || a.title.localeCompare(b.title);
+    })
+    .slice(0, PICKER_LIMIT);
+
+  return { library, discover, inSet, tmdb, error };
 }
 
 // ---------------------------------------------------------------------------

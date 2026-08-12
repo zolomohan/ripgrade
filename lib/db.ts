@@ -100,6 +100,47 @@ CREATE TABLE IF NOT EXISTS tmdb_collections (
   json        TEXT NOT NULL
 );
 
+-- Sets of your own, as against the ones TMDb publishes.
+--
+-- A collection here is a list you wrote: nothing on disk derives it and no
+-- rescan could rebuild it, which puts it with the wishlist and triage in the
+-- small set of tables that hold decisions rather than findings.
+--
+-- The backdrop is not a column. An uploaded image goes to the collection's own
+-- folder under data/collections/, and is indexed in the artwork table beside
+-- every other image this app has written — so the art route serves it, the
+-- thumbnail cache covers it, and replacing one is the same act as replacing a
+-- film's.
+CREATE TABLE IF NOT EXISTS custom_collections (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+
+-- What is in one.
+--
+-- Keyed by TMDb id where the film has one, which is what lets a film added
+-- before you owned it become the copy on the drive the moment one is scanned
+-- and matched — the same joining-up that fills in a TMDb set's missing half. A
+-- library film TMDb never matched has no such number and is keyed by its path.
+--
+-- Denormalised like the wishlist and for the same reason: an entry is a
+-- decision, and it should still draw with TMDb unreachable and long after any
+-- cache of the record has been dropped.
+CREATE TABLE IF NOT EXISTS custom_collection_films (
+  collection_id INTEGER NOT NULL,
+  -- "t" and the TMDb id, or "p" and the path; see filmKey in lib/collections.ts.
+  film_key      TEXT NOT NULL,
+  tmdb_id       INTEGER,
+  path          TEXT,
+  added_at      INTEGER NOT NULL,
+  title         TEXT NOT NULL,
+  year          INTEGER,
+  poster_path   TEXT,
+  overview      TEXT,
+  PRIMARY KEY (collection_id, film_key)
+);
+
 -- Which film each file was matched to, and how sure we are. A row with a null
 -- tmdb_id records "searched, found nothing" so it is not retried every run.
 CREATE TABLE IF NOT EXISTS tmdb_matches (

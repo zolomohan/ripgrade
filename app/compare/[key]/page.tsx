@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { Art } from "@/app/art";
+import { HERO_BOX, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { MagnetAction } from "@/app/magnet-action";
 import { languageName } from "@/lib/derive";
 import { findDuplicateGroup, type LibraryItem } from "@/lib/library";
@@ -97,9 +98,7 @@ function Delta({ value }: { value: number }) {
   return (
     <span
       className={`ml-1.5 font-sans text-xs font-normal tabular-nums ${
-        value > 0
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "opacity-40"
+        value > 0 ? "text-emerald-600 dark:text-emerald-400" : "opacity-40"
       }`}
     >
       {value > 0 ? `+${value}` : `−${Math.abs(value)}`}
@@ -175,10 +174,14 @@ function buildRows(copies: LibraryItem[], hit: StoredHit | null): Row[] {
       predicted: (h) => (h.scores ? String(h.scores.release) : undefined),
     }),
     row("Status", (m) => m.status),
-    row("Resolution", (m) => `${m.width ?? "?"}×${m.height ?? "?"} (${m.resolution})`, {
-      score: (m) => RESOLUTION_RANK[m.resolution],
-      predicted: (h) => h.resolution,
-    }),
+    row(
+      "Resolution",
+      (m) => `${m.width ?? "?"}×${m.height ?? "?"} (${m.resolution})`,
+      {
+        score: (m) => RESOLUTION_RANK[m.resolution],
+        predicted: (h) => h.resolution,
+      },
+    ),
     row("Codec", (m) => m.videoCodec ?? "unknown"),
     row("Bit depth", (m) => (m.bitDepth ? `${m.bitDepth}-bit` : "unknown"), {
       score: (m) => m.bitDepth,
@@ -186,7 +189,9 @@ function buildRows(copies: LibraryItem[], hit: StoredHit | null): Row[] {
     row(
       "Dynamic range",
       (m) =>
-        m.hdr === "Dolby Vision" ? `Dolby Vision P${m.dvProfile ?? "?"}` : m.hdr,
+        m.hdr === "Dolby Vision"
+          ? `Dolby Vision P${m.dvProfile ?? "?"}`
+          : m.hdr,
       {
         score: (m) => HDR_RANK[m.hdr],
         predicted: (h) => h.hdr,
@@ -200,9 +205,13 @@ function buildRows(copies: LibraryItem[], hit: StoredHit | null): Row[] {
           : "unknown",
       { score: (m) => m.videoBitrateKbps },
     ),
-    row("Bitrate density", (m) => (m.bpp ? `${m.bpp.toFixed(3)} bpp` : "unknown"), {
-      score: (m) => m.bpp,
-    }),
+    row(
+      "Bitrate density",
+      (m) => (m.bpp ? `${m.bpp.toFixed(3)} bpp` : "unknown"),
+      {
+        score: (m) => m.bpp,
+      },
+    ),
     row("Release type", (m) => m.releaseType, {
       score: (m) => RELEASE_RANK[m.releaseType],
       predicted: (h) => h.releaseType,
@@ -227,9 +236,13 @@ function buildRows(copies: LibraryItem[], hit: StoredHit | null): Row[] {
             : "none",
       { score: (m) => (m.audio.some((a) => a.atmos || a.dtsx) ? 1 : 0) },
     ),
-    row("Lossless audio", (m) => (m.audio.some((a) => a.lossless) ? "yes" : "no"), {
-      score: (m) => (m.audio.some((a) => a.lossless) ? 1 : 0),
-    }),
+    row(
+      "Lossless audio",
+      (m) => (m.audio.some((a) => a.lossless) ? "yes" : "no"),
+      {
+        score: (m) => (m.audio.some((a) => a.lossless) ? 1 : 0),
+      },
+    ),
     row("Audio tracks", (m) => String(m.audio.length), {
       score: (m) => m.audio.length,
     }),
@@ -249,7 +262,8 @@ function buildRows(copies: LibraryItem[], hit: StoredHit | null): Row[] {
     }),
     row(
       "Issues",
-      (m) => (m.issues.length ? m.issues.map((i) => i.code).join(", ") : "none"),
+      (m) =>
+        m.issues.length ? m.issues.map((i) => i.code).join(", ") : "none",
       { score: (m) => -m.issues.length },
     ),
     row("Edition", (m) => m.edition ?? "—"),
@@ -299,7 +313,7 @@ export default async function ComparePage({
           page is about choosing between that film's copies. It sat a size
           short of the page it is reached from, which made arriving here feel
           like arriving somewhere lesser. */}
-      <div className="relative h-96 w-full overflow-hidden sm:h-[32rem]">
+      <div className={HERO_BOX}>
         {keep.fanart || keep.art.fanart ? (
           <>
             <Art
@@ -307,9 +321,9 @@ export default async function ComparePage({
               remote={keep.art.fanart}
               version={keep.artAt}
               size="original"
-              className="enter-veil absolute inset-0 h-full w-full object-cover"
+              className={HERO_ART}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
+            <div className={HERO_VEIL} />
           </>
         ) : (
           <div className="absolute inset-0 bg-surface-strong" />
@@ -361,7 +375,9 @@ export default async function ComparePage({
                 {[
                   hit.resolution,
                   hit.releaseType,
-                  hit.sizeBytes !== undefined ? bytes(hit.sizeBytes) : undefined,
+                  hit.sizeBytes !== undefined
+                    ? bytes(hit.sizeBytes)
+                    : undefined,
                 ]
                   .filter(Boolean)
                   .join(" · ")}{" "}
@@ -400,179 +416,183 @@ export default async function ComparePage({
           </div>
         </header>
 
-      {/* The verdict only means something with something to delete. */}
-      {drop.length > 0 && (
-        <div className="rounded-card border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3">
-          <p className="text-sm">
-            <span className="font-medium text-emerald-700 dark:text-emerald-300">
-              Keep {keep.releaseType} · score {keep.scores.overall}
-            </span>{" "}
-            — deleting the {drop.length === 1 ? "other copy" : "other copies"}{" "}
-            reclaims <span className="font-medium">{bytes(reclaim)}</span>.
-          </p>
-          <p className="mt-1 font-mono text-xs opacity-60">{keep.fileName}</p>
-        </div>
-      )}
+        {/* The verdict only means something with something to delete. */}
+        {drop.length > 0 && (
+          <div className="rounded-card border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3">
+            <p className="text-sm">
+              <span className="font-medium text-emerald-700 dark:text-emerald-300">
+                Keep {keep.releaseType} · score {keep.scores.overall}
+              </span>{" "}
+              — deleting the {drop.length === 1 ? "other copy" : "other copies"}{" "}
+              reclaims <span className="font-medium">{bytes(reclaim)}</span>.
+            </p>
+            <p className="mt-1 font-mono text-xs opacity-60">{keep.fileName}</p>
+          </div>
+        )}
 
-      {/* mt on top of the column's gap: the table is the page's second act,
+        {/* mt on top of the column's gap: the table is the page's second act,
           and a touch more air under the hero says so. */}
-      <div className="mt-12 overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            {/* Real column titles, in the display face like every section
+        <div className="mt-12 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              {/* Real column titles, in the display face like every section
                 heading here: what each column *is* deserves more than a tag.
                 The verdict colours stay — emerald for the copy worth keeping,
                 amber for a claim that is only a prediction. */}
-            <tr className="border-b border-line-strong">
-              <th className="w-40 px-3 py-3" />
-              {copies.map((copy, i) => (
-                <th
-                  key={copy.path}
-                  className="min-w-52 px-3 pt-1 pb-3 text-left align-bottom"
-                >
-                  <span
-                    className={`font-display text-lg font-semibold tracking-tight ${
-                      copies.length === 1
-                        ? ""
+              <tr className="border-b border-line-strong">
+                <th className="w-40 px-3 py-3" />
+                {copies.map((copy, i) => (
+                  <th
+                    key={copy.path}
+                    className="min-w-52 px-3 pt-1 pb-3 text-left align-bottom"
+                  >
+                    <span
+                      className={`font-display text-lg font-semibold tracking-tight ${
+                        copies.length === 1
+                          ? ""
+                          : i === 0
+                            ? "text-emerald-700 dark:text-emerald-300"
+                            : "opacity-45"
+                      }`}
+                    >
+                      {copies.length === 1
+                        ? "Your copy"
                         : i === 0
-                          ? "text-emerald-700 dark:text-emerald-300"
-                          : "opacity-45"
-                    }`}
-                  >
-                    {copies.length === 1
-                      ? "Your copy"
-                      : i === 0
-                        ? "Keep"
-                        : "Drop"}
-                  </span>
-                </th>
-              ))}
-              {hit && (
-                <th className="min-w-52 px-3 pt-1 pb-3 text-left align-bottom">
-                  <span className="font-display text-lg font-semibold tracking-tight text-amber-700 dark:text-amber-300">
-                    Predicted
-                  </span>
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {/* The name is the first fact about each column — a copy's file,
+                          ? "Keep"
+                          : "Drop"}
+                    </span>
+                  </th>
+                ))}
+                {hit && (
+                  <th className="min-w-52 px-3 pt-1 pb-3 text-left align-bottom">
+                    <span className="font-display text-lg font-semibold tracking-tight text-amber-700 dark:text-amber-300">
+                      Predicted
+                    </span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {/* The name is the first fact about each column — a copy's file,
                 the candidate's release title. */}
-            <tr>
-              <td className="px-3 py-2.5 text-[11px] tracking-widest uppercase opacity-45">
-                File
-              </td>
-              {copies.map((copy) => (
-                <td
-                  key={copy.path}
-                  className="px-3 py-2.5 font-mono text-xs break-all opacity-70"
-                >
-                  {copy.fileName}
+              <tr>
+                <td className="px-3 py-2.5 text-[11px] tracking-widest uppercase opacity-45">
+                  File
                 </td>
-              ))}
-              {hit && (
-                <td className="px-3 py-2.5 font-mono text-xs break-all opacity-70">
-                  {hit.title}
-                </td>
-              )}
-            </tr>
-
-            {rows.map((r) => (
-              <tr key={r.label}>
-                <td
-                  className={`px-3 py-2.5 text-[11px] tracking-widest uppercase ${
-                    r.same && !r.predicted ? "opacity-30" : "opacity-45"
-                  }`}
-                >
-                  {r.label}
-                </td>
-                {r.values.map((value, i) => (
+                {copies.map((copy) => (
                   <td
-                    key={i}
-                    className={`px-3 py-2.5 ${r.scored ? "font-score" : ""} ${
-                      r.same && !r.predicted
-                        ? "opacity-40"
-                        : r.best?.includes(i)
-                          ? "font-medium text-emerald-700 dark:text-emerald-300"
-                          : r.best
-                            ? "opacity-60"
-                            : ""
-                    }`}
+                    key={copy.path}
+                    className="px-3 py-2.5 font-mono text-xs break-all opacity-70"
                   >
-                    {value}
-                    {r.deltas?.[i] != null && <Delta value={r.deltas[i]} />}
+                    {copy.fileName}
                   </td>
                 ))}
                 {hit && (
-                  <td
-                    className={`px-3 py-2.5 ${r.scored ? "font-score" : ""} ${
-                      r.predicted === undefined ? "opacity-25" : "opacity-80"
-                    }`}
-                  >
-                    {r.predicted ?? "—"}
-                    {r.predicted !== undefined && r.predictedDelta != null && (
-                      <Delta value={r.predictedDelta} />
-                    )}
+                  <td className="px-3 py-2.5 font-mono text-xs break-all opacity-70">
+                    {hit.title}
                   </td>
                 )}
               </tr>
-            ))}
 
-            {/* What to do once the table has been read: fetch the candidate.
-                Last, because acting comes after comparing. */}
-            {hit && (
-              <tr>
-                <td className="px-3 py-3" />
-                {copies.map((copy) => (
-                  <td key={copy.path} className="px-3 py-3" />
-                ))}
-                <td className="px-3 py-3">
-                  {hit.magnet ? (
-                    // A handover when qBittorrent is connected, the plain
-                    // magnet link otherwise; see app/magnet-action.tsx.
-                    <MagnetAction
-                      magnet={hit.magnet}
-                      film={{ title: keep.title, posterPath: keep.art.poster }}
-                      pill
-                    />
-                  ) : hit.detailsUrl ? (
-                    <a
-                      href={hit.detailsUrl}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90"
+              {rows.map((r) => (
+                <tr key={r.label}>
+                  <td
+                    className={`px-3 py-2.5 text-[11px] tracking-widest uppercase ${
+                      r.same && !r.predicted ? "opacity-30" : "opacity-45"
+                    }`}
+                  >
+                    {r.label}
+                  </td>
+                  {r.values.map((value, i) => (
+                    <td
+                      key={i}
+                      className={`px-3 py-2.5 ${r.scored ? "font-score" : ""} ${
+                        r.same && !r.predicted
+                          ? "opacity-40"
+                          : r.best?.includes(i)
+                            ? "font-medium text-emerald-700 dark:text-emerald-300"
+                            : r.best
+                              ? "opacity-60"
+                              : ""
+                      }`}
                     >
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden
-                        className="h-3.5 w-3.5"
+                      {value}
+                      {r.deltas?.[i] != null && <Delta value={r.deltas[i]} />}
+                    </td>
+                  ))}
+                  {hit && (
+                    <td
+                      className={`px-3 py-2.5 ${r.scored ? "font-score" : ""} ${
+                        r.predicted === undefined ? "opacity-25" : "opacity-80"
+                      }`}
+                    >
+                      {r.predicted ?? "—"}
+                      {r.predicted !== undefined &&
+                        r.predictedDelta != null && (
+                          <Delta value={r.predictedDelta} />
+                        )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+
+              {/* What to do once the table has been read: fetch the candidate.
+                Last, because acting comes after comparing. */}
+              {hit && (
+                <tr>
+                  <td className="px-3 py-3" />
+                  {copies.map((copy) => (
+                    <td key={copy.path} className="px-3 py-3" />
+                  ))}
+                  <td className="px-3 py-3">
+                    {hit.magnet ? (
+                      // A handover when qBittorrent is connected, the plain
+                      // magnet link otherwise; see app/magnet-action.tsx.
+                      <MagnetAction
+                        magnet={hit.magnet}
+                        film={{
+                          title: keep.title,
+                          posterPath: keep.art.poster,
+                        }}
+                        pill
+                      />
+                    ) : hit.detailsUrl ? (
+                      <a
+                        href={hit.detailsUrl}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90"
                       >
-                        <path d="M14 5h5v5" />
-                        <path d="M19 5l-7.5 7.5" />
-                        <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
-                      </svg>
-                      Details
-                    </a>
-                  ) : null}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden
+                          className="h-3.5 w-3.5"
+                        >
+                          <path d="M14 5h5v5" />
+                          <path d="M19 5l-7.5 7.5" />
+                          <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+                        </svg>
+                        Details
+                      </a>
+                    ) : null}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
         <p className="text-xs opacity-45">
           Rows where every copy agrees are dimmed. Green marks the better value
-        where one is meaningfully better — file size is shown without a winner,
-        since a larger file is not automatically the better copy.
-        {hit &&
-          " The predicted column is read off the release's name, never measured, so most rows have nothing to say until the file is on the drive and scanned."}{" "}
+          where one is meaningfully better — file size is shown without a
+          winner, since a larger file is not automatically the better copy.
+          {hit &&
+            " The predicted column is read off the release's name, never measured, so most rows have nothing to say until the file is on the drive and scanned."}{" "}
           Nothing here deletes anything; removing a file is left to you.
         </p>
       </div>

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ViewTransition } from "react";
 
 import { Art } from "@/app/art";
+import { HERO_BOX_SHORT, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { BackButton } from "@/app/film/[id]/back-button";
 import { ScoreRing } from "@/app/score-card";
 import { scoreTheme } from "@/app/score-circle";
@@ -50,15 +51,15 @@ export default async function CollectionPage({
     // sitting over the foot of it. A set has its own backdrop on TMDb, so there
     // is no reason for its page to begin colder than a film's.
     <main className="flex flex-col pb-16">
-      <div className="relative h-72 w-full overflow-hidden sm:h-96">
+      <div className={HERO_BOX_SHORT}>
         {set.backdropPath ? (
           <>
             <Art
               remote={set.backdropPath}
               size="original"
-              className="enter-veil absolute inset-0 h-full w-full object-cover"
+              className={HERO_ART}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
+            <div className={HERO_VEIL} />
           </>
         ) : (
           <div className="absolute inset-0 bg-surface-strong" />
@@ -70,7 +71,11 @@ export default async function CollectionPage({
       {/* relative + z-10: the hero above is positioned, so without its own
           stacking position this content would paint underneath it. */}
       <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-6xl flex-col gap-12 px-6 sm:px-8">
-        <div className="flex items-end justify-between gap-6">
+        {/* Centred on the ring's middle rather than sitting on its base, so
+            that this heading and the one a set of your own carries are the same
+            heading — that page has controls between the two, and they have to
+            be on the line as well. */}
+        <div className="flex items-center justify-between gap-6">
           <div className="enter-rise min-w-0">
             <ViewTransition
               name={collectionTitleName(set.id)}
