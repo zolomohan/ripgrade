@@ -402,7 +402,7 @@ export async function DetailPage({
                 TMDb's are — an episode belongs to a season, which is a set
                 somebody has already drawn up. */}
             {movie.kind === "movie" && (
-              <AddToCollection moviePath={movie.path} />
+              <AddToCollection film={{ from: "library", path: movie.path }} />
             )}
             {/* Last, so the primary action ends the row rather than leading it.
 

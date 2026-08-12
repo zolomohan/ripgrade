@@ -1858,26 +1858,36 @@ function memberFromLibrary(moviePath: string): CollectionMember | string {
   };
 }
 
+/**
+ * A film named from either end, as the row that will remember it.
+ *
+ * A hit off TMDb is stored as it stands, and a film off the shelf is looked up
+ * — so everything below can take one argument and stop caring which page it was
+ * called from. An error comes back as the sentence to show, which only the
+ * library branch can produce: a search hit is already everything the row needs.
+ */
+function memberFor(film: CollectionAdd): CollectionMember | string {
+  if (film.from === "library") return memberFromLibrary(film.path);
+
+  return {
+    key: memberKey(film.id, ""),
+    tmdbId: film.id,
+    title: film.title,
+    year: film.year,
+    posterPath: film.posterPath,
+    overview: film.overview,
+  };
+}
+
 export async function addToCollection(
   id: number,
   film: CollectionAdd,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!customSetExists(id)) return { ok: false, error: "No such collection." };
 
-  if (film.from === "library") {
-    const member = memberFromLibrary(film.path);
-    if (typeof member === "string") return { ok: false, error: member };
-    addToCustomSet(id, member);
-  } else {
-    addToCustomSet(id, {
-      key: memberKey(film.id, ""),
-      tmdbId: film.id,
-      title: film.title,
-      year: film.year,
-      posterPath: film.posterPath,
-      overview: film.overview,
-    });
-  }
+  const member = memberFor(film);
+  if (typeof member === "string") return { ok: false, error: member };
+  addToCustomSet(id, member);
 
   refresh();
   return { ok: true };
@@ -1893,11 +1903,17 @@ export type FilmCollection = { id: number; name: string; holds: boolean };
  * from the other end, which is the one you have when you are looking at a film
  * and thinking where it belongs. Cheap enough to ask on opening the menu: it is
  * one read of a table you wrote by hand.
+ *
+ * Asked of a film you do not own as readily as of one you do — a discover page
+ * is where you meet a film you have decided belongs with the others, and a set
+ * has held films nobody has since it was first written. The film is keyed by
+ * TMDb's number either way, so the two ends agree without having to be told:
+ * file it off TMDb today and the copy you rip next month arrives already in it.
  */
 export async function collectionsForFilm(
-  moviePath: string,
+  film: CollectionAdd,
 ): Promise<FilmCollection[]> {
-  const member = memberFromLibrary(moviePath);
+  const member = memberFor(film);
   if (typeof member === "string") return [];
 
   return getCustomSetsHolding(member.key);
@@ -1909,16 +1925,16 @@ export async function collectionsForFilm(
  */
 export async function setFilmInCollection(
   id: number,
-  moviePath: string,
+  film: CollectionAdd,
   member: boolean,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!customSetExists(id)) return { ok: false, error: "No such collection." };
 
-  const film = memberFromLibrary(moviePath);
-  if (typeof film === "string") return { ok: false, error: film };
+  const row = memberFor(film);
+  if (typeof row === "string") return { ok: false, error: row };
 
-  if (member) addToCustomSet(id, film);
-  else removeFromCustomSet(id, film.key);
+  if (member) addToCustomSet(id, row);
+  else removeFromCustomSet(id, row.key);
 
   refresh();
   return { ok: true };

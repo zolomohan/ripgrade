@@ -117,6 +117,24 @@ export default async function DiscoverPage({ params }: Params) {
           overview: title.overview,
           wanted: title.wanted,
         }}
+        /*
+         * Films only — a set of your own is a set of films. Stored as the hit
+         * stands, which is the same bargain the want list makes: nothing here
+         * is on a drive to be read back later, so the row has to carry what it
+         * needs to draw itself with TMDb unreachable.
+         */
+        collect={
+          wish === "movie"
+            ? {
+                from: "tmdb",
+                id: tmdbId,
+                title: title.title,
+                year: title.year,
+                posterPath: title.posterPath,
+                overview: title.overview,
+              }
+            : undefined
+        }
         jackettReady={hasJackett()}
         /*
          * Streamed rather than awaited with the rest: a film nobody has looked

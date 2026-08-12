@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
-import { addWish, removeWish } from "@/app/actions";
+import { addWish, removeWish, type CollectionAdd } from "@/app/actions";
 import { Art } from "@/app/art";
 import { HERO_BOX, HERO_ART, HERO_VEIL } from "@/app/hero-art";
+import { AddToCollection } from "@/app/film/[id]/add-to-collection";
 import { BackButton } from "@/app/film/[id]/back-button";
 import { HERO_BUTTON } from "@/app/film/[id]/hero-button";
 import { Heart } from "@/app/heart";
@@ -55,6 +56,7 @@ export function DiscoverView({
   art,
   logName,
   wish,
+  collect,
   jackettReady,
   disc,
   children,
@@ -77,6 +79,17 @@ export function DiscoverView({
   /** What the download log should call whatever is fetched from here. */
   logName: string;
   wish?: Wish;
+  /**
+   * The film as a set of your own would remember it, where this page is about
+   * a film at all.
+   *
+   * Films only, as on a film's own page: a set of your own is a set of films,
+   * and a season is a set somebody has already drawn up. Written out here
+   * rather than read off `wish` — the two carry the same five facts today, but
+   * one is a decision to fetch something and the other is a decision about
+   * where it belongs, and they should be free to differ.
+   */
+  collect?: CollectionAdd;
   jackettReady: boolean;
   /** The disc panel, streamed in from the server. Films only. */
   disc?: React.ReactNode;
@@ -201,28 +214,37 @@ export function DiscoverView({
               A want is the whole film or the whole series: the list is what you
               are missing, and half a series is not a different want — so a
               season and an episode have nothing to put here. */}
-          {wish && (
+          {(collect || wish) && (
             <div className="mt-2 flex items-center justify-end gap-2 sm:absolute sm:right-0 sm:bottom-1 sm:mt-0">
-              <button
-                type="button"
-                onClick={want}
-                disabled={saving}
-                aria-pressed={wanted}
-                aria-label={
-                  wanted
-                    ? `Remove ${wish.title} from wishlist`
-                    : `Want ${wish.title}`
-                }
-                title={wanted ? "On the wishlist" : "Add to wishlist"}
-                className={`${HERO_BUTTON} ${
-                  wanted ? "text-red-600 dark:text-red-400" : ""
-                }`}
-              >
-                {/* Smaller than the one on a poster: this one sits on a
-                    bordered button among other bordered buttons, and is sized
-                    to them rather than to the artwork behind them. */}
-                <Heart filled={wanted} className="h-4 w-4" />
-              </button>
+              {/* Filing a film you do not own is not a lesser act than filing
+                  one you do: a set holds a film by TMDb's number, so this is
+                  the same button doing the same thing — and the copy you rip
+                  next month lands in the set already. Before the heart, so the
+                  primary action ends the row, as on a film's own page. */}
+              {collect && <AddToCollection film={collect} />}
+
+              {wish && (
+                <button
+                  type="button"
+                  onClick={want}
+                  disabled={saving}
+                  aria-pressed={wanted}
+                  aria-label={
+                    wanted
+                      ? `Remove ${wish.title} from wishlist`
+                      : `Want ${wish.title}`
+                  }
+                  title={wanted ? "On the wishlist" : "Add to wishlist"}
+                  className={`${HERO_BUTTON} ${
+                    wanted ? "text-red-600 dark:text-red-400" : ""
+                  }`}
+                >
+                  {/* Smaller than the one on a poster: this one sits on a
+                      bordered button among other bordered buttons, and is
+                      sized to them rather than to the artwork behind them. */}
+                  <Heart filled={wanted} className="h-4 w-4" />
+                </button>
+              )}
             </div>
           )}
         </div>

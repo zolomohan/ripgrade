@@ -6,6 +6,7 @@ import {
   collectionsForFilm,
   createCollection,
   setFilmInCollection,
+  type CollectionAdd,
   type FilmCollection,
 } from "@/app/actions";
 import { NameDialog } from "@/app/collections/name-dialog";
@@ -28,8 +29,13 @@ import { HERO_BUTTON } from "./hero-button";
  *
  * Fetched when the menu opens rather than with the page. It is one small read,
  * and every film page in the app would otherwise carry a list nobody asked for.
+ *
+ * The film is named the way the page that drew this knows it — a path off the
+ * shelf, a search hit on a discover page — and nothing below cares which. A set
+ * has always been able to hold a film nobody has, so the only thing that made
+ * this a page-of-your-own-films button was the argument it took.
  */
-export function AddToCollection({ moviePath }: { moviePath: string }) {
+export function AddToCollection({ film }: { film: CollectionAdd }) {
   const [open, setOpen] = useState(false);
   const [sets, setSets] = useState<FilmCollection[] | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
@@ -58,11 +64,17 @@ export function AddToCollection({ moviePath }: { moviePath: string }) {
    * Re-read every time it opens, not once. Sets are made and filled from three
    * other places in the app, and a list cached on first open is a list that
    * quietly stops being true while the page stays put.
+   *
+   * Watched as a string rather than as the object it is: the film arrives
+   * written out at the call site, so a parent re-rendering for its own reasons
+   * hands down a new object saying the same thing — and this would re-read on
+   * every one of them. The same trick the release panel plays on its subject.
    */
+  const filmKey = JSON.stringify(film);
   useEffect(() => {
     if (!open) return;
     let live = true;
-    collectionsForFilm(moviePath)
+    collectionsForFilm(film)
       .then((found) => live && setSets(found))
       .catch(
         (err: unknown) =>
@@ -71,7 +83,8 @@ export function AddToCollection({ moviePath }: { moviePath: string }) {
     return () => {
       live = false;
     };
-  }, [open, moviePath]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, filmKey]);
 
   function toggle(set: FilmCollection) {
     const next = !set.holds;
@@ -87,7 +100,7 @@ export function AddToCollection({ moviePath }: { moviePath: string }) {
     );
 
     startTransition(async () => {
-      const result = await setFilmInCollection(set.id, moviePath, next).catch(
+      const result = await setFilmInCollection(set.id, film, next).catch(
         (err: unknown) => ({
           ok: false as const,
           error: err instanceof Error ? err.message : String(err),
@@ -120,7 +133,7 @@ export function AddToCollection({ moviePath }: { moviePath: string }) {
         return;
       }
 
-      const filed = await setFilmInCollection(made.id, moviePath, true).catch(
+      const filed = await setFilmInCollection(made.id, film, true).catch(
         (err: unknown) => ({
           ok: false as const,
           error: err instanceof Error ? err.message : String(err),
@@ -132,7 +145,7 @@ export function AddToCollection({ moviePath }: { moviePath: string }) {
       }
 
       setNaming(false);
-      setSets(await collectionsForFilm(moviePath));
+      setSets(await collectionsForFilm(film));
     });
   }
 
