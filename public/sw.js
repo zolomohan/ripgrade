@@ -15,7 +15,7 @@
 
 // Bump when offline.html changes: the install step is the only thing that
 // writes to this cache, and a new name is what makes it run again.
-const SHELL = "ripgrade-shell-v2";
+const SHELL = "ripgrade-shell-v3";
 const OFFLINE = "/offline.html";
 const OFFLINE_ICON = "/icon-512.png";
 

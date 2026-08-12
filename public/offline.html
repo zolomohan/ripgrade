@@ -53,6 +53,24 @@
         font: 400 0.875rem/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
         -webkit-font-smoothing: antialiased;
       }
+      /* Everything into the one cell, so the plate is centred whether or not it
+         is alone in here.
+
+         `place-items: center` centres the rows as a group, and a grid grows a
+         row per child — so a second element appearing in the body pushes the
+         plate up by half of whatever arrived. This page has no script that
+         would add one, but it is shown in whatever browser the person has,
+         and an extension that injects a container into every body it meets is
+         ordinary. The symptom is the plate centring for a frame and then
+         riding up, which is not something anyone can be expected to report as
+         a bug in a page they are only seeing because the server is down.
+
+         One cell costs nothing and takes the question away: anything that
+         turns up here is stacked in the same place rather than given a row of
+         its own. */
+      body > * {
+        grid-area: 1 / 1;
+      }
       .plate {
         max-width: 26rem;
         text-align: center;
