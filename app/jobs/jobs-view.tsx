@@ -8,7 +8,7 @@ import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
 import { ListingBar, useListing, type Choice } from "@/app/listing";
 import { ProcessDetails, type ProcessDetail } from "@/app/process-details";
-import { SectionHeading } from "@/app/section-heading";
+import { CollapsibleSection, SectionHeading } from "@/app/section-heading";
 import { stagger } from "@/app/stagger";
 import { visibleOutput } from "@/lib/job-output";
 import type { JobKind, JobRun } from "@/lib/job-history";
@@ -33,6 +33,7 @@ import {
   AudioTasks,
   DOVI_GROUPS,
   DOVI_SORTS,
+  DoviStats,
   DoviTasks,
 } from "./task-list";
 
@@ -83,7 +84,11 @@ export type LoggedRun = JobRun & { film?: TaskFilm };
 
 const TABS = [
   { key: "dovi", label: "Dolby Vision" },
-  { key: "audio", label: "Audio tracks" },
+  // Named for what the tab does rather than for what it lists: every other tab
+  // here is a job, the dashboard's tile into it already says Strip Audio, and
+  // "Audio tracks" was the same words the film page uses for the table that
+  // merely names them.
+  { key: "audio", label: "Strip Tracks" },
   { key: "cleanup", label: "Cleanup" },
 ] as const;
 
@@ -574,7 +579,8 @@ export function JobsView({
 
   // How much outstanding work this tab has, which is the same question each
   // list asks itself before deciding to draw its empty state instead. Asked
-  // here too so the heading above the list can go when the list does.
+  // here too so the heading above the list can go when the list does, and so
+  // the band of figures over both goes with them.
   const pending =
     tab === "dovi"
       ? doviPending.length
@@ -644,12 +650,29 @@ export function JobsView({
           tab's, and under the "Pending" heading they read as that section's
           own — which is wrong on the cleanup tab in particular, where the total
           counts rows the drive is currently hiding. Each returns nothing on an
-          empty tab, where the list's empty state is the whole answer. */}
-      {tab === "audio" ? (
-        <AudioStats tasks={audioPending} />
-      ) : tab === "cleanup" ? (
-        <CleanupStats files={cleanup} />
-      ) : null}
+          empty tab, where the list's empty state is the whole answer.
+
+          `-mt-5` cancels the space the listing bar keeps under itself, which is
+          there so a *list* does not read as a fourth control. This band is not
+          a list, and left in place that space put the figures further from the
+          bar than from the section under them — a band floating between two
+          things it belongs to neither of. Cancelled, its own `py-3` and the
+          page's gap fall the same either side of it.
+
+          Emptiness is asked here as well as inside each band, which would
+          return nothing either way: the wrapper is a flex child of the page,
+          and an empty one still takes a gap. */}
+      {pending > 0 && (
+        <div className="-mt-5">
+          {tab === "dovi" ? (
+            <DoviStats tasks={doviPending} />
+          ) : tab === "audio" ? (
+            <AudioStats tasks={audioPending} />
+          ) : (
+            <CleanupStats files={cleanup} />
+          )}
+        </div>
+      )}
 
       {/* No page title and no count above the sections, the way the downloads
           log has neither: the tabs already say which list this is, and the
@@ -718,9 +741,12 @@ export function JobsView({
         </section>
       )}
 
+      {/* Shut on arrival, unlike the two sections above it: the running job and
+          the work still outstanding are what this page is opened for, and the
+          record of what already ran is what you go looking for once — see
+          `CollapsibleSection`. */}
       {logged.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <SectionHeading label="History" />
+        <CollapsibleSection label="History" count={logged.length}>
           <ul className="ruled flex flex-col">
             {logged.map((run, index) => (
               <Run
@@ -739,7 +765,7 @@ export function JobsView({
               />
             ))}
           </ul>
-        </section>
+        </CollapsibleSection>
       )}
 
       <ProcessDetails

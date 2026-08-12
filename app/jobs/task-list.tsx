@@ -299,6 +299,64 @@ export const DOVI_GROUPS: GroupOption<DoviTask>[] = [
 ];
 
 /**
+ * What this tab adds up to.
+ *
+ * No total size, which the other two bands lead with and which means nothing
+ * here: a conversion rewrites a file into the same picture at very nearly the
+ * same size, so the figure was neither a saving nor a cost — just the sum of a
+ * column already on every row.
+ *
+ * What varies between these files is the enhancement layer, which is why it is
+ * also what the tab can be cut by: a MEL loses nothing at all in the rewrite, a
+ * simple FEL loses refinement rather than picture, and a file whose layer no
+ * pass has read yet is a check before it is a conversion. Three counts that
+ * come to the total, in the order that reads best — most is nothing lost, and
+ * the last one is the one with work still in front of it.
+ *
+ * All three are drawn at zero rather than dropped, unlike the counts on the
+ * cleanup band. A zero here is an answer and often the best one: no FELs at all
+ * means every conversion on this tab loses nothing whatsoever, and nothing
+ * unread means the queue is ready to run end to end. Dropped, that reads as the
+ * app having nothing to say about the layer — and a band whose columns come and
+ * go is one you have to re-read each visit to see what it is showing.
+ *
+ * How many have been read end to end is not up here. It is a fact about how
+ * long a click takes rather than about the backlog, it is said on every row
+ * that has it — and the rows can be ranked and cut by it, which is where a
+ * question about which files answers better than a single number ever did.
+ */
+export function DoviStats({ tasks }: { tasks: DoviTask[] }) {
+  if (tasks.length === 0) return null;
+
+  const mel = tasks.filter((task) => task.el === "mel").length;
+  const fel = tasks.filter((task) => task.el === "simple-fel").length;
+  const unread = tasks.length - mel - fel;
+
+  return (
+    <Stats>
+      <Stat label="Files" value={tasks.length.toLocaleString("en-GB")} />
+      {/* The tools' own names, as on the chips down the rows, with the gloss in
+          the tooltip both places take from the same table. */}
+      <Stat
+        label="MEL"
+        value={mel.toLocaleString("en-GB")}
+        title={EL_TITLE.mel}
+      />
+      <Stat
+        label="FEL"
+        value={fel.toLocaleString("en-GB")}
+        title={EL_TITLE["simple-fel"]}
+      />
+      <Stat
+        label="Layer unread"
+        value={unread.toLocaleString("en-GB")}
+        title={EL_TITLE.unknown}
+      />
+    </Stats>
+  );
+}
+
+/**
  * A full pass this page started, and what it started it for: the conversion the
  * pass is the first step of, or the answer the pass was run to get.
  */

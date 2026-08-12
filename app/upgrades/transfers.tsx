@@ -12,7 +12,7 @@ import {
 } from "@/app/actions";
 import { Art } from "@/app/art";
 import { ConfirmModal } from "@/app/confirm";
-import { SectionHeading } from "@/app/section-heading";
+import { CollapsibleSection, SectionHeading } from "@/app/section-heading";
 import { useLingering } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
 import { Spinner } from "@/app/spinner";
@@ -539,10 +539,11 @@ export function Transfers({
 
       {between}
 
+      {/* Shut on arrival: what is downloading is what this page is for, and
+          everything that has finished seeding since is a record you go looking
+          for rather than one you read past — see `CollapsibleSection`. */}
       {past.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <SectionHeading label="History" />
-
+        <CollapsibleSection label="History" count={past.length}>
           <ul className="ruled flex flex-col">
             {past.map((entry, i) => {
               const d = entry.live;
@@ -648,7 +649,7 @@ export function Transfers({
               );
             })}
           </ul>
-        </section>
+        </CollapsibleSection>
       )}
 
       {/* The app's own confirmation, rather than this list's copy of one.
