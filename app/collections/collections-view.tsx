@@ -351,9 +351,6 @@ function Fan({
      */
     <div className="flex shrink-0 items-center pl-4">
       {films.map((film, order) => {
-        const flying = flies(film);
-        const place = FAN_Z(order);
-
         const tile = (
           <div className="-ml-4 h-14 w-[2.35rem] shrink-0 overflow-hidden rounded-chip bg-surface-strong ring-1 ring-line">
             <Art
@@ -377,29 +374,39 @@ function Fan({
         );
 
         /*
-         * The poster this row is the first to claim wears the name it wears
-         * everywhere in the app, so it pairs with the tile on the page this row
-         * opens and flies there. Everything else wears a name of its own that
-         * pairs with nothing — see `fanName`.
+         * Every poster travels, and only some of them go anywhere.
          *
-         * `update` stays off: a row repainting because the library rescanned is
+         * A held one that this row is the first to claim wears the name it
+         * wears everywhere in the app, so it flies out from under the others to
+         * the place it occupies in the grid, and back under them on the way
+         * out. Everything else — a film you do not own, or one an earlier row
+         * already claimed — wears a name of its own that pairs with nothing,
+         * and is captured only so that it stays in the same stack as the ones
+         * that do fly. See `fanName`, and `FAN_STILL` in globals.css for what a
+         * poster with nowhere to go does for the length of the flight, which is
+         * nothing at all.
+         *
+         * `update` stays off. A row repainting because the library rescanned is
          * not a thing anybody asked to watch.
          */
         const ladder = pace(order, paced);
+        const z = FAN_Z(order);
 
         return (
           <ViewTransition
             key={filmKey(film)}
-            name={flying ? posterName(film.owned!.path) : fanName(scope, film)}
-            // Two classes, and the second is its place in the fan: how fast a
-            // poster travels is a question about where it sits, and so is what
-            // it is drawn over.
+            name={
+              flies(film) ? posterName(film.owned!.path) : fanName(scope, film)
+            }
+            // Two classes on every state, and the second is the same one every
+            // time: how fast this poster travels is a question about its place
+            // in the fan, and so is what it is drawn over.
             share={{
-              default: `${ladder.default} ${place}`,
-              "nav-back": `${ladder["nav-back"]} ${place}`,
+              default: `${ladder.default} ${z}`,
+              "nav-back": `${ladder["nav-back"]} ${z}`,
             }}
-            enter={`fan-still ${place}`}
-            exit={`fan-still ${place}`}
+            enter={`fan-still ${z}`}
+            exit={`fan-still ${z}`}
             update="none"
           >
             {tile}
