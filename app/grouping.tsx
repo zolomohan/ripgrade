@@ -55,6 +55,19 @@ function bucketsOf<T>(items: T[], group: GroupOption<T>): [string, T[]][] {
   });
 }
 
+/**
+ * The same rows, flat, in the order `Grouped` will draw them.
+ *
+ * For the one thing a list cut into sections cannot answer from its own props:
+ * what "everything between this row and that one" means. A shift-click measures
+ * down the page, not down the array the page was built from, and with a
+ * grouping in force those are two different orders.
+ */
+export function orderedBy<T>(items: T[], group: GroupOption<T>): T[] {
+  if (group.key === "none") return items;
+  return bucketsOf(items, group).flatMap(([, bucket]) => bucket);
+}
+
 /** A shelf-style section head: the name, what is under it, and a rule. */
 export function SectionHead({
   label,

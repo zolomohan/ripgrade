@@ -7,6 +7,7 @@ import { useNow } from "@/app/clock";
 import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
 import { ListingBar, useListing, type Choice } from "@/app/listing";
+import { PosterTile, TILE_GRID_RULED, TILE_READING } from "@/app/poster-tile";
 import { ProcessDetails, type ProcessDetail } from "@/app/process-details";
 import { CollapsibleSection, SectionHeading } from "@/app/section-heading";
 import { stagger } from "@/app/stagger";
@@ -18,21 +19,31 @@ import type {
   DoviTask,
   TaskFilm,
 } from "@/lib/queue-tasks";
+import { posterName } from "@/lib/routes";
 import {
   CLEANUP_GROUPS,
   CLEANUP_SORTS,
   CleanAll,
   CleanupList,
+  cleanupOrder,
+  CleanupRun,
   CleanupStats,
 } from "./cleanup-list";
 import { Poster } from "./poster";
 import {
   AUDIO_GROUPS,
   AUDIO_SORTS,
+  audioOrder,
+  AudioQueued,
+  AudioRun,
   AudioStats,
   AudioTasks,
+  SelectFilms,
   DOVI_GROUPS,
   DOVI_SORTS,
+  doviOrder,
+  DoviQueued,
+  DoviRun,
   DoviStats,
   DoviTasks,
 } from "./task-list";
@@ -93,6 +104,22 @@ const TABS = [
 ] as const;
 
 type Tab = (typeof TABS)[number]["key"];
+
+/** One empty set for every list not being ticked, rather than one per render. */
+const EMPTY: ReadonlySet<string> = new Set();
+
+/**
+ * What ticking rows on each tab is for, said on the button that starts it.
+ *
+ * One button, three meanings, and an icon that can say none of them. The
+ * difference matters most on the tab where the answer is irreversible.
+ */
+const PICKING: Record<Tab, string> = {
+  dovi: "Tick several films and convert them one after another",
+  audio:
+    "Tick several films and remove the tracks each of them proposes, one after another",
+  cleanup: "Tick several rows and delete them together",
+};
 
 /** Each list's own orders and cuts; the first of each is what it opens in. */
 const SORTS: Record<Tab, Choice[]> = {
@@ -376,6 +403,86 @@ function Running({
 }
 
 /**
+ * The same job in progress, as the poster of the film it is working on.
+ *
+ * The running half of this page has always been the finished row's layout with
+ * the facts a job can answer swapped in, and that holds a step further: this is
+ * the pending tile with the same swap made. What is outstanding and what is
+ * under way sit one section apart on the same grid, and a film that moves from
+ * one to the other should not change shape on the way.
+ *
+ * A sweep or a thumbnail rebuild has no film and so no picture — the empty frame
+ * stands for it, as it does on the cleanup grid, and the title falls back to the
+ * job's own name.
+ */
+function RunningTile({
+  row,
+  film,
+  now,
+  index,
+  onDetails,
+}: {
+  row: JobRow;
+  film?: TaskFilm;
+  now: number;
+  index: number;
+  onDetails: () => void;
+}) {
+  const elapsed = took(row.detail.startedAt, now);
+  const fileName = row.path?.split("/").pop();
+
+  return (
+    <PosterTile
+      poster={
+        film && {
+          src: film.poster,
+          remote: film.posterRemote,
+          version: film.artAt,
+        }
+      }
+      transitionName={film ? posterName(film.path) : undefined}
+      title={film?.title ?? fileName ?? row.detail.title}
+      year={film?.year}
+      episode={film?.episode}
+      fileName={fileName}
+      // The clock, in the corner the pending tiles keep their reading in: on a
+      // job that is running the one figure that changes while you watch is how
+      // long it has been going, and the percentage belongs on the bar.
+      badge={
+        elapsed ? <span className={TILE_READING}>{elapsed}</span> : undefined
+      }
+      status={
+        <>
+          {row.percent !== undefined && (
+            <div className="bar-track bar-track-thin">
+              <div
+                className="bar-fill motion-safe:transition-[width] motion-safe:duration-300"
+                style={{
+                  width: `${Math.min(100, Math.max(0, row.percent))}%`,
+                }}
+              />
+            </div>
+          )}
+          <div className="flex items-baseline gap-2 text-[11px] text-white">
+            <span className="min-w-0 truncate opacity-80">
+              {row.detail.stage ?? row.detail.title}
+            </span>
+            {row.percent !== undefined && (
+              <span className="ml-auto shrink-0 tabular-nums">
+                {Math.round(row.percent)}%
+              </span>
+            )}
+          </div>
+        </>
+      }
+      label={`${row.detail.title} — progress`}
+      index={index}
+      onOpen={onDetails}
+    />
+  );
+}
+
+/**
  * One finished run, opening onto what it printed.
  *
  * The output used to unfold in place behind a Show output link, which is the
@@ -529,6 +636,32 @@ export function JobsView({
   const router = useRouter();
   const [stopping, setStopping] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  /**
+   * Which list is being ticked rather than read, and what has been ticked in
+   * it.
+   *
+   * Here rather than in the lists because the button that turns it off is in
+   * the bar over the page — the one slot on this layout that belongs to the tab
+   * as a whole — and turning the boxes off has to drop what they were holding.
+   * The lists are where a tick means something; this is where it is put down.
+   *
+   * The tab it belongs to travels with it, so the mode is a fact about one
+   * list rather than about the page: all three tabs offer this now, they hold
+   * different kinds of row, and a set of paths ticked on the cleanup list means
+   * nothing at all to the conversions.
+   */
+  const [picking, setPicking] = useState<{
+    tab: Tab;
+    chosen: ReadonlySet<string>;
+  } | null>(null);
+
+  const selecting = picking?.tab === tab;
+  const chosen = selecting ? picking.chosen : EMPTY;
+  const setChosen = (next: ReadonlySet<string>) =>
+    setPicking({ tab, chosen: next });
+
+  /** Out of the mode, and empty-handed. Both ends of it do the same thing. */
+  const stopSelecting = () => setPicking(null);
   // The run whose output is being read, held by id: the log is re-fetched on
   // every refresh, so the object this page was rendered with is not the one it
   // will be holding a moment later.
@@ -574,8 +707,76 @@ export function JobsView({
     jobbing.map((row) => row.path).filter((path) => path !== undefined),
   );
 
-  const doviPending = dovi.filter((task) => !inFlight.has(task.path));
-  const audioPending = audio.filter((task) => !inFlight.has(task.path));
+  /**
+   * The films a run of conversions has been started on and not reached yet.
+   *
+   * Out of the pending list for the reason the audio queue's are, and read from
+   * its own corner of the snapshot rather than from a job: a run of conversions
+   * spends half its life in the full pass, and the conversion job reads idle
+   * throughout that. See lib/dovi-run.ts.
+   */
+  const dvQueued = jobs.dvRun?.queue ?? [];
+  const doviPending = dovi.filter(
+    (task) => !inFlight.has(task.path) && !dvQueued.includes(task.path),
+  );
+  const doviByPath = new Map(dovi.map((task) => [task.path, task]));
+  const doviQueued = dvQueued
+    .map((path) => doviByPath.get(path))
+    .filter((task) => task !== undefined);
+
+  /**
+   * The films a run of removals has been started on and has not reached yet.
+   *
+   * Out of the pending list for the same reason the running one is out of it:
+   * they have been acted on. A row still offering to start them would be a row
+   * that starts them twice — and the second press would be refused by the
+   * server anyway, which is a worse way to find out.
+   *
+   * In the queue's order rather than the tab's, because that is the only thing
+   * this section knows that the one below it does not. The lookup is by path
+   * against the list the server drew, so a queued film whose row has since gone
+   * simply is not drawn.
+   *
+   * Read only while the removal is running. The job keeps its last state
+   * forever after — that is how "done" can be reported to a page that has just
+   * connected — so a run stopped halfway would otherwise go on holding the
+   * films it never reached out of the list they belong back in.
+   */
+  const queued =
+    jobs.strip.status === "running" ? (jobs.strip.queue ?? []) : [];
+  const byPath = new Map(audio.map((task) => [task.path, task]));
+  const audioQueued = queued
+    .map((path) => byPath.get(path))
+    .filter((task) => task !== undefined);
+
+  const audioPending = audio.filter(
+    (task) => !inFlight.has(task.path) && !queued.includes(task.path),
+  );
+
+  /**
+   * The pending rows in the order the list draws them, and which of them are
+   * ticked.
+   *
+   * Worked out here as well as in the list because the band of figures above it
+   * is the selection's now — the tiles count what is ticked, and the button
+   * that starts it stands beside them. Order matters as far as this: a run
+   * happens in the order the rows are read in.
+   *
+   * A film on a drive that is away is not among the ones a run can take, so it
+   * is not among the ones Select all takes either — the same refusal its own
+   * dialog gives, made before the ticks rather than after.
+   */
+  const audioRows = audioOrder(audioPending, listing.sort, listing.group);
+  const audioChosen = audioRows.filter((task) => chosen.has(task.path));
+  const audioPickable = audioRows.filter((task) => !task.offline);
+
+  const doviRows = doviOrder(doviPending, listing.sort, listing.group);
+  const doviChosen = doviRows.filter((task) => chosen.has(task.path));
+  const doviPickable = doviRows.filter((task) => !task.offline);
+
+  const cleanupRows = cleanupOrder(cleanup, listing.sort, listing.group);
+  const cleanupChosen = cleanupRows.filter((file) => chosen.has(file.path));
+  const cleanupPickable = cleanupRows.filter((file) => !file.offline);
 
   // How much outstanding work this tab has, which is the same question each
   // list asks itself before deciding to draw its empty state instead. Asked
@@ -632,18 +833,45 @@ export function JobsView({
 
   // A job that ends takes its dialog with it, the way the rail's does.
   if (open !== null && !running.some((row) => row.key === open)) setOpen(null);
+
+  // A mode belongs to the list it was turned on over, so leaving that list
+  // leaves the mode. Kept rather than merely ignored, because the ticks are
+  // paths and the tab you moved to holds different ones — a set carried across
+  // would come back meaning nothing.
+  if (picking && picking.tab !== tab) setPicking(null);
   const shown = running.find((row) => row.key === open) ?? null;
 
   const read = runs.find((run) => run.id === reading) ?? null;
 
   return (
     <>
-      {/* The cleanup tab is the one that can act on the whole of itself, so it
-          is the one that fills the bar's slot. The other two propose a rewrite
-          per file, and there is no answering those in one click. */}
+      {/* Every tab can be told which of its rows to act on, so every tab gets
+          the Select button. What differs is what Start then means: a run of
+          conversions, a run of removals, or a delete — each list's own, said in
+          the band of figures where the count is.
+
+          The cleanup tab keeps Clean all beside it. That one is the answer to
+          the whole tab and has been since before there was a way to choose, and
+          the two do not compete: one is "all of it", the other is "these".
+
+          Nothing to select on an empty list, and nothing to select while every
+          row on it is already running or queued. */}
       <ListingBar
         listing={listing}
-        action={tab === "cleanup" ? <CleanAll files={cleanup} /> : undefined}
+        action={
+          pending > 0 ? (
+            <div className="flex shrink-0 items-center gap-2">
+              {tab === "cleanup" && !selecting && <CleanAll files={cleanup} />}
+              <SelectFilms
+                selecting={selecting}
+                onToggle={() =>
+                  selecting ? stopSelecting() : setChosen(EMPTY)
+                }
+                what={PICKING[tab]}
+              />
+            </div>
+          ) : undefined
+        }
       />
 
       {/* Above the sections rather than inside one: these figures are the
@@ -665,11 +893,55 @@ export function JobsView({
       {pending > 0 && (
         <div className="-mt-5">
           {tab === "dovi" ? (
-            <DoviStats tasks={doviPending} />
+            <DoviStats
+              tasks={selecting ? doviChosen : doviPending}
+              action={
+                selecting ? (
+                  <DoviRun
+                    tasks={doviChosen}
+                    all={doviPickable}
+                    keepingEl={keepingEl}
+                    onChoose={setChosen}
+                    onDone={stopSelecting}
+                  />
+                ) : undefined
+              }
+            />
           ) : tab === "audio" ? (
-            <AudioStats tasks={audioPending} />
+            /* While the boxes are out these figures are the selection's, not
+               the tab's: the question the band answers becomes "what have I
+               chosen, and what is it worth", which is the question anybody
+               ticking rows is asking. The button that acts on them stands in
+               the band's own action slot — Start reading as the answer to the
+               figures beside it, rather than as a bar of its own repeating
+               them in a smaller voice. */
+            <AudioStats
+              tasks={selecting ? audioChosen : audioPending}
+              action={
+                selecting ? (
+                  <AudioRun
+                    tasks={audioChosen}
+                    all={audioPickable}
+                    onChoose={setChosen}
+                    onDone={stopSelecting}
+                  />
+                ) : undefined
+              }
+            />
           ) : (
-            <CleanupStats files={cleanup} />
+            <CleanupStats
+              files={selecting ? cleanupChosen : cleanup}
+              action={
+                selecting ? (
+                  <CleanupRun
+                    files={cleanupChosen}
+                    all={cleanupPickable}
+                    onChoose={setChosen}
+                    onDone={stopSelecting}
+                  />
+                ) : undefined
+              }
+            />
           )}
         </div>
       )}
@@ -682,18 +954,56 @@ export function JobsView({
       {running.length > 0 && (
         <section className="flex flex-col gap-1">
           <SectionHeading label="Running" />
-          <ul className="ruled flex flex-col">
-            {running.map((row, index) => (
-              <Running
-                key={row.key}
-                row={row}
-                film={row.path ? films[row.path] : undefined}
-                now={now}
-                index={index}
-                onDetails={() => setOpen(row.key)}
-              />
-            ))}
-          </ul>
+          {/* Drawn the way the tab is being read, like everything under it. A
+              page whose outstanding work is a grid and whose running job is a
+              row is a page that has changed its mind halfway down — and the
+              running film is very often the one that was at the top of that
+              grid a moment ago. */}
+          {listing.layout === "grid" ? (
+            <div className={TILE_GRID_RULED}>
+              {running.map((row, index) => (
+                <RunningTile
+                  key={row.key}
+                  row={row}
+                  film={row.path ? films[row.path] : undefined}
+                  now={now}
+                  index={index}
+                  onDetails={() => setOpen(row.key)}
+                />
+              ))}
+            </div>
+          ) : (
+            <ul className="ruled flex flex-col">
+              {running.map((row, index) => (
+                <Running
+                  key={row.key}
+                  row={row}
+                  film={row.path ? films[row.path] : undefined}
+                  now={now}
+                  index={index}
+                  onDetails={() => setOpen(row.key)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* Between the two, which is where it belongs in every sense: these are
+          started but not yet begun. Both work tabs can have one; the cleanup
+          tab cannot, because a delete is over in the time it takes to unlink
+          and there is nothing to wait behind. */}
+      {(tab === "audio" ? audioQueued : doviQueued).length > 0 && (
+        <section className="flex flex-col gap-1">
+          {/* No count beside it, for the reason the other two headings have
+              none: the rows themselves say where in the run each of them is,
+              and the job above says how far through the run the server is. */}
+          <SectionHeading label="Queued" />
+          {tab === "audio" ? (
+            <AudioQueued tasks={audioQueued} layout={listing.layout} />
+          ) : (
+            <DoviQueued tasks={doviQueued} layout={listing.layout} />
+          )}
         </section>
       )}
 
@@ -724,18 +1034,30 @@ export function JobsView({
               keepingEl={keepingEl}
               sort={listing.sort}
               group={listing.group}
+              layout={listing.layout}
+              selecting={selecting}
+              chosen={chosen}
+              onChoose={setChosen}
             />
           ) : tab === "audio" ? (
             <AudioTasks
               tasks={audioPending}
               sort={listing.sort}
               group={listing.group}
+              layout={listing.layout}
+              selecting={selecting}
+              chosen={chosen}
+              onChoose={setChosen}
             />
           ) : (
             <CleanupList
               files={cleanup}
               sort={listing.sort}
               group={listing.group}
+              layout={listing.layout}
+              selecting={selecting}
+              chosen={chosen}
+              onChoose={setChosen}
             />
           )}
         </section>

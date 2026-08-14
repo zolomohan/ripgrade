@@ -3,6 +3,7 @@ import "server-only";
 import type { StripJob } from "./audio-strip";
 import type { ConvertJob } from "./convert";
 import type { DoviJob } from "./dovi";
+import type { DoviRunState } from "./dovi-run";
 import type { ScanState } from "./scanner";
 import type { ThumbJob } from "./thumbs";
 import type { SweepJob } from "./upgrade-sweep";
@@ -25,6 +26,16 @@ export type JobsSnapshot = {
   strip: StripJob;
   sweep: SweepJob;
   thumbs: ThumbJob;
+  /**
+   * A run of conversions, where one is going.
+   *
+   * Its own field rather than a corner of `convert`, which is where the audio
+   * queue lives inside its own job: a run of conversions spends half its life
+   * in the *other* job — the full pass that has to read a film before it can be
+   * converted — and a queue hanging off a job that reads "idle" for twenty
+   * minutes at a time would be a queue nobody could draw. See lib/dovi-run.ts.
+   */
+  dvRun: DoviRunState | null;
 };
 
 /**

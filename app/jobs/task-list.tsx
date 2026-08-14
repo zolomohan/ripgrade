@@ -5,23 +5,40 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   beginConvert,
+  beginConvertBatch,
   beginFullDoviScan,
+  beginStripBatch,
   checkConvertible,
   refreshAfterDoviScan,
 } from "@/app/actions";
 import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
 import { useJobs } from "@/app/jobs-provider";
+import type { Layout } from "@/app/listing";
 import { useClosing, useLingering } from "@/app/modal";
+import {
+  PosterTile,
+  TILE_GRID_RULED,
+  TILE_NOTE,
+  TILE_READING,
+} from "@/app/poster-tile";
 import { rememberListing } from "@/app/return-to";
+import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
-import { BUTTON } from "@/app/controls";
+import { Tick, TickColumn } from "@/app/tick";
+import { BUTTON, CONTROL_H } from "@/app/controls";
 import { ConfirmModal } from "@/app/confirm";
 import { languageKey } from "@/lib/audio-plan";
 import { languageName } from "@/lib/derive";
 import type { AudioTask, DoviTask, TaskFilm } from "@/lib/queue-tasks";
 import { movieId, posterName } from "@/lib/routes";
-import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
+import { tickRows } from "@/lib/selection";
+import {
+  Grouped,
+  orderedBy,
+  pickGroup,
+  type GroupOption,
+} from "@/app/grouping";
 import { Stat } from "@/app/charts";
 import { AudioPicker } from "./audio-picker";
 import { Stats } from "./stats";
@@ -102,6 +119,9 @@ function TaskRow({
   figure,
   progress,
   onOpen,
+  select,
+  selecting,
+  chosen,
 }: {
   task: TaskFilm;
   index: number;
@@ -118,13 +138,18 @@ function TaskRow({
    * question is which tracks, and that is asked here rather than a page away;
    * see ./audio-picker.tsx, which keeps a way through to the film anyway.
    */
-  onOpen?: () => void;
+  onOpen?: (range: boolean) => void;
+  /** The box that puts this row in a run of them, on a list that offers one. */
+  select?: React.ReactNode;
+  /** Whether that box is out, which is a mode the whole list is in or not. */
+  selecting?: boolean;
+  chosen?: boolean;
 }) {
   const router = useRouter();
 
-  function open() {
+  function open(range: boolean) {
     if (onOpen) {
-      onOpen();
+      onOpen(range);
       return;
     }
     rememberListing();
@@ -135,17 +160,43 @@ function TaskRow({
     <li
       role="button"
       tabIndex={0}
-      onClick={open}
+      onClick={(e) => open(e.shiftKey)}
+      // While the boxes are out the row is one of them, so it says so — the
+      // whole row answers the click, and the corner box is the mark rather
+      // than the control.
+      aria-pressed={selecting ? Boolean(chosen) : undefined}
+      // Shift-click is also how a browser extends a text selection, so without
+      // this a run ticked down the list drags a blue smear across it. Only when
+      // shift is held, and only where a run means something — see `Tick`, which
+      // refuses the same gesture for the same reason.
+      onMouseDown={(e) => {
+        if (selecting && e.shiftKey) e.preventDefault();
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          open();
+          open(e.shiftKey);
         }
       }}
       aria-label={task.title}
       style={stagger(index)}
+      // A chosen row is not drawn any differently. The box in its corner is
+      // filled, and that is the whole of the mark.
+      //
+      // It held a deeper fill for a while, and before that an outline. Both
+      // were the same mistake at different strengths: a row is a line in a
+      // ruled list, and a band of colour across it makes it a block sitting on
+      // the list rather than part of it — twelve ticked and the page is bars
+      // rather than rows. The tick is a small mark because what it marks is
+      // small; the count and the total are said in the band above, which is
+      // where somebody checking their selection is looking anyway.
       className="glow row-enter group -mx-4 flex cursor-pointer items-center gap-5 rounded-row px-4 py-4 transition-colors hover:bg-surface"
     >
+      {/* The box, in the corner of the row and opening out of nothing — see
+          `TickColumn`, which both this list and the cleanup list draw it
+          with. */}
+      {select && <TickColumn open={Boolean(selecting)}>{select}</TickColumn>}
+
       {task.poster || task.posterRemote ? (
         <Art
           src={task.poster}
@@ -201,6 +252,221 @@ function TaskRow({
         {figure}
       </div>
     </li>
+  );
+}
+
+/**
+ * The same file as a poster.
+ *
+ * What a row says down its length, a tile says round its edges — see
+ * app/poster-tile.tsx, which owns the four corners and what may be put in them.
+ * All this adds is the film: the artwork, the name, the file under it, and the
+ * click that opens whatever the list opens.
+ */
+function TaskTile({
+  task,
+  index,
+  facts,
+  factsTitle,
+  mark,
+  badge,
+  note,
+  status,
+  action,
+  onOpen,
+  selecting,
+  chosen,
+}: {
+  task: TaskFilm;
+  index: number;
+  facts?: (string | number | false | null | undefined)[];
+  factsTitle?: string;
+  mark?: React.ReactNode;
+  badge?: React.ReactNode;
+  note?: React.ReactNode;
+  status?: React.ReactNode;
+  action?: React.ReactNode;
+  onOpen?: (range: boolean) => void;
+  selecting?: boolean;
+  chosen?: boolean;
+}) {
+  const router = useRouter();
+
+  // The row's own default, kept here rather than passed down: a tile with
+  // nothing else to do opens the film, and the crumb is left by hand because
+  // the delegated listener in return-to.tsx only sees anchors.
+  function open(range: boolean) {
+    if (onOpen) {
+      onOpen(range);
+      return;
+    }
+    rememberListing();
+    router.push(hrefFor(task));
+  }
+
+  return (
+    <PosterTile
+      poster={{
+        src: task.poster,
+        remote: task.posterRemote,
+        version: task.artAt,
+      }}
+      // Named so the tile travels into the page it opens, as the row's poster
+      // does — the whole frame, because the whole frame is what you clicked.
+      transitionName={posterName(task.path)}
+      title={task.title}
+      year={task.year}
+      episode={task.episode}
+      fileName={task.fileName}
+      facts={facts}
+      factsTitle={factsTitle}
+      mark={mark}
+      badge={badge}
+      note={note}
+      status={status}
+      action={action}
+      label={task.title}
+      index={index}
+      onOpen={open}
+      selecting={selecting}
+      chosen={chosen}
+    />
+  );
+}
+
+/** What a tick on one of these means, before it is drawn either way. */
+type TickProps = {
+  checked: boolean;
+  disabled?: boolean;
+  refusal?: string;
+  hint?: string;
+  onTick: (range: boolean) => void;
+  label: string;
+};
+
+/**
+ * One task, drawn the way the page is being read.
+ *
+ * The branch is here rather than at each list so that a row and a tile of the
+ * same film cannot drift apart in what they *do* — one click handler, one
+ * selection mode, one set of refusals. What differs is only where each fact
+ * goes, and that is what the two sets of slots below are: `chips` and `figure`
+ * are the row's, `badge`, `note`, `status` and `action` are the tile's, and
+ * every list fills both because the same fact belongs in different places
+ * depending on how much room there is for it.
+ *
+ * The box is the one thing built here rather than passed in, because it is the
+ * one thing that is drawn differently in each: a plate in the corner of a row,
+ * and a ring over the artwork on a tile — see `Tick`'s `art`.
+ */
+function TaskItem({
+  layout,
+  task,
+  index,
+  tick,
+  chips,
+  figure,
+  progress,
+  facts,
+  factsTitle,
+  badge,
+  note,
+  status,
+  action,
+  onOpen,
+  selecting,
+  chosen,
+}: {
+  layout: Layout;
+  task: TaskFilm;
+  index: number;
+  /** The box, where this list offers one. */
+  tick?: TickProps;
+  /** Rows: the chip line under the file name. */
+  chips: React.ReactNode;
+  /** Rows: the right-hand column, which is what the list is ranked by. */
+  figure: React.ReactNode;
+  /** Rows: what replaces the chips while something is happening to this file. */
+  progress?: React.ReactNode;
+  /** Tiles: the muted line under the name — see `PosterTile`. */
+  facts?: (string | number | false | null | undefined)[];
+  /** And what a word in it means, where one is an abbreviation. */
+  factsTitle?: string;
+  /** Tiles: the reading, top right. */
+  badge?: React.ReactNode;
+  /** Tiles: a word about where this one is, bottom left. */
+  note?: React.ReactNode;
+  /** Tiles: the strip along the foot, while something is happening. */
+  status?: React.ReactNode;
+  /** Tiles: what will not fit on a poster, under the caption. */
+  action?: React.ReactNode;
+  onOpen?: (range: boolean) => void;
+  selecting?: boolean;
+  chosen?: boolean;
+}) {
+  const select = tick && (
+    <Tick
+      {...tick}
+      art={layout === "grid"}
+      // Small in both. In a row it sits in a corner rather than filling a
+      // column of its own, and on a tile every pixel of padding is a pixel of
+      // the poster it stands on.
+      pad="p-1"
+    />
+  );
+
+  if (layout === "rows") {
+    return (
+      <TaskRow
+        task={task}
+        index={index}
+        chips={chips}
+        figure={figure}
+        progress={progress}
+        onOpen={onOpen}
+        select={select}
+        selecting={selecting}
+        chosen={chosen}
+      />
+    );
+  }
+
+  return (
+    <TaskTile
+      task={task}
+      index={index}
+      facts={facts}
+      factsTitle={factsTitle}
+      mark={select}
+      badge={badge}
+      note={note}
+      status={status}
+      action={action}
+      onOpen={onOpen}
+      selecting={selecting}
+      chosen={chosen}
+    />
+  );
+}
+
+/**
+ * The container a list of tasks is laid out in, either way.
+ *
+ * A `ul.ruled` is what parts rows — see the rule in globals.css — and a grid
+ * parts its tiles by the space between them, so the two want different elements
+ * rather than one element with different classes.
+ */
+function TaskList({
+  layout,
+  children,
+}: {
+  layout: Layout;
+  children: React.ReactNode;
+}) {
+  return layout === "rows" ? (
+    <ul className="ruled flex flex-col">{children}</ul>
+  ) : (
+    <div className={TILE_GRID_RULED}>{children}</div>
   );
 }
 
@@ -325,15 +591,24 @@ export const DOVI_GROUPS: GroupOption<DoviTask>[] = [
  * that has it — and the rows can be ranked and cut by it, which is where a
  * question about which files answers better than a single number ever did.
  */
-export function DoviStats({ tasks }: { tasks: DoviTask[] }) {
-  if (tasks.length === 0) return null;
+export function DoviStats({
+  tasks,
+  action,
+}: {
+  tasks: DoviTask[];
+  /** What to do with them, while a selection is being made — see `DoviRun`. */
+  action?: React.ReactNode;
+}) {
+  // Zero chosen is a reading rather than an absence, the way it is on the audio
+  // band: it is what pressing Start right now would come to.
+  if (tasks.length === 0 && !action) return null;
 
   const mel = tasks.filter((task) => task.el === "mel").length;
   const fel = tasks.filter((task) => task.el === "simple-fel").length;
   const unread = tasks.length - mel - fel;
 
   return (
-    <Stats>
+    <Stats action={action}>
       <Stat label="Files" value={tasks.length.toLocaleString("en-GB")} />
       {/* The tools' own names, as on the chips down the rows, with the gloss in
           the tooltip both places take from the same table. */}
@@ -357,16 +632,202 @@ export function DoviStats({ tasks }: { tasks: DoviTask[] }) {
 }
 
 /**
+ * Start the conversion of every film ticked, one after another.
+ *
+ * The one control on this page that starts work it cannot describe in advance.
+ * Half these films have never been read end to end, and for those a conversion
+ * is two jobs — the full pass that settles whether converting would clip
+ * anything, then the rewrite — with the first able to rule the second out. So
+ * the dialog says what a run actually is rather than promising twelve
+ * conversions: some of these are checks, and a check that says no is the run
+ * doing its job.
+ *
+ * Everything is decided film by film as the run reaches it, with the reading in
+ * hand. See lib/dovi-run.ts, which is where the run lives — on the server,
+ * because twelve conversions is a day of disk and the tab that asked for them
+ * will have been closed long before the end.
+ */
+export function DoviRun({
+  tasks,
+  all,
+  keepingEl,
+  onChoose,
+  onDone,
+}: {
+  /** The films ticked, in the order the list draws them and will run them. */
+  tasks: DoviTask[];
+  /** Everything that could be ticked, for the button that ticks the lot. */
+  all: DoviTask[];
+  /** Whether a conversion keeps the enhancement layer it discards. */
+  keepingEl: boolean;
+  onChoose: (next: ReadonlySet<string>) => void;
+  onDone: () => void;
+}) {
+  const { jobs, apply } = useJobs();
+  const { dovi: pass, convert, strip } = jobs;
+  const [asking, setAsking] = useState(false);
+  const shown = useClosing(asking);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // One rewrite at a time, which the server enforces anyway — the button says
+  // so rather than letting Start find out. A track removal counts: it is the
+  // same drive and the same file being rewritten by a different tool.
+  const busy =
+    pass.status === "running" ||
+    convert.status === "running" ||
+    strip.status === "running"
+      ? "Something is already rewriting a file — wait for it"
+      : undefined;
+
+  /** How many of them begin with a read, which is what makes a run long. */
+  const reads = tasks.filter((task) => !task.scanned).length;
+
+  async function start() {
+    setError(null);
+    setStarting(true);
+    const result = await beginConvertBatch(tasks.map((task) => task.path));
+    setStarting(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    // What the first film is doing, said here so the rows move on the click
+    // rather than at the stream's next event. Which of the two jobs that is
+    // depends on whether anything has read it — the same question the run
+    // itself asks first.
+    const [first] = tasks;
+    apply(
+      first.scanned
+        ? {
+            convert: {
+              status: "running",
+              mode: "convert",
+              path: first.path,
+              step: 1,
+              steps: 4,
+              percent: 0,
+            },
+          }
+        : {
+            dovi: {
+              status: "running",
+              path: first.path,
+              percent: 0,
+              frames: 0,
+            },
+          },
+    );
+    setAsking(false);
+    onDone();
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-2">
+      {/* All three stand for as long as the mode does, greyed where they would
+          do nothing — a control that moves while you are reaching for it is
+          worse than one that is plainly unavailable. */}
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onChoose(new Set(all.map((task) => task.path)))}
+          disabled={starting || all.length === 0 || tasks.length === all.length}
+          title={
+            all.length === 0
+              ? "Every film here is on a drive that is not connected"
+              : "Tick every film on the list"
+          }
+          className={BUTTON.secondary}
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          onClick={() => onChoose(new Set())}
+          disabled={starting || tasks.length === 0}
+          className={BUTTON.secondary}
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={() => setAsking(true)}
+          disabled={Boolean(busy) || starting || tasks.length === 0}
+          title={busy ?? "Convert these films, one after another"}
+          className={BUTTON.primary}
+        >
+          {starting && <Spinner />}
+          Start
+        </button>
+      </div>
+
+      {error && (
+        <p className="max-w-sm text-right text-xs wrap-anywhere text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+
+      {shown && (
+        <ConfirmModal
+          open={asking}
+          title={`Convert ${tasks.length} ${
+            tasks.length === 1 ? "film" : "films"
+          }?`}
+          confirmLabel={starting ? "Starting" : "Start the run"}
+          busy={starting}
+          onConfirm={start}
+          onCancel={() => setAsking(false)}
+        >
+          Each is rewritten in place and its Profile 7 original kept beside it,
+          so any of them can be undone from the film&rsquo;s own page.{" "}
+          {keepingEl &&
+            "Each enhancement layer is set aside in an archive of its own first, so it survives deleting that original. "}
+          {reads > 0 &&
+            `${
+              reads === tasks.length
+                ? reads === 1
+                  ? "It"
+                  : "Every one of them"
+                : `${reads} of them`
+            } ${
+              reads === 1 && reads === tasks.length ? "has" : "have"
+            } to be read end to end first, which is the long part — and a read that finds an enhancement layer worth keeping takes that film out of the run rather than converting it. `}
+          They run one at a time, in the order they are listed. Leaving this
+          page will not stop them.
+        </ConfirmModal>
+      )}
+    </div>
+  );
+}
+
+/**
  * A full pass this page started, and what it started it for: the conversion the
  * pass is the first step of, or the answer the pass was run to get.
  */
 type Errand = { path: string; fileName: string; then: "convert" | "report" };
+
+/** The rows in the order this list draws them — see `audioOrder`, its twin. */
+export const doviOrder = (
+  tasks: DoviTask[],
+  sort?: string,
+  group?: string,
+): DoviTask[] =>
+  orderedBy(
+    [...tasks].sort(pickSort(DOVI_SORTS, sort).compare),
+    pickGroup(DOVI_GROUPS, group),
+  );
 
 export function DoviTasks({
   tasks: unsorted,
   keepingEl,
   sort,
   group,
+  layout,
+  selecting = false,
+  chosen,
+  onChoose,
 }: {
   tasks: DoviTask[];
   /**
@@ -378,9 +839,22 @@ export function DoviTasks({
   keepingEl: boolean;
   sort?: string;
   group?: string;
+  /** Posters or rows — the fourth thing the listing bar asks. */
+  layout: Layout;
+  /** Whether the header's Select button is on — see `SelectFilms`. */
+  selecting?: boolean;
+  /** The films ticked, by path, and the way to change them. */
+  chosen: ReadonlySet<string>;
+  onChoose: (next: ReadonlySet<string>) => void;
 }) {
   const tasks = [...unsorted].sort(pickSort(DOVI_SORTS, sort).compare);
   const grouping = pickGroup(DOVI_GROUPS, group);
+  // The rows in the order the page draws them, which is what a shift-held
+  // click runs along.
+  const order = orderedBy(tasks, grouping);
+  const keys = order.map((task) => task.path);
+  /** The last row ticked by hand, which is what a shift-click measures from. */
+  const anchor = useRef<number | null>(null);
 
   const { jobs, apply, subscribe } = useJobs();
   const { dovi: pass, convert, strip } = jobs;
@@ -560,6 +1034,19 @@ export function DoviTasks({
     strip.status === "running" ||
     queued !== null;
 
+  const ticked = (task: DoviTask) => selecting && chosen.has(task.path);
+
+  function pick(index: number, range: boolean) {
+    const from = anchor.current;
+    anchor.current = index;
+
+    const next = tickRows(chosen, keys, index, from, range);
+    // A run dragged across an offline row must not take it: the box on that row
+    // refuses by hand, and a shift-click is the same decision made faster.
+    for (const task of order) if (task.offline) next.delete(task.path);
+    onChoose(next);
+  }
+
   if (tasks.length === 0) {
     return (
       <EmptyState
@@ -600,7 +1087,7 @@ export function DoviTasks({
 
       <Grouped items={tasks} group={grouping} note={filmsNote}>
         {(rows, offset) => (
-          <ul className="ruled flex flex-col">
+          <TaskList layout={layout}>
             {rows.map((task, index) => {
               const i = offset + index;
               const converting =
@@ -626,11 +1113,93 @@ export function DoviTasks({
                   ? pass.percent
                   : 0;
 
+              /**
+               * The one thing this list offers, in both drawings of it.
+               *
+               * Bordered rather than filled: twelve filled buttons down a list
+               * is a column of black blobs, and the emphasis the console's own
+               * button earns comes from being the one thing on that page.
+               *
+               * The width comes from whatever holds it and not from the word in
+               * it — the row's fixed column, the tile's own width — because a
+               * list where some say Check and some say Convert was a ragged edge
+               * of pills, each a different size for a reason nobody reading a
+               * column of them can see.
+               *
+               * A word rather than a mark on the artwork, which is where every
+               * other control on these tiles went. Two of the three tabs mean
+               * something irreversible by their one button and this one means
+               * two different things by it — a rewrite, or a read that settles
+               * whether the rewrite is allowed — and an icon can say neither.
+               * So it keeps the caption's own line, under the poster.
+               */
+              const convertButton = (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    // The row navigates; this does not.
+                    e.stopPropagation();
+                    // A check writes nothing, so it runs on the click. Only
+                    // the rewrite is worth stopping to confirm.
+                    if (checkFirst) void check(task);
+                    else setAsking(task);
+                  }}
+                  disabled={busy || task.offline}
+                  title={
+                    task.offline
+                      ? "The drive this file lives on is not connected"
+                      : busy
+                        ? "Something is already rewriting a file — wait for it"
+                        : checkFirst
+                          ? "Reads every frame to settle whether converting would clip anything. Nothing is written."
+                          : task.scanned
+                            ? "Rewrite as Profile 8.1, keeping the original"
+                            : "Read every frame, then rewrite as Profile 8.1"
+                  }
+                  className={`${BUTTON.secondary} w-full`}
+                >
+                  {checkFirst ? "Check" : "Convert"}
+                </button>
+              );
+
+              /** What the job is doing, in the words the row prints under it. */
+              const stage = converting
+                ? [
+                    `Converting to Profile 8.1 · step ${convert.step} of ${convert.steps}`,
+                    convert.label,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : reading
+                  ? `Reading every frame · ${Math.round(pass.percent)}%${
+                      pass.frames ? ` · ${pass.frames} frames` : ""
+                    }`
+                  : "Starting the conversion…";
+
               return (
-                <TaskRow
+                <TaskItem
                   key={task.path}
+                  layout={layout}
                   task={task}
                   index={i}
+                  // In the choosing mode the tile is the box, and the film's own
+                  // page is a press of Cancel away. One already being worked on
+                  // answers neither: it is not waiting to be chosen.
+                  onOpen={
+                    selecting && !active ? (range) => pick(i, range) : undefined
+                  }
+                  chosen={ticked(task)}
+                  selecting={selecting && !active}
+                  tick={{
+                    checked: ticked(task),
+                    disabled: task.offline,
+                    refusal: task.offline
+                      ? "The drive this file lives on is not connected"
+                      : undefined,
+                    hint: "Shift-click to tick a run of films",
+                    onTick: (range) => pick(i, range),
+                    label: `Convert ${task.title}`,
+                  }}
                   chips={
                     <>
                       <Chip>Profile 7</Chip>
@@ -649,6 +1218,35 @@ export function DoviTasks({
                       </span>
                     </>
                   }
+                  // The same facts as the library card's own muted line: what a
+                  // file *is*, joined by middle dots. They are chips in a row,
+                  // where they stand among prose and have to be picked out of
+                  // it; a shelf of posters with two outlined boxes under every
+                  // one reads as a form rather than a shelf.
+                  //
+                  // The sentence about what a click will cost goes with them —
+                  // on a tile that is the button's own tooltip, and the one part
+                  // of it worth carrying is the plate on the poster instead.
+                  facts={[
+                    "Profile 7",
+                    task.el && EL_LABEL[task.el],
+                    size(task.sizeBytes),
+                  ]}
+                  factsTitle={task.el ? EL_TITLE[task.el] : undefined}
+                  // Only the ready ones say so. A film whose frames have been
+                  // read converts on one click, which is the difference between
+                  // this tile and the one next to it; the ones that have not
+                  // wear nothing, and the button under them says Check.
+                  note={
+                    !active && task.scanned ? (
+                      <span
+                        className={TILE_NOTE}
+                        title="Every frame has been read — this one converts straight away"
+                      >
+                        Read
+                      </span>
+                    ) : undefined
+                  }
                   progress={
                     active ? (
                       <>
@@ -663,19 +1261,32 @@ export function DoviTasks({
                         </div>
 
                         <p className="mt-2 text-xs tabular-nums opacity-45">
-                          {converting
-                            ? [
-                                `Converting to Profile 8.1 · step ${convert.step} of ${convert.steps}`,
-                                convert.label,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")
-                            : reading
-                              ? `Reading every frame · ${Math.round(pass.percent)}%${
-                                  pass.frames ? ` · ${pass.frames} frames` : ""
-                                }`
-                              : "Starting the conversion…"}
+                          {stage}
                         </p>
+                      </>
+                    ) : undefined
+                  }
+                  // The same two facts along the foot of the poster, in the
+                  // order there is room for them: the bar, then what it is a
+                  // bar of, with the figure at the end of the line rather than
+                  // in a corner of the artwork.
+                  status={
+                    active ? (
+                      <>
+                        <div className="bar-track bar-track-thin">
+                          <div
+                            className="bar-fill motion-safe:transition-[width] motion-safe:duration-500"
+                            style={{ width: `${Math.min(100, percent)}%` }}
+                          />
+                        </div>
+                        <div className="flex items-baseline gap-2 text-[11px] text-white">
+                          <span className="min-w-0 truncate opacity-80">
+                            {stage}
+                          </span>
+                          <span className="ml-auto shrink-0 tabular-nums">
+                            {Math.round(percent)}%
+                          </span>
+                        </div>
                       </>
                     ) : undefined
                   }
@@ -685,48 +1296,14 @@ export function DoviTasks({
                         {Math.round(percent)}%
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          // The row navigates; this does not.
-                          e.stopPropagation();
-                          // A check writes nothing, so it runs on the click. Only
-                          // the rewrite is worth stopping to confirm.
-                          if (checkFirst) void check(task);
-                          else setAsking(task);
-                        }}
-                        disabled={busy || task.offline}
-                        title={
-                          task.offline
-                            ? "The drive this file lives on is not connected"
-                            : busy
-                              ? "Something is already rewriting a file — wait for it"
-                              : checkFirst
-                                ? "Reads every frame to settle whether converting would clip anything. Nothing is written."
-                                : task.scanned
-                                  ? "Rewrite as Profile 8.1, keeping the original"
-                                  : "Read every frame, then rewrite as Profile 8.1"
-                        }
-                        // Bordered rather than filled: twelve filled buttons down a
-                        // list is a column of black blobs, and the emphasis the
-                        // console's own button earns comes from being the one
-                        // thing on that page.
-                        //
-                        // The width comes from the column and not from the word
-                        // in it: a list where some rows say Check and some say
-                        // Convert was a ragged left edge of pills down the side
-                        // of the page, each one a different size for a reason
-                        // nobody reading a column of them can see.
-                        className={`${BUTTON.secondary} w-full`}
-                      >
-                        {checkFirst ? "Check" : "Convert"}
-                      </button>
+                      convertButton
                     )
                   }
+                  action={active ? undefined : convertButton}
                 />
               );
             })}
-          </ul>
+          </TaskList>
         )}
       </Grouped>
 
@@ -829,6 +1406,26 @@ const freedNote = (tasks: AudioTask[]) =>
   `${tasks.length} · ${size(tasks.reduce((n, t) => n + t.freedBytes, 0))} freed`;
 
 /**
+ * The rows in the order the audio list draws them: sorted, then cut into the
+ * groups the page is showing and read back out flat.
+ *
+ * Exported because two places need the same answer and it has to be the same
+ * answer. The list needs it to know what a shift-held click runs along; the
+ * page needs it to know what order a run of removals happens in, which is the
+ * order they are read in — a queue that ran the list back to front would be a
+ * queue nobody could follow down the page.
+ */
+export const audioOrder = (
+  tasks: AudioTask[],
+  sort?: string,
+  group?: string,
+): AudioTask[] =>
+  orderedBy(
+    [...tasks].sort(pickSort(AUDIO_SORTS, sort).compare),
+    pickGroup(AUDIO_GROUPS, group),
+  );
+
+/**
  * What the audio tab adds up to, drawn above the pending list rather than
  * inside it.
  *
@@ -840,8 +1437,30 @@ const freedNote = (tasks: AudioTask[]) =>
  * Nothing to say about an empty tab — the list's own empty state is the answer
  * there, and a row of zeroes above it would be a second one.
  */
-export function AudioStats({ tasks }: { tasks: AudioTask[] }) {
-  if (tasks.length === 0) return null;
+export function AudioStats({
+  tasks,
+  action,
+}: {
+  tasks: AudioTask[];
+  /**
+   * What to do about the figures, where there is something.
+   *
+   * The band is the one place on this tab that describes a set of films rather
+   * than a film, so it is where a button that acts on a set belongs — see
+   * `AudioRun`, which fills this while the list is being ticked. It is also
+   * what holds the band open on an empty selection: a run about to be started
+   * on nothing still has to be able to say so.
+   */
+  action?: React.ReactNode;
+}) {
+  // Nothing to say about an empty tab — the list's own empty state is the
+  // answer there, and a row of zeroes above it would be a second one.
+  //
+  // A selection is the other case entirely. Zero chosen is a reading rather
+  // than an absence: it is what pressing Start right now would come to, and the
+  // figures climbing off it as the ticks land is what makes the band answer the
+  // question being asked of it.
+  if (tasks.length === 0 && !action) return null;
 
   const total = tasks.reduce((sum, task) => sum + task.freedBytes, 0);
   const anyEstimated = tasks.some((task) => task.estimated);
@@ -853,7 +1472,7 @@ export function AudioStats({ tasks }: { tasks: AudioTask[] }) {
   );
 
   return (
-    <Stats>
+    <Stats action={action}>
       <Stat
         label="To reclaim"
         gain
@@ -869,9 +1488,404 @@ export function AudioStats({ tasks }: { tasks: AudioTask[] }) {
       <Stat
         label={languages.size === 1 ? "Language" : "Languages"}
         value={languages.size.toLocaleString("en-GB")}
-        title={[...new Set([...languages].map(languageName))].sort().join(", ")}
+        // Nothing chosen yet is nothing to name, and an empty tooltip is a
+        // tooltip that opens on a blank box.
+        title={
+          languages.size
+            ? [...new Set([...languages].map(languageName))].sort().join(", ")
+            : undefined
+        }
       />
     </Stats>
+  );
+}
+
+/**
+ * What to do with the films that have been ticked, beside the figures for them.
+ *
+ * In the stats band rather than over the list, because the band is now the
+ * count: "7 films chosen · frees 63.4 GB" printed on a bar of its own was the
+ * same two numbers the tiles were already showing, said again in a smaller
+ * voice a few pixels underneath. So the tiles follow the selection and this is
+ * only the button — Start reads as the answer to the figures it stands next to,
+ * which is what it is.
+ *
+ * It runs the proposal each row was already showing — every track in a language
+ * you do not keep — because that is what the figure on the row is the price of.
+ * Disagreeing with one of them is what the dialog is for, and it is a press of
+ * Cancel and a click away.
+ */
+export function AudioRun({
+  tasks,
+  all,
+  onChoose,
+  onDone,
+}: {
+  /** The films ticked, in the order the list draws them and will run them. */
+  tasks: AudioTask[];
+  /** Everything that could be ticked, for the button that ticks the lot. */
+  all: AudioTask[];
+  onChoose: (next: ReadonlySet<string>) => void;
+  /** Leaves the choosing mode, once a run has been started out of it. */
+  onDone: () => void;
+}) {
+  const { jobs, apply } = useJobs();
+  const { strip, convert, dovi: pass } = jobs;
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // One rewrite at a time, which the server enforces anyway — the button says
+  // so rather than letting Start find out.
+  const busy =
+    strip.status === "running" ||
+    convert.status === "running" ||
+    pass.status === "running"
+      ? "Something is already rewriting a file — wait for it"
+      : undefined;
+
+  async function start() {
+    setError(null);
+    setStarting(true);
+
+    const result = await beginStripBatch(
+      tasks.map((task) => ({
+        path: task.path,
+        removeOrdinals: [...task.proposed].sort((a, b) => a - b),
+        audioCount: task.tracks.length,
+        // The Matroska numbers as this list has them, for the server to check
+        // against what mkvmerge reports before it rewrites anything — the same
+        // guard the single-file dialog sends.
+        numbers: task.tracks.map((track) => track.number),
+        freedBytes: task.freedBytes || undefined,
+      })),
+    );
+    setStarting(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (result.skipped > 0) {
+      setError(
+        `${result.skipped} of the films chosen could not be started — they have changed since this list was drawn. The rest are running.`,
+      );
+    }
+
+    // The first one is under way and the others are behind it, said here so the
+    // rows move the moment the button is pressed rather than at the stream's
+    // next event. See `apply`.
+    const [first, ...waiting] = tasks;
+    apply({
+      strip: {
+        status: "running",
+        path: first.path,
+        percent: 0,
+        removed: first.proposed.length,
+        kept: first.tracks.length - first.proposed.length,
+        freedBytes: first.freedBytes || undefined,
+        ...(waiting.length && {
+          batch: { index: 1, total: tasks.length, failed: 0 },
+          queue: waiting.map((task) => task.path),
+        }),
+      },
+    });
+
+    // Out of the mode, because what it was for has happened. The rows the ticks
+    // were on are under Running and Queued now, and the boxes would be standing
+    // open over whatever is left.
+    onDone();
+  }
+
+  return (
+    // Ranged right and off the top, so the buttons stand on the same line the
+    // tiles' labels do rather than centring themselves against figures that are
+    // twice their height.
+    <div className="flex flex-col items-end gap-2">
+      {/* All three stand for as long as the mode does, greyed where they would
+          do nothing. They were drawn only when they had something to do, which
+          meant the row rearranged itself under the pointer as you ticked — and
+          Select all vanished on the click that happened to complete the set,
+          which on a list with a couple of unreachable drives in it can be the
+          first one. A control that moves while you are reaching for it is worse
+          than one that is plainly unavailable. */}
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onChoose(new Set(all.map((task) => task.path)))}
+          disabled={starting || all.length === 0 || tasks.length === all.length}
+          title={
+            all.length === 0
+              ? "Every film here is on a drive that is not connected"
+              : "Tick every film on the list"
+          }
+          className={BUTTON.secondary}
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          onClick={() => onChoose(new Set())}
+          disabled={starting || tasks.length === 0}
+          className={BUTTON.secondary}
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={start}
+          disabled={Boolean(busy) || starting || tasks.length === 0}
+          title={
+            busy ??
+            "Removes the tracks each row proposes, one film at a time. The original of each is kept beside it."
+          }
+          className={BUTTON.primary}
+        >
+          {starting && <Spinner />}
+          Start
+        </button>
+      </div>
+
+      {error && (
+        <p className="max-w-sm text-right text-xs wrap-anywhere text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The films a run has been started on and has not reached yet.
+ *
+ * Their own section rather than rows left in the pending list, for the reason
+ * the running file leaves that list at all: they have been acted on, and a row
+ * offering to start what is already started is a row that would start it twice.
+ * Drawn in the order they will run, which is the one thing this list says that
+ * the pending list's own order cannot.
+ *
+ * Nothing to tick and no dialog: what these are going to do was decided when
+ * Start was pressed. A click opens the film, which is where anyone wondering
+ * what is about to happen to it would go.
+ */
+export function AudioQueued({
+  tasks,
+  layout,
+}: {
+  tasks: AudioTask[];
+  layout: Layout;
+}) {
+  return (
+    <TaskList layout={layout}>
+      {tasks.map((task, index) => (
+        <TaskItem
+          key={task.path}
+          layout={layout}
+          task={task}
+          index={index}
+          chips={
+            <span className="min-w-0 truncate text-xs opacity-40">
+              {languageLine(task.languages)} · {size(task.sizeBytes)} file
+            </span>
+          }
+          facts={[languageLine(task.languages), `${size(task.sizeBytes)} file`]}
+          figure={
+            <>
+              <span className="text-sm font-medium tabular-nums opacity-55">
+                {task.estimated ? "≈" : "−"}
+                {size(task.freedBytes)}
+              </span>
+              {/* Its place in the run, where the pending row says what the
+                  figure above is: a queue is an order, and the only question
+                  a row in one raises is when. */}
+              <span className="text-xs opacity-40">
+                {index === 0 ? "next" : `${index + 1}${ordinal(index + 1)}`}
+              </span>
+            </>
+          }
+          // The place leads on a tile, where the row leads with the saving.
+          // Nothing here is being offered — what these will do was settled when
+          // Start was pressed — so the only live question is when, and that is
+          // the corner every other tile in the app puts its reading in.
+          badge={
+            <span className={TILE_READING}>
+              {index === 0 ? "next" : `${index + 1}${ordinal(index + 1)}`}
+            </span>
+          }
+          note={
+            <span className={TILE_NOTE}>
+              {task.estimated ? "≈" : "−"}
+              {size(task.freedBytes)}
+            </span>
+          }
+        />
+      ))}
+    </TaskList>
+  );
+}
+
+/**
+ * The same section for a run of conversions.
+ *
+ * The figure says how long rather than how much: nothing on this tab saves
+ * space, so the row's own size is what a wait is measured in — and whether the
+ * film has been read end to end, which is the difference between one job and
+ * two on it.
+ */
+export function DoviQueued({
+  tasks,
+  layout,
+}: {
+  tasks: DoviTask[];
+  layout: Layout;
+}) {
+  return (
+    <TaskList layout={layout}>
+      {tasks.map((task, index) => (
+        <TaskItem
+          key={task.path}
+          layout={layout}
+          task={task}
+          index={index}
+          chips={
+            <>
+              <Chip>Profile 7</Chip>
+              {task.el && EL_LABEL[task.el] && (
+                <Chip title={EL_TITLE[task.el]}>{EL_LABEL[task.el]}</Chip>
+              )}
+              <span className="text-xs opacity-40">
+                {size(task.sizeBytes)}
+                {task.scanned
+                  ? " · every frame read"
+                  : " · every frame is read first"}
+              </span>
+            </>
+          }
+          facts={[
+            "Profile 7",
+            task.el && EL_LABEL[task.el],
+            size(task.sizeBytes),
+          ]}
+          factsTitle={task.el ? EL_TITLE[task.el] : undefined}
+          figure={
+            <span className="text-xs opacity-40">
+              {index === 0 ? "next" : `${index + 1}${ordinal(index + 1)}`}
+            </span>
+          }
+          badge={
+            <span className={TILE_READING}>
+              {index === 0 ? "next" : `${index + 1}${ordinal(index + 1)}`}
+            </span>
+          }
+          // How long the wait in front of this one is, which on this tab is the
+          // only thing that varies: a film already read converts straight away,
+          // and one that is not spends the first half of its turn being read.
+          note={
+            <span
+              className={TILE_NOTE}
+              title={
+                task.scanned
+                  ? "Every frame has been read"
+                  : "Every frame is read before this one is converted"
+              }
+            >
+              {task.scanned ? "Read" : "Reads first"}
+            </span>
+          }
+        />
+      ))}
+    </TaskList>
+  );
+}
+
+/** st, nd, rd, th — for a place in a queue rather than a date. */
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return "th";
+  return ["th", "st", "nd", "rd"][n % 10] ?? "th";
+}
+
+/**
+ * The button that puts the list into choosing rows rather than reading them.
+ *
+ * In the bar over the page rather than on the list, where the cleanup tab's
+ * Clean all already stands: it is a statement about the whole tab, and a
+ * control that turns forty rows into checkboxes is not something to come across
+ * halfway down them.
+ *
+ * A mode at all — rather than boxes that are simply always there — because
+ * ticking films is the rarer of the two things this list is for. Most visits
+ * are one film, opened, argued with and started; a box in the corner of every
+ * row would be furniture on all of them for the sake of the other visit.
+ *
+ * A mark rather than a word, and outlined rather than filled: Clean all is the
+ * answer to its whole tab and is drawn as one, while this only opens a way of
+ * asking. The two sit in the same slot on neighbouring tabs, and a second solid
+ * button there would have made "select" look like the thing this page is for.
+ *
+ * The icon changes rather than a label under it. Off, it is a list with ticks
+ * beside it, which is what pressing it produces; on, it is the cross every
+ * dialog in the app is left by, because that is now the whole of what it does.
+ */
+export function SelectFilms({
+  selecting,
+  onToggle,
+  what,
+}: {
+  selecting: boolean;
+  onToggle: () => void;
+  /**
+   * What a tick means on this list, in a phrase.
+   *
+   * All three tabs wear this button and none of them mean the same thing by
+   * it: one converts, one strips tracks, one deletes. An icon cannot say which,
+   * so the sentence it carries has to — and it is the tab's sentence, not this
+   * button's.
+   */
+  what: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={selecting}
+      aria-label={selecting ? "Stop choosing" : "Choose several"}
+      title={selecting ? "Leave the boxes, and what is ticked in them" : what}
+      // Written out rather than composed from `BUTTON.secondary` and a width:
+      // that one carries its own `px-4`, and two paddings in one class string
+      // are settled by Tailwind's emit order rather than by which was written
+      // last — the same reason `BUTTON.dangerStanding` is spelled out in full.
+      //
+      // Square at the bar's own height, for the reason the cleanup tab's button
+      // takes it: three controls on one line, one of them eight pixels shorter,
+      // reads as something that wandered in.
+      className={`grid ${CONTROL_H} w-10 shrink-0 place-items-center rounded-full border border-line transition-colors ${
+        // Held down while the mode is on. An icon button that only changes its
+        // picture is a button you have to remember the meaning of; one that is
+        // visibly pressed says which of the two states you are in.
+        selecting ? "bg-surface-strong" : "hover:bg-surface-strong"
+      }`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="h-4 w-4 opacity-70"
+      >
+        {selecting ? (
+          <path d="M6 6l12 12M18 6L6 18" />
+        ) : (
+          <>
+            <path d="m3 7 2 2 4-4" />
+            <path d="M13 8h8" />
+            <path d="m3 17 2 2 4-4" />
+            <path d="M13 18h8" />
+          </>
+        )}
+      </svg>
+    </button>
   );
 }
 
@@ -879,13 +1893,37 @@ export function AudioTasks({
   tasks: unsorted,
   sort,
   group,
+  layout,
+  selecting = false,
+  chosen,
+  onChoose,
 }: {
   tasks: AudioTask[];
   sort?: string;
   group?: string;
+  /** Posters or rows — the fourth thing the listing bar asks. */
+  layout: Layout;
+  /** Whether the header's Select button is on — see `SelectFilms`. */
+  selecting?: boolean;
+  /**
+   * The films ticked, by path, and the way to change them.
+   *
+   * Held by the page rather than here, with the mode it belongs to: the button
+   * that turns the boxes off is up in the bar, and it has to be able to drop
+   * what they held. By path rather than by index because this list is
+   * re-sorted, re-cut and re-rendered from the server every time a job ends —
+   * an index survives none of that.
+   */
+  chosen: ReadonlySet<string>;
+  onChoose: (next: ReadonlySet<string>) => void;
 }) {
   const tasks = [...unsorted].sort(pickSort(AUDIO_SORTS, sort).compare);
   const grouping = pickGroup(AUDIO_GROUPS, group);
+  // The rows in the order the page draws them, which is what a shift-held
+  // click runs along — a grouping cuts the sorted list into sections, and the
+  // order down the page is no longer the order of the array above. The same
+  // answer `audioOrder` gives the page, arrived at the same way.
+  const order = orderedBy(tasks, grouping);
 
   const { jobs, subscribe } = useJobs();
   const { strip, convert, dovi: pass } = jobs;
@@ -898,26 +1936,40 @@ export function AudioTasks({
   const held = useLingering(asking);
   const [error, setError] = useState<string | null>(null);
 
+  /** The last row ticked by hand, which is what a shift-click measures from. */
+  const anchor = useRef<number | null>(null);
+
   // Only the edge out of a removal counts, for the reason the conversions give
   // above: the server reports "done" forever after, so a status alone cannot
   // mean "just finished".
+  //
+  // A run of them has a second edge, and it is the one that matters most of the
+  // time: the file being worked on changing. The server takes the next film the
+  // moment the one before it ends, and the snapshots the two states would have
+  // arrived in are coalesced into one — so the status never appears to leave
+  // "running" between the first film and the last, and a list waiting on that
+  // would repaint once, hours in. The path is what changed.
   useEffect(
     () =>
       subscribe((next, prev) => {
-        if (
-          prev.strip.status !== "running" ||
-          next.strip.status === "running"
-        ) {
-          return;
-        }
+        const ended =
+          prev.strip.status === "running" && next.strip.status !== "running";
+        const moved =
+          next.strip.status === "running" &&
+          next.strip.path !== prev.strip.path;
+
+        if (!ended && !moved) return;
+
+        // A failure inside a run is not the end of the run — the server takes
+        // the next film regardless — so it is said and the list still repaints
+        // around it. The films that did work have left it.
         if (next.strip.status === "error") {
           setError(next.strip.error ?? "Removing the tracks failed");
-          return;
         }
         // The job re-probes and re-derives the rewritten file itself, so the
         // list only needs repainting — and the row leaves it, because what it
         // proposed has happened and the original is now the cleanup tab's.
-        router.refresh();
+        if (next.strip.status !== "error") router.refresh();
       }),
     [subscribe, router],
   );
@@ -930,6 +1982,32 @@ export function AudioTasks({
     pass.status === "running"
       ? "Something is already rewriting a file — wait for it"
       : undefined;
+
+  /**
+   * What is ticked, read back off the list rather than out of the set.
+   *
+   * A film whose removal has just finished is gone from `tasks` and still in
+   * `chosen`, and a count taken from the set would go on including it. Read
+   * this way a tick means "this row, while it is here" — which is the only
+   * thing it can honestly mean on a list the server keeps replacing.
+   *
+   * And nothing at all with the boxes away: a tick nobody can see is not a
+   * choice anybody is making.
+   */
+  const ticked = (task: AudioTask) => selecting && chosen.has(task.path);
+
+  const keys = order.map((task) => task.path);
+
+  function pick(index: number, range: boolean) {
+    const from = anchor.current;
+    anchor.current = index;
+
+    const next = tickRows(chosen, keys, index, from, range);
+    // A run dragged across an offline row must not take it: the box on that row
+    // refuses by hand, and a shift-click is the same decision made faster.
+    for (const task of order) if (task.offline) next.delete(task.path);
+    onChoose(next);
+  }
 
   if (tasks.length === 0) {
     return (
@@ -959,10 +2037,11 @@ export function AudioTasks({
 
       <Grouped items={tasks} group={grouping} note={freedNote}>
         {(rows, offset) => (
-          <ul className="ruled flex flex-col">
+          <TaskList layout={layout}>
             {rows.map((task, index) => (
-              <TaskRow
+              <TaskItem
                 key={task.path}
+                layout={layout}
                 task={task}
                 index={offset + index}
                 // The tracks are chosen here rather than on the film's page.
@@ -971,7 +2050,39 @@ export function AudioTasks({
                 // pending, so the jobs page takes it out of this list for as
                 // long as the removal lasts and draws it under Running instead.
                 // See `inFlight` in ./jobs-view.tsx.
-                onOpen={() => setAsking(task)}
+                //
+                // In the choosing mode the row is the box: an eighteen-pixel
+                // square is a poor target for a gesture whose whole point is
+                // doing it a dozen times, and every list that has ever offered
+                // this has let the row itself answer. The dialog is a press of
+                // Cancel away, which is where somebody wanting one film's
+                // tracks rather than all of them was headed anyway.
+                //
+                // Every row, including the ones that cannot go: `pick` drops a
+                // film whose drive is away, so the click simply does not take —
+                // which is a truer answer than a dialog opening in the middle
+                // of a mode that is not about dialogs. The box on that row
+                // carries the reason.
+                onOpen={
+                  selecting
+                    ? (range) => pick(offset + index, range)
+                    : () => setAsking(task)
+                }
+                chosen={ticked(task)}
+                selecting={selecting}
+                tick={{
+                  // The proposal, taken as read. A film ticked here is one
+                  // whose figure you agreed with; a film you want to argue with
+                  // is the same one opened rather than ticked.
+                  checked: ticked(task),
+                  disabled: task.offline,
+                  refusal: task.offline
+                    ? "The drive this file lives on is not connected"
+                    : undefined,
+                  hint: "Shift-click to tick a run of films",
+                  onTick: (range) => pick(offset + index, range),
+                  label: `Remove the proposed tracks from ${task.title}`,
+                }}
                 chips={
                   // No count chip. What is going is named — the languages — and
                   // what it is worth is the figure on the right; "8 of 9 tracks"
@@ -980,6 +2091,10 @@ export function AudioTasks({
                     {languageLine(task.languages)} · {size(task.sizeBytes)} file
                   </span>
                 }
+                facts={[
+                  languageLine(task.languages),
+                  `${size(task.sizeBytes)} file`,
+                ]}
                 figure={
                   <>
                     <span
@@ -996,9 +2111,27 @@ export function AudioTasks({
                     <span className="text-xs opacity-40">freed</span>
                   </>
                 }
+                // What this tab is ranked by, in the corner every tile in the
+                // app keeps for its reading. On a plate rather than white over
+                // the artwork, because it is a measurement and not a mark: the
+                // green is what makes it a saving, and green over a bright
+                // poster is the one thing `OVER_ART` cannot carry.
+                badge={
+                  <span
+                    className={`${TILE_READING} text-emerald-600 dark:text-emerald-400`}
+                    title={
+                      task.estimated
+                        ? "Part of this total is worked out from bitrate rather than counted"
+                        : "What removing the proposed tracks frees"
+                    }
+                  >
+                    {task.estimated ? "≈" : "−"}
+                    {size(task.freedBytes)}
+                  </span>
+                }
               />
             ))}
-          </ul>
+          </TaskList>
         )}
       </Grouped>
 

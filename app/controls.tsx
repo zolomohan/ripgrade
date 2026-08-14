@@ -284,6 +284,13 @@ export const ICONS = {
   filter: "M3 5h18l-7 8.2V19l-4 2v-7.8z",
   sort: "M3 6h13M3 12h9M3 18h5",
   group: "M4 5h16M4 10h16M8 15h12M8 19h12",
+  // The two shapes a list can be read in, drawn as what they produce rather
+  // than as an idea about it: four tiles, and two bands running the width of
+  // the page. Deliberately not a third set of horizontal lines — `sort` and
+  // `group` are already two of those, and a third in the same bar would be a
+  // button you have to click to find out what it was.
+  grid: "M4 5h6v6H4zM14 5h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
+  rows: "M4 6h16v4H4zM4 14h16v4H4z",
 };
 
 /**

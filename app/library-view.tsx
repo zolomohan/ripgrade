@@ -1,16 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ViewTransition } from "react";
 
 import { openIssues, titleKey } from "@/lib/derive";
 import type { LibraryItem } from "@/lib/library";
-import { Art } from "./art";
 import { Bar, HelpTip, ICONS, MenuItem, Popover } from "./controls";
+import { PosterTile, TILE_GRID } from "./poster-tile";
 import { STATUS_THEME } from "./score-circle";
-import { useEntrance } from "./return-to";
-import { stagger } from "./stagger";
 import { movieId, posterName } from "@/lib/routes";
 
 /**
@@ -317,68 +313,60 @@ function size(bytes: number) {
  * A row is for reading — codec, bitrate, what is wrong with it. A card is for
  * recognising, so it carries the two things you scan a shelf for: the artwork,
  * and whether this one is a problem. Everything else is a click away.
+ *
+ * The tile itself is the app's, in app/poster-tile.tsx. This shelf owned the
+ * best copy of it for a long time and every other shelf owned its own — the same
+ * frame written out by hand six times, which is how the jobs page and the queue
+ * came to need a seventh. What is left here is what is genuinely the library's:
+ * the score, in the library's own colours and the library's own verdict, and the
+ * count of what is wrong with the file. Both are slots on that tile, because
+ * every shelf disagrees about what its reading is and every one of them is
+ * right — the queue's is a dial, the audio tab's is a size in green.
  */
 function Card({ movie, index }: { movie: LibraryItem; index: number }) {
-  const entrance = useEntrance();
   const theme = STATUS_THEME[movie.status];
   const open = openIssues(movie);
 
   return (
-    <Link
-      href={`/film/${movieId(movie.path)}`}
-      style={stagger(index)}
-      className={`${entrance} group flex flex-col gap-2`}
-    >
-      {/* The whole tile is the thing that travels — its frame, the score on
-          it and the issue count with it. Naming the image inside instead left
-          the badge and the ring behind while the picture flew off alone. */}
-      <ViewTransition
-        name={posterName(movie.path)}
-        share="morph"
-        default="none"
-      >
-        <div className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
-          <Art
-            src={movie.poster}
-            remote={movie.art.poster}
-            version={movie.artAt}
-            loading="lazy"
-            className="h-full w-full object-cover"
-          />
-
-          <span
-            className={`absolute top-2 right-2 rounded-full bg-background/85 px-1.5 py-0.5 font-score text-[11px] font-semibold tabular-nums backdrop-blur ${theme.text}`}
-            title={`${movie.status} · ${movie.scores.overall} of 100`}
-          >
-            {movie.scores.overall}
+    <PosterTile
+      poster={{
+        src: movie.poster,
+        remote: movie.art.poster,
+        version: movie.artAt,
+      }}
+      // The whole tile is the thing that travels — its frame, the score on it
+      // and the issue count with it. Naming the image inside instead left the
+      // badge and the ring behind while the picture flew off alone.
+      transitionName={posterName(movie.path)}
+      title={movie.title}
+      year={movie.year}
+      facts={[movie.resolution, movie.releaseType]}
+      badge={
+        <span
+          className={`rounded-full bg-background/85 px-1.5 py-0.5 font-score text-[11px] font-semibold tabular-nums backdrop-blur ${theme.text}`}
+          title={`${movie.status} · ${movie.scores.overall} of 100`}
+        >
+          {movie.scores.overall}
+        </span>
+      }
+      note={
+        open.length > 0 ? (
+          <span className="rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
+            {open.length} {open.length === 1 ? "issue" : "issues"}
           </span>
-
-          {open.length > 0 && (
-            <span className="absolute bottom-2 left-2 rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
-              {open.length} {open.length === 1 ? "issue" : "issues"}
-            </span>
-          )}
-        </div>
-      </ViewTransition>
-
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium" title={movie.title}>
-          {movie.title}
-        </p>
-        <p className="truncate text-[11px] opacity-45">
-          {[movie.year, movie.resolution, movie.releaseType]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-      </div>
-    </Link>
+        ) : undefined
+      }
+      href={`/film/${movieId(movie.path)}`}
+      label={movie.title}
+      index={index}
+    />
   );
 }
 
 /** The shelf, for the whole library or for one bucket of it. */
 function Films({ films }: { films: LibraryItem[] }) {
   return (
-    <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
+    <div className={TILE_GRID}>
       {films.map((movie, i) => (
         <Card key={movie.path} movie={movie} index={i} />
       ))}

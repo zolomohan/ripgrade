@@ -128,6 +128,7 @@ export function QueueTabs({
             jackettReady={jackettReady}
             sort={listing.sort}
             group={listing.group}
+            layout={listing.layout}
           />
         </section>
       ) : (
@@ -157,6 +158,7 @@ export function QueueTabs({
                 jackettReady={jackettReady}
                 sort={listing.sort}
                 group={listing.group}
+                layout={listing.layout}
               />
             </section>
           }

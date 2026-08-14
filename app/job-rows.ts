@@ -59,18 +59,46 @@ export function jobRows(
   jobs: JobsSnapshot,
   apply: (patch: Partial<JobsSnapshot>) => void,
 ): JobRow[] {
-  const { dovi, convert, strip, sweep, thumbs } = jobs;
+  const { dovi, convert, strip, sweep, thumbs, dvRun } = jobs;
   const rows: JobRow[] = [];
+
+  /**
+   * Where a run of conversions has got to, for whichever of its two jobs is
+   * running at the moment.
+   *
+   * Both wear it, because both are the run: a film being read is the run
+   * working on that film as much as the rewrite that follows is. Without this
+   * the bar would say "3 of 12" for twenty minutes, then drop to nothing for
+   * the twenty before it while the next film was read.
+   */
+  const runPlace = dvRun ? `${dvRun.index} of ${dvRun.total}` : undefined;
+  const runRows = dvRun
+    ? [
+        { label: "In this run", value: runPlace! },
+        { label: "Failed", value: count(dvRun.failed), quiet: !dvRun.failed },
+        {
+          label: "Ruled out",
+          value: count(dvRun.ruledOut),
+          quiet: !dvRun.ruledOut,
+        },
+      ]
+    : [];
 
   if (dovi.status === "running") {
     rows.push({
       key: "dovi",
-      name: `Reading DV · ${Math.round(dovi.percent)}%`,
+      name: runPlace
+        ? `Reading DV · ${runPlace}`
+        : `Reading DV · ${Math.round(dovi.percent)}%`,
       percent: dovi.percent,
       path: dovi.path,
       detail: {
         title: "Reading Dolby Vision",
         percent: dovi.percent,
+        // What the reading is the first step of, where it is a step of
+        // something: on its own a pass is a question being answered, and in a
+        // run it is the half of a conversion that has to happen first.
+        stage: runPlace ? "Before converting it" : undefined,
         rows: [
           // One film for the whole pass, so it is the subject rather than the
           // thing in hand this second.
@@ -78,8 +106,12 @@ export function jobRows(
             ? [{ label: "File", value: dovi.path, mono: true }]
             : []),
           { label: "Frames read", value: count(dovi.frames) },
+          ...runRows,
         ],
         startedAt: dovi.startedAt,
+        note: runPlace
+          ? "Stopping ends the run — the films it had not reached go back to the list."
+          : undefined,
       },
       stop: () => stopFullDoviScan().then((job) => apply({ dovi: job })),
     });
@@ -183,7 +215,11 @@ export function jobRows(
       // the line already says that, and "step 2 of 4" says nothing about which
       // four. The dialog is where the steps are named, and where the profiles
       // either side of the conversion are spelled out.
-      name: rebuild ? "Dolby Vision Rebuild" : "Dolby Vision Conversion",
+      name: rebuild
+        ? "Dolby Vision Rebuild"
+        : runPlace
+          ? `Dolby Vision · ${runPlace}`
+          : "Dolby Vision Conversion",
       percent,
       detail: {
         title: rebuild ? "Rebuilding Profile 7" : "Converting to Profile 8.1",
@@ -202,15 +238,20 @@ export function jobRows(
         ]
           .filter(Boolean)
           .join(" · "),
-        rows: convert.path
-          ? [{ label: "File", value: convert.path, mono: true }]
-          : [],
+        rows: [
+          ...(convert.path
+            ? [{ label: "File", value: convert.path, mono: true }]
+            : []),
+          ...runRows,
+        ],
         command: convert.command,
         startedAt: convert.startedAt,
         output: convert.output,
         note: rebuild
           ? "The converted file is replaced only once the rebuild has been checked. Cancelling leaves it untouched."
-          : "The original is kept beside it. Cancelling leaves it untouched.",
+          : runPlace
+            ? "The original of each is kept beside it. Stopping ends the run — the films it had not reached go back to the list."
+            : "The original is kept beside it. Cancelling leaves it untouched.",
       },
       stop: () => stopConvert().then((job) => apply({ convert: job })),
     });
@@ -223,12 +264,26 @@ export function jobRows(
       // What is being done, in the fewest words that still say which tracks:
       // "Remuxing" alone would not distinguish this from the conversion's own
       // second step, and the rail has room for one line.
-      name: "Removing audio",
+      //
+      // A run of them says where it has got to, because that is the one thing
+      // the bar underneath cannot: it measures this file, and starts again at
+      // nothing twenty times over.
+      name: strip.batch
+        ? `Removing audio · ${strip.batch.index} of ${strip.batch.total}`
+        : "Removing audio",
       percent: strip.percent,
       detail: {
         title: "Removing audio tracks",
         percent: strip.percent,
-        stage: strip.label ?? "Starting",
+        stage: [
+          strip.label ?? "Starting",
+          strip.batch &&
+            `file ${strip.batch.index} of ${strip.batch.total}${
+              strip.batch.failed ? ` · ${strip.batch.failed} failed so far` : ""
+            }`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
         command: strip.command,
         output: strip.output,
         rows: [
@@ -244,9 +299,24 @@ export function jobRows(
           ...(strip.freedBytes !== undefined
             ? [{ label: "Frees", value: gigabytes(strip.freedBytes) }]
             : []),
+          ...(strip.batch
+            ? [
+                {
+                  label: "In this run",
+                  value: `${strip.batch.index} of ${strip.batch.total}`,
+                },
+                {
+                  label: "Failed",
+                  value: count(strip.batch.failed),
+                  quiet: !strip.batch.failed,
+                },
+              ]
+            : []),
         ],
         startedAt: strip.startedAt,
-        note: "The original is kept beside it. Cancelling leaves it untouched.",
+        note: strip.batch
+          ? "The original of each is kept beside it. Stopping ends the run — the files it had not reached go back to the list."
+          : "The original is kept beside it. Cancelling leaves it untouched.",
       },
       stop: () => stopStripAudio().then((job) => apply({ strip: job })),
     });

@@ -10,6 +10,7 @@ import "./globals.css";
 import { getStripJob } from "@/lib/audio-strip";
 import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
+import { getDoviRun } from "@/lib/dovi-run";
 import { hasQb } from "@/lib/qbittorrent";
 import { getScanState } from "@/lib/scanner";
 import { getThumbJob } from "@/lib/thumbs";
@@ -106,6 +107,7 @@ export default function RootLayout({
     strip: getStripJob(),
     sweep: getSweepJob(),
     thumbs: getThumbJob(),
+    dvRun: getDoviRun(),
   };
   return (
     <html

@@ -2,17 +2,32 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { discardCleanup } from "@/app/actions";
 import { EmptyState } from "@/app/empty-state";
+import type { Layout } from "@/app/listing";
 import { useClosing } from "@/app/modal";
+import {
+  PosterTile,
+  TILE_GRID_RULED,
+  TILE_NOTE,
+  TILE_READING,
+} from "@/app/poster-tile";
+import { rememberListing } from "@/app/return-to";
 import { stagger } from "@/app/stagger";
+import { Tick, TickColumn } from "@/app/tick";
 import { BUTTON, CONTROL_H } from "@/app/controls";
 import { ConfirmModal } from "@/app/confirm";
 import type { CleanupFile, CleanupKind } from "@/lib/queue-tasks";
 import { movieId } from "@/lib/routes";
-import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
+import { tickRows } from "@/lib/selection";
+import {
+  Grouped,
+  orderedBy,
+  pickGroup,
+  type GroupOption,
+} from "@/app/grouping";
 import { Stat } from "@/app/charts";
 import { Poster } from "./poster";
 import { Stats } from "./stats";
@@ -60,7 +75,9 @@ function since(then: number): string {
   if (days === 1) return "yesterday";
   if (days < 30) return `${days} days ago`;
   const months = Math.round(days / 30);
-  return months < 24 ? `${months} months ago` : `${Math.round(months / 12)} years ago`;
+  return months < 24
+    ? `${months} months ago`
+    : `${Math.round(months / 12)} years ago`;
 }
 
 const KIND_LABEL: Record<CleanupKind, string> = {
@@ -83,7 +100,11 @@ export const CLEANUP_SORTS: SortOption<CleanupFile>[] = [
     label: "Oldest first",
     compare: (a, b) => a.modifiedAt - b.modifiedAt,
   },
-  { key: "newest", label: "Newest first", compare: (a, b) => b.modifiedAt - a.modifiedAt },
+  {
+    key: "newest",
+    label: "Newest first",
+    compare: (a, b) => b.modifiedAt - a.modifiedAt,
+  },
   {
     key: "kind",
     label: "What it is",
@@ -249,6 +270,138 @@ export function CleanAll({ files }: { files: CleanupFile[] }) {
   );
 }
 
+/** The rows in the order this list draws them — see `audioOrder`, its twin. */
+export const cleanupOrder = (
+  files: CleanupFile[],
+  sort?: string,
+  group?: string,
+): CleanupFile[] =>
+  orderedBy(
+    [...files].sort(pickSort(CLEANUP_SORTS, sort).compare),
+    pickGroup(CLEANUP_GROUPS, group),
+  );
+
+/**
+ * Delete every row that has been ticked, beside the figures for them.
+ *
+ * The one bulk delete on this page that is neither "all of it" nor "one of
+ * them", and the only one that can take originals in a single answer. So the
+ * dialog leads with how many of those are in the set, ahead of the figure
+ * anybody pressed the button for: the leftovers are wreckage and the originals
+ * are undos somebody is still holding, and the two arrive here wearing the same
+ * row.
+ *
+ * One call rather than one per file — `discardCleanup` already takes a list,
+ * which is what the header's Clean all hands it. Nothing here is a job: a
+ * delete is an unlink, and a hundred of them are over before the page repaints.
+ */
+export function CleanupRun({
+  files,
+  all,
+  onChoose,
+  onDone,
+}: {
+  /** The rows ticked, in the order the list draws them. */
+  files: CleanupFile[];
+  /** Everything that could be ticked, for the button that ticks the lot. */
+  all: CleanupFile[];
+  onChoose: (next: ReadonlySet<string>) => void;
+  onDone: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const shown = useClosing(asking);
+  const { busy, error, run } = useDiscard();
+
+  const bytes = files.reduce((sum, file) => sum + file.bytes, 0);
+  const originals = files.filter((file) => file.kind !== "leftover").length;
+
+  return (
+    <div className="flex flex-col items-end gap-2">
+      {/* All three stand for as long as the mode does, greyed where they would
+          do nothing — a control that moves while you are reaching for it is
+          worse than one that is plainly unavailable. */}
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onChoose(new Set(all.map((file) => file.path)))}
+          disabled={busy || all.length === 0 || files.length === all.length}
+          title={
+            all.length === 0
+              ? "Every row here is on a drive that is not connected"
+              : "Tick every row on the list"
+          }
+          className={BUTTON.secondary}
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          onClick={() => onChoose(new Set())}
+          disabled={busy || files.length === 0}
+          className={BUTTON.secondary}
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={() => setAsking(true)}
+          disabled={busy || files.length === 0}
+          className={BUTTON.danger}
+        >
+          Delete
+        </button>
+      </div>
+
+      {error && !asking && (
+        <p className="max-w-sm text-right text-xs wrap-anywhere text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+
+      {shown && (
+        <ConfirmModal
+          open={asking}
+          title={`Delete ${files.length} ${
+            files.length === 1 ? "file" : "files"
+          }?`}
+          confirmLabel={`Delete ${size(bytes)}`}
+          tone="danger"
+          busy={busy}
+          onConfirm={async () => {
+            if (await run(files)) {
+              setAsking(false);
+              onDone();
+            }
+          }}
+          onCancel={() => setAsking(false)}
+        >
+          {originals > 0 && (
+            <>
+              {originals === 1
+                ? "One of these is an original"
+                : `${originals} of these are originals`}{" "}
+              kept beside a film so its rewrite could be undone. Deleting them
+              ends that: what they hold exists only on the discs the films were
+              ripped from, and no conversion or track removal among them can be
+              walked back.{" "}
+            </>
+          )}
+          {size(bytes)} comes back.
+          {/* A failure holds the dialog open. The button that raised it is up
+              in the band of figures, and a message printed down the page
+              beside a list that did not change would be nowhere near what was
+              asked. */}
+          {error && (
+            <span className="mt-3 block font-mono text-sm text-red-600 dark:text-red-400">
+              {error}
+            </span>
+          )}
+        </ConfirmModal>
+      )}
+    </div>
+  );
+}
+
 /**
  * What the cleanup tab adds up to, drawn above the pending list rather than
  * inside it.
@@ -259,7 +412,20 @@ export function CleanAll({ files }: { files: CleanupFile[] }) {
  * button is a caption on the Leftovers figure more than it is a control of the
  * list — and because the originals are now the header's to offer.
  */
-export function CleanupStats({ files }: { files: CleanupFile[] }) {
+export function CleanupStats({
+  files,
+  action,
+}: {
+  files: CleanupFile[];
+  /**
+   * What to do with them, while a selection is being made — see `CleanupRun`.
+   *
+   * It replaces the leftover sweep rather than standing beside it: the sweep is
+   * one fixed set of rows chosen for you, and a button offering that next to a
+   * button acting on what you have just ticked is two answers to one question.
+   */
+  action?: React.ReactNode;
+}) {
   const [asking, setAsking] = useState(false);
   const shown = useClosing(asking);
   const { busy, error, run } = useDiscard();
@@ -271,16 +437,19 @@ export function CleanupStats({ files }: { files: CleanupFile[] }) {
   const total = files.reduce((sum, file) => sum + file.bytes, 0);
   const sweptBytes = sweepable.reduce((sum, file) => sum + file.bytes, 0);
 
-  if (files.length === 0) return null;
+  // Zero chosen is a reading rather than an absence, the way it is on the other
+  // two bands: it is what pressing Delete right now would come to.
+  if (files.length === 0 && !action) return null;
 
   return (
     <>
       <Stats
         action={
+          action ??
           // Only the wreckage goes in one click from here. An original is an
           // undo somebody is still holding, and the header's button is the one
           // that asks about those.
-          sweepable.length > 1 ? (
+          (sweepable.length > 1 ? (
             <button
               type="button"
               onClick={() => setAsking(true)}
@@ -289,7 +458,7 @@ export function CleanupStats({ files }: { files: CleanupFile[] }) {
             >
               Delete {sweepable.length} leftovers
             </button>
-          ) : undefined
+          ) : undefined)
         }
       >
         <Stat label="To reclaim" gain value={size(total)} />
@@ -334,22 +503,239 @@ export function CleanupStats({ files }: { files: CleanupFile[] }) {
   );
 }
 
+/**
+ * What a row of this list is, as a chip: the undos in the app's plain outline,
+ * the wreckage in red.
+ *
+ * The one fact here that is not a measurement, and the one this list is really
+ * two lists along — so it is the same chip whether it is read in a row or worn
+ * on a poster, and only the plate under it differs.
+ */
+function KindChip({ file, art = false }: { file: CleanupFile; art?: boolean }) {
+  const leftover = file.kind === "leftover";
+
+  return art ? (
+    <span
+      className={`${TILE_NOTE} ${
+        leftover ? "text-red-700 dark:text-red-300" : ""
+      }`}
+    >
+      {KIND_LABEL[file.kind]}
+    </span>
+  ) : (
+    <span
+      className={`rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap ring-1 ring-inset ${
+        leftover
+          ? "text-red-700 ring-red-500/30 dark:text-red-300"
+          : "opacity-70 ring-line-strong"
+      }`}
+    >
+      {KIND_LABEL[file.kind]}
+    </span>
+  );
+}
+
+/**
+ * One file as a poster — of the film it was set aside from, which is the only
+ * picture a file has.
+ *
+ * The rows here are files, and this is the list where that matters most: an
+ * original whose film has since been renamed is a file with no film at all, and
+ * it still has to hold its place in the grid. `PosterTile` draws the empty frame
+ * for those, as the row's poster block did before it.
+ */
+function CleanupTile({
+  file,
+  index,
+  selecting,
+  chosen,
+  onPick,
+  action,
+}: {
+  file: CleanupFile;
+  index: number;
+  selecting: boolean;
+  chosen: boolean;
+  onPick: (range: boolean) => void;
+  action: React.ReactNode;
+}) {
+  const router = useRouter();
+
+  return (
+    <PosterTile
+      poster={
+        file.film && {
+          src: file.film.poster,
+          remote: file.film.posterRemote,
+          version: file.film.artAt,
+        }
+      }
+      // No `transitionName`, alone among the grids that draw a poster here: one
+      // film can hold two tiles on this tab — the Profile 7 original and the
+      // audio one, both beside the same film — and a transition name is a
+      // promise that only one thing on the page is wearing it. Two claiming it
+      // abort the transition outright.
+      // The film's name where the library still knows it, and the file's own
+      // where it does not. A cleanup list outlives what it describes.
+      title={file.film?.title ?? file.name}
+      year={file.film?.year}
+      episode={file.film?.episode}
+      fileName={file.name}
+      facts={[
+        file.kind === "leftover"
+          ? `left ${since(file.modifiedAt)}`
+          : `kept since ${since(file.modifiedAt)}`,
+        !file.film && "no film in the library",
+      ]}
+      mark={
+        <Tick
+          art
+          checked={chosen}
+          disabled={file.offline}
+          refusal={
+            file.offline
+              ? "The drive this file lives on is not connected"
+              : undefined
+          }
+          hint="Shift-click to tick a run of rows"
+          onTick={onPick}
+          label={`Delete ${file.name}`}
+          pad="p-1"
+        />
+      }
+      // What deleting this one gets you, in the corner every tile keeps for its
+      // reading. It is the whole argument for the tab.
+      badge={<span className={TILE_READING}>{size(file.bytes)}</span>}
+      // And what it *is*, which is the other half of the decision: an undo
+      // somebody may still want, or the wreckage of a job that died.
+      note={
+        <span className="flex min-w-0 flex-col items-start gap-1">
+          <KindChip file={file} art />
+          {file.offline && (
+            <span
+              className={TILE_NOTE}
+              title="Found the last time this folder could be read. The drive is not connected now."
+            >
+              Drive away
+            </span>
+          )}
+        </span>
+      }
+      action={action}
+      label={file.film?.title ?? file.name}
+      index={index}
+      selecting={selecting}
+      chosen={chosen}
+      onOpen={
+        selecting
+          ? onPick
+          : file.film
+            ? () => {
+                // The crumb the rows leave by way of their title link, left by
+                // hand here for the reason every tile in this app leaves it: the
+                // delegated listener in return-to.tsx only sees anchors.
+                rememberListing();
+                router.push(
+                  `/${file.film!.kind === "movie" ? "film" : "episode"}/${movieId(
+                    file.film!.path,
+                  )}`,
+                );
+              }
+            : // Nothing to open: the film was renamed after the rewrite, or it
+              // is gone. The file is still real, and the button still deletes it.
+              undefined
+      }
+    />
+  );
+}
+
 export function CleanupList({
   files: unsorted,
   sort,
   group,
+  layout,
+  selecting = false,
+  chosen,
+  onChoose,
 }: {
   files: CleanupFile[];
   sort?: string;
   group?: string;
+  /** Posters or rows — the fourth thing the listing bar asks. */
+  layout: Layout;
+  /** Whether the header's Select button is on — see `SelectFilms`. */
+  selecting?: boolean;
+  /** The rows ticked, by path, and the way to change them. */
+  chosen: ReadonlySet<string>;
+  onChoose: (next: ReadonlySet<string>) => void;
 }) {
   const files = [...unsorted].sort(pickSort(CLEANUP_SORTS, sort).compare);
   const grouping = pickGroup(CLEANUP_GROUPS, group);
+  // The rows in the order the page draws them, which is what a shift-held
+  // click runs along.
+  const order = orderedBy(files, grouping);
+  const keys = order.map((file) => file.path);
+  /** The last row ticked by hand, which is what a shift-click measures from. */
+  const anchor = useRef<number | null>(null);
 
   /** The row being asked about. The bulk answers are asked elsewhere now. */
   const [asking, setAsking] = useState<CleanupFile | null>(null);
   const shown = useClosing(asking !== null);
   const { busy, error, run } = useDiscard();
+
+  const ticked = (file: CleanupFile) => selecting && chosen.has(file.path);
+
+  function pick(index: number, range: boolean) {
+    const from = anchor.current;
+    anchor.current = index;
+
+    const next = tickRows(chosen, keys, index, from, range);
+    // A run dragged across a row whose drive is away must not take it: the box
+    // on that row refuses by hand, and a shift-click is the same decision made
+    // faster.
+    for (const file of order) if (file.offline) next.delete(file.path);
+    onChoose(next);
+  }
+
+  /**
+   * The one thing every row and every tile here offers.
+   *
+   * Always there, where it used to arrive on hover. Hiding an action until the
+   * pointer finds it is right for one that is incidental — this is the list's
+   * whole point. Every line in it is a file whose only remaining question is
+   * whether to delete it, and a page of them with no visible way to do that
+   * reads as a list you cannot act on at all. It also put the count at the top
+   * ("Delete 6 leftovers") in front of six rows that appeared to offer nothing.
+   *
+   * A word rather than a mark on the artwork, unlike everything else these tiles
+   * wear. This is the one irreversible thing in the app, and a cross in the
+   * corner of a poster is the gesture that takes a film off a wishlist — the
+   * same shape for "I have changed my mind about wanting this" and "the original
+   * is gone forever" is the one economy this app cannot make.
+   *
+   * A factory rather than a component: it closes over the dialog and the
+   * in-flight state, and a component declared inside a render is a component
+   * that remounts on every keystroke.
+   */
+  const deleteButton = (file: CleanupFile, full: boolean) => (
+    <button
+      type="button"
+      onClick={(e) => {
+        // The row ticks; this does not.
+        e.stopPropagation();
+        setAsking(file);
+      }}
+      disabled={busy || file.offline}
+      title={
+        file.offline
+          ? "The drive this file lives on is not connected"
+          : undefined
+      }
+      className={`${BUTTON.danger} ${full ? "w-full" : ""}`}
+    >
+      Delete
+    </button>
+  );
 
   if (files.length === 0) {
     return (
@@ -385,120 +771,154 @@ export function CleanupList({
           `${bucket.length} · ${size(bucket.reduce((n, f) => n + f.bytes, 0))}`
         }
       >
-        {(rows, offset) => (
-      <ul className="ruled flex flex-col">
-        {rows.map((file, index) => (
-          <li
-            key={file.path}
-            style={stagger(offset + index)}
-            className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-3.5 transition-colors hover:bg-surface"
-          >
-            {/* The rows here are files, but a file is recognised by the film it
-                was set aside from — and the same poster on the same left edge
-                is what says which. Absent on the rows whose film has been
-                renamed or removed, where the block stands in and keeps the
-                edge straight.
-
-                Unnamed, alone among the lists that draw this: one film can
-                hold two rows here — the Profile 7 original and the audio one,
-                both beside the same film — and a transition name is a promise
-                that only one thing on the page is wearing it. */}
-            <Poster film={file.film} transition={false} />
-
-            <div className="min-w-0 flex-1">
-              <p className="flex min-w-0 items-baseline gap-2">
-                {file.film ? (
-                  <Link
-                    href={`/${
-                      file.film.kind === "movie" ? "film" : "episode"
-                    }/${movieId(file.film.path)}`}
-                    className="min-w-0 truncate text-base font-medium hover:underline hover:underline-offset-4"
-                  >
-                    {file.film.title}
-                  </Link>
-                ) : (
-                  // No film to open: either it was renamed after the rewrite or
-                  // it is gone. The file is still real, and still deletable.
-                  <span className="min-w-0 truncate text-base font-medium opacity-70">
-                    {file.name}
-                  </span>
-                )}
-                {file.film?.year && (
-                  <span className="shrink-0 text-sm opacity-40">
-                    {file.film.year}
-                  </span>
-                )}
-                {file.film?.episode && (
-                  <span className="min-w-0 truncate text-sm opacity-40">
-                    {file.film.episode}
-                  </span>
-                )}
-              </p>
-
-              <p className="mt-1.5 truncate font-mono text-xs opacity-55">
-                {file.name}
-              </p>
-
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <span
-                  className={`rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap ring-1 ring-inset ${
-                    file.kind === "leftover"
-                      ? "text-red-700 ring-red-500/30 dark:text-red-300"
-                      : "opacity-70 ring-line-strong"
+        {(rows, offset) =>
+          layout === "grid" ? (
+            <div className={TILE_GRID_RULED}>
+              {rows.map((file, index) => (
+                <CleanupTile
+                  key={file.path}
+                  file={file}
+                  index={offset + index}
+                  selecting={selecting}
+                  chosen={ticked(file)}
+                  onPick={(range) => pick(offset + index, range)}
+                  action={deleteButton(file, true)}
+                />
+              ))}
+            </div>
+          ) : (
+            <ul className="ruled flex flex-col">
+              {rows.map((file, index) => (
+                <li
+                  key={file.path}
+                  style={stagger(offset + index)}
+                  // In the choosing mode the row is the box, as on the work
+                  // lists. The default is prevented rather than only stopped:
+                  // the title on this row is a link to the film, and a click
+                  // that ticked the row and then navigated away from it would
+                  // tick nothing anybody saw.
+                  {...(selecting && {
+                    role: "button",
+                    tabIndex: 0,
+                    onClick: (e: React.MouseEvent) => {
+                      e.preventDefault();
+                      pick(offset + index, e.shiftKey);
+                    },
+                    onMouseDown: (e: React.MouseEvent) => {
+                      if (e.shiftKey) e.preventDefault();
+                    },
+                    onKeyDown: (e: React.KeyboardEvent) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        pick(offset + index, e.shiftKey);
+                      }
+                    },
+                  })}
+                  // A ticked row is not drawn any differently — the box in its
+                  // corner is the whole of the mark. See the work rows, which
+                  // tried a fill and an outline before settling on neither.
+                  className={`row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-3.5 transition-colors hover:bg-surface ${
+                    selecting ? "cursor-pointer" : ""
                   }`}
                 >
-                  {KIND_LABEL[file.kind]}
-                </span>
-                {/* Where the row came from, when it did not come from a
-                    folder that opened. The size is still worth counting — the
-                    file is on the drive taking up room — but nothing has seen
-                    it today, so nothing may be promised about deleting it. */}
-                {file.offline && (
-                  <span
-                    className="rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-70 ring-1 ring-line-strong ring-inset"
-                    title="Found the last time this folder could be read. The drive is not connected now."
-                  >
-                    Drive away
+                  <TickColumn open={selecting}>
+                    <Tick
+                      checked={ticked(file)}
+                      disabled={file.offline}
+                      refusal={
+                        file.offline
+                          ? "The drive this file lives on is not connected"
+                          : undefined
+                      }
+                      hint="Shift-click to tick a run of rows"
+                      onTick={(range) => pick(offset + index, range)}
+                      label={`Delete ${file.name}`}
+                      pad="p-1"
+                    />
+                  </TickColumn>
+
+                  {/* The rows here are files, but a file is recognised by the
+                      film it was set aside from — and the same poster on the
+                      same left edge is what says which. Absent on the rows
+                      whose film has been renamed or removed, where the block
+                      stands in and keeps the edge straight.
+
+                      Unnamed, alone among the lists that draw this: one film
+                      can hold two rows here — the Profile 7 original and the
+                      audio one, both beside the same film — and a transition
+                      name is a promise that only one thing on the page is
+                      wearing it. */}
+                  <Poster film={file.film} transition={false} />
+
+                  <div className="min-w-0 flex-1">
+                    <p className="flex min-w-0 items-baseline gap-2">
+                      {file.film ? (
+                        <Link
+                          href={`/${
+                            file.film.kind === "movie" ? "film" : "episode"
+                          }/${movieId(file.film.path)}`}
+                          className="min-w-0 truncate text-base font-medium hover:underline hover:underline-offset-4"
+                        >
+                          {file.film.title}
+                        </Link>
+                      ) : (
+                        // No film to open: either it was renamed after the
+                        // rewrite or it is gone. The file is still real, and
+                        // still deletable.
+                        <span className="min-w-0 truncate text-base font-medium opacity-70">
+                          {file.name}
+                        </span>
+                      )}
+                      {file.film?.year && (
+                        <span className="shrink-0 text-sm opacity-40">
+                          {file.film.year}
+                        </span>
+                      )}
+                      {file.film?.episode && (
+                        <span className="min-w-0 truncate text-sm opacity-40">
+                          {file.film.episode}
+                        </span>
+                      )}
+                    </p>
+
+                    <p className="mt-1.5 truncate font-mono text-xs opacity-55">
+                      {file.name}
+                    </p>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <KindChip file={file} />
+                      {/* Where the row came from, when it did not come from a
+                          folder that opened. The size is still worth counting —
+                          the file is on the drive taking up room — but nothing
+                          has seen it today, so nothing may be promised about
+                          deleting it. */}
+                      {file.offline && (
+                        <span
+                          className="rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-70 ring-1 ring-line-strong ring-inset"
+                          title="Found the last time this folder could be read. The drive is not connected now."
+                        >
+                          Drive away
+                        </span>
+                      )}
+                      <span className="text-xs opacity-40">
+                        {file.kind === "leftover"
+                          ? `left ${since(file.modifiedAt)}`
+                          : `kept since ${since(file.modifiedAt)}`}
+                        {!file.film && " · no film in the library"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums">
+                    {size(file.bytes)}
                   </span>
-                )}
-                <span className="text-xs opacity-40">
-                  {file.kind === "leftover"
-                    ? `left ${since(file.modifiedAt)}`
-                    : `kept since ${since(file.modifiedAt)}`}
-                  {!file.film && " · no film in the library"}
-                </span>
-              </div>
-            </div>
 
-            <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums">
-              {size(file.bytes)}
-            </span>
-
-            <button
-              type="button"
-              onClick={() => setAsking(file)}
-              disabled={busy || file.offline}
-              title={
-                file.offline
-                  ? "The drive this file lives on is not connected"
-                  : undefined
-              }
-              // Always there, where it used to arrive on hover. Hiding an
-              // action until the pointer finds it is right for one that is
-              // incidental to the row — this is the row's whole point. Every
-              // line in this list is a file whose only remaining question is
-              // whether to delete it, and a page of them with no visible way
-              // to do that reads as a list you cannot act on at all. It also
-              // put the count at the top ("Delete 6 leftovers") in front of
-              // six rows that appeared to offer nothing.
-              className={BUTTON.danger}
-            >
-              Delete
-            </button>
-          </li>
-        ))}
-      </ul>
-        )}
+                  {deleteButton(file, false)}
+                </li>
+              ))}
+            </ul>
+          )
+        }
       </Grouped>
 
       {shown && asking !== null && (

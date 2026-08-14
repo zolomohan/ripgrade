@@ -9,7 +9,7 @@ import { CloseButton, Modal } from "@/app/modal";
 import { Spinner } from "@/app/spinner";
 import { Tick } from "@/app/tick";
 import { savingsOf, tickRange } from "@/lib/audio-plan";
-import { AUDIO_BACKUP_SUFFIX, languageName } from "@/lib/derive";
+import { languageName } from "@/lib/derive";
 import type { AudioTask } from "@/lib/queue-tasks";
 
 /**
@@ -293,7 +293,15 @@ export function AudioPicker({
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           {/* What the ticks come to, in the console's own words — an exact
               total, an approximation, or a floor, depending on which of the
-              three the sizes behind it support. */}
+              three the sizes behind it support.
+
+              What used to sit under it — that nothing is re-encoded, and what
+              the original beside the film would be called — is gone. The name
+              was the trouble: a remux's file name is two hundred characters of
+              release tags, and set in a mono face at the foot of a dialog it
+              was four lines of small print under a one-line reading, saying in
+              the largest thing on the panel something nobody had asked. What it
+              promised is still promised, on the button that does it. */}
           <p className="text-sm">
             {selected.size === 0 ? (
               <span className="opacity-60">
@@ -317,16 +325,6 @@ export function AudioPicker({
                 </span>
               </>
             )}
-          </p>
-
-          <p className="text-xs opacity-50">
-            Nothing is re-encoded — the tracks you keep are copied exactly as
-            they are, and the original is kept beside the film as{" "}
-            <code className="font-mono">
-              {task.fileName}
-              {AUDIO_BACKUP_SUFFIX}
-            </code>{" "}
-            until you delete it.
           </p>
         </div>
 

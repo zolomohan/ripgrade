@@ -314,6 +314,44 @@ body {
 }
 
 /*
+ * The same arrival, for a row that is holding something in flight.
+ *
+ * A view transition measures where a poster is *going* at the moment the
+ * navigation commits, and then flies it there. If the row around that poster is
+ * itself arriving — four pixels low and climbing, as `row-enter` has it — then
+ * the place it measures is four pixels low too. The flight is perfect and lands
+ * in the wrong place; the entrance then finishes out of sight behind the
+ * transition's own snapshot of the page, so the moment the page is handed back
+ * the poster is simply somewhere else. A two-pixel snap on the last frame, which
+ * is the one frame anybody is looking at.
+ *
+ * So a row that carries a travelling poster fades in without moving. It is the
+ * same cascade at the same pace off the same `--i`, and the movement is the only
+ * part of it that was ever a claim about *where* — which is not a claim a row
+ * gets to make while something inside it is being flown somewhere.
+ *
+ * The library never needed this: the only way to arrive at a named grid there is
+ * to come back to it, and `useEntrance` already holds the cascade for exactly
+ * that. This is for the lists you arrive at going forwards.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .row-enter-still {
+    animation: row-enter-still 200ms ease-out backwards;
+    animation-delay: calc(min(var(--i, 0), 12) * 26ms);
+  }
+
+  [data-splash] .row-enter-still {
+    animation-delay: calc(var(--splash-hold) + min(var(--i, 0), 12) * 26ms);
+  }
+}
+
+@keyframes row-enter-still {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
  * The skull beside the wordmark. Drawn as a mask rather than an <img> so the one
  * file in /public paints itself in the current foreground colour, instead of
  * needing a light copy and a dark copy that can fall out of step.
@@ -821,6 +859,116 @@ body {
 ::view-transition-group(.morph-out-5),
 ::view-transition-image-pair(.morph-out-5) {
   animation-duration: 760ms;
+}
+
+/*
+ * A poster in a fan with nowhere to fly, carried along anyway.
+ *
+ * A transitioning element is lifted out of the page into a layer painted above
+ * the whole of it. So a fan where four posters pair and six do not is four
+ * posters sailing over the top of the six and dropping back into the pile at
+ * the last frame — the stack reassembling itself in front of you, which is the
+ * one thing a fan must never appear to do. Nothing that overlaps a flyer may be
+ * left behind in the page layer, and in a fan every poster overlaps its
+ * neighbour, so every one of them is captured: some of them travel across the
+ * page and the rest travel nowhere.
+ *
+ * Travelling nowhere is what these rules say. The pseudo-element exists for the
+ * length of the transition — which is what buys the correct stacking — and does
+ * not move, fade or scale while it is there, so a poster that is merely holding
+ * its neighbours' place is indistinguishable from one that was never lifted at
+ * all. The one leaving goes at once rather than fading over the one arriving:
+ * they are different films in the same slot, and crossfading them would read as
+ * one poster turning into another.
+ */
+::view-transition-group(.fan-still) {
+  animation-duration: var(--morph);
+}
+
+::view-transition-old(.fan-still),
+::view-transition-new(.fan-still) {
+  animation: none;
+}
+
+::view-transition-old(.fan-still) {
+  opacity: 0;
+}
+
+/*
+ * And which poster is over which, for the length of the flight.
+ *
+ * At rest a fan needs none of this: flex items paint in document order, so the
+ * posters are written left to right and that is the stack. In flight the page's
+ * order is gone — every captured element is lifted into one layer, and that
+ * layer is ordered by when each name was registered: everything captured from
+ * the page being left, then everything that exists only on the page being
+ * arrived at. In a fan where some posters pair and some do not, that is
+ * "everything that flew, then everything that did not" — a stack the row never
+ * had, and one it visibly leaves at the last frame when the page takes its
+ * elements back. `z-index` on a transition group is the one thing that outranks
+ * capture order, so the order is written down instead of hoped for.
+ *
+ * Written as two digits rather than as one rule per place. A fan is as long as
+ * the row has room for — one of these lists holds thirty-eight films — and forty
+ * near-identical rules is not a stylesheet, it is a table. So each poster
+ * carries a high digit and a low one in base eight, and the group multiplies
+ * them back out: sixteen rules for sixty-four places. Counting up from the left,
+ * so each poster is drawn over the one before it exactly as the row draws it,
+ * and from one rather than zero so that a fan always sits above the groups that
+ * state no z-index at all.
+ */
+::view-transition-group(.fan) {
+  z-index: calc(var(--fan-hi, 0) * 8 + var(--fan-lo, 0) + 1);
+}
+
+::view-transition-group(.fan-hi-0) {
+  --fan-hi: 0;
+}
+::view-transition-group(.fan-hi-1) {
+  --fan-hi: 1;
+}
+::view-transition-group(.fan-hi-2) {
+  --fan-hi: 2;
+}
+::view-transition-group(.fan-hi-3) {
+  --fan-hi: 3;
+}
+::view-transition-group(.fan-hi-4) {
+  --fan-hi: 4;
+}
+::view-transition-group(.fan-hi-5) {
+  --fan-hi: 5;
+}
+::view-transition-group(.fan-hi-6) {
+  --fan-hi: 6;
+}
+::view-transition-group(.fan-hi-7) {
+  --fan-hi: 7;
+}
+
+::view-transition-group(.fan-lo-0) {
+  --fan-lo: 0;
+}
+::view-transition-group(.fan-lo-1) {
+  --fan-lo: 1;
+}
+::view-transition-group(.fan-lo-2) {
+  --fan-lo: 2;
+}
+::view-transition-group(.fan-lo-3) {
+  --fan-lo: 3;
+}
+::view-transition-group(.fan-lo-4) {
+  --fan-lo: 4;
+}
+::view-transition-group(.fan-lo-5) {
+  --fan-lo: 5;
+}
+::view-transition-group(.fan-lo-6) {
+  --fan-lo: 6;
+}
+::view-transition-group(.fan-lo-7) {
+  --fan-lo: 7;
 }
 
 /*

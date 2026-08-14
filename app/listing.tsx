@@ -27,6 +27,22 @@ import { pickSort } from "@/app/sorts";
 /** An option in one of the two menus, as the menu needs it. */
 export type Choice = { key: string; label: string };
 
+/**
+ * The two shapes a list of films can be read in.
+ *
+ * A grid is for recognising and a list is for reading — the same division the
+ * library shelf and the film page have always had between a poster and a row of
+ * figures. Which one a page wants depends on what you came to it for, so both
+ * pages that ask the three questions above ask this fourth one as well.
+ *
+ * Grid leads, because on both of these pages every row is a film and a film is
+ * recognised by its artwork long before it is recognised by its filename. The
+ * rows are what you drop to when the figures are the point — which of forty
+ * conversions is largest, what a release actually claims to be — and they say
+ * more per row than a tile ever can.
+ */
+export type Layout = "grid" | "rows";
+
 export type Listing<T extends string> = {
   tab: T;
   tabs: readonly { key: T; label: string }[];
@@ -42,7 +58,9 @@ export type Listing<T extends string> = {
   groups: Choice[];
   current: Choice;
   grouping: Choice;
-  update: (next: { t?: T; sort?: string; g?: string }) => void;
+  /** And how they are drawn, which is not a question about the tab — see below. */
+  layout: Layout;
+  update: (next: { t?: T; sort?: string; g?: string; v?: Layout }) => void;
 };
 
 /**
@@ -71,7 +89,9 @@ export function useListing<T extends string>(
   const group = searchParams.get("g") ?? undefined;
   const grouping = pickGroup(cuts, group);
 
-  function update(next: { t?: T; sort?: string; g?: string }) {
+  const layout: Layout = searchParams.get("v") === "rows" ? "rows" : "grid";
+
+  function update(next: { t?: T; sort?: string; g?: string; v?: Layout }) {
     const params = new URLSearchParams(searchParams.toString());
 
     if (next.t !== undefined) {
@@ -80,6 +100,12 @@ export function useListing<T extends string>(
       // The lists are ranked and cut by different things, so a key from the tab
       // you are leaving means nothing on the one you are opening. Dropped rather
       // than carried across, which puts each tab back in its own default shape.
+      //
+      // The layout is not dropped with them, and that is the whole difference
+      // between it and the other two: a sort key is a fact about one list, while
+      // reading a page as posters or as rows is a fact about the person reading
+      // it. Reset at every tab it would be a preference you have to state three
+      // times to hold.
       params.delete("sort");
       params.delete("g");
     }
@@ -90,6 +116,10 @@ export function useListing<T extends string>(
     if (next.g !== undefined) {
       if (next.g === cuts[0].key) params.delete("g");
       else params.set("g", next.g);
+    }
+    if (next.v !== undefined) {
+      if (next.v === "grid") params.delete("v");
+      else params.set("v", next.v);
     }
 
     const qs = params.toString();
@@ -105,6 +135,7 @@ export function useListing<T extends string>(
     groups: cuts,
     current,
     grouping,
+    layout,
     update,
   };
 }
@@ -124,7 +155,8 @@ export function ListingBar<T extends string>({
    */
   action?: React.ReactNode;
 }) {
-  const { tab, tabs, sorts, groups, current, grouping, update } = listing;
+  const { tab, tabs, sorts, groups, current, grouping, layout, update } =
+    listing;
 
   return (
     /* Its own space below it rather than the column's gap: this row is the
@@ -201,7 +233,6 @@ export function ListingBar<T extends string>({
             // put it in — every tab now opens as one ranked list, so "Group" is
             // what an untouched button says.
             value={grouping.key === "none" ? "Group" : grouping.label}
-            buttonClassName="rounded-r-full"
           >
             {(close) => (
               <div className="py-1">
@@ -220,6 +251,49 @@ export function ListingBar<T extends string>({
               </div>
             )}
           </Popover>
+
+          {/* The third question about the list, in the bar the other two are
+              in: the same frame, the same rule between the parts, the same
+              cap on the end. It was very nearly a menu of two like its
+              neighbours, and a menu is the wrong shape for a pair — you would
+              open a panel to choose between the thing you are looking at and
+              the only other thing there is.
+
+              So it says what it is set to, as the menus do, and switching is
+              the click rather than a step after it. `aria-pressed` is not what
+              this is: it is not a mode being held down, it is one of two named
+              states, so the label says which state pressing it produces. */}
+          <button
+            type="button"
+            onClick={() => update({ v: layout === "grid" ? "rows" : "grid" })}
+            aria-label={layout === "grid" ? "Show as rows" : "Show as a grid"}
+            title={
+              layout === "grid"
+                ? "Read these as rows, with the figures on them"
+                : "Read these as a grid of posters"
+            }
+            // The Popover trigger's own shape, spelled out rather than shared:
+            // that one is a button that opens a panel, and everything about it
+            // beyond these classes — the open state, the outside click, the
+            // panel — is exactly what this does not do.
+            className="flex items-center gap-2 self-stretch rounded-r-full px-3.5 text-sm transition-colors hover:bg-surface-strong"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              className="h-4 w-4 opacity-50"
+            >
+              <path d={layout === "grid" ? ICONS.grid : ICONS.rows} />
+            </svg>
+            <span className="hidden sm:inline">
+              {layout === "grid" ? "Grid" : "Rows"}
+            </span>
+          </button>
         </Bar>
 
         {action}

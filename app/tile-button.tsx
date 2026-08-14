@@ -18,15 +18,39 @@
  */
 
 /**
+ * The shadow on its own, for the few marks that answer in a colour of their own.
+ *
+ * A download that has landed goes green and one that failed goes red, wherever
+ * it is drawn — see `MagnetAction` — and a mark carrying both `text-white` and
+ * `text-emerald-300` is a mark whose colour is decided by the order Tailwind
+ * happens to emit them in. So the shadow is separable and the colour is always
+ * stated once.
+ */
+export const OVER_ART_SHADOW = "drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]";
+
+/**
  * White in both themes, unlike everything else here, because what it stands on
  * is a photograph rather than a surface this app painted. The shadow is what
  * carries it over a bright poster.
  */
-export const OVER_ART = "text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)]";
+export const OVER_ART = `text-white ${OVER_ART_SHADOW}`;
 
 /** And in red, where a mark stops being an offer and becomes an answer. */
 export const WANTED_ART =
   "text-red-500 drop-shadow-[0_1px_4px_rgba(0,0,0,0.5)]";
+
+/**
+ * The size and weight of one of those marks, wherever it is put.
+ *
+ * The box is larger than the disc it replaced even though nothing is painted on
+ * it — with no plate to draw, a generous target costs nothing.
+ *
+ * Split from the positioned version below because a tile can carry a *row* of
+ * these: the queue's posters offer the rest of the field, the indexer's page and
+ * the magnet, which is three marks in one corner rather than one mark in three
+ * corners. A flex row cannot be built out of absolutely positioned children.
+ */
+export const TILE_MARK = `grid h-9 w-9 place-items-center transition-opacity ${OVER_ART}`;
 
 /**
  * Where a tile's own controls sit.
@@ -35,11 +59,8 @@ export const WANTED_ART =
  * paints at `z-1`. Inside rather than pinned beside it, which matters: the frame
  * is the thing that lifts and turns under the pointer, and a control anchored
  * outside it hangs still while the picture it belongs to moves.
- *
- * The box is larger than the disc it replaced even though nothing is painted on
- * it — with no plate to draw, a generous target costs nothing.
  */
-export const TILE_BUTTON = `absolute z-10 grid h-9 w-9 place-items-center transition-opacity ${OVER_ART}`;
+export const TILE_BUTTON = `absolute z-10 ${TILE_MARK}`;
 
 /**
  * Takes a film out of the list the tile is part of — a set of your own, or the

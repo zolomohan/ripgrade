@@ -1,6 +1,7 @@
 import { getStripJob } from "@/lib/audio-strip";
 import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
+import { getDoviRun } from "@/lib/dovi-run";
 import { subscribeJobs, type JobsSnapshot } from "@/lib/job-events";
 import { getScanState } from "@/lib/scanner";
 import { getThumbJob } from "@/lib/thumbs";
@@ -33,6 +34,7 @@ export function GET(request: Request) {
     strip: getStripJob(),
     sweep: getSweepJob(),
     thumbs: getThumbJob(),
+    dvRun: getDoviRun(),
   });
 
   const stream = new ReadableStream({

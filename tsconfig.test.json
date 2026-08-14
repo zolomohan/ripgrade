@@ -16,6 +16,7 @@
     "lib/disc-entry.ts",
     "lib/job-output.ts",
     "lib/release-title.ts",
+    "lib/selection.ts",
     "lib/stats.ts",
     "lib/torznab.ts"
   ]

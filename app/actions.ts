@@ -37,8 +37,10 @@ import {
   cancelStrip,
   deleteAudioBackup,
   getStripJob,
+  queueStripAudio,
   restoreAudioTracks,
   startStripAudio,
+  type QueuedStrip,
   type StripJob,
 } from "@/lib/audio-strip";
 import {
@@ -76,6 +78,7 @@ import {
   startFullDoviScan,
   type DoviJob,
 } from "@/lib/dovi";
+import { clearDoviRun, getDoviRun, startDoviRun } from "@/lib/dovi-run";
 import { fetchAndCache, setManualMatch } from "@/lib/enrich";
 import {
   clearJackettConfig,
@@ -1031,6 +1034,9 @@ export async function beginFullDoviScan(
 
 /** Stops a full pass. The film keeps the reading it already had. */
 export async function stopFullDoviScan(): Promise<DoviJob> {
+  // And the run it may be the first step of, for the reason `stopConvert`
+  // gives: stopping the thing on screen stops what it was part of.
+  clearDoviRun();
   return cancelDoviScan();
 }
 
@@ -1138,6 +1144,42 @@ export async function beginConvert(
 }
 
 /**
+ * The same conversion, asked of a list of films instead of one.
+ *
+ * Nothing is validated per film here, unlike the audio run's. A conversion is
+ * not one decision but up to two — read every frame, then rewrite — and what
+ * the reading turns up is exactly what decides whether the rewrite may happen.
+ * A film checked now would be checked on the strength of a sample, which is the
+ * thing the pass exists to stop anybody doing. So the run checks each film at
+ * the moment it reaches it, with the reading in hand; see lib/dovi-run.ts.
+ *
+ * Which leaves this with the one question that is about the whole list: whether
+ * anything can be started at all.
+ */
+export async function beginConvertBatch(
+  moviePaths: string[],
+): Promise<{ ok: true; started: number } | { ok: false; error: string }> {
+  if (getConvertJob().status === "running") {
+    return { ok: false, error: "A conversion is already running." };
+  }
+  if (getDoviJob().status === "running") {
+    return { ok: false, error: "Wait for the current full pass to finish." };
+  }
+  if (getStripJob().status === "running") {
+    return { ok: false, error: "Wait for the track removal to finish." };
+  }
+  if (getDoviRun()) {
+    return { ok: false, error: "A run of conversions is already going." };
+  }
+
+  const paths = moviePaths.filter(knownMoviePath);
+  if (paths.length === 0) return { ok: false, error: "No films were chosen." };
+
+  startDoviRun(paths);
+  return { ok: true, started: paths.length };
+}
+
+/**
  * Throws away the pre-conversion original to reclaim its space. The one action
  * here that cannot be walked back, so it is kept separate from restoring.
  */
@@ -1169,6 +1211,11 @@ export async function discardBackup(
 
 /** Stops a conversion and sweeps up its partial output. */
 export async function stopConvert(): Promise<ConvertJob> {
+  // The run before the job. There is one Stop button and it is on the work in
+  // progress, so the other reading — stop this film and carry on with the next
+  // eleven — would be a button that looks like it abandoned the run and did
+  // not. Emptied first, so the pump wakes to nothing left to take.
+  clearDoviRun();
   return cancelConvert();
 }
 
@@ -1334,6 +1381,43 @@ function otherWorkRunning(): string | undefined {
 }
 
 /**
+ * Why this film cannot have its tracks removed, if it cannot.
+ *
+ * Everything here is about one file, so a run of them can ask it of each in
+ * turn — see `beginStripBatch`, which drops the rows that answer rather than
+ * refusing the whole run for one of them.
+ */
+function stripRefusal(
+  moviePath: string,
+  removeOrdinals: number[],
+): string | undefined {
+  if (!knownMoviePath(moviePath)) return `Unknown file: ${moviePath}`;
+
+  if (!canStripAudio(moviePath)) {
+    return "Only Matroska (.mkv) files can have tracks removed.";
+  }
+  if (audioBackupBytes(moviePath) !== undefined) {
+    return "An original is already kept beside this film. Restore it or delete it before removing more tracks.";
+  }
+  // The reciprocal of the guard in `beginConvert`, for the same reason: two
+  // files each claiming to be the original is a state nothing can undo cleanly.
+  if (backupBytes(moviePath) !== undefined) {
+    return "The pre-conversion original is still kept beside this film. Restore it or delete it before removing tracks.";
+  }
+  if (removeOrdinals.length === 0) return "No audio tracks were selected.";
+
+  return undefined;
+}
+
+/** And why nothing at all can be started right now, if nothing can. */
+function stripBlocked(): string | undefined {
+  if (getStripJob().status === "running") {
+    return "A track removal is already running.";
+  }
+  return otherWorkRunning();
+}
+
+/**
  * Removes audio tracks from a film, keeping the original beside it.
  *
  * Minutes of disk on a large remux, so it starts a job and returns — the job
@@ -1348,40 +1432,11 @@ export async function beginStripAudio(
   numbers?: (number | undefined)[],
   freedBytes?: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!knownMoviePath(moviePath)) {
-    return { ok: false, error: `Unknown file: ${moviePath}` };
-  }
-  if (getStripJob().status === "running") {
-    return { ok: false, error: "A track removal is already running." };
-  }
-  const busy = otherWorkRunning();
-  if (busy) return { ok: false, error: busy };
+  const blocked = stripBlocked();
+  if (blocked) return { ok: false, error: blocked };
 
-  if (!canStripAudio(moviePath)) {
-    return {
-      ok: false,
-      error: "Only Matroska (.mkv) files can have tracks removed.",
-    };
-  }
-  if (audioBackupBytes(moviePath) !== undefined) {
-    return {
-      ok: false,
-      error:
-        "An original is already kept beside this film. Restore it or delete it before removing more tracks.",
-    };
-  }
-  // The reciprocal of the guard in `beginConvert`, for the same reason: two
-  // files each claiming to be the original is a state nothing can undo cleanly.
-  if (backupBytes(moviePath) !== undefined) {
-    return {
-      ok: false,
-      error:
-        "The pre-conversion original is still kept beside this film. Restore it or delete it before removing tracks.",
-    };
-  }
-  if (removeOrdinals.length === 0) {
-    return { ok: false, error: "No audio tracks were selected." };
-  }
+  const refusal = stripRefusal(moviePath, removeOrdinals);
+  if (refusal) return { ok: false, error: refusal };
 
   startStripAudio(moviePath, {
     removeOrdinals,
@@ -1390,6 +1445,69 @@ export async function beginStripAudio(
     freedBytes,
   });
   return { ok: true };
+}
+
+/**
+ * The same removal, asked of a list of films instead of one.
+ *
+ * The plan travels per file rather than being worked out here: these are the
+ * proposals the rows were already showing — every track in a language you do
+ * not keep — and what the list promised is what runs. A file you want to
+ * disagree with is still a dialog away, which is the whole reason the dialog
+ * exists.
+ *
+ * A film that has changed since the list was drawn is dropped rather than
+ * allowed to refuse the run. The alternative is nineteen remuxes not happening
+ * because the twentieth grew a backup an hour ago — and the job itself is
+ * tolerant in exactly the same way, since it re-reads every container it is
+ * handed and fails only that file. What was dropped comes back in the count.
+ */
+export async function beginStripBatch(
+  items: {
+    path: string;
+    removeOrdinals: number[];
+    audioCount: number;
+    numbers?: (number | undefined)[];
+    freedBytes?: number;
+  }[],
+): Promise<
+  { ok: true; started: number; skipped: number } | { ok: false; error: string }
+> {
+  const blocked = stripBlocked();
+  if (blocked) return { ok: false, error: blocked };
+
+  const runnable: QueuedStrip[] = [];
+  let refused: string | undefined;
+
+  for (const item of items) {
+    const refusal = stripRefusal(item.path, item.removeOrdinals);
+    if (refusal) {
+      refused ??= refusal;
+      continue;
+    }
+    runnable.push({
+      path: item.path,
+      plan: {
+        removeOrdinals: item.removeOrdinals,
+        audioCount: item.audioCount,
+        numbers: item.numbers,
+        freedBytes: item.freedBytes,
+      },
+    });
+  }
+
+  // Nothing ran, so there is nothing to report but the reason — and with one
+  // file selected that reason is the whole answer rather than a footnote.
+  if (runnable.length === 0) {
+    return { ok: false, error: refused ?? "No films were selected." };
+  }
+
+  queueStripAudio(runnable);
+  return {
+    ok: true,
+    started: runnable.length,
+    skipped: items.length - runnable.length,
+  };
 }
 
 /** Stops a removal and sweeps up its working file. The film is untouched. */

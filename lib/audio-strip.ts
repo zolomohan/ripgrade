@@ -219,6 +219,22 @@ export type StripJob = {
   startedAt?: number;
   error?: string;
   finishedAt?: number;
+  /**
+   * Where this file sits in a run of them, when it is one of several.
+   *
+   * A removal started on its own has none of this, and reads exactly as it
+   * always did. See `queueStripAudio` for why a run is a queue on the server
+   * rather than a loop in a browser tab.
+   */
+  batch?: { index: number; total: number; failed: number };
+  /**
+   * The files still waiting behind this one, in the order they will run.
+   *
+   * Paths rather than plans: this crosses to every open page on the job stream,
+   * and what a page can do with it is take those rows out of the list of work
+   * still outstanding and draw them as what they are — see `JobsView`.
+   */
+  queue?: string[];
 };
 
 const IDLE: StripJob = { status: "idle" };
@@ -228,9 +244,30 @@ const IDLE: StripJob = { status: "idle" };
  * this module can exist more than once in one server, and a module-local copy
  * stops hearing about the job the moment a second instance appears.
  */
-const globalForStrip = globalThis as unknown as { medlibStripAudio?: StripJob };
+const globalForStrip = globalThis as unknown as {
+  medlibStripAudio?: StripJob;
+  medlibStripQueue?: StripQueue;
+};
 
 const current = (): StripJob => globalForStrip.medlibStripAudio ?? IDLE;
+
+/** One file's place in a run of removals: what to do, and to what. */
+export type QueuedStrip = {
+  path: string;
+  plan: StripPlan & { freedBytes?: number };
+};
+
+/** A run of them, and how far through it the server is. */
+type StripQueue = {
+  /** Still to run, in the order they were asked for. */
+  waiting: QueuedStrip[];
+  total: number;
+  /** How many have ended, whichever way they ended. */
+  done: number;
+  failed: number;
+};
+
+const queue = (): StripQueue | undefined => globalForStrip.medlibStripQueue;
 
 function setJob(next: StripJob) {
   const was = current();
@@ -258,9 +295,46 @@ function setJob(next: StripJob) {
         undefined,
       output: next.output,
     });
+
+    notifyJobs();
+    // After the row is written and the ending has been published, so the file
+    // that just finished is a fact before the next one starts. Here rather than
+    // at each of the eight places a removal can end: every one of them goes
+    // through this function, and a run that stalled because one failure path
+    // forgot to call it would be a queue that silently stops halfway.
+    advance(next.status);
+    return;
   }
 
   notifyJobs();
+}
+
+/**
+ * Takes the next file in a run, once the one before it has ended.
+ *
+ * A failure does not stop the rest. One file that cannot be remuxed — a
+ * container that changed under the plan, a drive that went away — is a fact
+ * about that file, and twenty others that could have been done are not worth
+ * abandoning for it. It is counted, written to the log like any other run, and
+ * left in the list of outstanding work, which is where somebody looking for it
+ * will look.
+ *
+ * A cancel does stop the rest: `cancelStrip` empties the queue before it kills
+ * anything, so there is nothing here to take.
+ */
+function advance(outcome: StripJob["status"]) {
+  const run = queue();
+  if (!run) return;
+
+  run.done += 1;
+  if (outcome === "error") run.failed += 1;
+
+  const next = run.waiting.shift();
+  if (!next) {
+    globalForStrip.medlibStripQueue = undefined;
+    return;
+  }
+  startStripAudio(next.path, next.plan);
 }
 
 export function getStripJob(): StripJob {
@@ -278,9 +352,20 @@ let cancelling = false;
  * the source is not renamed until the mux has finished and been checked, so
  * the film is still sitting where it was and all that has to go is the partial
  * output.
+ *
+ * Stopping a file that is one of a run stops the run. There is one Stop button
+ * and it is on the job in progress, so the other reading — stop this one and
+ * carry on with the next nineteen — would be a button that looks like it
+ * abandoned the work and did not. Nothing is lost by it: the films the run
+ * never reached are untouched, and they go back to the list they were started
+ * from to be started again.
  */
 export function cancelStrip(): StripJob {
   if (current().status !== "running") return current();
+
+  // Before the kill, so the ending that follows finds nothing to take.
+  const run = queue();
+  if (run) run.waiting = [];
 
   cancelling = true;
   if (activeChild?.pid) {
@@ -327,11 +412,40 @@ function failureFrom(tail: string, code: number): string {
   return lines.slice(-3).join(" ") || `mkvmerge exited ${code}`;
 }
 
+/**
+ * Starts a run of removals, one file at a time.
+ *
+ * Sequential because the machine says so — one mkvmerge already saturates the
+ * disk the films are being read from and written back to, and two of them
+ * halve each other rather than adding up. Which is the same rule the app has
+ * always enforced one file at a time; what this adds is that you no longer have
+ * to be sitting there to answer it twenty times.
+ *
+ * The queue is the server's, not a loop in the page that started it. A run of
+ * twenty remuxes is hours of disk, and the tab that asked for it will have been
+ * closed, navigated away from or asleep long before the end — the same reason
+ * every other job here is started and then followed rather than driven.
+ */
+export function queueStripAudio(items: QueuedStrip[]): StripJob {
+  if (current().status === "running" || items.length === 0) return current();
+
+  const [first, ...waiting] = items;
+  // One file is not a run of them. Left without a queue it is the job the film
+  // page and the dialog have always started, down to what the rail calls it —
+  // rather than the same job wearing "1 of 1".
+  globalForStrip.medlibStripQueue = waiting.length
+    ? { waiting, total: items.length, done: 0, failed: 0 }
+    : undefined;
+  return startStripAudio(first.path, first.plan);
+}
+
 export function startStripAudio(
   filePath: string,
   plan: StripPlan & { freedBytes?: number },
 ): StripJob {
   if (current().status === "running") return current();
+
+  const run = queue();
 
   setJob({
     status: "running",
@@ -340,6 +454,12 @@ export function startStripAudio(
     percent: 0,
     label: "Reading the container",
     startedAt: Date.now(),
+    // Nothing at all on a removal started on its own, so a single job reads
+    // exactly as it always did rather than as "1 of 1".
+    ...(run && {
+      batch: { index: run.done + 1, total: run.total, failed: run.failed },
+      queue: run.waiting.map((item) => item.path),
+    }),
   });
 
   void (async () => {

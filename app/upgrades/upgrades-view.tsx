@@ -7,12 +7,16 @@ import { useState } from "react";
 import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
 import { useJobs } from "@/app/jobs-provider";
+import type { Layout } from "@/app/listing";
 import { MagnetAction } from "@/app/magnet-action";
 import { useLingering } from "@/app/modal";
+import { PosterTile, TILE_GRID_RULED, TILE_READING } from "@/app/poster-tile";
 import { ReleaseSearchModal } from "@/app/release-search";
 import { rememberListing } from "@/app/return-to";
 import { queueTheme, ScoreDial } from "@/app/score-circle";
 import { stagger } from "@/app/stagger";
+import { TILE_MARK } from "@/app/tile-button";
+import { ReleaseDetails } from "./release-details";
 import { compareId, movieId, posterName } from "@/lib/routes";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import type { WishlistFind } from "@/lib/wishlist-search";
@@ -56,6 +60,99 @@ function ago(then: number): string {
 
 const ROW_ACTION =
   "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong";
+
+/**
+ * The two marks a release row wears beside the magnet.
+ *
+ * They were written twice — once on an upgrade's row and once on a want's — and
+ * the second copy was already a `stopPropagation` away from the first. Once
+ * each, here.
+ *
+ * Rows only. A tile carries the magnet and nothing else: these two are
+ * questions rather than answers — show me the rest of the field, show me the
+ * indexer's own page — and a grid of posters with a toolbar in the corner of
+ * every one is a grid you have to read before you can look at it. Both are
+ * offered in the dialog the poster opens instead. See `ReleaseTile`.
+ */
+function MoreButton({
+  title,
+  onMore,
+}: {
+  /** Whose releases these are, for the label. */
+  title: string;
+  onMore: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onMore();
+      }}
+      aria-label={`All releases for ${title}`}
+      title="Every release, not just the best one"
+      className={ROW_ACTION}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        aria-hidden
+        className="h-4 w-4"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+    </button>
+  );
+}
+
+function IndexerLink({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      onClick={(e) => e.stopPropagation()}
+      aria-label="Open the indexer's page for this release"
+      title="Details on the indexer"
+      className={ROW_ACTION}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="h-4 w-4"
+      >
+        <path d="M14 5h5v5" />
+        <path d="M19 5l-7.5 7.5" />
+        <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+      </svg>
+    </a>
+  );
+}
+
+/** And the gap left where an indexer publishes no magnet to hand over. */
+function NoMagnet({ art = false }: { art?: boolean }) {
+  return (
+    <span
+      className={
+        art
+          ? `${TILE_MARK} opacity-40`
+          : "grid h-9 w-9 place-items-center rounded-full text-[10px] opacity-25"
+      }
+      title="This indexer publishes no magnet - open the details page for it."
+    >
+      {"—"}
+    </span>
+  );
+}
 
 /**
  * What the two kinds of row have in common.
@@ -332,56 +429,9 @@ function Row({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 opacity-60 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onMore();
-          }}
-          aria-label={`All releases for ${item.title}`}
-          title="Every release, not just the best one"
-          className={ROW_ACTION}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            aria-hidden
-            className="h-4 w-4"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-        </button>
+        <MoreButton title={item.title} onMore={onMore} />
 
-        {hit.detailsUrl && (
-          <a
-            href={hit.detailsUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Open the indexer's page for this release"
-            title="Details on the indexer"
-            className={ROW_ACTION}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="h-4 w-4"
-            >
-              <path d="M14 5h5v5" />
-              <path d="M19 5l-7.5 7.5" />
-              <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
-            </svg>
-          </a>
-        )}
+        {hit.detailsUrl && <IndexerLink href={hit.detailsUrl} />}
 
         {hit.magnet ? (
           // A handover when qBittorrent is connected, the plain magnet link
@@ -392,15 +442,122 @@ function Row({
             size="md"
           />
         ) : (
-          <span
-            className="grid h-9 w-9 place-items-center rounded-full text-[10px] opacity-25"
-            title="This indexer publishes no magnet - open the details page for it."
-          >
-            {"—"}
-          </span>
+          <NoMagnet />
         )}
       </div>
     </li>
+  );
+}
+
+/**
+ * The same release as a poster.
+ *
+ * Both tabs draw this, because the difference between them is two facts and not
+ * a layout: an upgrade has a copy on the drive to be better than, so it can
+ * report a gain, and a want has neither. Everything else about a release reads
+ * the same whether or not you already own the film.
+ *
+ * A tile says three things and stops: which film this is, what the release
+ * claims to be, and how good it would be. Everything a row printed down its
+ * length — the release's own name, its size, who is seeding it, which indexer
+ * answered — is in the dialog the poster opens; see ./release-details.tsx. The
+ * name went first and most gladly: sixty characters of group tags, cut at the
+ * front, is a grey smear under the title saying nothing you can act on.
+ *
+ * One mark over the artwork, and it is the magnet. This is a page about
+ * fetching, so the one thing a tile should offer without being asked is the
+ * fetch; the rest of the field and the indexer's own page are questions rather
+ * than answers, and they are asked in the dialog. Three marks in the corner of
+ * a picture was a toolbar over a poster.
+ *
+ * The dial keeps a plate because it is a figure — the rule this app's tiles have
+ * always kept, and a two-digit number at eleven pixels cannot be read off a
+ * photograph. The magnet does not, because it is a mark.
+ */
+function ReleaseTile({
+  poster,
+  title,
+  year,
+  hit,
+  gain,
+  scoreTitle,
+  scoreLabel,
+  index,
+  onOpen,
+  magnetPoster,
+}: {
+  poster: { src?: string; remote?: string; version?: number; name: string };
+  title: string;
+  year?: number;
+  hit: UpgradeQueueItem["hit"];
+  /** What replacing your copy would add, where there is a copy to replace. */
+  gain?: number;
+  scoreTitle: string;
+  scoreLabel: string;
+  index: number;
+  /** Opens everything this tile does not say — see `ReleaseDetails`. */
+  onOpen: () => void;
+  /** The poster the download log should keep for this fetch. */
+  magnetPoster?: string;
+}) {
+  return (
+    <PosterTile
+      poster={{
+        src: poster.src,
+        remote: poster.remote,
+        version: poster.version,
+      }}
+      // The whole tile travels into the page it opens: the frame, the dial on
+      // it and the gain with them.
+      transitionName={poster.name}
+      title={title}
+      year={year}
+      // The library card's own line, in the library card's own words: the facts
+      // that separate one copy of a film from another, set as plain muted text.
+      // They were chips, which is right in the release dialog where they stand
+      // among prose and wrong in a grid — a shelf of posters with three outlined
+      // boxes under every one reads as a form.
+      facts={[hit.resolution, hit.hdr, hit.releaseType]}
+      badge={
+        // The dial on a disc of its own rather than on the artwork: the ring is
+        // drawn in the line colour and the number in the verdict's, and neither
+        // survives a bright poster underneath them.
+        <span className="grid place-items-center rounded-full bg-background/85 p-0.5 backdrop-blur">
+          <ScoreDial
+            score={hit.score}
+            theme={queueTheme(hit.score)}
+            size={40}
+            title={scoreTitle}
+            srLabel={scoreLabel}
+          />
+        </span>
+      }
+      note={
+        gain !== undefined && gain > 0 ? (
+          <span
+            className={`${TILE_READING} text-emerald-600 dark:text-emerald-400`}
+            title="What replacing your copy would add to its score"
+          >
+            +{gain}
+          </span>
+        ) : undefined
+      }
+      actions={
+        hit.magnet ? (
+          <MagnetAction
+            magnet={hit.magnet}
+            film={{ title, posterPath: magnetPoster }}
+            size="md"
+            art
+          />
+        ) : (
+          <NoMagnet art />
+        )
+      }
+      label={title}
+      index={index}
+      onOpen={onOpen}
+    />
   );
 }
 
@@ -521,56 +678,9 @@ function WishRow({
         {/* The same first action an upgrade's row carries, and on a want it is
             the only way to the rest of the field now that the row itself goes
             to the film. */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onMore();
-          }}
-          aria-label={`All releases for ${find.title}`}
-          title="Every release, not just the best one"
-          className={ROW_ACTION}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            aria-hidden
-            className="h-4 w-4"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-        </button>
+        <MoreButton title={find.title} onMore={onMore} />
 
-        {hit.detailsUrl && (
-          <a
-            href={hit.detailsUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Open the indexer's page for this release"
-            title="Details on the indexer"
-            className={ROW_ACTION}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="h-4 w-4"
-            >
-              <path d="M14 5h5v5" />
-              <path d="M19 5l-7.5 7.5" />
-              <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
-            </svg>
-          </a>
-        )}
+        {hit.detailsUrl && <IndexerLink href={hit.detailsUrl} />}
 
         {hit.magnet ? (
           <MagnetAction
@@ -579,12 +689,7 @@ function WishRow({
             size="md"
           />
         ) : (
-          <span
-            className="grid h-9 w-9 place-items-center rounded-full text-[10px] opacity-25"
-            title="This indexer publishes no magnet - open the details page for it."
-          >
-            {"—"}
-          </span>
+          <NoMagnet />
         )}
       </div>
     </li>
@@ -632,6 +737,7 @@ export function UpgradesView({
   jackettReady,
   sort,
   group,
+  layout,
 }: {
   queue: UpgradeQueueItem[];
   candidates: number;
@@ -641,13 +747,26 @@ export function UpgradesView({
   sort?: string;
   /** A key from RELEASE_GROUPS; flat unless asked otherwise. */
   group?: string;
+  /** Posters or rows — the fourth thing the listing bar asks. */
+  layout: Layout;
 }) {
   const { jobs } = useJobs();
+  const router = useRouter();
   const sweep = jobs.sweep;
   const sweeping = sweep.status === "running";
   // Which film has its full release list open.
   const [finding, setFinding] = useState<UpgradeQueueItem | null>(null);
   const shown = useLingering(finding);
+  /**
+   * And which has the one release the sweep picked open.
+   *
+   * Two dialogs about the same film, deliberately: this one is "what did the
+   * sweep find", which is one release read whole, and the other is "show me
+   * everything", which is a search. Opening the second closes the first — a
+   * dialog stacked on a dialog is a dialog you cannot see the edge of.
+   */
+  const [reading, setReading] = useState<UpgradeQueueItem | null>(null);
+  const read = useLingering(reading);
 
   // Ranked whole, then cut if you asked for it: the sort decides the order and
   // the grouping decides where the rules fall. Neither is the page's own opinion
@@ -660,18 +779,50 @@ export function UpgradesView({
     <div className="flex flex-1 flex-col gap-6">
       {rows.length > 0 ? (
         <Grouped items={rows} group={grouping} note={gainNote}>
-          {(bucket, offset) => (
-            <ul className="ruled flex flex-col">
-              {bucket.map((item, index) => (
-                <Row
-                  key={item.path}
-                  item={item}
-                  index={offset + index}
-                  onMore={() => setFinding(item)}
-                />
-              ))}
-            </ul>
-          )}
+          {(bucket, offset) =>
+            layout === "grid" ? (
+              <div className={TILE_GRID_RULED}>
+                {bucket.map((item, index) => (
+                  <ReleaseTile
+                    key={item.path}
+                    poster={{
+                      src: item.poster,
+                      remote: item.posterRemote,
+                      version: item.artAt,
+                      // Named so it travels: the same poster stands in the
+                      // compare hero this tile opens.
+                      name: posterName(item.path),
+                    }}
+                    title={item.title}
+                    year={item.year}
+                    hit={item.hit}
+                    gain={item.hit.delta}
+                    scoreTitle={`Predicted ${item.hit.score}, from ${item.currentScore} now`}
+                    scoreLabel={`Predicted score ${item.hit.score}, up from ${item.currentScore}`}
+                    magnetPoster={item.posterRemote}
+                    index={offset + index}
+                    // The tile opens the release rather than the comparison.
+                    // A row could show what the sweep found and still leave its
+                    // click for the compare page; a tile shows three facts, so
+                    // the click has to be the way to the rest of them. The
+                    // comparison is one press further in, from the dialog.
+                    onOpen={() => setReading(item)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <ul className="ruled flex flex-col">
+                {bucket.map((item, index) => (
+                  <Row
+                    key={item.path}
+                    item={item}
+                    index={offset + index}
+                    onMore={() => setFinding(item)}
+                  />
+                ))}
+              </ul>
+            )
+          }
         </Grouped>
       ) : sweeping ? (
         <EmptyState icon={SWEEP_ICON} title="Sweeping the library">
@@ -701,6 +852,37 @@ export function UpgradesView({
           anything last checked over a day ago — by which time the trackers will
           have had time to change.
         </EmptyState>
+      )}
+
+      {/* What the sweep found, read whole. Only the grid opens it — a row
+          already prints everything in here down its own length. */}
+      {read && (
+        <ReleaseDetails
+          open={reading !== null}
+          title={read.title}
+          year={read.year}
+          poster={read.poster}
+          posterRemote={read.posterRemote}
+          posterVersion={read.artAt}
+          hit={read.hit}
+          gain={read.hit.delta}
+          currentScore={read.currentScore}
+          checkedLabel={`Checked ${ago(read.checkedAt)}`}
+          onward={{
+            label: "Compare copies",
+            go: () => {
+              // The crumb an upgrade's row leaves, for the same reason: the
+              // listener in return-to.tsx only sees anchors.
+              rememberListing();
+              router.push(`/compare/${compareId(read.compareKey)}`);
+            },
+          }}
+          onMore={() => {
+            setReading(null);
+            setFinding(read);
+          }}
+          onClose={() => setReading(null)}
+        />
       )}
 
       {/* One dialog for the tab: the row shows the sweep's single best find,
@@ -742,6 +924,7 @@ export function DownloadsView({
   jackettReady,
   sort,
   group,
+  layout,
 }: {
   /** What the last scan's wishlist pass turned up, best first. */
   finds: WishlistFind[];
@@ -754,12 +937,18 @@ export function DownloadsView({
   sort?: string;
   /** A key from RELEASE_GROUPS; flat unless asked otherwise. */
   group?: string;
+  /** Posters or rows — the fourth thing the listing bar asks. */
+  layout: Layout;
 }) {
   const { jobs } = useJobs();
+  const router = useRouter();
   const sweep = jobs.sweep;
   const sweeping = sweep.status === "running";
   const [finding, setFinding] = useState<WishlistFind | null>(null);
   const shown = useLingering(finding);
+  /** And the one release this find is, read whole — see `UpgradesView`. */
+  const [reading, setReading] = useState<WishlistFind | null>(null);
+  const read = useLingering(reading);
 
   const order = pickSort(DOWNLOAD_SORTS, sort);
   const grouping = pickGroup(RELEASE_GROUPS, group);
@@ -769,18 +958,47 @@ export function DownloadsView({
     <div className="flex flex-1 flex-col gap-6">
       {rows.length > 0 ? (
         <Grouped items={rows} group={grouping} note={filmsNote}>
-          {(bucket, offset) => (
-            <ul className="ruled flex flex-col">
-              {bucket.map((find, index) => (
-                <WishRow
-                  key={find.tmdbId}
-                  find={find}
-                  index={offset + index}
-                  onMore={() => setFinding(find)}
-                />
-              ))}
-            </ul>
-          )}
+          {(bucket, offset) =>
+            layout === "grid" ? (
+              <div className={TILE_GRID_RULED}>
+                {bucket.map((find, index) => (
+                  <ReleaseTile
+                    key={find.tmdbId}
+                    // Remote only: a film you do not have has no poster on the
+                    // drive. Named the way the wishlist names it, so the tile
+                    // travels into the page it opens.
+                    poster={{
+                      remote: find.posterPath,
+                      name: posterName(`tmdb-movie-${find.tmdbId}`),
+                    }}
+                    title={find.title}
+                    year={find.year}
+                    hit={find.hit}
+                    // No gain on a want. Nothing is being improved on — the
+                    // number in the dial is simply how good the release is,
+                    // which is the whole question when the alternative is not
+                    // having the film at all.
+                    scoreTitle={`Predicted ${find.hit.score} — you do not have this film`}
+                    scoreLabel={`Predicted score ${find.hit.score}, not in the library`}
+                    magnetPoster={find.posterPath}
+                    index={offset + index}
+                    onOpen={() => setReading(find)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <ul className="ruled flex flex-col">
+                {bucket.map((find, index) => (
+                  <WishRow
+                    key={find.tmdbId}
+                    find={find}
+                    index={offset + index}
+                    onMore={() => setFinding(find)}
+                  />
+                ))}
+              </ul>
+            )
+          }
         </Grouped>
       ) : sweeping ? (
         // The two halves of a sweep run in order, and this tab is the second
@@ -830,6 +1048,32 @@ export function DownloadsView({
           sweep asks again about anything last checked over a day ago, so a
           release that turns up tonight is here tomorrow.
         </EmptyState>
+      )}
+
+      {/* No gain and no comparison: nothing is being improved on, so the way
+          onward is the film itself, on TMDb's side of the app. */}
+      {read && (
+        <ReleaseDetails
+          open={reading !== null}
+          title={read.title}
+          year={read.year}
+          posterRemote={read.posterPath}
+          hit={read.hit}
+          checkedLabel={`Found ${ago(read.checkedAt)}`}
+          onward={{
+            label: "About this film",
+            go: () => {
+              rememberListing();
+              // Wishlist finds are films; the sweep only searches those.
+              router.push(`/discover/movie/${read.tmdbId}`);
+            },
+          }}
+          onMore={() => {
+            setReading(null);
+            setFinding(read);
+          }}
+          onClose={() => setReading(null)}
+        />
       )}
 
       {/* Searched by TMDb id rather than by path — the wishlist's own way in,

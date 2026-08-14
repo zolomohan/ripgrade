@@ -9,6 +9,7 @@ import { CloseButton, Modal, useClosing } from "@/app/modal";
 import { Failure } from "@/app/settings/parts";
 import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
+import { OVER_ART_SHADOW } from "@/app/tile-button";
 import type { DirListing } from "@/lib/browse";
 import type { FilmContext } from "@/lib/qbittorrent";
 
@@ -30,21 +31,52 @@ import type { FilmContext } from "@/lib/qbittorrent";
 const CIRCLE =
   "grid shrink-0 place-items-center rounded-full border transition-colors";
 
+/**
+ * The same control with no ring around it, for the one place it stands on a
+ * photograph rather than on a surface this app painted.
+ *
+ * The queue's tiles wear their controls the way the wishlist's tiles wear the
+ * cross: white over its own shadow, no plate — see app/tile-button.tsx, which
+ * makes the case. What survives the change is the colour a sent or failed
+ * download answers in, which is why the shadow is imported apart from the white
+ * that usually comes with it.
+ */
+const OVER_ART = "grid shrink-0 place-items-center transition-opacity";
+
 const SIZES = {
   sm: { button: "h-8 w-8", icon: "h-3.5 w-3.5" },
   md: { button: "h-9 w-9", icon: "h-4 w-4" },
+  /**
+   * The mark a poster wears, which is the cross's and the heart's size and not
+   * a row control's.
+   *
+   * A ringed button carries its own edge, so a small icon inside it still reads
+   * as a target. Over artwork there is no edge — the mark *is* the target — and
+   * a four-pixel-smaller arrow than the cross across the tile from it is a
+   * control that looks like it belongs to something else. Same box, bigger
+   * drawing, and the stroke goes up with it: see `RemoveButton`, which is drawn
+   * at 2.2 for exactly this reason.
+   */
+  art: { button: "h-9 w-9", icon: "h-5 w-5", stroke: "2.2" },
 };
 
 /** The last destination picked, offered first the next time. */
 const LAST_PATH_KEY = "ripgrade:downloadPath";
 
-function DownArrow({ className }: { className: string }) {
+function DownArrow({
+  className,
+  strokeWidth = "1.8",
+}: {
+  className: string;
+  /** Heavier where the mark stands on a photograph — see `SIZES.art`. */
+  strokeWidth?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -131,13 +163,19 @@ function Destination({
   );
 }
 
-function Check({ className }: { className: string }) {
+function Check({
+  className,
+  strokeWidth = "2",
+}: {
+  className: string;
+  strokeWidth?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -153,6 +191,7 @@ export function MagnetAction({
   film,
   size = "sm",
   pill = false,
+  art = false,
 }: {
   magnet: string;
   /** Which film this release is for, for the download log's poster. */
@@ -160,6 +199,8 @@ export function MagnetAction({
   size?: keyof typeof SIZES;
   /** The compare page's filled button; circles everywhere else. */
   pill?: boolean;
+  /** And no ring at all, where it is worn over a poster — see `OVER_ART`. */
+  art?: boolean;
 }) {
   const { qb } = useCapabilities();
   const [open, setOpen] = useState(false);
@@ -175,7 +216,36 @@ export function MagnetAction({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const { button, icon } = SIZES[size];
+  // Over artwork the mark is the poster's own size, whatever a caller asked
+  // for: `size` is about which row this sits in, and there are no rows there.
+  const { button, icon, stroke } = art
+    ? SIZES.art
+    : { ...SIZES[size], stroke: undefined };
+
+  /**
+   * The shape and colour of the mark, in whichever of the two it is wearing.
+   *
+   * The three states are the same either way — waiting, sent, failed — and the
+   * colour is stated exactly once in each branch: a class string carrying both
+   * `text-white` and `text-emerald-400` is settled by Tailwind's emit order
+   * rather than by which was written last.
+   */
+  const markClass = (sent: boolean, failed: boolean) =>
+    art
+      ? `${OVER_ART} ${button} ${OVER_ART_SHADOW} ${
+          sent
+            ? "text-emerald-300"
+            : failed
+              ? "text-red-300"
+              : "text-white hover:opacity-80"
+        } disabled:opacity-50`
+      : `${CIRCLE} ${button} ${
+          sent
+            ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
+            : failed
+              ? "border-red-500/60 text-red-600 dark:text-red-400"
+              : "border-line-strong hover:bg-surface-strong"
+        } disabled:opacity-50`;
 
   // The folders are the same few strings every time; fetched once per dialog.
   useEffect(() => {
@@ -202,9 +272,9 @@ export function MagnetAction({
         onClick={(e) => e.stopPropagation()}
         aria-label="Download"
         title={magnet}
-        className={`${CIRCLE} ${button} border-line-strong hover:bg-surface-strong`}
+        className={markClass(false, false)}
       >
-        <DownArrow className={icon} />
+        <DownArrow className={icon} strokeWidth={stroke} />
       </a>
     );
   }
@@ -272,9 +342,7 @@ export function MagnetAction({
     }
   })();
 
-  const label = sent
-    ? "Sent to qBittorrent"
-    : (error ?? "Send to qBittorrent");
+  const label = sent ? "Sent to qBittorrent" : (error ?? "Send to qBittorrent");
 
   const trigger = pill ? (
     <button
@@ -309,20 +377,14 @@ export function MagnetAction({
       disabled={pending}
       aria-label={label}
       title={label}
-      className={`${CIRCLE} ${button} ${
-        sent
-          ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
-          : error
-            ? "border-red-500/60 text-red-600 dark:text-red-400"
-            : "border-line-strong hover:bg-surface-strong"
-      } disabled:opacity-50`}
+      className={markClass(sent, Boolean(error))}
     >
       {pending ? (
         <Spinner className={icon} />
       ) : sent ? (
-        <Check className={icon} />
+        <Check className={icon} strokeWidth={stroke} />
       ) : (
-        <DownArrow className={icon} />
+        <DownArrow className={icon} strokeWidth={stroke} />
       )}
     </button>
   );
@@ -464,7 +526,6 @@ export function MagnetAction({
                 />
               </div>
             )}
-
           </>
         </Modal>
       )}
