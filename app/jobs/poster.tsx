@@ -24,6 +24,7 @@ import { posterName } from "@/lib/routes";
 export function Poster({
   film,
   transition = true,
+  box = "h-24 w-16",
 }: {
   film?: TaskFilm;
   /**
@@ -36,6 +37,16 @@ export function Poster({
    * list that is not the one worth animating from says so here.
    */
   transition?: boolean;
+  /**
+   * The box it is drawn in, where a row's is the wrong size for it.
+   *
+   * The width and height together, so the two cannot drift out of a poster's
+   * proportions — and only those: the rounding, the ring and the fallback are
+   * what make this the same picture everywhere, and a caller free to restyle
+   * them is a caller that has drawn its own poster. A dialog header wanting a
+   * thumbnail is the case this exists for.
+   */
+  box?: string;
 }) {
   if (film && (film.poster || film.posterRemote)) {
     return (
@@ -47,10 +58,12 @@ export function Poster({
         transitionName={transition ? posterName(film.path) : undefined}
         size="w92"
         loading="lazy"
-        className="h-24 w-16 shrink-0 rounded-control object-cover ring-1 ring-line"
+        className={`${box} shrink-0 rounded-control object-cover ring-1 ring-line`}
       />
     );
   }
 
-  return <div className="h-24 w-16 shrink-0 rounded-control bg-surface-strong" />;
+  return (
+    <div className={`${box} shrink-0 rounded-control bg-surface-strong`} />
+  );
 }

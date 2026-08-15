@@ -6,6 +6,7 @@ import { beginStripAudio } from "@/app/actions";
 import { BUTTON } from "@/app/controls";
 import { useJobs } from "@/app/jobs-provider";
 import { CloseButton, Modal } from "@/app/modal";
+import { Poster } from "@/app/jobs/poster";
 import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
 import { Tick } from "@/app/tick";
@@ -412,12 +413,43 @@ export function TrackPicker({
       // dialog taller than the window puts its own buttons off the bottom of it.
       panelClassName="flex max-h-[85dvh] w-full max-w-4xl flex-col gap-3 glass-panel rounded-card border border-line p-6 shadow-2xl"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold">{task.title}</h2>
-          <p className="mt-0.5 truncate font-mono text-xs opacity-55">
-            {task.fileName}
-          </p>
+      <div className="mb-3 flex items-start justify-between gap-4">
+        {/* The film, as the picture the rest of the app knows it by.
+
+            This dialog is opened from a row that has one, and without it the
+            header was a title and a filename — which is what every other
+            dialog in the app looks like, and this is the one that rewrites a
+            specific file. The poster is how you check you opened the row you
+            meant to before ticking anything.
+
+            Small, and the row's own component at a smaller box rather than a
+            second way of drawing a poster: the fallback block matters here too,
+            since an original whose film has been renamed still opens this.
+
+            No transition name — the row that opened this is still mounted
+            behind the dialog, and two posters of one film claiming one name
+            abort the transition for both. */}
+        <div className="flex min-w-0 items-center gap-3">
+          <Poster film={task} transition={false} box="h-12 w-8" />
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold">{task.title}</h2>
+            {/* The year, where the filename used to be.
+
+                The filename was the longest thing in the header and the least
+                worth reading: a hundred monospace characters of release tags,
+                truncated in the middle of them, under a poster and a title that
+                had already said which film this is. The year is what a title
+                needs to be unambiguous and nothing more.
+
+                An episode has no year of its own — it takes the show's title
+                above, so the fact that tells one file from another here is
+                which episode it is, and that is what stands in its place. */}
+            {(task.year || task.episode) && (
+              <p className="mt-0.5 truncate text-xs opacity-55">
+                {task.year ?? task.episode}
+              </p>
+            )}
+          </div>
         </div>
         <CloseButton onClick={onClose} disabled={starting} />
       </div>
@@ -435,7 +467,14 @@ export function TrackPicker({
           nothing reaches the one before that, which on a three-step dialog is a
           door you can see and cannot open. Forward is not offered: the last
           screen is a review, and a review you can jump to before the choices it
-          reviews is not one. */}
+          reviews is not one.
+
+          It spans the panel: the rules between the steps stretch instead of
+          being a fixed forty pixels, so the last step sits at the right edge
+          and the row reads as the whole of the dialog's length rather than as
+          three words huddled in its top-left corner. That is also what makes
+          the filled badge a position — a third of the way along, two thirds —
+          instead of just the one that happens to be dark. */}
       <nav aria-label="Steps">
         <ol className="flex items-center gap-2">
           {steps.map((each, index) => {
@@ -480,7 +519,15 @@ export function TrackPicker({
             );
 
             return (
-              <li key={each} className="flex items-center gap-2">
+              // Every step but the last grows, and the rule inside it takes the
+              // slack — so the labels sit at even intervals across the panel
+              // however wide it is, and the last one ends the row.
+              <li
+                key={each}
+                className={`flex items-center gap-2 ${
+                  index < steps.length - 1 ? "min-w-0 flex-1" : "shrink-0"
+                }`}
+              >
                 {done ? (
                   <button
                     type="button"
@@ -506,7 +553,7 @@ export function TrackPicker({
                 {index < steps.length - 1 && (
                   <span
                     aria-hidden
-                    className={`h-px w-6 sm:w-10 ${
+                    className={`h-px min-w-6 flex-1 ${
                       done ? "bg-line-strong" : "bg-line"
                     }`}
                   />
