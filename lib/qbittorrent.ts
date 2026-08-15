@@ -303,6 +303,11 @@ export async function addMagnet(
   // itself carries — the add API returns nothing to key on.
   const { hash, name } = parseMagnet(magnet);
   if (hash) {
+    // Asked for again, so it is no longer something you are finished looking
+    // at — see `forgetDownload`. Cleared before the insert, since the row this
+    // writes is exactly what the headstone was suppressing.
+    db.prepare("DELETE FROM forgotten_downloads WHERE hash = ?").run(hash);
+
     db.prepare(
       `INSERT INTO downloads (hash, title, added_at, film_title, poster_path, source)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -699,11 +704,22 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
   }[];
 
   const known = new Set(rows.map((r) => r.hash));
+
+  // And the ones cleared by hand, which adoption must not undo — see
+  // `forgetDownload`. Read as a set for the same reason `known` is: this is a
+  // membership test run once per torrent the client is holding.
+  const forgotten = new Set(
+    (
+      db.prepare("SELECT hash FROM forgotten_downloads").all() as {
+        hash: string;
+      }[]
+    ).map((r) => r.hash),
+  );
   const adopt = db.prepare(
     "INSERT INTO downloads (hash, title, added_at) VALUES (?, ?, ?) ON CONFLICT(hash) DO NOTHING",
   );
   for (const download of live?.values() ?? []) {
-    if (!known.has(download.hash)) {
+    if (!known.has(download.hash) && !forgotten.has(download.hash)) {
       adopt.run(download.hash, download.name, download.addedOn);
       rows.push({
         hash: download.hash,
@@ -847,9 +863,31 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
   return entries.sort((a, b) => b.addedAt - a.addedAt);
 }
 
-/** Drops a row from the log — the one delete history itself supports. */
+/**
+ * Drops a row from the log, and remembers having dropped it.
+ *
+ * The delete alone is not enough while qBittorrent still holds the torrent:
+ * the read below adopts anything in this app's category it has no row for, so
+ * the entry would be back on the next poll three seconds later, in the same
+ * place, as though the button had missed. That is why this was offered only on
+ * rows the client had already let go of.
+ *
+ * The headstone is what makes it work on the rest, and it changes nothing about
+ * what is cleared: the row goes, the torrent stays exactly where it is, seeding
+ * or idle, and the files on the drive are not touched. What is in the client
+ * remains the client's business — this only stops the log from re-adopting
+ * something you have said you are finished looking at.
+ *
+ * One statement, so a delete that succeeds and a headstone that does not is not
+ * a state this can end in.
+ */
 export function forgetDownload(hash: string): void {
-  db.prepare("DELETE FROM downloads WHERE hash = ?").run(hash);
+  db.transaction(() => {
+    db.prepare("DELETE FROM downloads WHERE hash = ?").run(hash);
+    db.prepare(
+      "INSERT INTO forgotten_downloads (hash, forgot_at) VALUES (?, ?) ON CONFLICT(hash) DO UPDATE SET forgot_at = excluded.forgot_at",
+    ).run(hash, Date.now());
+  })();
 }
 
 // ---------------------------------------------------------------------------

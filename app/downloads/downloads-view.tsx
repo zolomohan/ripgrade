@@ -364,22 +364,38 @@ function Poster({
  */
 const ASK: Record<
   "cancel" | "forget" | "seed",
-  { title: string; label: string; body: string }
+  { title: string; label: string; body: (entry: DownloadEntry) => string }
 > = {
   cancel: {
     title: "Cancel this download?",
     label: "Cancel download",
-    body: "The download stops and its partial files are deleted — half a file is no use to anyone. The history entry stays, marked as never finished.",
+    body: () =>
+      "The download stops and its partial files are deleted — half a file is no use to anyone. The history entry stays, marked as never finished.",
   },
   forget: {
     title: "Clear from history?",
     label: "Clear",
-    body: "Only the record is forgotten. Nothing on the drive or in qBittorrent is touched.",
+    /*
+     * Two answers, because the honest one depends on whether qBittorrent is
+     * still holding the torrent.
+     *
+     * With the client done with it, the record is the last trace and clearing
+     * it is the end of the story. With the client still holding it, the row
+     * goes and the torrent carries on exactly as it was — which is the thing
+     * somebody pressing this on a seeding film needs told, since the obvious
+     * reading of "clear" on a row that is still uploading is that the
+     * uploading stops.
+     */
+    body: (entry: DownloadEntry) =>
+      entry.live
+        ? "Only the record is forgotten. The torrent stays in qBittorrent, seeding or not, and the files stay where they are — it simply stops being listed here."
+        : "Only the record is forgotten. Nothing on the drive or in qBittorrent is touched.",
   },
   seed: {
     title: "Stop seeding?",
     label: "Stop seeding",
-    body: "The torrent stops uploading and stays in qBittorrent with its files where they are. Resume it from qBittorrent whenever you like.",
+    body: () =>
+      "The torrent stops uploading and stays in qBittorrent with its files where they are. Resume it from qBittorrent whenever you like.",
   },
 };
 
@@ -726,14 +742,30 @@ function DownloadTile({
  * change of subject: when it was sent, when it finished, how big it turned out
  * to be, and whether the client still has it at all.
  */
+/**
+ * What a finished fetch says about itself: how big it was, and when it landed.
+ *
+ * The date carries no verb. "finished 12 Aug 2026" spent a word on something
+ * the section heading above the row already says and the tense of the page
+ * says twice over — this is the record, so a date on it is when it happened.
+ *
+ * A fetch that never finished has no date to give, so it says the one thing
+ * that is true of it instead. That is a word rather than a blank because a
+ * caption reading "51.9 GB ·" with nothing after it looks like a figure that
+ * failed to load, and because a tile read on its own — out of its section, in
+ * a flat list — should still say which of the two it is.
+ *
+ * The size comes from the client and is gone once the client is: a torrent
+ * qBittorrent has forgotten leaves the app no way to know what it weighed, so
+ * the fact simply falls away rather than being guessed at.
+ */
+const historyFacts = (entry: DownloadEntry) => [
+  entry.live && gigabytes(entry.live.sizeBytes),
+  entry.completedAt ? day(entry.completedAt) : "cancelled",
+];
+
 const historyLine = (entry: DownloadEntry) =>
-  [
-    `sent ${day(entry.addedAt)}`,
-    entry.completedAt ? `finished ${day(entry.completedAt)}` : undefined,
-    entry.live ? gigabytes(entry.live.sizeBytes) : "no longer in qBittorrent",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  historyFacts(entry).filter(Boolean).join(" · ");
 
 /**
  * A fetch that has already happened, as a poster.
@@ -766,8 +798,21 @@ function HistoryTile({
   /** `posterName(…)`, where this row's film is one the library holds. */
   name?: string;
   index: number;
-  /** Absent while qBittorrent still holds this one — see `clearable`. */
-  onClear?: () => void;
+  /**
+   * Clearing the record, which every history row now offers.
+   *
+   * It was only the rows qBittorrent had already let go of, and the reason was
+   * sound: the log adopts every torrent in this app's category it has no row
+   * for, so a delete was undone by the next poll three seconds later and the
+   * button appeared to miss. Clearing leaves a headstone that adoption reads
+   * now, so the offer holds on the whole log. See `forgetDownload` in
+   * lib/qbittorrent.ts.
+   *
+   * What it clears is unchanged: the record, and nothing else. The torrent
+   * stays in qBittorrent exactly as it was and the files stay on the drive —
+   * which the question says out loud before anything happens.
+   */
+  onClear: () => void;
   /** And present only while it is still uploading to somebody. */
   onStopSeeding?: () => void;
   /** The whole record, which is more than a tile can hold. */
@@ -800,10 +845,7 @@ function HistoryTile({
        * name the score above is read off, so printing both was the tile making
        * its own working out. The record dialog still lists them.
        */
-      facts={[
-        d && gigabytes(d.sizeBytes),
-        entry.completedAt && `finished ${day(entry.completedAt)}`,
-      ]}
+      facts={historyFacts(entry)}
       /*
        * What the library makes of what landed, in the corner every shelf in the
        * app keeps its reading in — the same badge, the same colours, the same
@@ -858,24 +900,21 @@ function HistoryTile({
        * log entry is the only thing that remembers a fetch happened; a cross
        * would promise the reversibility the wishlist's has. See `RemoveButton`.
        *
-       * Only once qBittorrent has let go of it. While the client still holds a
-       * torrent the record is not the last copy of anything, and the offer is
-       * the one below instead.
+       * On every row, whatever qBittorrent still holds — see `onClear` above.
+       * Asked before it happens, like every other irreversible thing here.
        */
       remove={
-        onClear && (
-          <RemoveButton
-            icon="bin"
-            label={`Clear ${entry.filmTitle ?? entry.title} from history`}
-            title="Clear from history"
-            onClick={onClear}
-          />
-        )
+        <RemoveButton
+          icon="bin"
+          label={`Clear ${entry.filmTitle ?? entry.title} from history`}
+          title="Clear from history"
+          onClick={onClear}
+        />
       }
       /* And the one thing a finished fetch is still doing, in the corner a tile
-         keeps what can be done about it. Never on the same tile as the bin —
-         stopping the seeding needs the torrent still in the client, and
-         clearing the record exists only once it is not. */
+         keeps what can be done about it. It can share a tile with the bin now
+         that the bin is on all of them — different corners, different
+         questions: one stops the uploading, the other forgets the row. */
       actions={
         onStopSeeding && (
           <button
@@ -1178,23 +1217,6 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
       setEntries(await listDownloadLog());
     });
 
-  /**
-   * Whether the record is all that is left of this fetch, and so the only
-   * thing there is to clear.
-   *
-   * A row qBittorrent still lists cannot be cleared, and offering it would be a
-   * button that appears to do nothing: `getDownloadLog` adopts every torrent in
-   * this app's category that it has no row for, so the entry would be written
-   * straight back on the next poll — three seconds later, in the same place, as
-   * if the cross had missed.
-   *
-   * Removing it from qBittorrent as well would make the cross work, and that is
-   * exactly the offer this page has stopped making: what is in the client is
-   * the client's business, and a cross in this app should never be the thing
-   * that reaches into another one.
-   */
-  const clearable = (entry: DownloadEntry) => !entry.live;
-
   /** And whether it is still uploading, which is the one thing left to stop. */
   const seeding = (entry: DownloadEntry) =>
     Boolean(entry.live && SEEDING_STATES.has(entry.live.state));
@@ -1495,11 +1517,7 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
                       entry={entry}
                       name={named.get(entry.hash)}
                       index={offset + i}
-                      onClear={
-                        clearable(entry)
-                          ? () => setConfirming({ kind: "forget", entry })
-                          : undefined
-                      }
+                      onClear={() => setConfirming({ kind: "forget", entry })}
                       onStopSeeding={
                         seeding(entry)
                           ? () => setConfirming({ kind: "seed", entry })
@@ -1642,20 +1660,18 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
                               <TransportIcon paused={false} />
                             </button>
                           ) : (
-                            clearable(entry) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setConfirming({ kind: "forget", entry });
-                                }}
-                                aria-label={`Clear ${entry.filmTitle ?? entry.title} from history`}
-                                title="Clear from history"
-                                className={`${ROW_ACTION} opacity-50 hover:text-red-400 hover:opacity-100`}
-                              >
-                                <CrossIcon />
-                              </button>
-                            )
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirming({ kind: "forget", entry });
+                              }}
+                              aria-label={`Clear ${entry.filmTitle ?? entry.title} from history`}
+                              title="Clear from history"
+                              className={`${ROW_ACTION} opacity-50 hover:text-red-400 hover:opacity-100`}
+                            >
+                              <CrossIcon />
+                            </button>
                           )}
                         </div>
                       </li>
@@ -1679,11 +1695,7 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
           open={readingEntry !== null}
           asking={confirming !== null}
           onClose={() => setReading(null)}
-          onClear={
-            clearable(readShown)
-              ? () => setConfirming({ kind: "forget", entry: readShown })
-              : undefined
-          }
+          onClear={() => setConfirming({ kind: "forget", entry: readShown })}
           onStopSeeding={
             seeding(readShown)
               ? () => setConfirming({ kind: "seed", entry: readShown })
@@ -1724,7 +1736,7 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
           <p className="mb-2 truncate font-mono text-xs opacity-55">
             {confirmShown.entry.filmTitle ?? confirmShown.entry.title}
           </p>
-          {ASK[confirmShown.kind].body}
+          {ASK[confirmShown.kind].body(confirmShown.entry)}
         </ConfirmModal>
       )}
     </div>

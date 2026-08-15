@@ -263,6 +263,25 @@ CREATE TABLE IF NOT EXISTS downloads (
   source       TEXT
 );
 
+-- Records cleared from the log by hand, so they stay cleared.
+--
+-- getDownloadLog adopts every torrent in this app's category that it has no
+-- row for, which is what lets a torrent added from qBittorrent's own window
+-- appear here at all. It also means deleting a row is not enough while the
+-- client still holds the torrent: the next poll, three seconds later, writes
+-- it straight back in the same place, as though the button had missed. So
+-- clearing leaves a headstone, and adoption reads it.
+--
+-- Only adoption consults this. Sending the same release again writes its own
+-- row and lifts the stone with it — asking for something a second time is not
+-- a thing to go on suppressing. See lib/qbittorrent.ts.
+CREATE TABLE IF NOT EXISTS forgotten_downloads (
+  hash       TEXT PRIMARY KEY,
+  -- Kept for nothing but the answering of "when did I clear this", which is a
+  -- question a support log gets asked and a schema costs nothing to answer.
+  forgot_at  INTEGER NOT NULL
+);
+
 -- Poster/fanart live beside the movie file, so this is keyed by directory
 -- rather than by film. A separate table so adding it needed no rescan.
 CREATE TABLE IF NOT EXISTS artwork (
