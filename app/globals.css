@@ -1253,12 +1253,22 @@ body {
       backwards;
   }
 
+  /*
+   * Going out is its own pair of keyframes rather than the arrival played
+   * `reverse`, which is what these were and why dialogs used to vanish on the
+   * frame they were closed. Only a change of `animation-name` starts a new
+   * animation — every other property is applied to the one already running.
+   * Reusing the arrival's name therefore reached an animation that had finished
+   * on open and was sitting past its own end, so it stayed finished and
+   * `forwards` painted the reversed last frame at once: opacity 0, immediately.
+   * Distinct names, as `job-enter` and `job-leave` do below.
+   */
   .modal-veil.is-leaving {
-    animation: veil-fade var(--modal-out) ease-in reverse forwards;
+    animation: veil-out var(--modal-out) ease-in forwards;
   }
 
   .modal-panel.is-leaving {
-    animation: modal-panel-in var(--modal-out) ease-in reverse forwards;
+    animation: modal-panel-out var(--modal-out) ease-in forwards;
   }
 }
 
@@ -1270,8 +1280,24 @@ body {
   }
 }
 
+@keyframes veil-out {
+  to {
+    opacity: 0;
+    -webkit-backdrop-filter: blur(0);
+    backdrop-filter: blur(0);
+  }
+}
+
 @keyframes modal-panel-in {
   from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.9);
+  }
+}
+
+/* The way it came in, so it leaves back into the corner it grew out of. */
+@keyframes modal-panel-out {
+  to {
     opacity: 0;
     transform: translateY(20px) scale(0.9);
   }
