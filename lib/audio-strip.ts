@@ -7,7 +7,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import {
-  canStripAudio,
+  canStripTracks,
   resolvePlan,
   type ContainerTrack,
   type ResolvedPlan,
@@ -22,7 +22,8 @@ import { compareRuntime } from "./media";
 import { reprobeFile } from "./scanner";
 
 /*
- * Dropping audio tracks from a Matroska file, by remuxing it with mkvmerge.
+ * Dropping audio and subtitle tracks from a Matroska file, by remuxing it with
+ * mkvmerge.
  *
  * A film ripped from a disc carries every language that disc was pressed with,
  * and a lossless track is the largest single thing in the file after the video
@@ -31,6 +32,13 @@ import { reprobeFile } from "./scanner";
  * re-encode it costs nothing in quality: mkvmerge copies the streams it keeps
  * byte for byte and never touches the video, so the picture that comes out is
  * the picture that went in, Dolby Vision RPU and all.
+ *
+ * Text tracks ride along in the same pass, and it has to be the same pass. The
+ * saving is smaller — a PGS track is tens of megabytes where a TrueHD track is
+ * gigabytes — but the file is rewritten either way, one original is kept beside
+ * it under one name, and the check below refuses to start a second removal
+ * while that original is still there. Two passes would mean two rewrites of a
+ * 90 GB film with a restore in between.
  *
  * It is only ever asked to keep tracks, never to drop them. The plan the page
  * makes is in terms of what to remove, and this module turns that into a keep
@@ -122,7 +130,7 @@ async function planFor(
   filePath: string,
   plan: StripPlan,
 ): Promise<ResolvedPlan> {
-  if (!canStripAudio(filePath)) {
+  if (!canStripTracks(filePath)) {
     throw new Error("Only Matroska (.mkv) files can have tracks removed.");
   }
   return resolvePlan(await identify(filePath), plan);
@@ -195,6 +203,9 @@ export type StripJob = {
   /** How many audio tracks are going, and how many the film keeps. */
   removed?: number;
   kept?: number;
+  /** The same pair for the text tracks, absent when none were touched. */
+  removedSubtitles?: number;
+  keptSubtitles?: number;
   /** What the removal was expected to free, as the page worked it out. */
   freedBytes?: number;
   /** What it actually freed, measured once both files are on disk. */
@@ -276,7 +287,7 @@ function setJob(next: StripJob) {
   if (was.status === "running" && ended(next.status)) {
     recordRun({
       kind: "strip",
-      title: next.path ? path.basename(next.path) : "Audio removal",
+      title: next.path ? path.basename(next.path) : "Track removal",
       path: next.path,
       outcome: next.status,
       startedAt: next.startedAt,
@@ -285,7 +296,12 @@ function setJob(next: StripJob) {
       detail:
         next.error ||
         [
-          next.removed !== undefined && `${next.removed} tracks removed`,
+          // Counted by kind rather than as one total: "5 tracks removed" on a
+          // row you are reading a month later does not say whether the film
+          // lost five languages or five subtitle streams, and those are very
+          // different things to have done to it.
+          next.removed && `${next.removed} audio removed`,
+          next.removedSubtitles && `${next.removedSubtitles} subtitles removed`,
           next.actualBytes !== undefined &&
             `${(next.actualBytes / 1e9).toFixed(1)} GB freed`,
           next.check,
@@ -498,6 +514,14 @@ export function startStripAudio(
       // dropping the wrong set would not.
       "--audio-tracks",
       resolved.keepIds.join(","),
+      // Named only when the plan asked for a change. An empty keep list is not
+      // an empty argument — mkvmerge reads `--subtitle-tracks ""` as a syntax
+      // error, and "keep none of them" is a flag of its own.
+      ...(resolved.keepSubtitleIds === undefined
+        ? []
+        : resolved.keepSubtitleIds.length === 0
+          ? ["--no-subtitles"]
+          : ["--subtitle-tracks", resolved.keepSubtitleIds.join(",")]),
       path.basename(filePath),
     ];
     const cwd = path.dirname(filePath);
@@ -506,6 +530,10 @@ export function startStripAudio(
       ...current(),
       removed: resolved.removedAudio,
       kept: resolved.keptAudio,
+      ...(resolved.keepSubtitleIds !== undefined && {
+        removedSubtitles: resolved.removedSubtitles,
+        keptSubtitles: resolved.keptSubtitles,
+      }),
       label: "Remuxing",
       command: commandLine(cwd, "mkvmerge", args),
     });
@@ -583,14 +611,33 @@ export function startStripAudio(
     // asked to write. Both this and the runtime check run while the original
     // is still under its own name, so failing either costs only the temp file.
     try {
-      const written = (await identify(working)).filter(
-        (t) => t.type === "audio",
-      ).length;
-      if (written !== resolved.keptAudio) {
+      const written = await identify(working);
+      const count = (type: string) =>
+        written.filter((t) => t.type === type).length;
+
+      const writtenAudio = count("audio");
+      if (writtenAudio !== resolved.keptAudio) {
         await fail(
-          `The remux came out with ${written} audio track${
-            written === 1 ? "" : "s"
+          `The remux came out with ${writtenAudio} audio track${
+            writtenAudio === 1 ? "" : "s"
           } instead of ${resolved.keptAudio}. The film has not been touched.`,
+        );
+        return;
+      }
+
+      // Only where subtitles were part of the plan. Counting them on a run
+      // that never mentioned them would be checking mkvmerge's copying rather
+      // than this job's arithmetic, and would fail a perfectly good remux of a
+      // file whose text tracks were miscounted at scan time.
+      const writtenText = count("subtitles");
+      if (
+        resolved.keepSubtitleIds !== undefined &&
+        writtenText !== resolved.keptSubtitles
+      ) {
+        await fail(
+          `The remux came out with ${writtenText} subtitle track${
+            writtenText === 1 ? "" : "s"
+          } instead of ${resolved.keptSubtitles}. The film has not been touched.`,
         );
         return;
       }

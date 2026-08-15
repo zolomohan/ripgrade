@@ -441,6 +441,13 @@ test("text tracks are read per track, and the language list follows them", () =>
     default: true,
     sdh: false,
     cues: 1420,
+    // The two numberings and the size, carried so a removal plan made against
+    // this listing can be checked against mkvmerge's before anything is
+    // rewritten. Absent here because this fixture reports neither.
+    id: undefined,
+    number: undefined,
+    sizeBytes: undefined,
+    sizeEstimated: undefined,
   });
   // An SRT is only "UTF-8" to MediaInfo.
   assert.equal(d.subtitles?.[2].format, "SubRip");

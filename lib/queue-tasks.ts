@@ -5,8 +5,9 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
-  canStripAudio,
+  canStripTracks,
   originalUnknown,
+  removableSubtitles,
   removableTracks,
   savingsOf,
 } from "./audio-plan";
@@ -17,8 +18,14 @@ import type { CleanupKind } from "./cleanup-names";
 import { backupBytes, backupPathFor, filePresent } from "./convert";
 import { db, getSetting } from "./db";
 import { classifyEnhancementLayer } from "./derive";
-import type { AudioTrack, ElVerdict, EpisodeInfo } from "./derive";
+import type {
+  AudioTrack,
+  ElVerdict,
+  EpisodeInfo,
+  SubtitleTrack,
+} from "./derive";
 import { recordDiscardedBackup } from "./job-history";
+import { getSubtitlePreference } from "./subtitle-prefs";
 import { getLibrary } from "./library";
 import type { LibraryItem } from "./library";
 import { reachabilityReader } from "./reach";
@@ -124,6 +131,20 @@ export type AudioTask = TaskFilm & {
    * Ticking is still yours to change: this is a proposal, not a plan.
    */
   proposed: number[];
+  /**
+   * The text tracks, and the same proposal made of them.
+   *
+   * They travel on the audio row rather than on a row of their own because
+   * they are the same remux: the file is rewritten once and one original is
+   * kept beside it, so a film that is having its Hungarian DTS track removed
+   * is the film to remove its nine unwanted subtitle tracks from too. A film
+   * with nothing to lose but subtitles still earns a row — the saving is
+   * smaller and it sorts accordingly, but "nine tracks I will never turn on"
+   * is a real answer to what the queue is asking.
+   */
+  subtitles: SubtitleTrack[];
+  proposedSubtitles: number[];
+  removingSubtitles: number;
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -291,6 +312,7 @@ export function libraryTasks(items: LibraryItem[] = getLibrary()): {
   // a queue built half under one answer and half under another would be a
   // queue nobody could act on.
   const preference = getAudioPreference();
+  const subtitlePreference = getSubtitlePreference();
 
   // One stat per folder, not per film. See `lib/reach.ts` for why that is the
   // only affordable way to ask this of a whole library.
@@ -344,15 +366,25 @@ export function libraryTasks(items: LibraryItem[] = getLibrary()): {
     }
 
     const original = facts.originalLanguage;
-    if (
-      canStripAudio(item.path) &&
-      item.audio.length > 1 &&
-      !originalUnknown(preference, original)
-    ) {
-      const unwanted = removableTracks(item.audio, preference, original);
+    if (canStripTracks(item.path) && !originalUnknown(preference, original)) {
+      // A film with one audio track has nothing to propose about audio, but it
+      // may still be carrying nine subtitle tracks nobody will ever turn on.
+      const unwanted =
+        item.audio.length > 1
+          ? removableTracks(item.audio, preference, original)
+          : [];
 
-      if (unwanted.length > 0) {
-        const { bytes, estimated } = savingsOf(item.audio, unwanted);
+      const tracks = item.subtitles ?? [];
+      const unwantedText = originalUnknown(subtitlePreference, original)
+        ? []
+        : removableSubtitles(tracks, subtitlePreference, original);
+
+      if (unwanted.length > 0 || unwantedText.length > 0) {
+        const audioSaving = savingsOf(item.audio, unwanted);
+        const textSaving = savingsOf(tracks, unwantedText);
+        const bytes = audioSaving.bytes + textSaving.bytes;
+        const estimated = audioSaving.estimated || textSaving.estimated;
+
         // Sized by neither count nor bitrate: there is nothing to rank it by
         // and nothing to promise, so it waits for the file's own page.
         // Already stripped once, and what is left is what was kept on purpose.
@@ -373,6 +405,9 @@ export function libraryTasks(items: LibraryItem[] = getLibrary()): {
             ),
             tracks: item.audio,
             proposed: unwanted,
+            subtitles: tracks,
+            proposedSubtitles: unwantedText,
+            removingSubtitles: unwantedText.length,
           });
         }
       }

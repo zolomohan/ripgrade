@@ -16,7 +16,7 @@ import {
   useDoviConvert,
 } from "./dovi-convert";
 import { ago, count, size } from "./format";
-import { AudioPicker } from "./jobs/audio-picker";
+import { TrackPicker } from "./jobs/track-picker";
 import { DoviDetails } from "./jobs/dovi-details";
 import { useClosing, useLingering } from "./modal";
 import { ReleaseDetails } from "./release-details";
@@ -343,7 +343,13 @@ export function DashboardView({ data }: { data: Dashboard }) {
         {work.upgrades.films.length > 0 && (
           <Card
             title="Upgrade queue"
-            hint={`${count(work.upgrades.count)} ${work.upgrades.count === 1 ? "film" : "films"} · +${count(work.upgrades.totalGain)} to gain`}
+            // How many, and nothing else. "+23 to gain" was the queue's whole
+            // gain summed, and a sum of score points is a figure with no unit
+            // anybody holds a sense of: eleven films at two points each and two
+            // films at eleven are the same number and not the same afternoon.
+            // The posters below carry the gain that means something, one film
+            // at a time, which is the granularity the decision is made at.
+            hint={`${count(work.upgrades.count)} ${work.upgrades.count === 1 ? "film" : "films"}`}
             index={1}
           >
             {/* Points of score, signed: the figure is what taking the release
@@ -383,13 +389,25 @@ export function DashboardView({ data }: { data: Dashboard }) {
             hint={`${count(work.audio.count)} ${work.audio.count === 1 ? "file" : "files"} · ${work.audio.estimated ? "≈" : "−"}${size(work.audio.bytes)} freed`}
             index={3}
           >
-            {/* ≈ where the saving is bitrate × runtime and − where it was
-                counted, which is the jobs page's own mark for the difference —
-                see app/jobs/task-list.tsx. */}
+            {/* ≈ where the saving is bitrate × runtime, and nothing at all
+                where it was counted.
+
+                The minus that used to lead a counted figure was carried over
+                from the jobs page, where it sits in a column headed "freed" and
+                reads as the direction of the change. Over a poster there is no
+                column and no heading: it is a lone glyph in the corner of a
+                picture, and at ten point it reads as a hyphen or as part of the
+                number before anyone reads it as a sign. Nothing on this shelf
+                is a figure that could go the other way — the whole queue is
+                space given back — so the sign was carrying no information the
+                shelf's own title did not.
+
+                The ≈ stays, because it is the one mark here that changes what
+                the number means. */}
             <WorkShelf
               films={work.audio.films}
               badge={(film) =>
-                `${film.estimated ? "≈" : "−"}${size(film.figure)}`
+                `${film.estimated ? "≈" : ""}${size(film.figure)}`
               }
               onOpen={setStripping}
             />
@@ -410,6 +428,9 @@ export function DashboardView({ data }: { data: Dashboard }) {
               tones={work.issues.bySeverity.map(
                 (band) => SEVERITY_INK[band.label] ?? SEVERITY_INK.Info,
               )}
+              // Counts alone. These bands are a backlog, not a census — see
+              // `share` in app/charts.tsx.
+              share={false}
             />
 
             {work.issues.filmsCritical > 0 && (
@@ -510,7 +531,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
       {/*
        * What the three shelves open, each the same panel its own queue's page
        * opens — see app/release-details.tsx, app/jobs/dovi-details.tsx and
-       * app/jobs/audio-picker.tsx. Nothing here is a dashboard-shaped copy of
+       * app/jobs/track-picker.tsx. Nothing here is a dashboard-shaped copy of
        * one: a poster that opened a lighter version of the real dialog would be
        * a fourth thing to learn and a place where the app disagreed with itself
        * about what a release, a conversion or a track removal is.
@@ -602,7 +623,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
           from the proposal once per mount, and without this the mount is
           shared. The jobs page keys it for the same reason. */}
       {picking && (
-        <AudioPicker
+        <TrackPicker
           key={picking.path}
           task={picking}
           open={stripping !== null}

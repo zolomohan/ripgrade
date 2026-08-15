@@ -25,13 +25,24 @@ import {
   type Candidate,
 } from "@/lib/disc";
 import { readEntry, type DiscEntry } from "@/lib/disc-entry";
-import { canStripAudio, type AudioPreference } from "@/lib/audio-plan";
+import {
+  canStripTracks,
+  type AudioPreference,
+  type StripPlan,
+  type SubtitlePreference,
+} from "@/lib/audio-plan";
 import {
   getAudioPreference,
   libraryLanguages,
   setAudioPreference,
   type LibraryLanguage,
 } from "@/lib/audio-prefs";
+import {
+  getSubtitlePreference,
+  librarySubtitleLanguages,
+  setSubtitlePreference,
+  type SubtitleLanguage,
+} from "@/lib/subtitle-prefs";
 import {
   audioBackupBytes,
   cancelStrip,
@@ -1388,13 +1399,11 @@ function otherWorkRunning(): string | undefined {
  * turn — see `beginStripBatch`, which drops the rows that answer rather than
  * refusing the whole run for one of them.
  */
-function stripRefusal(
-  moviePath: string,
-  removeOrdinals: number[],
-): string | undefined {
+function stripRefusal(request: StripRequest): string | undefined {
+  const moviePath = request.path;
   if (!knownMoviePath(moviePath)) return `Unknown file: ${moviePath}`;
 
-  if (!canStripAudio(moviePath)) {
+  if (!canStripTracks(moviePath)) {
     return "Only Matroska (.mkv) files can have tracks removed.";
   }
   if (audioBackupBytes(moviePath) !== undefined) {
@@ -1405,10 +1414,41 @@ function stripRefusal(
   if (backupBytes(moviePath) !== undefined) {
     return "The pre-conversion original is still kept beside this film. Restore it or delete it before removing tracks.";
   }
-  if (removeOrdinals.length === 0) return "No audio tracks were selected.";
+  if (
+    request.removeOrdinals.length === 0 &&
+    (request.removeSubtitleOrdinals?.length ?? 0) === 0
+  ) {
+    return "No tracks were selected.";
+  }
 
   return undefined;
 }
+
+/**
+ * One film's removal as a page asks for it.
+ *
+ * Both kinds of track in one request, because they are one remux — see
+ * `StripPlan`, which this is the wire form of. The subtitle half is optional so
+ * that a caller with nothing to say about text tracks says nothing, which is
+ * the difference between "leave them alone" and "remove all of them".
+ */
+export type StripRequest = {
+  path: string;
+  removeOrdinals: number[];
+  audioCount: number;
+  numbers?: (number | undefined)[];
+  removeSubtitleOrdinals?: number[];
+  subtitleCount?: number;
+  subtitleNumbers?: (number | undefined)[];
+  freedBytes?: number;
+};
+
+/** The plan half of a request, which is everything but where it points. */
+const planOf = (request: StripRequest): StripPlan & { freedBytes?: number } => {
+  const { path, ...plan } = request;
+  void path;
+  return plan;
+};
 
 /** And why nothing at all can be started right now, if nothing can. */
 function stripBlocked(): string | undefined {
@@ -1419,32 +1459,23 @@ function stripBlocked(): string | undefined {
 }
 
 /**
- * Removes audio tracks from a film, keeping the original beside it.
+ * Removes audio and subtitle tracks from a film, keeping the original beside it.
  *
  * Minutes of disk on a large remux, so it starts a job and returns — the job
  * stream is how the page follows it. The tracks are named by position among the
- * audio tracks alone; `resolvePlan` is what turns that into mkvmerge's own
+ * tracks of their own kind; `resolvePlan` is what turns that into mkvmerge's own
  * numbering, and it re-reads the container before it will.
  */
 export async function beginStripAudio(
-  moviePath: string,
-  removeOrdinals: number[],
-  audioCount: number,
-  numbers?: (number | undefined)[],
-  freedBytes?: number,
+  request: StripRequest,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const blocked = stripBlocked();
   if (blocked) return { ok: false, error: blocked };
 
-  const refusal = stripRefusal(moviePath, removeOrdinals);
+  const refusal = stripRefusal(request);
   if (refusal) return { ok: false, error: refusal };
 
-  startStripAudio(moviePath, {
-    removeOrdinals,
-    audioCount,
-    numbers,
-    freedBytes,
-  });
+  startStripAudio(request.path, planOf(request));
   return { ok: true };
 }
 
@@ -1464,13 +1495,7 @@ export async function beginStripAudio(
  * handed and fails only that file. What was dropped comes back in the count.
  */
 export async function beginStripBatch(
-  items: {
-    path: string;
-    removeOrdinals: number[];
-    audioCount: number;
-    numbers?: (number | undefined)[];
-    freedBytes?: number;
-  }[],
+  items: StripRequest[],
 ): Promise<
   { ok: true; started: number; skipped: number } | { ok: false; error: string }
 > {
@@ -1481,20 +1506,12 @@ export async function beginStripBatch(
   let refused: string | undefined;
 
   for (const item of items) {
-    const refusal = stripRefusal(item.path, item.removeOrdinals);
+    const refusal = stripRefusal(item);
     if (refusal) {
       refused ??= refusal;
       continue;
     }
-    runnable.push({
-      path: item.path,
-      plan: {
-        removeOrdinals: item.removeOrdinals,
-        audioCount: item.audioCount,
-        numbers: item.numbers,
-        freedBytes: item.freedBytes,
-      },
-    });
+    runnable.push({ path: item.path, plan: planOf(item) });
   }
 
   // Nothing ran, so there is nothing to report but the reason — and with one
@@ -1596,6 +1613,26 @@ export async function setAudioLanguages(
   preference: AudioPreference,
 ): Promise<{ ok: true }> {
   setAudioPreference(preference);
+  refresh();
+  return { ok: true };
+}
+
+/** The same pair for the text tracks — see `getAudioLanguages`. */
+export async function getSubtitleLanguages(): Promise<{
+  preference: SubtitlePreference;
+  available: SubtitleLanguage[];
+}> {
+  return {
+    preference: getSubtitlePreference(),
+    available: librarySubtitleLanguages(),
+  };
+}
+
+/** And the same commit, which likewise rewrites nothing. */
+export async function setSubtitleLanguages(
+  preference: SubtitlePreference,
+): Promise<{ ok: true }> {
+  setSubtitlePreference(preference);
   refresh();
   return { ok: true };
 }

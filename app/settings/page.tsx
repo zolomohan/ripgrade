@@ -1,5 +1,6 @@
 import {
   getAudioLanguages,
+  getSubtitleLanguages,
   getConvertTempDir,
   getKeepEnhancementLayer,
   getJackettStatus,
@@ -10,6 +11,7 @@ import {
   getTmdbStatus,
 } from "../actions";
 import { AudioLanguages } from "./audio-languages";
+import { SubtitleLanguages } from "./subtitle-languages";
 import { EnhancementLayer } from "./el-backup";
 import { FolderSection } from "../folder-section";
 import { ScanButton } from "../scan-button";
@@ -81,6 +83,7 @@ export default async function SettingsPage() {
   const thumbs = await getThumbCache();
   const queue = await getQueueRules();
   const audio = await getAudioLanguages();
+  const subtitles = await getSubtitleLanguages();
 
   /** What the shut row says: the languages kept, in the order they were shown. */
   const audioSummary = [
@@ -88,6 +91,20 @@ export default async function SettingsPage() {
       .filter((language) => audio.preference.languages.includes(language.key))
       .map((language) => language.name),
     ...(audio.preference.original ? ["Original"] : []),
+  ];
+
+  // The same line for the text tracks, with the two flags that have no audio
+  // counterpart appended — they change what is proposed as much as a language
+  // does, and a shut row that named only languages would be half the answer.
+  const subtitleSummary = [
+    ...subtitles.available
+      .filter((language) =>
+        subtitles.preference.languages.includes(language.key),
+      )
+      .map((language) => language.name),
+    ...(subtitles.preference.original ? ["Original"] : []),
+    ...(subtitles.preference.forced ? ["Forced"] : []),
+    ...(subtitles.preference.sdh ? ["SDH"] : []),
   ];
 
   /*
@@ -222,6 +239,21 @@ export default async function SettingsPage() {
           <AudioLanguages
             preference={audio.preference}
             available={audio.available}
+          />
+        </Setting>
+
+        <Setting
+          title="Subtitle languages"
+          summary={
+            subtitleSummary.length
+              ? subtitleSummary.join(" · ")
+              : "Nothing preferred"
+          }
+          hint="Which text tracks are worth keeping in the menu. A disc carries a set for every market it was pressed for, and they ride out of the file in the same remux the audio does — so what you do not keep here is offered for removal on the same row, at no extra pass over the film."
+        >
+          <SubtitleLanguages
+            preference={subtitles.preference}
+            available={subtitles.available}
           />
         </Setting>
       </>

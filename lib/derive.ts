@@ -389,6 +389,19 @@ export type SubtitleTrack = {
   default: boolean;
   /** How many cues the track holds, where MediaInfo counted them. */
   cues?: number;
+  /**
+   * The same two numberings `AudioTrack` carries, and kept here for the same
+   * reason: a plan made against MediaInfo's view is checked against mkvmerge's
+   * before a track is removed from a file. Undefined on a film scanned before
+   * these were read, which `resolvePlan` treats as "no second opinion" rather
+   * than as a mismatch.
+   */
+  id?: number;
+  number?: number;
+  /** What the track costs in the file. A PGS track is not nothing. */
+  sizeBytes?: number;
+  /** True when the size above is bitrate × runtime rather than a counted one. */
+  sizeEstimated?: boolean;
 };
 
 /**
@@ -878,6 +891,10 @@ const SDH = /\b(SDH|CC|closed[\s-]?captions?|hearing[\s-]?impaired)\b/i;
 function subtitleOf(track: Track): SubtitleTrack {
   const title = str(track, "Title");
   const format = str(track, "Format") ?? "unknown";
+  // A text track has no bitrate to fall back on, so this is the counted size
+  // or nothing — which is the honest answer for one, and why the total the
+  // page shows says "at least" as soon as a track cannot be counted.
+  const size = trackBytes(track, num(track, "BitRate"));
 
   return {
     // An SRT is stored as plain UTF-8 text and reported as exactly that, which
@@ -892,6 +909,11 @@ function subtitleOf(track: Track): SubtitleTrack {
     default: str(track, "Default") === "Yes",
     sdh: SDH.test(title ?? ""),
     cues: num(track, "ElementCount"),
+    // Under the names their own tool uses, exactly as `audioOf` keeps them.
+    id: num(track, "StreamOrder"),
+    number: num(track, "ID"),
+    sizeBytes: size?.bytes,
+    sizeEstimated: size?.estimated,
   };
 }
 

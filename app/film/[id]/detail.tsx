@@ -11,6 +11,7 @@ import {
   type SubtitleTrack,
 } from "@/lib/derive";
 import { getAudioPreference } from "@/lib/audio-prefs";
+import { getSubtitlePreference } from "@/lib/subtitle-prefs";
 import { audioBackupBytes } from "@/lib/audio-strip";
 import {
   backupBytes,
@@ -33,7 +34,7 @@ import { Panel } from "@/app/panel";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { AddToCollection } from "./add-to-collection";
 import { ArtworkEditor } from "./artwork-editor";
-import { AudioTracks } from "./audio-tracks";
+import { TrackTables } from "./tracks";
 import { BackButton } from "./back-button";
 import { DiscReview } from "./disc-review";
 import { DolbyVision } from "./dolby-vision";
@@ -996,18 +997,23 @@ export async function DetailPage({
           <Spec movie={movie} />
         </Panel>
 
-        {/* Audio tracks, and what removing the unwanted ones would free. */}
-        <AudioTracks
+        {/* Every removable track, and what removing the unwanted ones would
+            free. Audio and subtitles are one console because they are one
+            remux — see `TrackTables`, which explains why that is forced rather
+            than a layout preference. */}
+        <TrackTables
           moviePath={movie.path}
           fileName={movie.fileName}
           summary={[
-            `${movie.audio.length} track${movie.audio.length === 1 ? "" : "s"}`,
+            `${movie.audio.length} audio`,
+            subtitles.length > 0 ? `${subtitles.length} subtitle` : null,
             bestTrack?.label,
             bestTrack?.channels ? `${bestTrack.channels}ch` : null,
           ]
             .filter(Boolean)
             .join(" · ")}
           tracks={movie.audio}
+          subtitles={subtitles}
           sizeBytes={movie.sizeBytes}
           backupBytes={audioBackupBytes(movie.path)}
           present={filePresent(movie.path)}
@@ -1015,6 +1021,7 @@ export async function DetailPage({
           // — together they decide which rows the table marks, and which ones
           // it stops you removing without saying so first.
           preference={getAudioPreference()}
+          subtitlePreference={getSubtitlePreference()}
           // A film knows its own; an episode borrows the series', because there
           // is no per-episode record for TMDb to have put it on. Without the
           // second half every anime on the shelf reads as having no original
@@ -1024,67 +1031,11 @@ export async function DetailPage({
           }
         />
 
-        {/* Subtitle tracks — the audio table's counterpart. The spec grid says
-            which languages are in there; this says what they actually are,
-            which is the difference between a full English track and a forced
-            one that only translates the signs. */}
-        <Panel
-          title="Subtitle tracks"
-          // The count alone. A file can carry a dozen text tracks, and naming
-          // every language in a line that has to stay one line only truncates
-          // — the table below is where the languages are read.
-          summary={
-            subtitles.length === 0
-              ? "none"
-              : `${subtitles.length} track${subtitles.length === 1 ? "" : "s"}`
-          }
-        >
-          {subtitles.length === 0 ? (
-            <p className="text-sm opacity-60">
-              This file carries no subtitles at all — nothing to turn on, in any
-              language.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-xs uppercase tracking-wide opacity-50">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">Format</th>
-                    <th className="px-4 py-2 font-medium">Language</th>
-                    <th className="px-4 py-2 font-medium">Track</th>
-                    <th className="px-4 py-2 text-right font-medium">Cues</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {subtitles.map((track, i) => (
-                    <tr key={i}>
-                      <td className="px-4 py-2">{track.format}</td>
-                      <td className="px-4 py-2 opacity-70">
-                        {track.language ? languageName(track.language) : "—"}
-                      </td>
-                      {/* The muxer's name for the track and the flags a player
-                          reads are one answer to "which one is this", so they
-                          are one column rather than three sparse ones. */}
-                      <td className="px-4 py-2 opacity-70">
-                        {[
-                          track.title,
-                          track.forced ? "forced" : null,
-                          track.sdh ? "SDH" : null,
-                          track.default ? "default" : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums opacity-70">
-                        {track.cues?.toLocaleString() ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
+        {/* The subtitle table used to stand here on its own, reading and
+            offering nothing. It is inside the console above now, because a
+            listing you cannot act on and a listing you can are the same table
+            with a column added — and because the removal it feeds is the same
+            remux the audio one starts. */}
 
         {/* Last, because it explains what the top of the page already showed. */}
         <Panel

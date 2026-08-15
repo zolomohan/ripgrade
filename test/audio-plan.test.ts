@@ -2,16 +2,20 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  canStripAudio,
+  canStripTracks,
   isEnglish,
   isPreferred,
+  isSubtitleKept,
   languageKey,
   originalUnknown,
+  keptFirst,
+  removableSubtitles,
   removableTracks,
   resolvePlan,
   savingsOf,
   tickRange,
   type ContainerTrack,
+  type SubtitlePreference,
 } from "../lib/audio-plan";
 import type { AudioTrack } from "../lib/derive";
 
@@ -96,7 +100,7 @@ test("removing every audio track is refused", () => {
 test("an empty selection is refused", () => {
   assert.throws(
     () => resolvePlan(container(), { removeOrdinals: [], audioCount: 3 }),
-    /No audio tracks were selected/,
+    /No tracks were selected/,
   );
 });
 
@@ -227,10 +231,10 @@ test("an untagged track is not treated as a foreign one", () => {
 });
 
 test("only Matroska files can have tracks removed", () => {
-  assert.equal(canStripAudio("/m/Film/Film.mkv"), true);
-  assert.equal(canStripAudio("/m/Film/Film.MKV"), true);
-  assert.equal(canStripAudio("/m/Film/Film.mp4"), false);
-  assert.equal(canStripAudio("/m/Film/Film.m2ts"), false);
+  assert.equal(canStripTracks("/m/Film/Film.mkv"), true);
+  assert.equal(canStripTracks("/m/Film/Film.MKV"), true);
+  assert.equal(canStripTracks("/m/Film/Film.mp4"), false);
+  assert.equal(canStripTracks("/m/Film/Film.m2ts"), false);
 });
 
 
@@ -241,8 +245,17 @@ test("only Matroska files can have tracks removed", () => {
 const ticked = (...ordinals: number[]) => new Set(ordinals);
 const listed = (set: Set<number>) => [...set].sort((a, b) => a - b);
 
+/**
+ * Every ordinal of a table, in file order.
+ *
+ * What these tables drew before the rows you keep were lifted to the top, and
+ * what all but the last few cases below still want — a run measured between
+ * two numbers is the same run when the drawn order is those numbers.
+ */
+const inOrder = (total: number) => Array.from({ length: total }, (_, i) => i);
+
 /** A nine-track rip, which is what a disc of a big film routinely is. */
-const NINE = 9;
+const NINE = inOrder(9);
 
 test("a plain click ticks one box and leaves the rest alone", () => {
   assert.deepEqual(listed(tickRange(ticked(0), 2, 0, false, NINE)), [0, 2]);
@@ -311,11 +324,11 @@ test("the ceiling holds however the run reaches it", () => {
   assert.deepEqual(listed(tickRange(ticked(1, 2, 3), 8, 0, true, NINE)), [
     1, 2, 3, 4, 5, 6, 7, 8,
   ]);
-  assert.deepEqual(listed(tickRange(ticked(1), 0, 1, true, 2)), [1]);
+  assert.deepEqual(listed(tickRange(ticked(1), 0, 1, true, inOrder(2))), [1]);
 });
 
 test("a single track file can never have that track ticked", () => {
-  assert.deepEqual(listed(tickRange(ticked(), 0, null, false, 1)), []);
+  assert.deepEqual(listed(tickRange(ticked(), 0, null, false, inOrder(1))), []);
 });
 
 test("unticking is never capped — it only ever leaves more behind", () => {
@@ -410,4 +423,271 @@ test("a promise about the original language cannot be kept for an unmatched film
   assert.equal(originalUnknown(prefers(["en"], true), undefined), true);
   assert.equal(originalUnknown(prefers(["en"], true), "ja"), false);
   assert.equal(originalUnknown(prefers(["en"], false), undefined), false);
+});
+
+// ---------------------------------------------------------------------------
+// Subtitles, which the same plan carries
+// ---------------------------------------------------------------------------
+
+/** A rip pressed for several markets: three audio tracks, four text ones. */
+const multilingual = (): ContainerTrack[] => [
+  { id: 0, type: "video", number: 1 },
+  { id: 1, type: "audio", number: 2, language: "eng" },
+  { id: 2, type: "audio", number: 3, language: "fre" },
+  { id: 3, type: "audio", number: 4, language: "ger" },
+  { id: 4, type: "subtitles", number: 5, language: "eng" },
+  { id: 5, type: "subtitles", number: 6, language: "fre" },
+  { id: 6, type: "subtitles", number: 7, language: "ger" },
+  { id: 7, type: "subtitles", number: 8, language: "spa" },
+];
+
+test("both kinds come out of one plan, each in mkvmerge's own numbering", () => {
+  const plan = resolvePlan(multilingual(), {
+    removeOrdinals: [1, 2],
+    audioCount: 3,
+    removeSubtitleOrdinals: [1, 3],
+    subtitleCount: 4,
+  });
+
+  assert.deepEqual(plan.keepIds, [1]);
+  // Text ordinals 1 and 3 are the French and Spanish tracks at IDs 5 and 7 —
+  // the same off-by-one the audio list has, counted from its own zero.
+  assert.deepEqual(plan.keepSubtitleIds, [4, 6]);
+  assert.equal(plan.removedSubtitles, 2);
+  assert.equal(plan.keptSubtitles, 2);
+});
+
+test("a plan that says nothing about subtitles leaves every one of them", () => {
+  // `undefined`, not an empty list: nothing is named to mkvmerge, so the text
+  // tracks are copied by not being mentioned.
+  const plan = resolvePlan(multilingual(), {
+    removeOrdinals: [1],
+    audioCount: 3,
+  });
+
+  assert.equal(plan.keepSubtitleIds, undefined);
+  assert.equal(plan.removedSubtitles, 0);
+});
+
+test("a plan that ticks no subtitle also leaves every one of them", () => {
+  // The page sends the count on every run so the file can be checked, which
+  // means "none ticked" arrives as an empty removal rather than as silence.
+  const plan = resolvePlan(multilingual(), {
+    removeOrdinals: [1],
+    audioCount: 3,
+    removeSubtitleOrdinals: [],
+    subtitleCount: 4,
+  });
+
+  assert.equal(plan.keepSubtitleIds, undefined);
+});
+
+test("removing every subtitle is allowed, and asks for it by keeping none", () => {
+  // The one case where empty and absent differ: this is `--no-subtitles`, and
+  // a film with no text tracks is an ordinary film.
+  const plan = resolvePlan(multilingual(), {
+    removeOrdinals: [],
+    audioCount: 3,
+    removeSubtitleOrdinals: [0, 1, 2, 3],
+    subtitleCount: 4,
+  });
+
+  assert.deepEqual(plan.keepSubtitleIds, []);
+  assert.equal(plan.keptSubtitles, 0);
+  assert.equal(plan.removedAudio, 0);
+});
+
+test("a subtitle-only removal is a removal", () => {
+  // Nothing ticked in the audio table is not an empty selection when the text
+  // table has something in it.
+  assert.doesNotThrow(() =>
+    resolvePlan(multilingual(), {
+      removeOrdinals: [],
+      audioCount: 3,
+      removeSubtitleOrdinals: [2],
+      subtitleCount: 4,
+    }),
+  );
+});
+
+test("a subtitle count that no longer matches refuses the whole plan", () => {
+  // Including the audio half of it. A file whose text tracks have changed is a
+  // file that has been remuxed, and its audio ordinals are no safer.
+  assert.throws(
+    () =>
+      resolvePlan(multilingual(), {
+        removeOrdinals: [1],
+        audioCount: 3,
+        removeSubtitleOrdinals: [0],
+        subtitleCount: 9,
+      }),
+    /4 subtitle tracks, not the 9/,
+  );
+});
+
+test("a subtitle whose Matroska number moved is refused by name", () => {
+  assert.throws(
+    () =>
+      resolvePlan(multilingual(), {
+        removeOrdinals: [1],
+        audioCount: 3,
+        removeSubtitleOrdinals: [1],
+        subtitleCount: 4,
+        // The page had the French track at Matroska number 6; say it saw 60.
+        subtitleNumbers: [5, 60, 7, 8],
+      }),
+    /subtitle tracks are not in the order/,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Which subtitles are worth keeping
+// ---------------------------------------------------------------------------
+
+const KEEP_ENGLISH: SubtitlePreference = {
+  languages: ["en"],
+  original: false,
+  forced: true,
+  sdh: true,
+};
+
+const text = (
+  language: string | undefined,
+  flags: { forced?: boolean; sdh?: boolean } = {},
+) => ({ language, forced: flags.forced ?? false, sdh: flags.sdh ?? false });
+
+test("a forced track is kept whatever language it names", () => {
+  // The case this exists for: the signs on an English film, tagged with the
+  // language of the signs rather than of the audience.
+  assert.equal(isSubtitleKept(text("hun", { forced: true }), KEEP_ENGLISH), true);
+});
+
+test("a forced track goes like any other once the rescue is off", () => {
+  assert.equal(
+    isSubtitleKept(text("hun", { forced: true }), {
+      ...KEEP_ENGLISH,
+      forced: false,
+    }),
+    false,
+  );
+});
+
+test("SDH is removable inside a language that is otherwise kept", () => {
+  // The language rule can never reach these — an English SDH track is English
+  // — so this flag is the only thing that can.
+  const track = text("en", { sdh: true });
+  assert.equal(isSubtitleKept(track, KEEP_ENGLISH), true);
+  assert.equal(isSubtitleKept(track, { ...KEEP_ENGLISH, sdh: false }), false);
+});
+
+test("forced outranks SDH, in the one file that carries both at once", () => {
+  assert.equal(
+    isSubtitleKept(text("en", { forced: true, sdh: true }), {
+      ...KEEP_ENGLISH,
+      sdh: false,
+    }),
+    true,
+  );
+});
+
+test("an untagged text track is kept, as an untagged audio track is", () => {
+  assert.equal(isSubtitleKept(text(undefined), KEEP_ENGLISH), true);
+});
+
+test("the film's own language is kept when it has been asked for", () => {
+  const preference = { ...KEEP_ENGLISH, original: true };
+  assert.equal(isSubtitleKept(text("ja"), preference, "ja"), true);
+  assert.equal(isSubtitleKept(text("ja"), KEEP_ENGLISH, "ja"), false);
+});
+
+test("what a rip could shed is every text track you did not ask to keep", () => {
+  const tracks = [
+    text("en"),
+    text("fr"),
+    text("de", { forced: true }),
+    text("en", { sdh: true }),
+    text("es"),
+  ];
+
+  assert.deepEqual(removableSubtitles(tracks, KEEP_ENGLISH), [1, 4]);
+  // With SDH off, the English hard-of-hearing track joins them.
+  assert.deepEqual(
+    removableSubtitles(tracks, { ...KEEP_ENGLISH, sdh: false }),
+    [1, 3, 4],
+  );
+});
+
+test("every text track may go, where the audio list always stops one short", () => {
+  // The asymmetry `tickRange` and `resolvePlan` both carry, stated once here
+  // on the function that decides what to propose.
+  const tracks = [text("fr"), text("de"), text("es")];
+  assert.deepEqual(removableSubtitles(tracks, KEEP_ENGLISH), [0, 1, 2]);
+});
+
+test("a run across the subtitle table covers the whole of it", () => {
+  // `keepOne: false` — the audio table's ceiling would leave one behind, which
+  // on subtitles would be a rule Matroska does not have.
+  const all = tickRange(new Set<number>(), 3, 0, true, inOrder(4), false);
+  assert.deepEqual([...all].sort((a, b) => a - b), [0, 1, 2, 3]);
+
+  // And the audio default still stops short, from the same starting point.
+  const audio = tickRange(new Set<number>(), 3, 0, true, inOrder(4));
+  assert.deepEqual([...audio].sort((a, b) => a - b), [1, 2, 3]);
+});
+
+// ---------------------------------------------------------------------------
+// The order the tables draw their rows in
+// ---------------------------------------------------------------------------
+
+test("what you keep comes first, and file order survives inside each half", () => {
+  // The rip this exists for: the two rows that matter are in the middle of it.
+  const kept = new Set([3, 6]);
+  assert.deepEqual(
+    keptFirst([0, 1, 2, 3, 4, 5, 6], (_track, ordinal) => kept.has(ordinal)),
+    [3, 6, 0, 1, 2, 4, 5],
+  );
+});
+
+test("a table with nothing kept, and one with nothing else, are file order", () => {
+  assert.deepEqual(keptFirst([0, 1, 2], () => false), [0, 1, 2]);
+  assert.deepEqual(keptFirst([0, 1, 2], () => true), [0, 1, 2]);
+  assert.deepEqual(keptFirst([], () => true), []);
+});
+
+test("the predicate is asked about the track, not only its position", () => {
+  const tracks = [{ keep: false }, { keep: true }, { keep: false }];
+  assert.deepEqual(
+    keptFirst(tracks, (track) => track.keep),
+    [1, 0, 2],
+  );
+});
+
+test("a run follows the rows as drawn, not the numbers behind them", () => {
+  // Ordinals 3 and 6 lifted to the top: the table reads 3, 6, 0, 1, 2, 4, 5.
+  // Shift-clicking from the first row to the third covers 3, 6 and 0 — which
+  // as plain numbers is not a range at all.
+  const drawn = [3, 6, 0, 1, 2, 4, 5];
+  assert.deepEqual(listed(tickRange(ticked(3), 0, 3, true, drawn)), [0, 3, 6]);
+});
+
+test("the run stops where the drawn table does, at both ends", () => {
+  const drawn = [3, 6, 0, 1, 2, 4, 5];
+  // Last row back to the first is the whole table — and on audio that still
+  // stops one short, dropping the film's first track from the selection.
+  assert.deepEqual(listed(tickRange(ticked(5), 3, 5, true, drawn)), [
+    1, 2, 3, 4, 5, 6,
+  ]);
+});
+
+test("a click on a row the table is not drawing changes nothing", () => {
+  // Not reachable from the UI, but the guard is what makes the order and the
+  // selection independent: a stale ordinal can never tick something else.
+  const before = ticked(1);
+  assert.deepEqual(listed(tickRange(before, 9, null, false, inOrder(4))), [1]);
+});
+
+test("an anchor the table no longer draws is simply no anchor", () => {
+  // A shift-click measured from a row that has gone is a plain click, which is
+  // what it is measured from nothing.
+  assert.deepEqual(listed(tickRange(ticked(), 2, 9, true, inOrder(4))), [2]);
 });

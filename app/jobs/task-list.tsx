@@ -49,7 +49,7 @@ import {
   type GroupOption,
 } from "@/app/grouping";
 import { Stat } from "@/app/charts";
-import { AudioPicker } from "./audio-picker";
+import { TrackPicker } from "./track-picker";
 import { DoviDetails } from "./dovi-details";
 import { Stats } from "./stats";
 import { byTitle, pickSort, type SortOption } from "@/app/sorts";
@@ -64,7 +64,7 @@ import { byTitle, pickSort, type SortOption } from "@/app/sorts";
  *
  * An audio row opens a dialog instead, because its work is a question rather
  * than a button — which of these tracks actually go — and the film's page was
- * a walk taken only to answer it. See ./audio-picker.tsx.
+ * a walk taken only to answer it. See ./track-picker.tsx.
  *
  * They are the pending half of the jobs page's first two tabs, under the job
  * running and above the log of the ones that ran. They were the queue's for as
@@ -83,10 +83,25 @@ import { byTitle, pickSort, type SortOption } from "@/app/sorts";
  * which of the two it is, rather than promising a rewrite and finding out.
  */
 
+/**
+ * The two-tier form the rest of the app writes a film's size in, with the two
+ * tiers under it that a *track* needs.
+ *
+ * A film is always gigabytes and this stopped there. A subtitle track is tens
+ * of megabytes, so every one of them drew as "0.0 GB" — which does not read as
+ * a rounded figure, it reads as a track that costs nothing at all, and it made
+ * the subtitle half of a removal look pointless. The same point `format.ts`
+ * makes about the thumbnail cache, arriving on a list of tracks: rounding 40 MB
+ * to nothing is not a coarser answer, it is a wrong one.
+ */
 const size = (bytes: number) =>
   bytes >= 1e12
     ? `${(bytes / 1e12).toFixed(2)} TB`
-    : `${(bytes / 1e9).toFixed(1)} GB`;
+    : bytes >= 1e9
+      ? `${(bytes / 1e9).toFixed(1)} GB`
+      : bytes >= 1e6
+        ? `${Math.round(bytes / 1e6)} MB`
+        : `${Math.round(bytes / 1e3)} kB`;
 
 /** The release modal's chip, so a fact reads the same wherever it appears. */
 function Chip({
@@ -146,7 +161,7 @@ function TaskRow({
    * The Dolby Vision list has nothing to ask — a conversion is one decision
    * made by a button — so its rows still go to the page. The audio list's whole
    * question is which tracks, and that is asked here rather than a page away;
-   * see ./audio-picker.tsx, which keeps a way through to the film anyway.
+   * see ./track-picker.tsx, which keeps a way through to the film anyway.
    */
   onOpen?: (range: boolean) => void;
   /** The box that puts this row in a run of them, on a list that offers one. */
@@ -1406,7 +1421,12 @@ export const AUDIO_SORTS: SortOption<AudioTask>[] = [
   {
     key: "tracks",
     label: "Most tracks removed",
-    compare: (a, b) => b.removing - a.removing || b.freedBytes - a.freedBytes,
+    // Both kinds, because both go in the one remux the row starts.
+    compare: (a, b) =>
+      b.removing +
+        b.removingSubtitles -
+        (a.removing + a.removingSubtitles) ||
+      b.freedBytes - a.freedBytes,
   },
   {
     key: "size",
@@ -1524,7 +1544,10 @@ export function AudioStats({
 
   const total = tasks.reduce((sum, task) => sum + task.freedBytes, 0);
   const anyEstimated = tasks.some((task) => task.estimated);
-  const trackCount = tasks.reduce((sum, task) => sum + task.removing, 0);
+  const trackCount = tasks.reduce(
+    (sum, task) => sum + task.removing + task.removingSubtitles,
+    0,
+  );
   // Canonical, so the "fre" on one rip and the "fr" on the next are one
   // language here as they are in the setting that decided both.
   const languages = new Set(
@@ -1616,6 +1639,16 @@ export function AudioRun({
         // against what mkvmerge reports before it rewrites anything — the same
         // guard the single-file dialog sends.
         numbers: task.tracks.map((track) => track.number),
+        // Sent whenever the file has text tracks at all, ticked or not: the
+        // count is what tells the server the list and the file still agree
+        // about this half too.
+        ...(task.subtitles.length > 0 && {
+          removeSubtitleOrdinals: [...task.proposedSubtitles].sort(
+            (a, b) => a - b,
+          ),
+          subtitleCount: task.subtitles.length,
+          subtitleNumbers: task.subtitles.map((track) => track.number),
+        }),
         freedBytes: task.freedBytes || undefined,
       })),
     );
@@ -1642,6 +1675,9 @@ export function AudioRun({
         percent: 0,
         removed: first.proposed.length,
         kept: first.tracks.length - first.proposed.length,
+        removedSubtitles: first.proposedSubtitles.length,
+        keptSubtitles:
+          first.subtitles.length - first.proposedSubtitles.length,
         freedBytes: first.freedBytes || undefined,
         ...(waiting.length && {
           batch: { index: 1, total: tasks.length, failed: 0 },
@@ -2207,7 +2243,7 @@ export function AudioTasks({
       {/* Keyed by the file, so choosing on one row and then another does not
           hand the second film the first one's ticks. */}
       {held && (
-        <AudioPicker
+        <TrackPicker
           key={held.path}
           task={held}
           open={asking !== null}
