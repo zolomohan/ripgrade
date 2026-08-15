@@ -141,6 +141,7 @@ import {
   checkQb,
   clearQbConfig,
   forgetDownload,
+  retryDownload,
   getDownloadLog,
   getQbConfig,
   getStopSeeding,
@@ -2532,6 +2533,20 @@ export async function qbRemove(hash: string, deleteFiles: boolean) {
 /** The transfer list's poll: the log wearing qBittorrent's present tense. */
 export async function listDownloadLog(): Promise<DownloadEntry[]> {
   return getDownloadLog();
+}
+
+/**
+ * Hands a cancelled fetch back to qBittorrent on the link it was sent with.
+ *
+ * Wrapped in `qbResult` like every other control on that page, because the
+ * client is a separate program that can be shut, moved or busy — and a Retry
+ * that quietly did nothing would look exactly like one that worked until the
+ * next poll put the row back unchanged.
+ */
+export async function retryDownloadEntry(hash: string) {
+  const result = await qbResult(() => retryDownload(hash));
+  if (result.ok) refresh();
+  return result;
 }
 
 export async function forgetDownloadEntry(hash: string): Promise<void> {

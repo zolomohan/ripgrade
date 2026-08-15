@@ -9,6 +9,7 @@ import {
   qbPause,
   qbRemove,
   qbResume,
+  retryDownloadEntry,
 } from "@/app/actions";
 import { Art } from "@/app/art";
 import { ConfirmModal } from "@/app/confirm";
@@ -363,7 +364,7 @@ function Poster({
  * would be a dialog in front of a toggle.
  */
 const ASK: Record<
-  "cancel" | "forget" | "seed",
+  "cancel" | "forget" | "seed" | "retry",
   { title: string; label: string; body: (entry: DownloadEntry) => string }
 > = {
   cancel: {
@@ -371,6 +372,12 @@ const ASK: Record<
     label: "Cancel download",
     body: () =>
       "The download stops and its partial files are deleted — half a file is no use to anyone. The history entry stays, marked as never finished.",
+  },
+  retry: {
+    title: "Download this again?",
+    label: "Download again",
+    body: () =>
+      "The same release is handed to qBittorrent again, on the link it was sent with the first time. The history row stays where it is and starts moving.",
   },
   forget: {
     title: "Clear from history?",
@@ -449,6 +456,52 @@ function TransportIcon({ paused }: { paused: boolean }) {
  * on a transfer in flight, "clear this from the record" on a row in the
  * history — and to the dialog each of them opens.
  */
+/**
+ * A full turn of the arrow: send it again.
+ *
+ * The mark the indexer rescan button used to wear, and gave up when it turned
+ * out to be saying "again" where it needed to say *what* again. Here that is
+ * the whole of the meaning — the same magnet, handed over a second time — so
+ * the glyph finally means what it draws.
+ */
+function RetryIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-4 w-4"
+    >
+      <path d="M20 11a8 8 0 1 0-.6 4" />
+      <path d="M20 5v6h-6" />
+    </svg>
+  );
+}
+
+/** The tiles' bin, at the size a row's controls are drawn. */
+function BinIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-4 w-4"
+    >
+      <path d="M5 7h14" />
+      <path d="M9.5 7V4.8h5V7" />
+      <path d="M6.9 7l.8 11.5a1.7 1.7 0 0 0 1.7 1.6h5.2a1.7 1.7 0 0 0 1.7-1.6L17.1 7" />
+    </svg>
+  );
+}
+
 function CrossIcon() {
   return (
     <svg
@@ -743,25 +796,34 @@ function DownloadTile({
  * to be, and whether the client still has it at all.
  */
 /**
- * What a finished fetch says about itself: how big it was, and when it landed.
+ * What a finished fetch says about itself: how big it was, and its date.
  *
  * The date carries no verb. "finished 12 Aug 2026" spent a word on something
- * the section heading above the row already says and the tense of the page
- * says twice over — this is the record, so a date on it is when it happened.
+ * the section heading above the row already says and the tense of the whole
+ * page says twice over — this is the record, so a date on it is when it
+ * happened.
  *
- * A fetch that never finished has no date to give, so it says the one thing
- * that is true of it instead. That is a word rather than a blank because a
- * caption reading "51.9 GB ·" with nothing after it looks like a figure that
- * failed to load, and because a tile read on its own — out of its section, in
- * a flat list — should still say which of the two it is.
+ * Which date depends on what happened. A fetch that landed is dated by its
+ * landing, because that is the moment you are looking for when you come here
+ * asking whether a film arrived. One that never landed has no such moment, so
+ * it is dated by the send — the day you asked for it, which is the only thing
+ * that happened and is a fact the log has always held.
  *
- * The size comes from the client and is gone once the client is: a torrent
- * qBittorrent has forgotten leaves the app no way to know what it weighed, so
- * the fact simply falls away rather than being guessed at.
+ * That replaced the word "cancelled" standing alone in this line. It was
+ * accurate and it was the wrong thing to say twice: the section heading above
+ * already says which half you are reading, and a caption that spends its only
+ * line repeating the heading tells you nothing about the row it belongs to. A
+ * date does.
+ *
+ * The size comes from the client while it is listed and from the log once it is
+ * not — see `measure` in lib/qbittorrent.ts, which copies it down on every read
+ * that finds the torrent, precisely so this line keeps it afterwards. Rows
+ * removed from qBittorrent before that existed have no size and never will, so
+ * the fact falls away rather than being guessed at.
  */
 const historyFacts = (entry: DownloadEntry) => [
-  entry.live && gigabytes(entry.live.sizeBytes),
-  entry.completedAt ? day(entry.completedAt) : "cancelled",
+  entry.sizeBytes !== undefined && gigabytes(entry.sizeBytes),
+  day(entry.completedAt ?? entry.addedAt),
 ];
 
 const historyLine = (entry: DownloadEntry) =>
@@ -792,6 +854,7 @@ function HistoryTile({
   index,
   onClear,
   onStopSeeding,
+  onRetry,
   onOpen,
 }: {
   entry: DownloadEntry;
@@ -815,6 +878,16 @@ function HistoryTile({
   onClear: () => void;
   /** And present only while it is still uploading to somebody. */
   onStopSeeding?: () => void;
+  /**
+   * Sending it again, on a fetch that never landed and still has its link.
+   *
+   * The one row on this page with something left to do about it: a download
+   * stops for reasons that are almost never the release — a client restarted,
+   * a disk filled, a cancel pressed by mistake — so the answer is the same
+   * magnet handed over again. Absent on anything that finished, and on a row
+   * whose link was never recorded. See `DownloadEntry.magnet`.
+   */
+  onRetry?: () => void;
   /** The whole record, which is more than a tile can hold. */
   onOpen: () => void;
 }) {
@@ -911,12 +984,14 @@ function HistoryTile({
           onClick={onClear}
         />
       }
-      /* And the one thing a finished fetch is still doing, in the corner a tile
-         keeps what can be done about it. It can share a tile with the bin now
-         that the bin is on all of them — different corners, different
-         questions: one stops the uploading, the other forgets the row. */
+      /* What can be done about it, in the corner a tile keeps that in. Two
+         possibilities and never both: a torrent still uploading can be stopped,
+         and one that never landed can be sent again — states that exclude each
+         other by definition. It shares the tile with the bin now that the bin is
+         on all of them, which is fine at opposite corners: one forgets the row,
+         these act on the fetch. */
       actions={
-        onStopSeeding && (
+        onStopSeeding ? (
           <button
             type="button"
             onClick={onStopSeeding}
@@ -926,6 +1001,18 @@ function HistoryTile({
           >
             <TransportIcon paused={false} />
           </button>
+        ) : (
+          onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              aria-label={`Download ${entry.filmTitle ?? entry.title} again`}
+              title="Download again"
+              className={TILE_MARK}
+            >
+              <RetryIcon />
+            </button>
+          )
         )
       }
       label={`${entry.filmTitle ?? entry.title} — ${historyLine(entry)}`}
@@ -964,6 +1051,7 @@ function DownloadDetails({
   onClose,
   onClear,
   onStopSeeding,
+  onRetry,
   asking,
 }: {
   entry: DownloadEntry;
@@ -971,6 +1059,8 @@ function DownloadDetails({
   onClose: () => void;
   onClear?: () => void;
   onStopSeeding?: () => void;
+  /** Sending it again — see `retryable`. Absent on anything that landed. */
+  onRetry?: () => void;
   /** A question is up over this dialog, so it must not answer Escape itself. */
   asking?: boolean;
 }) {
@@ -1051,7 +1141,16 @@ function DownloadDetails({
             release never stated simply fall away. */}
         <dl className="overflow-hidden rounded-control border border-line">
           <Fact label="Release" value={entry.title} mono />
-          <Fact label="Size" value={d && gigabytes(d.sizeBytes)} />
+          {/* The stored figure as well as the live one, so a record outlives
+              the client that measured it — see `DownloadEntry.sizeBytes`. */}
+          <Fact
+            label="Size"
+            value={
+              entry.sizeBytes !== undefined
+                ? gigabytes(entry.sizeBytes)
+                : undefined
+            }
+          />
           <Fact label="Resolution" value={entry.resolution} />
           <Fact label="HDR" value={entry.hdr} />
           <Fact label="Release type" value={entry.releaseType} />
@@ -1085,7 +1184,7 @@ function DownloadDetails({
           <Fact label="Hash" value={entry.hash} mono />
         </dl>
 
-        {(onStopSeeding || onClear) && (
+        {(onStopSeeding || onRetry || onClear) && (
           <div className="flex flex-wrap items-center justify-end gap-2">
             {onStopSeeding && (
               <button
@@ -1094,6 +1193,19 @@ function DownloadDetails({
                 className={BUTTON.secondary}
               >
                 Stop seeding
+              </button>
+            )}
+            {/* Filled, where the other two are outlined: on a record of a fetch
+                that never landed this is the thing the dialog is open for, and
+                the app's word for "the decision this screen is asking you to
+                make" is the filled pill. */}
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className={BUTTON.primary}
+              >
+                Download again
               </button>
             )}
             {/* The cross on the tile, in words. Outlined rather than filled:
@@ -1216,6 +1328,18 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
       if (result && !result.ok) setFailure(result.error);
       setEntries(await listDownloadLog());
     });
+
+  /**
+   * Whether this one can be sent again: it never landed, and the link it was
+   * sent with was recorded.
+   *
+   * Both halves matter. A fetch that finished has nothing to retry — the file
+   * is on the drive — and a row adopted from qBittorrent's own window, or
+   * logged before the column existed, has no link to send. The button is
+   * offered per row on exactly that basis rather than shown and then refused.
+   */
+  const retryable = (entry: DownloadEntry) =>
+    !entry.completedAt && Boolean(entry.magnet);
 
   /** And whether it is still uploading, which is the one thing left to stop. */
   const seeding = (entry: DownloadEntry) =>
@@ -1523,6 +1647,11 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
                           ? () => setConfirming({ kind: "seed", entry })
                           : undefined
                       }
+                      onRetry={
+                        retryable(entry)
+                          ? () => setConfirming({ kind: "retry", entry })
+                          : undefined
+                      }
                       onOpen={() => setReading(entry.hash)}
                     />
                   ))}
@@ -1645,7 +1774,11 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
                           where there was no control, a control's width in where
                           there was — and a column of readings that does not
                           line up is a column you cannot run your eye down. */}
-                        <div className="flex w-9 shrink-0 justify-end">
+                        <div className="flex w-[4.5rem] shrink-0 justify-end">
+                          {/* One of the two that act on the fetch, and never
+                              both: a torrent still uploading can be stopped,
+                              one that never landed can be sent again, and a row
+                              cannot be in both states. */}
                           {seeding(entry) ? (
                             <button
                               type="button"
@@ -1660,19 +1793,40 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
                               <TransportIcon paused={false} />
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirming({ kind: "forget", entry });
-                              }}
-                              aria-label={`Clear ${entry.filmTitle ?? entry.title} from history`}
-                              title="Clear from history"
-                              className={`${ROW_ACTION} opacity-50 hover:text-red-400 hover:opacity-100`}
-                            >
-                              <CrossIcon />
-                            </button>
+                            retryable(entry) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConfirming({ kind: "retry", entry });
+                                }}
+                                aria-label={`Download ${entry.filmTitle ?? entry.title} again`}
+                                title="Download again"
+                                className={`${ROW_ACTION} opacity-50 hover:opacity-100`}
+                              >
+                                <RetryIcon />
+                              </button>
+                            )
                           )}
+
+                          {/* And the one every row has. The slot is drawn at
+                              two buttons' width whether or not both are in it,
+                              so the score to its left sits the same distance
+                              from the edge on every row — a column of readings
+                              that does not line up is one you cannot run your
+                              eye down. */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirming({ kind: "forget", entry });
+                            }}
+                            aria-label={`Clear ${entry.filmTitle ?? entry.title} from history`}
+                            title="Clear from history"
+                            className={`${ROW_ACTION} opacity-50 hover:text-red-400 hover:opacity-100`}
+                          >
+                            <BinIcon />
+                          </button>
                         </div>
                       </li>
                     );
@@ -1701,6 +1855,11 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
               ? () => setConfirming({ kind: "seed", entry: readShown })
               : undefined
           }
+          onRetry={
+            retryable(readShown)
+              ? () => setConfirming({ kind: "retry", entry: readShown })
+              : undefined
+          }
         />
       )}
 
@@ -1725,6 +1884,7 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
             control(async () => {
               if (kind === "cancel") return qbRemove(entry.hash, true);
               if (kind === "seed") return qbPause(entry.hash);
+              if (kind === "retry") return retryDownloadEntry(entry.hash);
               // The only one that touches nothing but our own table, and so
               // the only one with no client to refuse it.
               return forgetDownloadEntry(entry.hash);

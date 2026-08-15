@@ -260,7 +260,24 @@ CREATE TABLE IF NOT EXISTS downloads (
   -- recover afterwards which of the two you pressed Download on. NULL for
   -- sends from elsewhere and for rows that predate the column; those are read
   -- as whichever the library can still answer for. See lib/qbittorrent.ts.
-  source       TEXT
+  source       TEXT,
+  -- The last size qBittorrent reported, in bytes.
+  --
+  -- The client is the only thing that ever knows this, and it stops knowing the
+  -- moment the torrent is removed from it — which is precisely when the log
+  -- becomes the only account of the fetch. So it is copied down on every read
+  -- that finds the torrent still listed, and what is left behind is the last
+  -- figure anybody had. NULL for rows cleared out of the client before this
+  -- column existed: nothing on disk can recover what they weighed.
+  size_bytes   INTEGER,
+  -- The magnet as sent, so a fetch that failed can be sent again.
+  --
+  -- A hash alone would make a magnet that only DHT can resolve; the link the
+  -- indexer gave carries its trackers, which is what actually finds peers. NULL
+  -- for rows adopted from qBittorrent's own window — nobody handed this app a
+  -- link for those — and for anything logged before the column, which is why
+  -- Retry is offered per row rather than assumed.
+  magnet       TEXT
 );
 
 -- Records cleared from the log by hand, so they stay cleared.
@@ -462,6 +479,19 @@ if (downloadColumns.length > 0 && !downloadColumns.includes("film_title")) {
 // table would make a guess indistinguishable from a send that said so.
 if (downloadColumns.length > 0 && !downloadColumns.includes("source")) {
   db.exec("ALTER TABLE downloads ADD COLUMN source TEXT");
+}
+
+// The size and the magnet, added last of all. Both start NULL on every row
+// already logged and fill themselves in from here: the size on the next read
+// that finds the torrent still in the client, the magnet on the next send. A
+// row whose torrent has already left qBittorrent will never get a size, which
+// is why the caption treats it as a fact that may simply be absent.
+if (downloadColumns.length > 0 && !downloadColumns.includes("size_bytes")) {
+  db.exec("ALTER TABLE downloads ADD COLUMN size_bytes INTEGER");
+}
+
+if (downloadColumns.length > 0 && !downloadColumns.includes("magnet")) {
+  db.exec("ALTER TABLE downloads ADD COLUMN magnet TEXT");
 }
 
 /**

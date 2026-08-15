@@ -309,12 +309,15 @@ export async function addMagnet(
     db.prepare("DELETE FROM forgotten_downloads WHERE hash = ?").run(hash);
 
     db.prepare(
-      `INSERT INTO downloads (hash, title, added_at, film_title, poster_path, source)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO downloads (hash, title, added_at, film_title, poster_path, source, magnet)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(hash) DO UPDATE SET
          film_title = COALESCE(excluded.film_title, downloads.film_title),
          poster_path = COALESCE(excluded.poster_path, downloads.poster_path),
-         source = COALESCE(excluded.source, downloads.source)`,
+         source = COALESCE(excluded.source, downloads.source),
+         -- The link wins over whatever was stored: this is the one that was
+         -- just accepted, trackers and all.
+         magnet = excluded.magnet`,
     ).run(
       hash,
       name ?? "Unknown release",
@@ -322,6 +325,7 @@ export async function addMagnet(
       options.film?.title ?? null,
       options.film?.posterPath ?? null,
       options.source ?? null,
+      magnet,
     );
   }
 }
@@ -582,6 +586,24 @@ export type DownloadEntry = {
   resolution?: string;
   hdr?: string;
   releaseType?: string;
+  /**
+   * What the release weighs, from the client while it is listed and from the
+   * log once it is not — see `measure` in `getDownloadLog`.
+   *
+   * Absent only where neither has ever known: a row logged and removed from
+   * qBittorrent before the column existed. That is a real state, and the page
+   * draws it as one fact fewer rather than as a nought.
+   */
+  sizeBytes?: number;
+  /**
+   * The link this was sent with, where the send was made from this app.
+   *
+   * What makes a failed fetch retryable: the magnet the indexer gave carries
+   * its trackers, and a hash alone would make one only DHT could resolve.
+   * Absent on rows adopted from qBittorrent's own window and on anything logged
+   * before it was recorded, which is why Retry is a per-row offer.
+   */
+  magnet?: string;
   live?: Download;
 };
 
@@ -690,7 +712,7 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
 
   const rows = db
     .prepare(
-      "SELECT hash, title, added_at, completed_at, last_state, film_title, poster_path, source FROM downloads",
+      "SELECT hash, title, added_at, completed_at, last_state, film_title, poster_path, source, size_bytes, magnet FROM downloads",
     )
     .all() as {
     hash: string;
@@ -701,6 +723,8 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
     film_title: string | null;
     poster_path: string | null;
     source: string | null;
+    size_bytes: number | null;
+    magnet: string | null;
   }[];
 
   const known = new Set(rows.map((r) => r.hash));
@@ -732,6 +756,10 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
         // Nobody pressed anything in this app to make it exist, so there is
         // no tab it came from; read off the library below, like the rest.
         source: null,
+        // Nor a link: nothing handed this app one. The size fills itself in on
+        // this very read, from the client that is listing it.
+        size_bytes: null,
+        magnet: null,
       });
     }
   }
@@ -742,6 +770,21 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
 
   const fill = db.prepare(
     "UPDATE downloads SET film_title = ?, poster_path = ? WHERE hash = ?",
+  );
+
+  /**
+   * The size, copied down while there is still somewhere to copy it from.
+   *
+   * qBittorrent is the only thing that ever knows what a torrent weighs, and it
+   * stops knowing the moment the torrent is removed — which is exactly when the
+   * log becomes the only account of the fetch. Every read that finds it listed
+   * writes the figure down, so what survives the removal is the last one
+   * anybody had. Rows already cleared out of the client before this existed
+   * have no size and never will; the caption is written to let the fact be
+   * absent rather than guess at it.
+   */
+  const measure = db.prepare(
+    "UPDATE downloads SET size_bytes = ? WHERE hash = ? AND (size_bytes IS NULL OR size_bytes != ?)",
   );
 
   // Read once for the whole pass, and handed to every match below.
@@ -792,6 +835,10 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
     }
 
     if (current) {
+      // Written on every read that finds it, guarded so an unchanged size is
+      // not a write per row per three seconds.
+      measure.run(current.sizeBytes, row.hash, current.sizeBytes);
+
       if (current.done && !completedAt) {
         completedAt = Date.now();
         stamp.run(completedAt, current.state, row.hash);
@@ -827,6 +874,12 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
       // by — see `DownloadEntry.score`.
       score: guess.scores.overall,
       status: guess.status,
+      // The client's figure while there is one, and the last one it gave
+      // otherwise — see `measure` above.
+      sizeBytes: current?.sizeBytes ?? row.size_bytes ?? undefined,
+      // Only where a link was actually stored: a row adopted from the client's
+      // own window never had one, and Retry is offered on that basis.
+      magnet: row.magnet ?? undefined,
       // What the send said, or what the library can still say. `filmPath` is
       // the library's answer and only the library's — `resolveFilm` matches
       // the wishlist too, and a want it matched has no file, so a row that
@@ -861,6 +914,52 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
   });
 
   return entries.sort((a, b) => b.addedAt - a.addedAt);
+}
+
+/**
+ * Sends a logged fetch again, on the link it was sent with the first time.
+ *
+ * A cancelled download is the one row on this page with something left to do
+ * about it: the reason it stopped was almost never the release — a client
+ * restarted, a disk filled, a cancel pressed by mistake — and the answer is the
+ * same magnet handed over again. Everything needed is already in the row, so
+ * this asks for nothing and re-fetches nothing.
+ *
+ * `addMagnet` does the rest, including the upsert that keeps the row's identity
+ * and lifts its headstone. `added_at` is deliberately not moved: the log's
+ * ordering is when a fetch was first asked for, and a retry is the same fetch
+ * carrying on rather than a new one.
+ *
+ * Throws where there is no link, which the page prevents by not offering the
+ * button — but a server action is reachable without the page that drew it.
+ */
+export async function retryDownload(hash: string): Promise<void> {
+  const row = db
+    .prepare(
+      "SELECT magnet, film_title, poster_path, source FROM downloads WHERE hash = ?",
+    )
+    .get(hash) as
+    | {
+        magnet: string | null;
+        film_title: string | null;
+        poster_path: string | null;
+        source: string | null;
+      }
+    | undefined;
+
+  if (!row?.magnet) {
+    throw new QbError(
+      "No link was stored for this fetch, so it cannot be sent again.",
+    );
+  }
+
+  await addMagnet(row.magnet, {
+    film: {
+      title: row.film_title ?? undefined,
+      posterPath: row.poster_path ?? undefined,
+    },
+    source: asSource(row.source),
+  });
 }
 
 /**
