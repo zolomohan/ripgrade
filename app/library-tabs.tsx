@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 
 import type { LibraryItem } from "@/lib/library";
 import type { Show } from "@/lib/shows";
+import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import { Switch } from "./controls";
 import { LibraryView } from "./library-view";
 import { ShowsView } from "./shows-view";
@@ -19,9 +20,20 @@ import { ShowsView } from "./shows-view";
 export function LibraryTabs({
   movies,
   shows,
+  upgrades,
+  jackettReady,
 }: {
   movies: LibraryItem[];
   shows: Show[];
+  /**
+   * The better copies the sweep found, for the film shelf alone.
+   *
+   * The shows tab is handed neither of these and wants neither: the sweep only
+   * searches films — see sweepCandidates in lib/upgrade-sweep.ts — so a series
+   * has no release waiting for it to report.
+   */
+  upgrades: UpgradeQueueItem[];
+  jackettReady: boolean;
 }) {
   const searchParams = useSearchParams();
   const tab = searchParams.get("t") === "tv" ? "tv" : "movies";
@@ -57,7 +69,12 @@ export function LibraryTabs({
   );
 
   return tab === "movies" ? (
-    <LibraryView movies={movies} tabs={tabs} />
+    <LibraryView
+      movies={movies}
+      upgrades={upgrades}
+      jackettReady={jackettReady}
+      tabs={tabs}
+    />
   ) : (
     <ShowsView shows={shows} tabs={tabs} />
   );

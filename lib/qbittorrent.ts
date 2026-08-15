@@ -3,7 +3,7 @@ import "server-only";
 import { db, getSetting, setSetting } from "./db";
 import { titleKey } from "./derive";
 import { getMovies, type LibraryItem } from "./library";
-import { guessFromTitle } from "./release-title";
+import { guessFromTitle, type ReleaseTags } from "./release-title";
 import { getWishlist, type WishlistEntry } from "./wishlist";
 
 /**
@@ -232,12 +232,40 @@ export type FilmContext = {
    * each time and only means "the library holds this right now".
    */
   path?: string;
+  /**
+   * The artwork sitting beside that file, and when it was last read.
+   *
+   * Never stored either, and for a stronger reason than `path`: this is the
+   * poster you chose. `posterPath` is a TMDb path — the picture the send
+   * happened to know about, frozen at the moment a button was pressed — and a
+   * film whose poster you have since replaced would go on wearing the old one
+   * in the log for good. The file on the drive is the app's answer everywhere
+   * else, so it is the answer here, worked out fresh on every read.
+   */
+  poster?: string;
+  artAt?: number;
 };
+
+/**
+ * Which list a release was fetched off, carried from the button that sent it.
+ *
+ * Two pages send releases — the queue, which is better copies of films you own,
+ * and the wishlist, which is films you do not — and a transfer belongs under
+ * the one it left. Nothing downstream can work that out for itself: the magnet
+ * says nothing about it, and the film is no help either, because a want that
+ * finishes and gets scanned is a film the library holds by the time you next
+ * look at the row.
+ */
+export type DownloadSource = "upgrade" | "wishlist";
 
 /** Hands a magnet over, into this app's own category — and into the log. */
 export async function addMagnet(
   magnet: string,
-  options: { savePath?: string; film?: FilmContext } = {},
+  options: {
+    savePath?: string;
+    film?: FilmContext;
+    source?: DownloadSource;
+  } = {},
 ): Promise<void> {
   if (!magnet.startsWith("magnet:")) {
     throw new QbError("Not a magnet link.");
@@ -267,17 +295,19 @@ export async function addMagnet(
   const { hash, name } = parseMagnet(magnet);
   if (hash) {
     db.prepare(
-      `INSERT INTO downloads (hash, title, added_at, film_title, poster_path)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO downloads (hash, title, added_at, film_title, poster_path, source)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(hash) DO UPDATE SET
          film_title = COALESCE(excluded.film_title, downloads.film_title),
-         poster_path = COALESCE(excluded.poster_path, downloads.poster_path)`,
+         poster_path = COALESCE(excluded.poster_path, downloads.poster_path),
+         source = COALESCE(excluded.source, downloads.source)`,
     ).run(
       hash,
       name ?? "Unknown release",
       Date.now(),
       options.film?.title ?? null,
       options.film?.posterPath ?? null,
+      options.source ?? null,
     );
   }
 }
@@ -465,15 +495,71 @@ export type DownloadEntry = {
   lastState?: string;
   /** The film the release was fetched for, when the send knew it. */
   filmTitle?: string;
+  /**
+   * The TMDb path behind the poster — what a row falls back to when the film
+   * is not in the library, or is on a drive that is not plugged in.
+   */
   posterPath?: string;
+  /**
+   * The poster on the drive, where the library still holds this film: the
+   * picture you chose, the same file every shelf in the app draws.
+   *
+   * The log was TMDb's poster and only TMDb's, because the send recorded a
+   * path and the row printed it back. That is the right answer for a want,
+   * which has no folder to have artwork in, and the wrong one for everything
+   * else — replace a film's poster and the history went on showing the picture
+   * you replaced. `artAt` comes with it for the reason it always does: the file
+   * keeps its name when it is swapped, so this is what tells a browser holding
+   * the old one that it is looking at a different picture.
+   */
+  poster?: string;
+  artAt?: number;
   /**
    * Where that film sits in the library, if it is in the library at all. The
    * name the rest of the app knows this poster by is built from it, which is
    * what lets the same film's poster travel between a shelf and this log.
    */
   filmPath?: string;
+  /**
+   * Which of the two pages that send releases this transfer belongs under.
+   *
+   * Always answered, never absent: every row has to be drawn somewhere, and a
+   * third state would mean a third list nobody would think to look in. Sends
+   * that said so are taken at their word; the rest — a fetch from a film's own
+   * page, a torrent adopted from qBittorrent, anything logged before the app
+   * recorded this — are read off the library and the fetch's own fate, which
+   * `getDownloadLog` explains.
+   */
+  source: DownloadSource;
+  /**
+   * What the release name claims the file is, read off that name.
+   *
+   * Present only where the name actually said so, which is `trim`'s rule in
+   * lib/upgrade-sweep.ts and the same one the release rows draw their chips by:
+   * a name states a resolution or it does not, and "SDR" or "UNKNOWN" are the
+   * parser's defaults rather than facts about the file. Absent is how a tile is
+   * told to print nothing, so a thin name simply says less.
+   *
+   * Nothing here is measured. The file is arriving — most of it is not on the
+   * drive yet — so this is the release's own claim, exactly as the queue's
+   * pending rows show it, and the scanner is what will one day disagree.
+   */
+  resolution?: string;
+  hdr?: string;
+  releaseType?: string;
   live?: Download;
 };
+
+/**
+ * The column back as the type, and anything else as nothing.
+ *
+ * SQLite will hold whatever string is put in it, and a row written by an older
+ * build — or by hand — is not the app's word for where a send came from. A
+ * value that is not one of the two is treated as unrecorded, which the read
+ * already knows how to answer.
+ */
+const asSource = (value: string | null): DownloadSource | undefined =>
+  value === "upgrade" || value === "wishlist" ? value : undefined;
 
 /**
  * Which film a release name belongs to, worked out after the fact.
@@ -486,7 +572,12 @@ export type DownloadEntry = {
  * title alone.
  */
 function resolveFilm(
-  releaseTitle: string,
+  /**
+   * The name already parsed. Handed in rather than parsed here, because the
+   * caller wants the rest of the same reading — what the release claims to
+   * be — and one name should be read once.
+   */
+  tags: ReleaseTags,
   /**
    * Read once by the caller and handed in. This used to read the whole library
    * and the whole wishlist itself, inside a loop, inside a loop over every row
@@ -494,7 +585,6 @@ function resolveFilm(
    */
   library: { movies: LibraryItem[]; wishes: WishlistEntry[] },
 ): FilmContext | undefined {
-  const tags = guessFromTitle(releaseTitle, {}).tags;
   if (!tags.title) return undefined;
 
   /*
@@ -527,6 +617,8 @@ function resolveFilm(
         title: movie.tmdb.title,
         posterPath: movie.art.poster,
         path: movie.path,
+        poster: movie.poster,
+        artAt: movie.artAt,
       };
     }
 
@@ -560,7 +652,7 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
 
   const rows = db
     .prepare(
-      "SELECT hash, title, added_at, completed_at, last_state, film_title, poster_path FROM downloads",
+      "SELECT hash, title, added_at, completed_at, last_state, film_title, poster_path, source FROM downloads",
     )
     .all() as {
     hash: string;
@@ -570,6 +662,7 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
     last_state: string | null;
     film_title: string | null;
     poster_path: string | null;
+    source: string | null;
   }[];
 
   const known = new Set(rows.map((r) => r.hash));
@@ -587,6 +680,9 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
         last_state: null,
         film_title: null,
         poster_path: null,
+        // Nobody pressed anything in this app to make it exist, so there is
+        // no tab it came from; read off the library below, like the rest.
+        source: null,
       });
     }
   }
@@ -606,10 +702,21 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
     const current = live?.get(row.hash);
     let completedAt = row.completed_at ?? undefined;
 
+    /*
+     * The name read once, for the two questions asked of it: which film this
+     * is, and what the release claims to be.
+     *
+     * The client's name for the torrent wins over the logged one where there
+     * is one — it is the name qBittorrent resolved from the magnet, and the
+     * magnet's display name can be the shorter of the two.
+     */
+    const guess = guessFromTitle(current?.name ?? row.title);
+    const { facts } = guess;
+
     // Run for every row, not only the ones with no film yet: the title and
     // poster are stored once and stay, but where the film sits in the library
     // is only true until the next scan, so it is asked again each read.
-    const film = resolveFilm(current?.name ?? row.title, library);
+    const film = resolveFilm(guess.tags, library);
 
     if (!row.film_title && film) {
       row.film_title = film.title ?? null;
@@ -640,8 +747,43 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
       completedAt,
       lastState: current?.state ?? row.last_state ?? undefined,
       filmTitle: row.film_title ?? undefined,
-      posterPath: row.poster_path ?? undefined,
+      // What the library says now, and what the send recorded only where the
+      // film can no longer be found. The stored path is a snapshot taken at
+      // the button; the match is re-made on every read, and where it succeeds
+      // it knows about artwork that has changed since.
+      posterPath: film?.posterPath ?? row.poster_path ?? undefined,
+      poster: film?.poster,
+      artAt: film?.artAt,
       filmPath: film?.path,
+      // What the send said, or what the library can still say. `filmPath` is
+      // the library's answer and only the library's — `resolveFilm` matches
+      // the wishlist too, and a want it matched has no file, so a row that
+      // fell through to here without one is a film you do not have.
+      /*
+       * What the send said, or what the log can still work out.
+       *
+       * The library is the evidence, but it has to be read at the right
+       * moment. A fetch that finished is *why* the film is in the library —
+       * scanned in after it landed — so holding it says nothing about what the
+       * fetch was for, and reading that as an upgrade filed every completed
+       * want under the wrong tab. A fetch that never finished is the honest
+       * case: nothing has arrived, so a copy on the drive can only be one you
+       * already had, and going after a better one is an upgrade.
+       *
+       * That leaves the genuine completed upgrade — a copy replaced by a
+       * finished fetch — reading as a want. It is not recoverable: the file on
+       * the drive is the fetched one either way, and the copy it replaced is
+       * gone. Only rows that predate `source` are guessed at all, and this way
+       * round the guess is wrong about the rarer of the two.
+       */
+      source:
+        asSource(row.source) ??
+        (film?.path && !completedAt ? "upgrade" : "wishlist"),
+      // Only what the name stated — `trim`'s rule, kept in step with it.
+      resolution: facts.resolution !== "unknown" ? facts.resolution : undefined,
+      hdr: facts.hdr !== "SDR" ? facts.hdr : undefined,
+      releaseType:
+        facts.releaseType !== "UNKNOWN" ? facts.releaseType : undefined,
       live: current,
     };
   });

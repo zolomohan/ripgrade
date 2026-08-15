@@ -2,24 +2,25 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  addTransitionType,
-  Fragment,
-  useState,
-  useTransition,
-  ViewTransition,
-} from "react";
+import { addTransitionType, useTransition, ViewTransition } from "react";
 
 import { removeWish } from "@/app/actions";
 import { Art } from "@/app/art";
-import { Bar, ICONS, MenuItem, Popover, Switch } from "@/app/controls";
+import { Switch } from "@/app/controls";
+import type { GroupOption } from "@/app/grouping";
+import { ListingControls, useListingOptions } from "@/app/listing";
+import { SectionHeading } from "@/app/section-heading";
 import { movieId, posterName, showId } from "@/lib/routes";
 import { stagger } from "@/app/stagger";
 import { RemoveButton } from "@/app/tile-button";
+import { RescanButton } from "@/app/rescan-button";
+import { DOWNLOAD_SORTS, DownloadsView, RELEASE_GROUPS } from "./finds-view";
 import type { WishlistEntry } from "@/lib/wishlist";
+import type { WishlistFind } from "@/lib/wishlist-search";
 
 /**
- * The one list in this app about things that are not on the drive.
+ * The one list in this app about things that are not on the drive, and now the
+ * whole of what happens to it.
  *
  * Its job is to stop being a want list, entry by entry, so an entry the library
  * has already matched is not quietly dropped — it stays, marked as got, until
@@ -32,16 +33,81 @@ import type { WishlistEntry } from "@/lib/wishlist";
  * Films and shows are split by the same switch the library uses, in the same
  * place, keyed to the same `t` in the URL — one list read two ways, and the way
  * you left it is the way you come back to it.
+ *
+ * The wants come in two halves, and the split is the sweep's answer to each:
+ * **Found**, the films something has turned up for, drawn as the release you
+ * would fetch — and **Not found**, everything still outstanding. A want belongs
+ * to exactly one of them. It used to appear in both, because the finds were a
+ * tab on a page of their own and this page listed the whole wishlist regardless: the
+ * same film was a poster here and a release there, one click along the rail,
+ * and nothing on either said they were the same thing.
+ *
+ * Found leads. It is the half with something to do about it — a release, a
+ * score, a button that fetches it — and the half that empties itself as you act
+ * on it. Not found is the standing list underneath, which changes only when you
+ * add to it or the indexers do.
+ *
+ * A want being fetched right now is on neither list: it has left Found, because
+ * it is no longer something to fetch, and it never falls into Not found,
+ * because something *was* found for it. It is on the downloads page, which is
+ * where every fetch goes whichever list started it — see `answered`, and
+ * app/downloads/downloads-view.tsx.
+ *
+ * One bar of controls over both, at the head of the page. Found and Not found
+ * are not two lists with two sets of questions — they are one wishlist cut in
+ * two, and the cut is itself the first entry in the Group menu. Choose another
+ * and the found half is cut that way instead, by indexer or resolution or the
+ * set a film belongs to; the wants nothing was found for cannot answer any of
+ * those questions — there is no release to read them off — so they stay
+ * gathered at the foot under the name they already had. Every cut ends the same
+ * way, and the last thing on the page is always what is still outstanding.
  */
 
-const GROUPINGS = [
-  { key: "added", label: "None" },
-  { key: "collection", label: "Collection" },
-  { key: "year", label: "Year" },
-];
-
-/** A series belongs to no collection, so that grouping is not offered for one. */
-const SHOW_GROUPINGS = GROUPINGS.filter((o) => o.key !== "collection");
+/**
+ * The cuts this page can be read along, over the half that has releases in it.
+ *
+ * The first is the page's own shape and is drawn flat, which is what the key
+ * `none` means to `Grouped` — the two halves are already parted by their own
+ * headings, so cutting the top one as well would be a rule through a rule. Its
+ * label names the shape rather than denying one: every other list in this app
+ * opens on "No grouping", and this one opens on a grouping it cannot be
+ * without.
+ *
+ * Then the two facts about the film, which the old wants menu offered and which
+ * are worth as much over a shelf of releases: the set it belongs to, and when
+ * it came out. Both are read off the wishlist entry rather than the release —
+ * a release name knows nothing about a collection — so they are built where the
+ * entries are, in `WishlistView`.
+ *
+ * Then the release's own cuts, exactly as the queue offers them; see
+ * `RELEASE_GROUPS`. Its own first entry is dropped, because this list already
+ * has a first entry and two ways of saying "flat" in one menu is one too many.
+ */
+function wishGroups(
+  entries: Map<number, WishlistEntry>,
+  finds: WishlistFind[],
+): GroupOption<WishlistFind>[] {
+  return [
+    { key: "none", label: "Found / Not found", of: () => "" },
+    {
+      key: "collection",
+      label: "Collection",
+      of: (find) => entries.get(find.tmdbId)?.collection?.name ?? "No set",
+    },
+    {
+      key: "year",
+      label: "Year",
+      of: (find) => (find.year ? String(find.year) : "Unknown year"),
+      // Newest first, which alphabetical order is exactly backwards for. Stated
+      // as a fixed order over the years actually present rather than left to
+      // the sort, because these are numbers wearing strings.
+      order: [...new Set(finds.map((find) => find.year).filter(Boolean))]
+        .sort((a, b) => b! - a!)
+        .map(String),
+    },
+    ...RELEASE_GROUPS.slice(1),
+  ];
+}
 
 /** How many paces the ladder in globals.css defines before it repeats. */
 const WISH_STEPS = 6;
@@ -169,10 +235,51 @@ function Tile({
   );
 }
 
-export function WishlistView({ entries }: { entries: WishlistEntry[] }) {
-  const [group, setGroup] = useState("added");
+export function WishlistView({
+  entries,
+  finds,
+  answered,
+  wants,
+  wantsChecked,
+  jackettReady,
+}: {
+  entries: WishlistEntry[];
+  /** What the last sweep's wishlist pass turned up, one release per want. */
+  finds: WishlistFind[];
+  /**
+   * Every want the sweep has an answer for, whether or not it is still listed
+   * above.
+   *
+   * Wider than `finds` by exactly the releases already in qBittorrent, which
+   * are dropped from that list because they have stopped being things to
+   * fetch. Those must not fall through into "Not found" — something *was*
+   * found for them, and it is downstairs under Downloading. A want being
+   * fetched is in neither list, which is the same rule the queue keeps.
+   */
+  answered: number[];
+  /** Wanted films the sweep would search for, and how many it has asked about. */
+  wants: number;
+  wantsChecked: number;
+  jackettReady: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+
+  /*
+   * One set of questions for the page, in the URL like every other listing.
+   *
+   * The cuts are built here rather than declared beside the component because
+   * two of them read the wishlist entry a find belongs to — see `wishGroups`.
+   */
+  // Films only: TMDb numbers films and series in separate sequences, so a map
+  // over both would let a series answer for a film of the same number.
+  const byId = new Map(
+    entries
+      .filter((entry) => entry.kind === "movie")
+      .map((entry) => [entry.tmdbId, entry]),
+  );
+  const groups = wishGroups(byId, finds);
+  const listing = useListingOptions(DOWNLOAD_SORTS, groups);
 
   // The same `t` the library reads, so the two shelves and the two lists all
   // answer to one word in the URL; see app/library-tabs.tsx.
@@ -190,76 +297,33 @@ export function WishlistView({ entries }: { entries: WishlistEntry[] }) {
   const list = entries.filter((e) =>
     tab === "tv" ? e.kind === "tv" : e.kind === "movie",
   );
-  const groupings = tab === "tv" ? SHOW_GROUPINGS : GROUPINGS;
-  // A grouping the other tab does not offer falls back rather than showing
-  // nothing: switching to the shows while grouped by collection is a switch,
-  // not a request for an empty page.
-  const grouping = groupings.find((o) => o.key === group) ?? groupings[0];
 
   const owned = list.filter((e) => e.owned).length;
 
   /**
-   * Within any group, newest first: a want list is read as a queue, and what
-   * you added last is what you are hunting now.
+   * The wants nothing has turned up for, newest first.
+   *
+   * A want the sweep answered is drawn once, up above, as the release it would
+   * fetch — so it comes out of here. Both lists showed it before this split,
+   * which made the page count the same film twice and put its poster on screen
+   * twice under one name.
+   *
+   * Never cut into sections, whatever the Group menu is set to. Every cut this
+   * page offers is a question about a release — which indexer answered, what it
+   * claims to be, which set the film it is for belongs to — and these are the
+   * wants that have no release to ask. Read as a queue, so what you added last
+   * is what you are hunting now.
+   *
+   * Films are matched by id against `answered`; a series is never answered, so
+   * on the shows tab this is the whole list. TMDb numbers films and series in
+   * separate sequences — 1399 is a film and also Game of Thrones — so the kind
+   * has to be checked as well, or a series would drop off the list because a
+   * film it never met was found.
    */
-  const newest = (list: WishlistEntry[]) =>
-    [...list].sort((a, b) => b.addedAt - a.addedAt);
-
-  /**
-   * The default is that queue, whole — no headings. Grouping is offered
-   * rather than imposed: by collection for filling out a set, by year for
-   * working through an era, each still newest-first inside.
-   */
-  const groups = (() => {
-    if (grouping.key === "collection") {
-      // Only where a set is more than one film: a heading over a single
-      // poster fragments the page without telling you anything the poster
-      // did not.
-      const bySet = new Map<string, WishlistEntry[]>();
-      const loose: WishlistEntry[] = [];
-
-      for (const entry of list) {
-        if (!entry.collection) {
-          loose.push(entry);
-          continue;
-        }
-        const bucket = bySet.get(entry.collection.name);
-        if (bucket) bucket.push(entry);
-        else bySet.set(entry.collection.name, [entry]);
-      }
-
-      const sets: { name?: string; entries: WishlistEntry[] }[] = [];
-      for (const [name, list] of bySet) {
-        if (list.length > 1) sets.push({ name, entries: list });
-        else loose.push(...list);
-      }
-
-      sets.sort((a, b) => a.name!.localeCompare(b.name!));
-      return loose.length
-        ? [...sets, { name: "Everything else", entries: newest(loose) }]
-        : sets;
-    }
-
-    if (grouping.key === "year") {
-      const byYear = new Map<string, WishlistEntry[]>();
-      for (const entry of list) {
-        const key = entry.year ? String(entry.year) : "Unknown year";
-        const bucket = byYear.get(key);
-        if (bucket) bucket.push(entry);
-        else byYear.set(key, [entry]);
-      }
-
-      return [...byYear.entries()]
-        .sort((a, b) => {
-          if (a[0] === "Unknown year") return 1;
-          if (b[0] === "Unknown year") return -1;
-          return Number(b[0]) - Number(a[0]);
-        })
-        .map(([name, list]) => ({ name, entries: newest(list) }));
-    }
-
-    return [{ name: undefined, entries: newest(list) }];
-  })();
+  const found = new Set(answered);
+  const unanswered = list
+    .filter((e) => !(e.kind === "movie" && found.has(e.tmdbId)))
+    .sort((a, b) => b.addedAt - a.addedAt);
 
   /**
    * Taking an entry off runs as a typed transition: the type is what the tiles'
@@ -272,6 +336,21 @@ export function WishlistView({ entries }: { entries: WishlistEntry[] }) {
       await removeWish(entry.tmdbId, entry.kind);
       router.refresh();
     });
+
+  /*
+   * Whether the list is worth splitting in two at all.
+   *
+   * Films only, because the sweep searches films only: a want that is a series
+   * is a season at a time or an episode at a time, and no background pass can
+   * decide which — see wishlistCandidates in lib/wishlist-search.ts. On the
+   * shows there is no question of found or not found, so there is one list and
+   * it keeps the page's own name.
+   *
+   * And nothing at all when there is nothing wanted and nothing found, where
+   * `DownloadsView`'s own empty state would be a second "nothing on the
+   * wishlist" directly above the grid's.
+   */
+  const releases = tab === "movies" && (wants > 0 || finds.length > 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -289,70 +368,91 @@ export function WishlistView({ entries }: { entries: WishlistEntry[] }) {
           className="-ml-2"
         />
 
-        {list.length > 0 && (
-          <Bar className="ml-auto">
-            <Popover
-              icon={ICONS.group}
-              label="Group by"
-              value={grouping.label}
-              // The bar's only slot, so the fill follows both its rounded ends.
-              buttonClassName="rounded-full"
-            >
-              {(close) => (
-                <div className="py-1">
-                  {groupings.map((option) => (
-                    <MenuItem
-                      key={option.key}
-                      active={option.key === grouping.key}
-                      onClick={() => {
-                        setGroup(option.key);
-                        close();
-                      }}
-                    >
-                      {option.label}
-                    </MenuItem>
-                  ))}
-                </div>
-              )}
-            </Popover>
-          </Bar>
-        )}
+        <div className="ml-auto flex flex-wrap items-center gap-3">
+          {/* One bar for the page, in the place every listing here keeps its
+              own: how the found half is ordered, how the whole list is cut, and
+              which shape both halves are read in. Only where there is a found
+              half to ask about — on the shows all three questions are about a
+              list that is not on the page. */}
+          {releases && <ListingControls listing={listing} />}
+
+          {/* The pass that fills the list below, with the once-a-day rule off.
+              The page's own control rather than the releases' — a forced sweep
+              asks the indexers about every want *and* every film you own, so it
+              belongs at the head of the page rather than on one section's
+              heading, which is the same argument that kept it out of the
+              queue's tabs. Present on both halves of the switch for that
+              reason: what it starts is not this tab's pass. */}
+          <RescanButton jackettReady={jackettReady} />
+        </div>
       </div>
 
-      {list.length === 0 ? (
-        <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
-          <p className="text-sm opacity-50">
-            {tab === "tv"
-              ? "No shows on the list yet. Search from anywhere — the button in the corner — and heart the series you are hunting for."
-              : "Nothing on the list yet. Search from anywhere — the button in the corner — and heart the films you are hunting for."}
-          </p>
-        </div>
-      ) : (
-        <>
-          {groups.map((section, i) => (
-            <Fragment key={section.name ?? "all"}>
-              {/* Space alone between the groups: each already has a rule under
-                  its own name, and a second one at its foot fenced the films
-                  in rather than parting them from what follows. */}
-              <section
-                className={`flex flex-col gap-7 ${i > 0 ? "pt-14" : "pt-6"}`}
-              >
-                {section.name && (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-baseline justify-between gap-4">
-                      <h2 className="font-display text-lg font-semibold tracking-tight">
-                        {section.name}
-                      </h2>
-                      <span className="shrink-0 text-xs opacity-45">
-                        {section.entries.length} wanted
-                      </span>
-                    </div>
-                    <div aria-hidden className="rule-head" />
-                  </div>
-                )}
+      {/* The list in its two halves, at the gap `Grouped` puts between its own
+          sections — because that is what these two are. Found and Not found are
+          the first cut this page offers, and they should not sit closer
+          together than two indexers do. */}
+      <div className="flex flex-col gap-14">
+        {releases && (
+          <section className="flex flex-col gap-5">
+            {/* Headed "Found" only while the list is uncut. Ask for any
+                    other grouping and the sections name themselves — the
+                    indexer, the resolution, the set — and a "Found" above them
+                    would be a rule drawn through a list that is already ruled.
+                    What makes them all found is that they are above the one
+                    heading that never moves. */}
+            {listing.grouping.key === "none" && (
+              <SectionHeading label="Found" />
+            )}
+            <DownloadsView
+              finds={finds}
+              wants={wants}
+              checked={wantsChecked}
+              jackettReady={jackettReady}
+              sort={listing.sort}
+              group={listing.group}
+              groups={groups}
+              layout={listing.layout}
+            />
+          </section>
+        )}
 
-                <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
-                  {section.entries.map((entry, n) => (
+        {list.length === 0 ? (
+          <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
+            <p className="text-sm opacity-50">
+              {tab === "tv"
+                ? "No shows on the list yet. Search from anywhere — the button in the corner — and heart the series you are hunting for."
+                : "Nothing on the list yet. Search from anywhere — the button in the corner — and heart the films you are hunting for."}
+            </p>
+          </div>
+        ) : (
+          <section className="flex flex-col gap-5">
+            {/* Named only where there is something to be named apart from.
+                    On the shows, and on a list nothing has been searched for
+                    yet, this grid is the whole wishlist — and a heading over
+                    all of it would be parting it from nothing. */}
+            {releases && (
+              <SectionHeading
+                label="Not found"
+                action={
+                  <span className="shrink-0 text-xs opacity-45">
+                    {unanswered.length} wanted
+                  </span>
+                }
+              />
+            )}
+
+            <div className="flex flex-col gap-6">
+              {unanswered.length === 0 ? (
+                <p className="text-sm opacity-50">
+                  Nothing outstanding — every film on the list has a release
+                  waiting above.
+                </p>
+              ) : (
+                // `TILE_GRID_RULED`'s own shape, so this grid clears the
+                // rule above it by exactly as much as every other grid on
+                // the page does.
+                <div className="grid grid-cols-2 gap-6 pt-3 sm:grid-cols-3 lg:grid-cols-5">
+                  {unanswered.map((entry, n) => (
                     <Tile
                       key={`${entry.kind}-${entry.tmdbId}`}
                       entry={entry}
@@ -362,25 +462,29 @@ export function WishlistView({ entries }: { entries: WishlistEntry[] }) {
                     />
                   ))}
                 </div>
-              </section>
-            </Fragment>
-          ))}
+              )}
 
-          <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-4 text-xs opacity-45">
-            <p>
-              {list.length}{" "}
-              {tab === "tv"
-                ? list.length === 1
-                  ? "show"
-                  : "shows"
-                : list.length === 1
-                  ? "film"
-                  : "films"}
-            </p>
-            {owned > 0 && <p>{owned} now in the library</p>}
-          </div>
-        </>
-      )}
+              {/* The tab's own total, not this section's — which is why the
+                      heading above carries its own count. A page foot that
+                      reported only what is under it would say the wishlist had
+                      shrunk every time the sweep found something. */}
+              <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-4 text-xs opacity-45">
+                <p>
+                  {list.length}{" "}
+                  {tab === "tv"
+                    ? list.length === 1
+                      ? "show"
+                      : "shows"
+                    : list.length === 1
+                      ? "film"
+                      : "films"}
+                </p>
+                {owned > 0 && <p>{owned} now in the library</p>}
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   );
 }

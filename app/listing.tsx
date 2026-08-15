@@ -7,19 +7,23 @@ import { pickGroup } from "@/app/grouping";
 import { pickSort } from "@/app/sorts";
 
 /**
- * The furniture over a page of tabbed lists: which list, in what order, and cut
- * how.
+ * The furniture over a page of lists: which list, in what order, and cut how.
  *
- * Two pages ask exactly this now — the queue, over what there is to fetch, and
- * the jobs page, over the work the library can do to its own files — and the
- * three questions are the same three questions in both. They were written once
- * for the queue and would have been copied for the second page: ninety lines of
- * markup and a URL-writing function, which is the kind of duplicate that starts
- * identical and ends up with one page's sort menu closing on click and the
- * other's not.
+ * Three pages ask this now — the jobs page, over the work the library can do to
+ * its own files; the queue, over the better copies there are to fetch; and the
+ * wishlist, over what has turned up for the films you do not own — and the
+ * questions are the same questions in every one. They were written once for the
+ * queue and would have been copied for each: ninety lines of markup and a
+ * URL-writing function, which is the kind of duplicate that starts identical and
+ * ends up with one page's sort menu closing on click and the other's not.
  *
- * All three answers live in the URL, like every other listing here, so opening
- * a film and coming back returns to the list you were reading, in the order you
+ * Two of those pages are one list rather than several, so the tabs are the part
+ * that comes off: `useListingOptions` and `ListingControls` are the questions
+ * about a list, and `useListing` and `ListingBar` are those plus the switch that
+ * says which list is being asked about.
+ *
+ * All the answers live in the URL, like every other listing here, so opening a
+ * film and coming back returns to the list you were reading, in the order you
  * were reading it — and so a link can point at a tab, which is how the
  * dashboard's tiles reach the work they count.
  */
@@ -43,9 +47,11 @@ export type Choice = { key: string; label: string };
  */
 export type Layout = "grid" | "rows";
 
-export type Listing<T extends string> = {
-  tab: T;
-  tabs: readonly { key: T; label: string }[];
+/** What the three menus can be asked to change. */
+export type ListingChange = { sort?: string; g?: string; v?: Layout };
+
+/** The questions about one list, and how they were answered. */
+export type ListingOptions = {
   /**
    * The raw parameters, passed down untouched. The lists sort and cut
    * themselves — the comparators live with the rows they compare — so what they
@@ -53,22 +59,92 @@ export type Listing<T extends string> = {
    */
   sort?: string;
   group?: string;
-  /** The current tab's own options, and which of each is in force. */
+  /** The list's own options, and which of each is in force. */
   sorts: Choice[];
   groups: Choice[];
   current: Choice;
   grouping: Choice;
-  /** And how they are drawn, which is not a question about the tab — see below. */
+  /** And how they are drawn, which is not a question about the list — see below. */
   layout: Layout;
-  update: (next: { t?: T; sort?: string; g?: string; v?: Layout }) => void;
+  update: (next: ListingChange) => void;
 };
+
+export type Listing<T extends string> = Omit<ListingOptions, "update"> & {
+  tab: T;
+  tabs: readonly { key: T; label: string }[];
+  update: (next: { t?: T } & ListingChange) => void;
+};
+
+/**
+ * Writes the answers back without a navigation.
+ *
+ * `replaceState` rather than the router: these are questions about how the page
+ * you are on is drawn, and every one of them would otherwise be a step in the
+ * history you have to press back through to leave.
+ */
+function commit(params: URLSearchParams) {
+  const qs = params.toString();
+  window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+}
+
+/**
+ * An answer written, or dropped where it is the one the page opens in.
+ *
+ * A list arrives in a known shape, so the parameters that would only say so are
+ * left out of the URL entirely — which is what keeps a shared link short and a
+ * default one address rather than two.
+ */
+function set(
+  params: URLSearchParams,
+  key: string,
+  value: string,
+  fallback: string,
+) {
+  if (value === fallback) params.delete(key);
+  else params.set(key, value);
+}
 
 /**
  * Reads the three from the URL and hands back the writer for them.
  *
- * The first tab is the page unasked, and the first option in each menu is that
- * tab's default order and cut — so a page arrives in a known shape, and the
- * parameters that would say so are left out of the URL entirely.
+ * The first option in each menu is the list's default order and cut. For a page
+ * that is one list this is the whole of it; `useListing` adds the tab.
+ */
+export function useListingOptions(
+  sorts: Choice[],
+  groups: Choice[],
+): ListingOptions {
+  const searchParams = useSearchParams();
+
+  const sort = searchParams.get("sort") ?? undefined;
+  const group = searchParams.get("g") ?? undefined;
+  const layout: Layout = searchParams.get("v") === "rows" ? "rows" : "grid";
+
+  function update(next: ListingChange) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next.sort !== undefined) set(params, "sort", next.sort, sorts[0].key);
+    if (next.g !== undefined) set(params, "g", next.g, groups[0].key);
+    if (next.v !== undefined) set(params, "v", next.v, "grid");
+    commit(params);
+  }
+
+  return {
+    sort,
+    group,
+    sorts,
+    groups,
+    current: pickSort(sorts, sort),
+    grouping: pickGroup(groups, group),
+    layout,
+    update,
+  };
+}
+
+/**
+ * The same, over a page of several lists: which one, and then the three.
+ *
+ * The first tab is the page unasked, and each tab brings its own menus — so
+ * `sorts` and `groups` are keyed by tab rather than being one list of options.
  */
 export function useListing<T extends string>(
   tabs: readonly { key: T; label: string }[],
@@ -81,66 +157,191 @@ export function useListing<T extends string>(
   const known = tabs.some((option) => option.key === param);
   const tab = (known ? param : tabs[0].key) as T;
 
-  const options = sorts[tab];
-  const sort = searchParams.get("sort") ?? undefined;
-  const current = pickSort(options, sort);
+  const options = useListingOptions(sorts[tab], groups[tab]);
 
-  const cuts = groups[tab];
-  const group = searchParams.get("g") ?? undefined;
-  const grouping = pickGroup(cuts, group);
+  function update(next: { t?: T } & ListingChange) {
+    if (next.t === undefined) return options.update(next);
 
-  const layout: Layout = searchParams.get("v") === "rows" ? "rows" : "grid";
-
-  function update(next: { t?: T; sort?: string; g?: string; v?: Layout }) {
     const params = new URLSearchParams(searchParams.toString());
-
-    if (next.t !== undefined) {
-      if (next.t === tabs[0].key) params.delete("t");
-      else params.set("t", next.t);
-      // The lists are ranked and cut by different things, so a key from the tab
-      // you are leaving means nothing on the one you are opening. Dropped rather
-      // than carried across, which puts each tab back in its own default shape.
-      //
-      // The layout is not dropped with them, and that is the whole difference
-      // between it and the other two: a sort key is a fact about one list, while
-      // reading a page as posters or as rows is a fact about the person reading
-      // it. Reset at every tab it would be a preference you have to state three
-      // times to hold.
-      params.delete("sort");
-      params.delete("g");
-    }
-    if (next.sort !== undefined) {
-      if (next.sort === options[0].key) params.delete("sort");
-      else params.set("sort", next.sort);
-    }
-    if (next.g !== undefined) {
-      if (next.g === cuts[0].key) params.delete("g");
-      else params.set("g", next.g);
-    }
-    if (next.v !== undefined) {
-      if (next.v === "grid") params.delete("v");
-      else params.set("v", next.v);
-    }
-
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+    set(params, "t", next.t, tabs[0].key);
+    // The lists are ranked and cut by different things, so a key from the tab
+    // you are leaving means nothing on the one you are opening. Dropped rather
+    // than carried across, which puts each tab back in its own default shape.
+    //
+    // The layout is not dropped with them, and that is the whole difference
+    // between it and the other two: a sort key is a fact about one list, while
+    // reading a page as posters or as rows is a fact about the person reading
+    // it. Reset at every tab it would be a preference you have to state three
+    // times to hold.
+    params.delete("sort");
+    params.delete("g");
+    if (next.v !== undefined) set(params, "v", next.v, "grid");
+    commit(params);
   }
 
-  return {
-    tab,
-    tabs,
-    sort,
-    group,
-    sorts: options,
-    groups: cuts,
-    current,
-    grouping,
-    layout,
-    update,
-  };
+  return { ...options, tab, tabs, update };
 }
 
-/** The row itself: the tabs on the left, the two questions on the right. */
+/**
+ * Posters or rows, on its own — for a page that has nothing else to ask.
+ *
+ * The downloads page is one: what is moving and what has been sent are two
+ * sections rather than a list you would sort, and neither can be cut by
+ * anything a menu could name. What is left of the listing bar there is this one
+ * button, so it is a hook rather than a slice of `useListingOptions`.
+ */
+export function useLayout(): [Layout, (next: Layout) => void] {
+  const searchParams = useSearchParams();
+  const layout: Layout = searchParams.get("v") === "rows" ? "rows" : "grid";
+
+  return [
+    layout,
+    (next) => {
+      const params = new URLSearchParams(searchParams.toString());
+      set(params, "v", next, "grid");
+      commit(params);
+    },
+  ];
+}
+
+/**
+ * The third question about the list, drawn the way the two menus are.
+ *
+ * It was very nearly a menu of two like its neighbours, and a menu is the wrong
+ * shape for a pair — you would open a panel to choose between the thing you are
+ * looking at and the only other thing there is.
+ *
+ * So it says what it is set to, as the menus do, and switching is the click
+ * rather than a step after it. `aria-pressed` is not what this is: it is not a
+ * mode being held down, it is one of two named states, so the label says which
+ * state pressing it produces.
+ */
+export function LayoutToggle({
+  layout,
+  onChange,
+  className = "rounded-full",
+}: {
+  layout: Layout;
+  onChange: (next: Layout) => void;
+  /** Which caps it keeps: the end of a bar of three, or the whole of one. */
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(layout === "grid" ? "rows" : "grid")}
+      aria-label={layout === "grid" ? "Show as rows" : "Show as a grid"}
+      title={
+        layout === "grid"
+          ? "Read these as rows, with the figures on them"
+          : "Read these as a grid of posters"
+      }
+      // The Popover trigger's own shape, spelled out rather than shared: that
+      // one is a button that opens a panel, and everything about it beyond
+      // these classes — the open state, the outside click, the panel — is
+      // exactly what this does not do.
+      className={`flex items-center gap-2 self-stretch px-3.5 text-sm transition-colors hover:bg-surface-strong ${className}`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="h-4 w-4 opacity-50"
+      >
+        <path d={layout === "grid" ? ICONS.grid : ICONS.rows} />
+      </svg>
+      <span className="hidden sm:inline">
+        {layout === "grid" ? "Grid" : "Rows"}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The three questions about a list, in one bar.
+ *
+ * Its own component because a list does not have to be a tab to be asked them:
+ * the queue and the wishlist are each a single page-long list, and what they
+ * want is this bar without a switch in front of it. `ListingBar` is this plus
+ * the switch.
+ */
+export function ListingControls({ listing }: { listing: ListingOptions }) {
+  const { sorts, groups, current, grouping, layout, update } = listing;
+
+  return (
+    /* The library shelf's own two controls, in the library shelf's own bar: the
+       same pair of questions asked of a list — in what order, and cut how — so
+       they are the same pair of buttons. */
+    <Bar className="w-auto">
+      <Popover
+        icon={ICONS.sort}
+        label="Sort"
+        value={current.label}
+        buttonClassName="rounded-l-full"
+      >
+        {(close) => (
+          <div className="py-1">
+            {sorts.map((option) => (
+              <MenuItem
+                key={option.key}
+                active={option.key === current.key}
+                onClick={() => {
+                  update({ sort: option.key });
+                  close();
+                }}
+              >
+                {option.label}
+              </MenuItem>
+            ))}
+          </div>
+        )}
+      </Popover>
+
+      <Popover
+        icon={ICONS.group}
+        label="Group by"
+        // "Group" rather than "No grouping" when the list is flat: the button
+        // has to say what it is before it says what it is set to. Every other
+        // state names the cut instead, which is the state you put it in — every
+        // list now opens as one ranked list, so "Group" is what an untouched
+        // button says.
+        value={grouping.key === "none" ? "Group" : grouping.label}
+      >
+        {(close) => (
+          <div className="py-1">
+            {groups.map((option) => (
+              <MenuItem
+                key={option.key}
+                active={option.key === grouping.key}
+                onClick={() => {
+                  update({ g: option.key });
+                  close();
+                }}
+              >
+                {option.label}
+              </MenuItem>
+            ))}
+          </div>
+        )}
+      </Popover>
+
+      {/* The third question about the list, in the bar the other two are in:
+          the same frame, the same rule between the parts, the same cap on the
+          end. */}
+      <LayoutToggle
+        layout={layout}
+        onChange={(v) => update({ v })}
+        className="rounded-r-full"
+      />
+    </Bar>
+  );
+}
+
+/** The row itself: the tabs on the left, the three questions on the right. */
 export function ListingBar<T extends string>({
   listing,
   action,
@@ -155,8 +356,7 @@ export function ListingBar<T extends string>({
    */
   action?: React.ReactNode;
 }) {
-  const { tab, tabs, sorts, groups, current, grouping, layout, update } =
-    listing;
+  const { tab, tabs, update } = listing;
 
   return (
     /* Its own space below it rather than the column's gap: this row is the
@@ -196,106 +396,7 @@ export function ListingBar<T extends string>({
           it a row that says "checked 20 h ago" is a fact with nothing to do
           about it. It is back, as a slot the bar does not have to understand. */}
       <div className="flex flex-wrap items-center gap-3">
-        {/* The library shelf's own two controls, in the library shelf's own
-            bar: the same pair of questions asked of a list — in what order, and
-            cut how — so they are the same pair of buttons. */}
-        <Bar className="w-auto">
-          <Popover
-            icon={ICONS.sort}
-            label="Sort"
-            value={current.label}
-            buttonClassName="rounded-l-full"
-          >
-            {(close) => (
-              <div className="py-1">
-                {sorts.map((option) => (
-                  <MenuItem
-                    key={option.key}
-                    active={option.key === current.key}
-                    onClick={() => {
-                      update({ sort: option.key });
-                      close();
-                    }}
-                  >
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </div>
-            )}
-          </Popover>
-
-          <Popover
-            icon={ICONS.group}
-            label="Group by"
-            // "Group" rather than "No grouping" when the list is flat: the
-            // button has to say what it is before it says what it is set to.
-            // Every other state names the cut instead, which is the state you
-            // put it in — every tab now opens as one ranked list, so "Group" is
-            // what an untouched button says.
-            value={grouping.key === "none" ? "Group" : grouping.label}
-          >
-            {(close) => (
-              <div className="py-1">
-                {groups.map((option) => (
-                  <MenuItem
-                    key={option.key}
-                    active={option.key === grouping.key}
-                    onClick={() => {
-                      update({ g: option.key });
-                      close();
-                    }}
-                  >
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </div>
-            )}
-          </Popover>
-
-          {/* The third question about the list, in the bar the other two are
-              in: the same frame, the same rule between the parts, the same
-              cap on the end. It was very nearly a menu of two like its
-              neighbours, and a menu is the wrong shape for a pair — you would
-              open a panel to choose between the thing you are looking at and
-              the only other thing there is.
-
-              So it says what it is set to, as the menus do, and switching is
-              the click rather than a step after it. `aria-pressed` is not what
-              this is: it is not a mode being held down, it is one of two named
-              states, so the label says which state pressing it produces. */}
-          <button
-            type="button"
-            onClick={() => update({ v: layout === "grid" ? "rows" : "grid" })}
-            aria-label={layout === "grid" ? "Show as rows" : "Show as a grid"}
-            title={
-              layout === "grid"
-                ? "Read these as rows, with the figures on them"
-                : "Read these as a grid of posters"
-            }
-            // The Popover trigger's own shape, spelled out rather than shared:
-            // that one is a button that opens a panel, and everything about it
-            // beyond these classes — the open state, the outside click, the
-            // panel — is exactly what this does not do.
-            className="flex items-center gap-2 self-stretch rounded-r-full px-3.5 text-sm transition-colors hover:bg-surface-strong"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="h-4 w-4 opacity-50"
-            >
-              <path d={layout === "grid" ? ICONS.grid : ICONS.rows} />
-            </svg>
-            <span className="hidden sm:inline">
-              {layout === "grid" ? "Grid" : "Rows"}
-            </span>
-          </button>
-        </Bar>
-
+        <ListingControls listing={listing} />
         {action}
       </div>
     </div>

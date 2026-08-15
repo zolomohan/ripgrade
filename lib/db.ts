@@ -252,7 +252,15 @@ CREATE TABLE IF NOT EXISTS downloads (
   -- its release name but not its film, and the Downloads page wants the
   -- poster and the title the release was chosen for.
   film_title   TEXT,
-  poster_path  TEXT
+  poster_path  TEXT,
+  -- Which list the send came from: 'upgrade' for a better copy of a film on
+  -- the drive, 'wishlist' for a film you do not have. The queue draws each
+  -- tab's transfers under that tab's own list, and nothing about a magnet —
+  -- or about the film, which a fetched want soon joins the library as — can
+  -- recover afterwards which of the two you pressed Download on. NULL for
+  -- sends from elsewhere and for rows that predate the column; those are read
+  -- as whichever the library can still answer for. See lib/qbittorrent.ts.
+  source       TEXT
 );
 
 -- Poster/fanart live beside the movie file, so this is keyed by directory
@@ -428,6 +436,13 @@ const downloadColumns = (
 if (downloadColumns.length > 0 && !downloadColumns.includes("film_title")) {
   db.exec("ALTER TABLE downloads ADD COLUMN film_title TEXT");
   db.exec("ALTER TABLE downloads ADD COLUMN poster_path TEXT");
+}
+
+// And for which list the send came from, added later still. Everything already
+// logged stays NULL — the fact was never recorded, and guessing it into the
+// table would make a guess indistinguishable from a send that said so.
+if (downloadColumns.length > 0 && !downloadColumns.includes("source")) {
+  db.exec("ALTER TABLE downloads ADD COLUMN source TEXT");
 }
 
 /**

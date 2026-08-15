@@ -13,7 +13,7 @@ import {
 import { BUTTON, FIELD } from "@/app/controls";
 import { qualityLabel } from "@/lib/disc-entry";
 import { MagnetAction } from "@/app/magnet-action";
-import type { FilmContext } from "@/lib/qbittorrent";
+import type { DownloadSource, FilmContext } from "@/lib/qbittorrent";
 import { ScoreDial } from "@/app/score-circle";
 import type { DiscSummary, ScoredRelease, Standing } from "@/lib/upgrades";
 import { CloseButton, Modal, useClosing } from "@/app/modal";
@@ -224,12 +224,19 @@ export function Result({
   release,
   referenceKind,
   film,
+  source,
   ruled,
 }: {
   release: ScoredRelease;
   referenceKind?: "copy" | "disc";
   /** Which film the search was for, riding into the download log. */
   film?: FilmContext;
+  /**
+   * And which queue tab the search was opened from, where it was opened from
+   * one — a fetch off this row is that tab's, wherever the row itself came
+   * from. Unset everywhere else; see `MagnetAction`.
+   */
+  source?: DownloadSource;
   /**
    * For a list that is not inside a card: the row is parted from the one above
    * it by the app's own hairline rather than by a border ruled edge to edge,
@@ -366,7 +373,12 @@ export function Result({
         {release.magnet ? (
           // The download control: a handover when qBittorrent is connected,
           // the plain magnet link otherwise. See app/magnet-action.tsx.
-          <MagnetAction magnet={release.magnet} film={film} size="sm" />
+          <MagnetAction
+            magnet={release.magnet}
+            film={film}
+            source={source}
+            size="sm"
+          />
         ) : (
           <span
             className="grid h-8 w-8 place-items-center rounded-full text-[10px] opacity-25"
@@ -429,6 +441,7 @@ export function ReleaseSearchModal({
   title,
   subtitle,
   posterPath,
+  source,
   configured,
   onClose,
 }: {
@@ -438,6 +451,8 @@ export function ReleaseSearchModal({
   subtitle?: string;
   /** The film's TMDb poster path, for the download log. */
   posterPath?: string;
+  /** The queue tab this was opened from, where it was opened from one. */
+  source?: DownloadSource;
   configured: boolean;
   onClose: () => void;
 }) {
@@ -610,6 +625,7 @@ export function ReleaseSearchModal({
                         release={release}
                         referenceKind={search.reference?.kind}
                         film={{ title, posterPath }}
+                        source={source}
                       />
                     ))}
                   </ul>

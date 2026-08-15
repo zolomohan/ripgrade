@@ -3,15 +3,22 @@ import "server-only";
 import { db } from "./db";
 import { hasJackett } from "./jackett";
 import { getLibrary, type LibraryItem } from "./library";
-import { hasQb } from "./qbittorrent";
+import { alreadyFetching, hasQb } from "./qbittorrent";
 import { folderReachable } from "./reach";
 import { getLibraryRoots } from "./roots";
 import { movieId, showId } from "./routes";
 import { getShows } from "./shows";
 import { computeIssues, type IssueTally } from "./stats";
 import { hasCredentials } from "./tmdb";
-import { cleanupFiles, libraryTasks, type AudioTask } from "./queue-tasks";
-import { getUpgradeQueue } from "./upgrade-sweep";
+import {
+  cleanupFiles,
+  libraryTasks,
+  type AudioTask,
+  type DoviTask,
+  type TaskFilm,
+} from "./queue-tasks";
+import { keepsEnhancementLayer } from "./convert";
+import { getUpgradeQueue, type UpgradeQueueItem } from "./upgrade-sweep";
 import { getWishlistFinds } from "./wishlist-search";
 
 /**
@@ -56,13 +63,41 @@ export type Dashboard = {
     savableBytes: number;
   };
   work: {
-    upgrades: { count: number; totalGain: number };
-    dovi: { count: number; bytes: number; unscanned: number; offline: number };
+    /**
+     * Three backlogs, each with the head of its own queue.
+     *
+     * The counts are the whole queue; `films` is as much of it as a shelf can
+     * hold, in the order the page the count links to would list them. A number
+     * says how much there is and a row of artwork says what it is, and those
+     * are different questions — "43 upgrades found" is a figure you either act
+     * on or do not, and four posters of films you remember ripping is the thing
+     * that makes you act.
+     */
+    upgrades: {
+      count: number;
+      totalGain: number;
+      films: WorkFilm<UpgradeQueueItem>[];
+    };
+    dovi: {
+      count: number;
+      bytes: number;
+      unscanned: number;
+      offline: number;
+      /**
+       * Whether a conversion sets the enhancement layer aside before it drops
+       * it. A setting rather than a fact about any of these files, carried here
+       * because the shelf's own dialog has to say what pressing it will do —
+       * see `DoviConvertConfirm` in app/dovi-convert.tsx.
+       */
+      keepingEl: boolean;
+      films: WorkFilm<DoviTask>[];
+    };
     audio: {
       count: number;
       bytes: number;
       estimated: boolean;
       offline: number;
+      films: WorkFilm<AudioTask>[];
     };
     issues: IssueTally;
     /** Shows with a gap, and the episodes those gaps come to. */
@@ -92,8 +127,56 @@ export type Dashboard = {
   };
 };
 
-/** How many posters the "recently added" shelf holds before it runs off the side. */
-const RECENT = 15;
+/**
+ * One film on one of this page's shelves.
+ *
+ * Everything a poster needs and nothing a row would want. There is no caption
+ * under a tile here — a shelf is artwork read at a glance — so the title is for
+ * the tooltip and for anything that cannot see a picture, and it carries the
+ * episode's number where the file is an episode, because a show's poster twelve
+ * times over says nothing about which twelve.
+ *
+ * `figure` is whatever the queue behind the shelf is ordered by, unformatted:
+ * the score a better copy would add, the size of a conversion, the bytes a
+ * rewrite would give back. Which of those it is, and how it reads, belongs to
+ * the shelf drawing it — this module does not know what a gigabyte looks like.
+ */
+export type WorkFilm<T> = {
+  /** The file's path: React's key here, and the film's identity everywhere. */
+  posterKey: string;
+  href: string;
+  title: string;
+  poster?: string;
+  posterRemote?: string;
+  artAt?: number;
+  figure: number;
+  /**
+   * True where `figure` is bitrate × runtime rather than a measurement — the
+   * audio queue's own distinction, drawn as ≈ against − wherever it is printed.
+   */
+  estimated?: boolean;
+  /**
+   * The queue's own record of this film, whole, for the dialog the poster
+   * opens.
+   *
+   * A tile on this page used to be a link to the film, so eight fields were
+   * everything it could ever need. Clicking one now opens the same dialog the
+   * queue's own page opens — the release the sweep found, the conversion, the
+   * tracks to remove — and every one of those is a question about the record
+   * rather than about the film: which magnet, which enhancement layer, which
+   * nine of eighteen audio tracks. None of that can be re-derived on the
+   * client, and asking the server for it a second time on the click would put a
+   * round trip between the press and the panel.
+   *
+   * So the shelf carries what it is a shelf *of*. Fifteen of them per queue,
+   * already read on this request — see `getDashboard`, where all three lists
+   * are computed whether or not anybody opens one.
+   */
+  item: T;
+};
+
+/** How many posters a shelf on this page holds before it runs off the side. */
+const SHELF = 15;
 
 const maxOf = (sql: string): number | undefined => {
   const row = db.prepare(sql).get() as { n: number | null };
@@ -109,8 +192,29 @@ export async function getDashboard(): Promise<Dashboard> {
 
   const tasks = libraryTasks(library);
   const cleanup = cleanupFiles(library);
-  const queue = getUpgradeQueue(movies);
-  const finds = getWishlistFinds();
+
+  /*
+   * What is already coming does not need fetching again.
+   *
+   * The same cut `/library` and `/wishlist` make, and it has to be made here
+   * too or the front page contradicts the two pages its figures link to: a
+   * release sent to qBittorrent leaves both of those lists the moment it is
+   * sent, and this one went on counting it — "43 upgrades found" over a shelf
+   * whose first poster was a film already downloading, and a figure you could
+   * not make go down by doing the thing it was asking for.
+   *
+   * It is also the half of cancelling that is easy to miss. `alreadyFetching`
+   * reads a fetch that never finished and is no longer in the client as one
+   * that was called off, so cancelling a download puts the film back on the
+   * lists it left — and this page is one of them.
+   */
+  const fetching = await alreadyFetching();
+  const queue = getUpgradeQueue(movies).filter(
+    (item) => !fetching({ title: item.title, magnet: item.hit.magnet }),
+  );
+  const finds = getWishlistFinds().filter(
+    (find) => !fetching({ title: find.title, magnet: find.hit.magnet }),
+  );
 
   const roots = getLibraryRoots();
 
@@ -124,12 +228,27 @@ export async function getDashboard(): Promise<Dashboard> {
       upgrades: {
         count: queue.length,
         totalGain: queue.reduce((n, item) => n + item.hit.delta, 0),
+        // The queue's own order, which is not the gain: `getUpgradeQueue` puts
+        // the releases that would finish a film off the hunt first. The shelf
+        // is the head of that queue rather than a ranking of its own.
+        films: queue.slice(0, SHELF).map((item) => ({
+          posterKey: item.path,
+          href: `/film/${movieId(item.path)}`,
+          title: item.title,
+          poster: item.poster,
+          posterRemote: item.posterRemote,
+          artAt: item.artAt,
+          figure: item.hit.delta,
+          item,
+        })),
       },
       dovi: {
         count: tasks.dovi.length,
         bytes: tasks.dovi.reduce((n, task) => n + task.sizeBytes, 0),
         unscanned: tasks.dovi.filter((task) => !task.scanned).length,
         offline: tasks.dovi.filter((task) => task.offline).length,
+        keepingEl: keepsEnhancementLayer(),
+        films: shelfOf(tasks.dovi, (task) => task.sizeBytes),
       },
       audio: audioOf(tasks.audio),
       /*
@@ -293,7 +412,7 @@ function recentlyAdded(
 
   return [...films, ...grouped]
     .sort((a, b) => b.addedAt - a.addedAt || a.title.localeCompare(b.title))
-    .slice(0, RECENT);
+    .slice(0, SHELF);
 }
 
 function audioOf(audio: AudioTask[]): Dashboard["work"]["audio"] {
@@ -304,7 +423,41 @@ function audioOf(audio: AudioTask[]): Dashboard["work"]["audio"] {
     // that is partly counted and partly inferred is inferred.
     estimated: audio.some((task) => task.estimated),
     offline: audio.filter((task) => task.offline).length,
+    films: shelfOf(audio, (task) => task.freedBytes, (task) => task.estimated),
   };
+}
+
+/**
+ * The head of a job queue as posters.
+ *
+ * Both lists arrive sorted by the figure they are about — biggest conversion,
+ * biggest saving — so the shelf is a slice off the front rather than a second
+ * ordering. Written once for the two of them because the only thing that
+ * differs is which number the tile prints.
+ *
+ * An episode's number joins the show's title. The poster is the series' — every
+ * episode of a show borrows it, so nine tiles of the same artwork is a normal
+ * shelf here, and the only thing that tells them apart is what the tooltip and
+ * the screen reader are given.
+ */
+function shelfOf<T extends TaskFilm>(
+  tasks: T[],
+  figure: (task: T) => number,
+  estimated?: (task: T) => boolean,
+): WorkFilm<T>[] {
+  return tasks.slice(0, SHELF).map((task) => ({
+    posterKey: task.path,
+    // The film's page, or the episode's — the jobs page's own rule for where a
+    // row leads, and the same one because it is the same file.
+    href: `/${task.kind === "movie" ? "film" : "episode"}/${movieId(task.path)}`,
+    title: task.episodeCode ? `${task.title} ${task.episodeCode}` : task.title,
+    poster: task.poster,
+    posterRemote: task.posterRemote,
+    artAt: task.artAt,
+    figure: figure(task),
+    estimated: estimated?.(task),
+    item: task,
+  }));
 }
 
 /**

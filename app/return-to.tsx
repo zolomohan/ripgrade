@@ -44,7 +44,6 @@ const LISTINGS = [
   "/library",
   "/collections",
   "/wishlist",
-  "/upgrades",
   // The jobs page, since the library's own work moved onto it: its rows open
   // the film a conversion or a removal is waiting on, and back from one of
   // those means back to the list you picked it off.

@@ -8,15 +8,12 @@ import { discardCleanup } from "@/app/actions";
 import { EmptyState } from "@/app/empty-state";
 import type { Layout } from "@/app/listing";
 import { useClosing } from "@/app/modal";
-import {
-  PosterTile,
-  TILE_GRID_RULED,
-  TILE_NOTE,
-  TILE_READING,
-} from "@/app/poster-tile";
+import { PosterTile, TILE_GRID_RULED, TILE_NOTE } from "@/app/poster-tile";
 import { rememberListing } from "@/app/return-to";
+import { SCORE_PLATE_ROOMY } from "@/app/score-circle";
 import { stagger } from "@/app/stagger";
 import { Tick, TickColumn } from "@/app/tick";
+import { TILE_MARK } from "@/app/tile-button";
 import { BUTTON, CONTROL_H } from "@/app/controls";
 import { ConfirmModal } from "@/app/confirm";
 import type { CleanupFile, CleanupKind } from "@/lib/queue-tasks";
@@ -511,6 +508,41 @@ export function CleanupStats({
  * two lists along — so it is the same chip whether it is read in a row or worn
  * on a poster, and only the plate under it differs.
  */
+/**
+ * The one mark that ends a file.
+ *
+ * A bin, and deliberately not the cross. The cross over artwork in this app
+ * means "take this out of the list I am looking at" — the wishlist's, the
+ * collections' — and it is undone by pressing the heart again. Nothing here is
+ * undone: the file is gone off the drive, and with it the only copy of what a
+ * rewrite replaced. The same shape for both would be the one economy this app
+ * cannot make. So this drawing appears nowhere else, and the dialog behind it
+ * still spells out what will be gone before anything is.
+ *
+ * Three strokes and no more. The body tapers to a rounded base — drawn with
+ * square corners it reads as a cup at twenty pixels — and the two slats a bin
+ * usually carries are left off: inside a body this size they close up into a
+ * smudge, which is worse than a bin with nothing in it.
+ */
+function BinIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="h-5 w-5"
+    >
+      <path d="M5 7h14" />
+      <path d="M9.5 7V4.8h5V7" />
+      <path d="M6.9 7l.8 11.5a1.7 1.7 0 0 0 1.7 1.6h5.2a1.7 1.7 0 0 0 1.7-1.6L17.1 7" />
+    </svg>
+  );
+}
+
 function KindChip({ file, art = false }: { file: CleanupFile; art?: boolean }) {
   const leftover = file.kind === "leftover";
 
@@ -575,16 +607,39 @@ function CleanupTile({
       // audio one, both beside the same film — and a transition name is a
       // promise that only one thing on the page is wearing it. Two claiming it
       // abort the transition outright.
-      // The film's name where the library still knows it, and the file's own
-      // where it does not. A cleanup list outlives what it describes.
-      title={file.film?.title ?? file.name}
-      year={file.film?.year}
-      episode={file.film?.episode}
-      fileName={file.name}
+      /*
+       * The film's name where the library still knows it, and the file's own
+       * where it does not. A cleanup list outlives what it describes.
+       *
+       * Composed the way the other two tabs compose theirs — the episode's
+       * number in front of the show, no year, no file name underneath. The
+       * name was here twice over on a film the library still holds: once as
+       * the caption and once cut at the front in mono below it. Which of two
+       * files beside one film this is, is said by the chip on the artwork,
+       * which is the fact that actually decides the delete.
+       */
+      title={
+        file.film?.episodeCode
+          ? `${file.film.episodeCode} · ${file.film.title}`
+          : (file.film?.title ?? file.name)
+      }
+      /*
+       * What it is and how long it has been there, in the caption's own muted
+       * line — which is where the other two tabs put what a file *is*.
+       *
+       * The kind was a chip on the artwork, and it is the first thing you need
+       * about one of these rows: an original is an undo somebody may still
+       * want, a leftover is wreckage. It reads as prose down here and as a
+       * label pinned to a picture up there.
+       *
+       * "kept since" and "left" went with it. The date is the whole of the
+       * argument this tab makes — a year-old original is one you were never
+       * going back to — and the words in front of it only restated the kind
+       * that now leads the line.
+       */
       facts={[
-        file.kind === "leftover"
-          ? `left ${since(file.modifiedAt)}`
-          : `kept since ${since(file.modifiedAt)}`,
+        KIND_LABEL[file.kind],
+        since(file.modifiedAt),
         !file.film && "no film in the library",
       ]}
       mark={
@@ -605,23 +660,28 @@ function CleanupTile({
       }
       // What deleting this one gets you, in the corner every tile keeps for its
       // reading. It is the whole argument for the tab.
-      badge={<span className={TILE_READING}>{size(file.bytes)}</span>}
-      // And what it *is*, which is the other half of the decision: an undo
-      // somebody may still want, or the wreckage of a job that died.
-      note={
-        <span className="flex min-w-0 flex-col items-start gap-1">
-          <KindChip file={file} art />
-          {file.offline && (
-            <span
-              className={TILE_NOTE}
-              title="Found the last time this folder could be read. The drive is not connected now."
-            >
-              Drive away
-            </span>
-          )}
-        </span>
-      }
-      action={action}
+      //
+      // On the score plate, like the freed figure on the tab next door: the two
+      // are the same fact about the same kind of decision — how many gigabytes
+      // this press is worth — and they were set in two different faces.
+      badge={<span className={SCORE_PLATE_ROOMY}>{size(file.bytes)}</span>}
+      /*
+       * The delete, on the artwork.
+       *
+       * It was a word under the caption, and the argument for that was a good
+       * one: this is the only irreversible thing in the app, and a cross in the
+       * corner of a poster is the gesture that takes a film off a wishlist —
+       * one shape for "I have changed my mind" and "the original is gone
+       * forever". So it is not that shape. A bin is what it is, drawn nowhere
+       * else in the app, and the dialog behind it still says in words exactly
+       * what will be gone before anything is.
+       *
+       * Nothing else is worn over the picture now. The chip saying what the
+       * file is has gone to the caption, and the one saying the drive is away
+       * with it — the mark refuses with that reason in its own tooltip, and the
+       * tick beside it does too, which is where the answer is actually needed.
+       */
+      actions={action}
       label={file.film?.title ?? file.name}
       index={index}
       selecting={selecting}
@@ -707,17 +767,15 @@ export function CleanupList({
    * reads as a list you cannot act on at all. It also put the count at the top
    * ("Delete 6 leftovers") in front of six rows that appeared to offer nothing.
    *
-   * A word rather than a mark on the artwork, unlike everything else these tiles
-   * wear. This is the one irreversible thing in the app, and a cross in the
-   * corner of a poster is the gesture that takes a film off a wishlist — the
-   * same shape for "I have changed my mind about wanting this" and "the original
-   * is gone forever" is the one economy this app cannot make.
+   * The word is the row's. On a tile it is a bin over the artwork — see
+   * `BinIcon` for why it is a bin and not the cross every other mark on a
+   * poster in this app is.
    *
    * A factory rather than a component: it closes over the dialog and the
    * in-flight state, and a component declared inside a render is a component
    * that remounts on every keystroke.
    */
-  const deleteButton = (file: CleanupFile, full: boolean) => (
+  const deleteButton = (file: CleanupFile, art: boolean) => (
     <button
       type="button"
       onClick={(e) => {
@@ -726,14 +784,21 @@ export function CleanupList({
         setAsking(file);
       }}
       disabled={busy || file.offline}
+      aria-label={art ? `Delete ${file.name}` : undefined}
       title={
         file.offline
           ? "The drive this file lives on is not connected"
-          : undefined
+          : art
+            ? "Delete this file"
+            : undefined
       }
-      className={`${BUTTON.danger} ${full ? "w-full" : ""}`}
+      className={
+        art
+          ? `${TILE_MARK} hover:text-red-400 disabled:opacity-40`
+          : BUTTON.danger
+      }
     >
-      Delete
+      {art ? <BinIcon /> : "Delete"}
     </button>
   );
 

@@ -54,13 +54,14 @@ export default function manifest(): MetadataRoute.Manifest {
     // The pages worth a right-click on the dock icon. Deliberately short: the
     // three the app is opened *for*, not a copy of the rail.
     //
-    // Jobs in place of Downloads, which is not a page any more: what is being
-    // fetched is on the queue with the things to fetch, and the third reason to
-    // open this app is the work it is doing to the files you already have.
+    // Downloads rather than Jobs, and it took losing the page to see why: "is
+    // that film here yet" is the question this app is opened for most, and for
+    // the stretch when what was arriving was drawn at the foot of two other
+    // pages there was no one address to answer it. There is again.
     shortcuts: [
       { name: "Library", url: "/library" },
-      { name: "Queue", url: "/upgrades" },
-      { name: "Jobs", url: "/jobs" },
+      { name: "Wishlist", url: "/wishlist" },
+      { name: "Downloads", url: "/downloads" },
     ],
   };
 }

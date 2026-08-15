@@ -7,12 +7,32 @@
  * heading is a thing this app has an opinion about, and two copies of that
  * opinion is one more than it can hold.
  */
-export function SectionHeading({ label }: { label: string }) {
+export function SectionHeading({
+  label,
+  action,
+}: {
+  label: string;
+  /**
+   * What belongs on the heading's own line, at the end of it.
+   *
+   * A count, where the section holds a number worth saying before you have
+   * scrolled it — which is what the wishlist's "Not found" carries, since the
+   * total at the foot of the page is the whole list rather than that section's
+   * share of it.
+   */
+  action?: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-2">
-      <h2 className="font-display text-lg font-semibold tracking-tight">
-        {label}
-      </h2>
+      {/* The row is always there and collapses to the name's own height when
+          nothing is in it, so a heading with no controls sits exactly where it
+          sat before this slot existed. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-display text-lg font-semibold tracking-tight">
+          {label}
+        </h2>
+        {action}
+      </div>
       <div aria-hidden className="rule-head" />
     </div>
   );
@@ -37,15 +57,27 @@ export function SectionHeading({ label }: { label: string }) {
 export function CollapsibleSection({
   label,
   count,
+  open,
   children,
 }: {
   label: string;
   /** How many rows are inside, said on the line that stands in for them. */
   count?: number;
+  /**
+   * Whether it starts open, for the page whose record is half the subject.
+   *
+   * Shut is the rule and the reason is above: it holds wherever the log is an
+   * appendix to something you actually came for. The downloads page is the
+   * exception — what has arrived answers "is that film here yet" as squarely as
+   * what is still arriving, so its history opens open. Uncontrolled either way:
+   * this is the state it opens in, not a state it is held in, so the arrow
+   * still works.
+   */
+  open?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <details className="ruled group">
+    <details open={open} className="ruled group">
       <summary className="flex cursor-pointer list-none flex-col gap-2 [&::-webkit-details-marker]:hidden">
         {/* The band is the heading's own, held to the width the rows below
             bleed to: the name sits exactly where an unopenable section's name

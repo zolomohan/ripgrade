@@ -599,3 +599,49 @@ export const FIELD = {
   select:
     "cursor-pointer appearance-none rounded-full border border-line bg-transparent py-1 pr-7 pl-3 text-xs outline-none transition-colors focus:border-line-strong",
 };
+
+/**
+ * One labelled fact, in the ruled block this app's dialogs set a table of facts
+ * in.
+ *
+ * Written twice before this — once for the release dialog and once for the
+ * conversion dialog, which copied it and then fixed it. Two things came out of
+ * that fix and both are here: a fixed label column, so five labels of five
+ * lengths do not give their values five different left edges; and `.rule-l`
+ * between them, the app's own hairline fading out at both ends, where a plain
+ * border was the one hard line in a dialog built out of soft ones.
+ *
+ * Nothing renders for an absent value, so a caller can write the whole table
+ * out and let the facts it does not have fall away.
+ */
+export function Fact({
+  label,
+  value,
+  mono,
+  title,
+}: {
+  label: string;
+  value?: string;
+  /** A file or release name: monospace, and wrapped rather than cut. */
+  mono?: boolean;
+  title?: string;
+}) {
+  if (!value) return null;
+
+  return (
+    /* `items-stretch` rather than baselines, so the rule between the two runs
+       the whole height of the row — on a release name that is three lines, and
+       a divider that stopped after the first would read as a stray tick. */
+    <div className="card-band flex items-stretch px-3 py-2">
+      <dt className="w-32 shrink-0 pr-4 text-xs opacity-50">{label}</dt>
+      <dd
+        className={`rule-l min-w-0 flex-1 pl-4 text-right text-xs ${
+          mono ? "font-mono break-all" : "break-words tabular-nums"
+        }`}
+        title={title}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}

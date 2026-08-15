@@ -139,6 +139,7 @@ import {
   setQbConfig,
   setStopSeeding,
   type DownloadEntry,
+  type DownloadSource,
   type FilmContext,
 } from "@/lib/qbittorrent";
 import {
@@ -2268,10 +2269,12 @@ export async function stopUpgradeSweep(): Promise<SweepJob> {
  * unasked and should stay cheap. This one was asked for, and the asking is what
  * pays for the searches.
  *
- * Reached from the Scan pill at the end of the queue page's listing bar — see
- * app/upgrades/rescan-button.tsx — which is the page's only way to ask for
- * anything. Both halves of the queue are refreshed by one press: `startSweep`
- * passes the force through to the wishlist pass as well.
+ * Reached from the Scan pill at the head of the wishlist page — see
+ * app/rescan-button.tsx, the app's one way to ask for a pass on demand. Both
+ * halves are refreshed by the one press even though only one of them is on
+ * that page: `startSweep` passes the force through to the films you own as
+ * well as to the wants, and what it finds for those lands on the library
+ * shelf under "Upgrades found".
  */
 export async function rescanUpgradeQueue(): Promise<SweepJob> {
   return sweep(true);
@@ -2429,17 +2432,18 @@ export async function disconnectQb(): Promise<void> {
 }
 
 /**
- * Hands a release to qBittorrent, with where to put it and which film it is
- * for — the button that sends knows both, and nothing downstream can recover
- * either from a bare magnet.
+ * Hands a release to qBittorrent, with where to put it, which film it is for,
+ * and which list it was fetched off — the button that sends knows all three,
+ * and nothing downstream can recover any of them from a bare magnet.
  */
 export async function sendToQb(
   magnet: string,
   savePath?: string,
   film?: FilmContext,
+  source?: DownloadSource,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await addMagnet(magnet, { savePath, film });
+    await addMagnet(magnet, { savePath, film, source });
     // The queue drops what is being fetched, and the row this was sent from is
     // on screen at this moment — so the page it left is re-read now rather
     // than on whatever navigation happens to come next.

@@ -88,6 +88,7 @@ export function PosterTile({
   facts,
   factsTitle,
   mark,
+  remove,
   badge,
   note,
   actions,
@@ -151,6 +152,18 @@ export function PosterTile({
   factsTitle?: string;
   /** Top left: whether this one is chosen. */
   mark?: React.ReactNode;
+  /**
+   * Top left as well: the cross that takes this one out of the list it is in.
+   *
+   * The same corner as `mark` and never at the same time — one is a tick that
+   * only exists while a grid is being ticked, the other a control on a grid
+   * that has no ticking. The corner is not shared out of thrift: it is where
+   * this app has always put the mark that says what a tile is *in* rather than
+   * what it is, and a cross that moved to the other corner on one shelf would
+   * be a control you have to find twice. See `RemoveButton` in
+   * app/tile-button.tsx, which is what belongs here.
+   */
+  remove?: React.ReactNode;
   /** Top right: the reading this list is ranked by. */
   badge?: React.ReactNode;
   /** Bottom left: what is happening to it, in a word. */
@@ -233,7 +246,7 @@ export function PosterTile({
    * its sibling. The wishlist settled this trade; it is written down here so the
    * next tile does not have to settle it again.
    */
-  const controls = Boolean(mark || actions);
+  const controls = Boolean(mark || remove || actions);
 
   const cover =
     href && controls ? (
@@ -294,6 +307,12 @@ export function PosterTile({
           {mark}
         </div>
       )}
+
+      {/* Positioned by the button itself, which is what `RemoveButton` is: it
+          carries the corner and the hover with it, so the same cross sits in
+          the same place whether a tile is built out of this component or by
+          hand — see the wishlist's, which is not. */}
+      {remove}
 
       {badge && <div className="absolute top-2 right-2 z-10">{badge}</div>}
 

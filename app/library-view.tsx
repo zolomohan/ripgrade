@@ -1,23 +1,35 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
 
 import { openIssues, titleKey } from "@/lib/derive";
 import type { LibraryItem } from "@/lib/library";
+import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
+import { ago } from "./format";
+import { useLingering } from "./modal";
+import { ReleaseSearchModal } from "./release-search";
+import { rememberListing } from "./return-to";
+import { ReleaseDetails, ReleaseMark } from "./release-details";
 import { Bar, HelpTip, ICONS, MenuItem, Popover } from "./controls";
 import { PosterTile, TILE_GRID } from "./poster-tile";
-import { STATUS_THEME } from "./score-circle";
-import { movieId, posterName } from "@/lib/routes";
+import { ScoreBadge, SCORE_PLATE, STATUS_THEME } from "./score-circle";
+import { compareId, movieId, posterName } from "@/lib/routes";
 
 /**
  * Duplicate detection needs to compare films against each other, which a
  * per-item predicate cannot do — so the set is computed once and handed in.
  * "Added in the last scan" is the same shape of question: it depends on the
  * newest timestamp in the library, not on any one film.
+ *
+ * The upgrades are the same shape again and arrive from further away still —
+ * the sweep's own table, read on the server. A film cannot tell you whether
+ * something better is seeding; only the last pass over the indexers can.
  */
 type FilterContext = {
   duplicatePaths: Set<string>;
   recentPaths: Set<string>;
+  upgrades: Map<string, UpgradeQueueItem>;
 };
 
 type Option = {
@@ -220,14 +232,30 @@ function matches(
 const GROUPS: {
   key: string;
   label: string;
-  of: (m: LibraryItem) => string;
+  of: (m: LibraryItem, ctx: FilterContext) => string;
   /** Fixed order for the buckets; anything unlisted sorts alphabetically after. */
   order?: string[];
 }[] = [
   {
     key: "verdict",
     label: "Verdict",
-    of: (m) => {
+    of: (m, ctx) => {
+      /*
+       * A release actually waiting outranks every opinion under it.
+       *
+       * The three below are readings of the file on your drive — how far short
+       * of its best it falls, and whether there is a disc to say so. This one
+       * is not a reading at all: it is the answer, found, sitting on an indexer
+       * with a magnet beside it. A film in this bucket has stopped being a
+       * recommendation and become a thing to press.
+       *
+       * Which is why it takes the film out of "Upgrade recommended" rather than
+       * standing beside it. Those two sections would have held the same films
+       * saying two different things — one that the copy could be better, one
+       * that a better one has been found — and the second is the whole of the
+       * first plus somewhere to go.
+       */
+      if (ctx.upgrades.has(m.path)) return "Upgrades found";
       if (m.status === "Must Upgrade") return "Must upgrade";
       if (m.status === "Upgrade Recommended" || m.status === "Good")
         return "Upgrade recommended";
@@ -237,6 +265,7 @@ const GROUPS: {
       return "Best available";
     },
     order: [
+      "Upgrades found",
       "Must upgrade",
       "Upgrade recommended",
       "Best available",
@@ -323,7 +352,26 @@ function size(bytes: number) {
  * every shelf disagrees about what its reading is and every one of them is
  * right — the queue's is a dial, the audio tab's is a size in green.
  */
-function Card({ movie, index }: { movie: LibraryItem; index: number }) {
+function Card({
+  movie,
+  upgrade,
+  onRelease,
+  index,
+}: {
+  movie: LibraryItem;
+  /**
+   * The better copy the sweep found for this film, where there is one.
+   *
+   * Present on any card whose film has one, in every grouping — not only in the
+   * verdict shelf's own section. Which section a film happens to be under is a
+   * question about how you asked to read the shelf; whether a release is
+   * waiting for it is a fact about the film, and a button that vanished when
+   * you regrouped would be answering the wrong question.
+   */
+  upgrade?: UpgradeQueueItem;
+  onRelease: (item: UpgradeQueueItem) => void;
+  index: number;
+}) {
   const theme = STATUS_THEME[movie.status];
   const open = openIssues(movie);
 
@@ -342,12 +390,25 @@ function Card({ movie, index }: { movie: LibraryItem; index: number }) {
       year={movie.year}
       facts={[movie.resolution, movie.releaseType]}
       badge={
-        <span
-          className={`rounded-full bg-background/85 px-1.5 py-0.5 font-score text-[11px] font-semibold tabular-nums backdrop-blur ${theme.text}`}
-          title={`${movie.status} · ${movie.scores.overall} of 100`}
-        >
-          {movie.scores.overall}
-        </span>
+        /* The library's reading, and beside it what the waiting release would
+           add to it — the queue's own pairing, in the queue's own order: the
+           gain leads and the score keeps the corner every shelf in the app
+           keeps its reading in. See `ReleaseTile` in upgrades-view.tsx. */
+        <div className="flex items-center gap-1">
+          {upgrade && upgrade.hit.delta > 0 && (
+            <span
+              className={`${SCORE_PLATE} text-emerald-600 dark:text-emerald-400`}
+              title={`A release was found that would score ${upgrade.hit.score} — ${upgrade.hit.delta} more than this copy`}
+            >
+              +{upgrade.hit.delta}
+            </span>
+          )}
+          <ScoreBadge
+            score={movie.scores.overall}
+            theme={theme}
+            title={`${movie.status} · ${movie.scores.overall} of 100`}
+          />
+        </div>
       }
       note={
         open.length > 0 ? (
@@ -355,6 +416,29 @@ function Card({ movie, index }: { movie: LibraryItem; index: number }) {
             {open.length} {open.length === 1 ? "issue" : "issues"}
           </span>
         ) : undefined
+      }
+      /*
+       * The queue's whole offer, on the shelf where the film lives, behind one
+       * mark.
+       *
+       * The poster opens the film, which is what a library card is for, so the
+       * release cannot have the click. It had two marks for a moment — an arrow
+       * that sent the magnet and a magnifier that opened the release — which
+       * was two buttons in the corner of a picture for one subject, and the
+       * quicker of them was the one you could not take back. Now the arrow
+       * opens the dialog and the dialog holds everything: the release's name,
+       * size, seeders and indexer, the way to every other release of the film,
+       * the indexer's own page, the comparison, and the button that actually
+       * fetches. See `ReleaseMark`.
+       *
+       * Only where there is a release. A shelf of four hundred posters each
+       * wearing a mark would be a shelf you have to read before you can look at
+       * it; this appears on the handful of films something is waiting for.
+       */
+      actions={
+        upgrade && (
+          <ReleaseMark title={movie.title} onOpen={() => onRelease(upgrade)} />
+        )
       }
       href={`/film/${movieId(movie.path)}`}
       label={movie.title}
@@ -364,11 +448,25 @@ function Card({ movie, index }: { movie: LibraryItem; index: number }) {
 }
 
 /** The shelf, for the whole library or for one bucket of it. */
-function Films({ films }: { films: LibraryItem[] }) {
+function Films({
+  films,
+  upgrades,
+  onRelease,
+}: {
+  films: LibraryItem[];
+  upgrades: Map<string, UpgradeQueueItem>;
+  onRelease: (item: UpgradeQueueItem) => void;
+}) {
   return (
     <div className={TILE_GRID}>
       {films.map((movie, i) => (
-        <Card key={movie.path} movie={movie} index={i} />
+        <Card
+          key={movie.path}
+          movie={movie}
+          upgrade={upgrades.get(movie.path)}
+          onRelease={onRelease}
+          index={i}
+        />
       ))}
     </div>
   );
@@ -376,12 +474,34 @@ function Films({ films }: { films: LibraryItem[] }) {
 
 export function LibraryView({
   movies,
+  upgrades,
+  jackettReady,
   tabs,
 }: {
   movies: LibraryItem[];
+  /** The better copies the sweep found, by the path of the film they beat. */
+  upgrades: UpgradeQueueItem[];
+  /** Whether the "every release" search has anywhere to ask. */
+  jackettReady: boolean;
   /** The shelf switch, at the head of this shelf's own row of controls. */
   tabs: React.ReactNode;
 }) {
+  const router = useRouter();
+
+  /**
+   * Which film's found release is open, and which film's whole field is.
+   *
+   * The queue's two dialogs, on the queue's own terms: the first is "what did
+   * the sweep find", which is one release read whole, and the second is "show
+   * me everything", which is a search. Opening the second closes the first — a
+   * dialog stacked on a dialog is a dialog you cannot see the edge of.
+   */
+  const [reading, setReading] = useState<UpgradeQueueItem | null>(null);
+  const read = useLingering(reading);
+  const [finding, setFinding] = useState<UpgradeQueueItem | null>(null);
+  // Not `shown`: that name belongs to the films this shelf is drawing.
+  const searching = useLingering(finding);
+
   // The URL is the single source of truth, so filters survive navigating into a
   // film and back. `history.replaceState` syncs `useSearchParams` without a
   // server round-trip.
@@ -465,7 +585,12 @@ export function LibraryView({
       : new Set(batch.map((m) => m.path));
   })();
 
-  const ctx: FilterContext = { duplicatePaths: duplicates, recentPaths };
+  const byPath = new Map(upgrades.map((item) => [item.path, item]));
+  const ctx: FilterContext = {
+    duplicatePaths: duplicates,
+    recentPaths,
+    upgrades: byPath,
+  };
 
   // Narrowing this shelf is what the filters are for; finding one film by name
   // is the floating search's job, on this page and every other.
@@ -485,7 +610,7 @@ export function LibraryView({
 
     const map = new Map<string, LibraryItem[]>();
     for (const movie of shown) {
-      const name = grouping.of(movie);
+      const name = grouping.of(movie, ctx);
       const bucket = map.get(name);
       if (bucket) bucket.push(movie);
       else map.set(name, [movie]);
@@ -671,7 +796,7 @@ export function LibraryView({
           space a header and its rule would have taken is kept anyway. */}
       {shown.length > 0 && grouping.key === "none" && (
         <div className="pt-13">
-          <Films films={shown} />
+          <Films films={shown} upgrades={byPath} onRelease={setReading} />
         </div>
       )}
 
@@ -694,7 +819,7 @@ export function LibraryView({
                   the films on, and the space that comes with it. */}
               <div aria-hidden className="rule-head" />
             </div>
-            <Films films={films} />
+            <Films films={films} upgrades={byPath} onRelease={setReading} />
           </section>
         ))}
 
@@ -709,6 +834,59 @@ export function LibraryView({
           </p>
           <p>{size(shown.reduce((sum, m) => sum + m.sizeBytes, 0))}</p>
         </div>
+      )}
+
+      {/* What the sweep found, read whole — the same dialog the queue opens,
+          with the same three ways onward and the same button that fetches it.
+          Nothing about a release is different for being reached from the shelf
+          the film sits on. */}
+      {read && (
+        <ReleaseDetails
+          open={reading !== null}
+          title={read.title}
+          year={read.year}
+          poster={read.poster}
+          posterRemote={read.posterRemote}
+          posterVersion={read.artAt}
+          hit={read.hit}
+          gain={read.hit.delta}
+          currentScore={read.currentScore}
+          checkedLabel={`Checked ${ago(read.checkedAt)}`}
+          source="upgrade"
+          film={{ href: `/film/${movieId(read.path)}` }}
+          onward={{
+            // "Compare", not "Compare copies": it stands beside Download now,
+            // and a two-word button next to a one-word one reads as the longer
+            // of two options rather than the lighter of them.
+            label: "Compare",
+            go: () => {
+              // The crumb the queue's own rows leave, for the same reason: the
+              // delegated listener in return-to.tsx only sees anchors, and this
+              // navigates from a handler.
+              rememberListing();
+              router.push(`/compare/${compareId(read.compareKey)}`);
+            },
+          }}
+          onMore={() => {
+            setReading(null);
+            setFinding(read);
+          }}
+          onClose={() => setReading(null)}
+        />
+      )}
+
+      {/* And the rest of the field, when one release is not the answer. */}
+      {searching && (
+        <ReleaseSearchModal
+          open={finding !== null}
+          subject={{ kind: "movie", path: searching.path }}
+          title={searching.title}
+          subtitle={searching.year ? String(searching.year) : undefined}
+          posterPath={searching.posterRemote}
+          source="upgrade"
+          configured={jackettReady}
+          onClose={() => setFinding(null)}
+        />
       )}
     </div>
   );

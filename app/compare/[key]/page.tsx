@@ -554,6 +554,12 @@ export default async function ComparePage({
                           title: keep.title,
                           posterPath: keep.art.poster,
                         }}
+                        // This page exists because there is a copy on the
+                        // drive to compare against, so a fetch from it is an
+                        // upgrade by definition — and the queue's upgrades
+                        // tab, which is where you came from, is where it
+                        // should report.
+                        source="upgrade"
                         pill
                       />
                     ) : hit.detailsUrl ? (

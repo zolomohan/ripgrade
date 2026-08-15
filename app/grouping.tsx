@@ -120,11 +120,19 @@ export function Grouped<T>({
   );
 
   return (
-    // Further apart than rows in a list are, so a heading reads as belonging to
-    // what follows it rather than to the section it just ended.
-    <div className="flex flex-col gap-6">
+    /* Further apart than rows in a list are, so a heading reads as belonging to
+       what follows it rather than to the section it just ended — and further
+       apart than that gap was at first. A cut list is read section by section,
+       and at six the last poster of one bucket and the heading of the next were
+       closer together than two posters within a bucket, which made the rule
+       under a name look like a rule over the row above it.
+
+       The same argument inside: `gap-5` under the rule, so the heading sits
+       nearer what it names than what it follows. That is the whole of what
+       these two numbers have to say — a heading belongs downwards. */
+    <div className="flex flex-col gap-14">
       {buckets.map(([name, bucket], i) => (
-        <section key={name} className="flex flex-col gap-1">
+        <section key={name} className="flex flex-col gap-5">
           <SectionHead label={name} note={note?.(bucket)} />
           {children(bucket, before[i])}
         </section>

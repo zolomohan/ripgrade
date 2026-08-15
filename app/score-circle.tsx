@@ -127,6 +127,84 @@ export function ScoreDial({
   );
 }
 
+/**
+ * The same score as a plate, which is what a poster wears.
+ *
+ * The library has read this way from the beginning: two digits in the top-right
+ * corner, in the verdict's colour, on the frosted plate that is the one thing
+ * this app allows over artwork — see app/poster-tile.tsx, where the rule is
+ * written down. The shows shelf drew the same badge from its own copy of the
+ * markup, and the queue drew a forty-pixel ring on a white disc instead, so
+ * three shelves of posters reported three different-looking numbers on the same
+ * hundred-point scale.
+ *
+ * This is that badge, once. The colour still comes from the caller, because
+ * what a number means is the shelf's own business — the library grades a film,
+ * the queue grades a job, and `queueTheme` says why they disagree.
+ *
+ * Sized for the corner and nothing else. Where a score is the subject rather
+ * than a mark on a picture — a film's own page, a release read whole — the ring
+ * is still the right drawing, and `ScoreDial` above is still it.
+ */
+/**
+ * The plate itself, for the few figures that stand beside a score rather than
+ * being one.
+ *
+ * The queue's gain is the case: `+11` belongs next to the 94 it is part of, and
+ * a chip in the caption font pinned to a pill in the score face reads as two
+ * unrelated marks that happen to touch. Same shape, same weight, same numerals —
+ * only the colour is its own, because green there means "this much better"
+ * rather than "good enough".
+ *
+ * Exported as the classes rather than as a component: what goes on it is not a
+ * score, so `ScoreBadge` cannot draw it without pretending otherwise.
+ */
+const PLATE_FACE =
+  "rounded-full bg-background/85 font-score text-[11px] font-semibold tabular-nums backdrop-blur";
+
+export const SCORE_PLATE = `${PLATE_FACE} px-1.5 py-0.5`;
+
+/**
+ * The same plate with room around what it holds, for a figure that is not two
+ * digits.
+ *
+ * A score is always 0 to 100 and the tight plate was cut to fit it. "12.5 GB"
+ * is three times as wide with a space and a unit in it, and at the same
+ * padding it reads as a label crammed into a badge rather than a figure set on
+ * one. Written as a second size rather than a padding tacked on at the point of
+ * use, because two padding utilities on one element are settled by the order
+ * Tailwind happens to emit them in and not by which was written last.
+ */
+export const SCORE_PLATE_ROOMY = `${PLATE_FACE} px-2 py-1`;
+
+export function ScoreBadge({
+  score,
+  theme = scoreTheme(score),
+  title,
+  srLabel,
+}: {
+  score: number;
+  /** Overridden where a status, or a list's own rule, decides the colour. */
+  theme?: { stroke: string; text: string };
+  title?: string;
+  /**
+   * What the number means, where the number alone does not say. Given one, the
+   * digits are hidden from a screen reader and this is read instead — the same
+   * trade `ScoreDial` makes, so "94" is never announced without its scale.
+   */
+  srLabel?: string;
+}) {
+  return (
+    <span
+      className={`${SCORE_PLATE} ${theme.text}`}
+      title={title ?? `${score} of 100`}
+    >
+      <span aria-hidden={srLabel ? true : undefined}>{score}</span>
+      {srLabel && <span className="sr-only">{srLabel}</span>}
+    </span>
+  );
+}
+
 /** The same ring for a film, where the verdict rather than the number colours it. */
 export function ScoreCircle({ movie }: { movie: LibraryItem }) {
   return (

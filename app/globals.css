@@ -2006,6 +2006,35 @@ html {
     background: color-mix(in srgb, var(--foreground) 30%, transparent);
     box-shadow: none;
   }
+
+  /*
+   * The same bar laid on a photograph rather than on a surface this app
+   * painted — the foot of a poster whose film is being fetched.
+   *
+   * Everything above is drawn in the theme's own ink: a channel a shade off the
+   * page, a fill in the foreground colour, and light in that colour under it.
+   * None of that survives a scrim over artwork. In the light theme it is a
+   * near-black bar in a five-percent-black channel, laid over a dark gradient —
+   * present in the DOM, six pixels tall, and invisible.
+   *
+   * So the pair goes white in both themes, which is the rule every other mark
+   * over artwork already keeps — see app/tile-button.tsx. The light goes white
+   * with it: a glow is the fill's own colour spilling onto its track, and a
+   * dark pool under a white bar reads as a smudge rather than as light.
+   */
+  .bar-track.bar-over {
+    background: rgb(255 255 255 / 0.3);
+  }
+
+  .bar-over .bar-fill {
+    background: rgb(255 255 255);
+    box-shadow: 0 2px 12px -2px rgb(255 255 255 / 0.5);
+  }
+
+  .bar-over .bar-fill.bar-fill-idle {
+    background: rgb(255 255 255 / 0.5);
+    box-shadow: none;
+  }
 }
 
 /*

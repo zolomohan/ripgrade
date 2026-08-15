@@ -58,6 +58,15 @@ export type TaskFilm = {
   year?: number;
   /** "S01E02" and the episode's own title, where a file is an episode. */
   episode?: string;
+  /**
+   * The number on its own, for where there is room for one line and not two.
+   *
+   * Split out rather than cut back off `episode` at the point of use: what is
+   * between the two halves there is a separator chosen for reading, and code
+   * that splits a display string on it is code that breaks the day the
+   * separator changes.
+   */
+  episodeCode?: string;
   fileName: string;
   poster?: string;
   /** The TMDb path behind it, for when the drive holding the file is away. */
@@ -119,10 +128,13 @@ export type AudioTask = TaskFilm & {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-const episodeLabel = (e: EpisodeInfo) => {
-  const code = `S${pad(e.season)}E${pad(e.episode)}${
+const episodeCode = (e: EpisodeInfo) =>
+  `S${pad(e.season)}E${pad(e.episode)}${
     e.episodeEnd ? `-E${pad(e.episodeEnd)}` : ""
   }`;
+
+const episodeLabel = (e: EpisodeInfo) => {
+  const code = episodeCode(e);
   return e.episodeTitle ? `${code} · ${e.episodeTitle}` : code;
 };
 
@@ -197,6 +209,7 @@ const filmOf = (
   title: item.episode ? item.episode.showTitle : item.title,
   year: item.episode ? undefined : item.year,
   episode: item.episode ? episodeLabel(item.episode) : undefined,
+  episodeCode: item.episode ? episodeCode(item.episode) : undefined,
   fileName: item.fileName,
   poster: art.poster,
   posterRemote: art.posterRemote,

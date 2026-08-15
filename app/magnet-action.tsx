@@ -11,7 +11,7 @@ import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
 import { OVER_ART_SHADOW } from "@/app/tile-button";
 import type { DirListing } from "@/lib/browse";
-import type { FilmContext } from "@/lib/qbittorrent";
+import type { DownloadSource, FilmContext } from "@/lib/qbittorrent";
 
 /**
  * The download control, wherever a release appears.
@@ -19,13 +19,14 @@ import type { FilmContext } from "@/lib/qbittorrent";
  * With qBittorrent connected it is a real handover: the click opens a small
  * dialog asking where the download should land — qBittorrent's own default,
  * or any library folder, remembered for next time — and picking one sends it.
- * The mark turns into a tick; progress lives under the queue's Wishlist tab,
- * in the same list the release was picked off. Without a client, the same
+ * The mark turns into a tick; progress appears under the queue tab the release
+ * was picked off, above the list it just left. Without a client, the same
  * control is the plain magnet link it always was.
  *
- * `film` rides along so the log knows which film the release was fetched
- * for — the transfer list shows the poster, and a bare magnet could never
- * say.
+ * `film` and `source` ride along because the send is the only moment either is
+ * known: the log shows the poster of the film a release was fetched for, and
+ * draws the row under the list it was fetched from. A bare magnet says
+ * neither.
  */
 
 const CIRCLE =
@@ -63,7 +64,16 @@ const SIZES = {
 /** The last destination picked, offered first the next time. */
 const LAST_PATH_KEY = "ripgrade:downloadPath";
 
-function DownArrow({
+/**
+ * The arrow this app fetches with, wherever fetching is offered.
+ *
+ * Exported because it is worn by marks that do not send anything themselves:
+ * the tiles on the library shelf and the wishlist open the release dialog with
+ * it, and the dialog is where the send actually happens. The same glyph in both
+ * places is what makes that read as one gesture in two steps rather than two
+ * different buttons. See `ReleaseMark`.
+ */
+export function DownArrow({
   className,
   strokeWidth = "1.8",
 }: {
@@ -189,16 +199,36 @@ function Check({
 export function MagnetAction({
   magnet,
   film,
+  source,
   size = "sm",
   pill = false,
+  full = false,
   art = false,
 }: {
   magnet: string;
   /** Which film this release is for, for the download log's poster. */
   film?: FilmContext;
+  /**
+   * And which of the queue's two lists it was pressed on, where the control
+   * sits on one of them — that is the tab the transfer is drawn under.
+   *
+   * Left unset everywhere else. A release fetched from a film's own page or
+   * from a search belongs to no tab, and the log answers for those by asking
+   * the library; see `DownloadEntry.source`.
+   */
+  source?: DownloadSource;
   size?: keyof typeof SIZES;
   /** The compare page's filled button; circles everywhere else. */
   pill?: boolean;
+  /**
+   * And that button given the width of what it stands in.
+   *
+   * For a dialog whose whole subject is this one press — the release dialog
+   * asks "fetch this or not", and a pill hugging its own word in the corner is
+   * what a button looks like when it is one option among several. `pill` only:
+   * a mark over artwork is a circle, and a circle stretched is not one.
+   */
+  full?: boolean;
   /** And no ring at all, where it is worn over a poster — see `OVER_ART`. */
   art?: boolean;
 }) {
@@ -321,7 +351,7 @@ export function MagnetAction({
     return new Promise<{ ok: true } | { ok: false; error: string }>(
       (resolve) => {
         startTransition(async () => {
-          const result = await sendToQb(magnet, savePath, film);
+          const result = await sendToQb(magnet, savePath, film, source);
           if (result.ok) {
             setSent(true);
             setOpen(false);
@@ -350,7 +380,9 @@ export function MagnetAction({
       onClick={begin}
       disabled={pending}
       title={label}
-      className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm transition-opacity disabled:opacity-60 ${
+      className={`inline-flex items-center justify-center gap-2 rounded-full px-4 py-1.5 text-sm transition-opacity disabled:opacity-60 ${
+        full ? "w-full" : ""
+      } ${
         sent
           ? "bg-emerald-600 text-white dark:bg-emerald-500"
           : error

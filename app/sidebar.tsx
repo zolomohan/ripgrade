@@ -85,19 +85,21 @@ const PAGES = [
  * are — the indexers are one of the places that window asks now.
  */
 const ACQUIRING = [
-  // Everything there is to go and fetch and everything being fetched, on one
-  // page now: better copies of what you have, the wants something has turned
-  // up for, and the transfers those two send.
-  //
-  // The arrow lands rather than rises. It was pointing up off the shelf while
-  // this was a list of things standing above what you hold, and the arrow that
-  // came down was the Downloads page's, one row below — with that page folded
-  // into this one, the mark that survives is the one for what actually happens
-  // here. A rail of two arrows in opposite directions for one destination is a
-  // rail that has to be read twice.
+  /*
+   * What is actually coming down the wire, whichever list sent it.
+   *
+   * Queue stood above this for a long time — the better copies the sweep had
+   * found, as a page of releases. It has gone, and not because it was wrong:
+   * everything on it was about a film already on your shelf, which is where it
+   * is drawn now. See the "Upgrades found" section in app/library-view.tsx.
+   *
+   * That leaves one entry where there were two, and it is the one that was
+   * always a place rather than a list — a fetch is a thing happening, and this
+   * is where you go to watch it happen. See app/downloads/downloads-view.tsx.
+   */
   {
-    href: "/upgrades",
-    label: "Queue",
+    href: "/downloads",
+    label: "Downloads",
     icon: "M12 4v11m0 0 4-4m-4 4-4-4M4 20h16",
   },
   // The work itself, while it runs and after it has. A clock face: what this
@@ -135,9 +137,11 @@ const TOOLS = [
 ];
 
 /**
- * A film, an episode or a show is somewhere inside the library, not a place
- * of its own. A comparison is the queue's page: its rows are the one thing
- * that opens it, and the question it answers is the queue's question.
+ * A film, an episode or a show is somewhere inside the library, not a place of
+ * its own — and so is a comparison, now. It belonged to the queue while the
+ * queue existed, because the queue's rows were the one thing that opened it;
+ * what opens it now is a card on the shelf, and the two copies it weighs
+ * against each other are both library files.
  *
  * The dashboard is the exception that has to be written out: it is the only
  * href that is a prefix of every other one, so the fallback below would light
@@ -150,10 +154,9 @@ const isActive = (href: string, pathname: string) =>
       ? pathname.startsWith("/library") ||
         pathname.startsWith("/film") ||
         pathname.startsWith("/episode") ||
-        pathname.startsWith("/show")
-      : href === "/upgrades"
-        ? pathname.startsWith("/upgrades") || pathname.startsWith("/compare")
-        : pathname.startsWith(href);
+        pathname.startsWith("/show") ||
+        pathname.startsWith("/compare")
+      : pathname.startsWith(href);
 
 /**
  * Between two groups of links: weighted where the labels begin and trailing off

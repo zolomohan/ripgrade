@@ -18,9 +18,12 @@ import { Spinner } from "@/app/spinner";
  * but wait out the rest of the day.
  *
  * This is that sweep with the freshness rule off. It is the page's only
- * trigger and it is deliberately the loud kind — a filled pill, top corner,
- * where the shelf keeps Scan library — because it is the same bargain: a pass
- * over everything, costing real time at the indexers, that you asked for.
+ * trigger, and it wears the outline rather than the fill: what it starts is a
+ * pass over everything, costing real time at the indexers, but it is a way of
+ * refreshing the page you are already on rather than the thing the page is for.
+ * The filled pill is the app's word for the decision a screen is asking you to
+ * make, and spending it here would put the loudest button on the page beside a
+ * list whose rows are the actual work.
  *
  * Progress belongs to the rail, like every other job here — the phase, the
  * count, the film in hand, and the way to stop it. So a running sweep gets no
@@ -36,7 +39,7 @@ export function RescanButton({
   jackettReady: boolean;
   /**
    * What the button says when it is not running. "Scan" reads correctly at the
-   * head of the queue page, where the page itself is the subject; on a card
+   * head of the wishlist, where the page itself is the subject; on a card
    * that names the pass, it needs to be the verb for that pass instead.
    */
   label?: string;
@@ -76,7 +79,7 @@ export function RescanButton({
       // controls beside it moving. Faded while a sweep runs, because it really
       // is unpressable then — the state is disabled, and dressing it up as
       // live would be the button lying about what a click would do.
-      className={`flex ${CONTROL_H} w-32 shrink-0 items-center justify-center gap-2 rounded-full bg-foreground px-4 text-sm text-background transition-opacity hover:opacity-90 disabled:opacity-40`}
+      className={`flex ${CONTROL_H} w-32 shrink-0 items-center justify-center gap-2 rounded-full border border-line px-4 text-sm transition-colors hover:bg-surface-strong disabled:opacity-40`}
     >
       {busy ? (
         <Spinner />

@@ -1,14 +1,32 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Art } from "./art";
 import { Bars, Card, Coverage, Stat } from "./charts";
-import { count, size } from "./format";
-import { useEntrance } from "./return-to";
+import {
+  checksFirst,
+  doviRefusal,
+  DoviConvertConfirm,
+  DoviNotices,
+  EL_LABEL,
+  EL_TITLE,
+  useDoviConvert,
+} from "./dovi-convert";
+import { ago, count, size } from "./format";
+import { AudioPicker } from "./jobs/audio-picker";
+import { DoviDetails } from "./jobs/dovi-details";
+import { useClosing, useLingering } from "./modal";
+import { ReleaseDetails } from "./release-details";
+import { ReleaseSearchModal } from "./release-search";
+import { rememberListing, useEntrance } from "./return-to";
 import { stagger } from "./stagger";
-import type { Dashboard } from "@/lib/dashboard";
-import { posterName } from "@/lib/routes";
+import type { Dashboard, WorkFilm } from "@/lib/dashboard";
+import type { AudioTask, DoviTask } from "@/lib/queue-tasks";
+import { compareId, movieId, posterName } from "@/lib/routes";
+import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 
 /**
  * What to do about the library, on one page.
@@ -89,6 +107,44 @@ type Check = {
 
 export function DashboardView({ data }: { data: Dashboard }) {
   const { now, headline, work, recent, system } = data;
+  const router = useRouter();
+
+  /**
+   * The three queues' dialogs, one piece of state each.
+   *
+   * Held apart rather than as one "whatever is open", because they are three
+   * different questions about three different records and a single slot would
+   * have to be narrowed back to a type on the way out. Three `useState` calls
+   * is the cheaper honesty.
+   *
+   * Each is kept past the click that closes it — `useLingering` — so the panel
+   * plays its way out rather than blanking a frame before it has finished
+   * leaving. The same pairing every list in this app makes with its dialogs.
+   */
+  const [release, setRelease] = useState<UpgradeQueueItem | null>(null);
+  const readingRelease = useLingering(release);
+  /** And the whole field for that film, which is a dialog of its own. */
+  const [finding, setFinding] = useState<UpgradeQueueItem | null>(null);
+  const searching = useLingering(finding);
+
+  const [converting, setConverting] = useState<DoviTask | null>(null);
+  const readingConvert = useLingering(converting);
+  /** The film a Convert has been pressed on, which is asked before it runs. */
+  const [asking, setAsking] = useState<DoviTask | null>(null);
+  const askShown = useClosing(asking !== null);
+
+  const [stripping, setStripping] = useState<AudioTask | null>(null);
+  const picking = useLingering(stripping);
+
+  /**
+   * The conversion flow, shared with the jobs page — see app/dovi-convert.tsx.
+   *
+   * Its `busy` is what greys every rewrite offered on this page, the audio
+   * dialog included: one rewrite at a time is a rule about the drive rather
+   * than about the tab, and a Continue that promised otherwise here would be
+   * refused by the server a moment later.
+   */
+  const dovi = useDoviConvert();
 
   const checks: Check[] = [
     { name: "TMDb", ok: system.connections.tmdb, why: "no read token" },
@@ -221,7 +277,9 @@ export function DashboardView({ data }: { data: Dashboard }) {
           {work.upgrades.count > 0 && (
             <WorkTile
               index={0}
-              href="/upgrades"
+              // The shelf, cut the way this figure counts: the films the
+              // sweep has a better copy waiting for are a section of it.
+              href="/library?g=verdict"
               label="Upgrades found"
               value={work.upgrades.count}
             />
@@ -230,7 +288,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
           {recent.finds.count > 0 && (
             <WorkTile
               index={1}
-              href="/upgrades?t=downloads"
+              href="/wishlist"
               label="Wishlist finds"
               value={recent.finds.count}
             />
@@ -264,11 +322,85 @@ export function DashboardView({ data }: { data: Dashboard }) {
           )}
         </div>
 
+        {/*
+         * And who the work is, under the figures that count it.
+         *
+         * Three queues, three shelves, in the order the row of figures already
+         * puts them: what an indexer has found for you, then the two rewrites
+         * this app can run on its own. Each is the head of its own list — the
+         * best releases, the largest conversions, the biggest savings — because
+         * a shelf is fifteen posters of a backlog that may be four hundred, and
+         * the fifteen it shows should be the fifteen worth doing first.
+         *
+         * The figures above are the way to each list, and the posters are not a
+         * second one. A tile opens its own film, which is where the work is
+         * actually done — and the figure in its corner is why it is in the
+         * queue at all, so the shelf can be read without the page it came from.
+         *
+         * Only where there is something in them. A heading over an empty strip
+         * is the page reporting on its own layout.
+         */}
+        {work.upgrades.films.length > 0 && (
+          <Card
+            title="Upgrade queue"
+            hint={`${count(work.upgrades.count)} ${work.upgrades.count === 1 ? "film" : "films"} · +${count(work.upgrades.totalGain)} to gain`}
+            index={1}
+          >
+            {/* Points of score, signed: the figure is what taking the release
+                would add to a film that already has a number. */}
+            <WorkShelf
+              films={work.upgrades.films}
+              badge={(film) => `+${film.figure}`}
+              onOpen={setRelease}
+            />
+          </Card>
+        )}
+
+        {work.dovi.films.length > 0 && (
+          <Card
+            title="Dolby Vision conversion queue"
+            hint={`${count(work.dovi.count)} ${work.dovi.count === 1 ? "file" : "files"} · ${size(work.dovi.bytes)}`}
+            index={2}
+          >
+            {/* The file's own size, which is what a P7 to P8.1 rewrite has to
+                read and write — the cost of the job rather than its yield. */}
+            <WorkShelf
+              films={work.dovi.films}
+              badge={(film) => size(film.figure)}
+              onOpen={setConverting}
+            />
+
+            {/* What a check found, or what a rewrite failed with. Inside the
+                card rather than at the head of the page, because it is an
+                answer about one of these files and belongs beside them. */}
+            <DoviNotices error={dovi.error} notice={dovi.notice} />
+          </Card>
+        )}
+
+        {work.audio.films.length > 0 && (
+          <Card
+            title="Strip Tracks queue"
+            hint={`${count(work.audio.count)} ${work.audio.count === 1 ? "file" : "files"} · ${work.audio.estimated ? "≈" : "−"}${size(work.audio.bytes)} freed`}
+            index={3}
+          >
+            {/* ≈ where the saving is bitrate × runtime and − where it was
+                counted, which is the jobs page's own mark for the difference —
+                see app/jobs/task-list.tsx. */}
+            <WorkShelf
+              films={work.audio.films}
+              badge={(film) =>
+                `${film.estimated ? "≈" : "−"}${size(film.figure)}`
+              }
+              onOpen={setStripping}
+            />
+          </Card>
+        )}
+
         {work.issues.filmsAffected > 0 && (
           <Card
             title="Open issues"
             hint={`${count(work.issues.filmsAffected)} ${work.issues.filmsAffected === 1 ? "film" : "films"}`}
-            index={0}
+            index={4}
           >
             {/* Red, amber, and the page's own ink — the three tones the film
                 page and `/how-it-works` already spend on a severity, so a
@@ -372,6 +504,116 @@ export function DashboardView({ data }: { data: Dashboard }) {
           </ul>
         )}
       </Card>
+
+      {/* ------------------------------------------------------------------ */}
+
+      {/*
+       * What the three shelves open, each the same panel its own queue's page
+       * opens — see app/release-details.tsx, app/jobs/dovi-details.tsx and
+       * app/jobs/audio-picker.tsx. Nothing here is a dashboard-shaped copy of
+       * one: a poster that opened a lighter version of the real dialog would be
+       * a fourth thing to learn and a place where the app disagreed with itself
+       * about what a release, a conversion or a track removal is.
+       */}
+
+      {readingRelease && (
+        <ReleaseDetails
+          open={release !== null}
+          title={readingRelease.title}
+          year={readingRelease.year}
+          poster={readingRelease.poster}
+          posterRemote={readingRelease.posterRemote}
+          posterVersion={readingRelease.artAt}
+          hit={readingRelease.hit}
+          gain={readingRelease.hit.delta}
+          currentScore={readingRelease.currentScore}
+          checkedLabel={`Checked ${ago(readingRelease.checkedAt)}`}
+          source="upgrade"
+          film={{ href: `/film/${movieId(readingRelease.path)}` }}
+          onward={{
+            label: "Compare",
+            go: () => {
+              // The crumb the queue's own rows leave, for the same reason: the
+              // delegated listener in return-to.tsx only sees anchors, and this
+              // navigates from a handler.
+              rememberListing();
+              router.push(`/compare/${compareId(readingRelease.compareKey)}`);
+            },
+          }}
+          onMore={() => {
+            setRelease(null);
+            setFinding(readingRelease);
+          }}
+          onClose={() => setRelease(null)}
+        />
+      )}
+
+      {searching && (
+        <ReleaseSearchModal
+          open={finding !== null}
+          subject={{ kind: "movie", path: searching.path }}
+          title={searching.title}
+          subtitle={searching.year ? String(searching.year) : undefined}
+          posterPath={searching.posterRemote}
+          source="upgrade"
+          configured={system.connections.jackett}
+          onClose={() => setFinding(null)}
+        />
+      )}
+
+      {readingConvert && (
+        <DoviDetails
+          task={readingConvert}
+          open={converting !== null}
+          layer={readingConvert.el ? EL_LABEL[readingConvert.el] : undefined}
+          layerTitle={
+            readingConvert.el ? EL_TITLE[readingConvert.el] : undefined
+          }
+          size={size(readingConvert.sizeBytes)}
+          checkFirst={checksFirst(readingConvert)}
+          refusal={doviRefusal(readingConvert, dovi.busy)}
+          href={`/${readingConvert.kind === "movie" ? "film" : "episode"}/${movieId(readingConvert.path)}`}
+          onStart={() => {
+            // The details close on the way through, whichever of the two this
+            // is: a check runs here and now, a rewrite hands over to the
+            // question below. The jobs page's own rule, kept because it is the
+            // same press.
+            setConverting(null);
+            if (checksFirst(readingConvert)) void dovi.check(readingConvert);
+            else setAsking(readingConvert);
+          }}
+          onClose={() => setConverting(null)}
+        />
+      )}
+
+      {askShown && asking && (
+        <DoviConvertConfirm
+          task={asking}
+          open={asking !== null}
+          keepingEl={work.dovi.keepingEl}
+          busy={dovi.starting}
+          onConfirm={() => void dovi.run(asking).then(() => setAsking(null))}
+          onCancel={() => setAsking(null)}
+        />
+      )}
+
+      {/* Keyed by the file, so choosing on one poster and then another does not
+          hand the second film the first one's ticks — the dialog seeds itself
+          from the proposal once per mount, and without this the mount is
+          shared. The jobs page keys it for the same reason. */}
+      {picking && (
+        <AudioPicker
+          key={picking.path}
+          task={picking}
+          open={stripping !== null}
+          blocked={
+            dovi.busy
+              ? "Something is already rewriting a file — wait for it"
+              : undefined
+          }
+          onClose={() => setStripping(null)}
+        />
+      )}
     </div>
   );
 }
@@ -527,13 +769,51 @@ function WorkTile({
 const SHELF_MASK =
   "[mask-image:linear-gradient(to_right,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)]";
 
-/** What a tile is, for the tooltip and the screen reader that lost the caption. */
-const nameOf = (item: Dashboard["recent"]["added"][number]) =>
-  item.episodes === undefined
-    ? item.title
-    : `${item.title} — ${count(item.episodes)} ${item.episodes === 1 ? "episode" : "episodes"}`;
+/**
+ * One poster on a shelf, whichever shelf it is.
+ *
+ * Four shelves ran on this page before this type existed and only the first was
+ * written: the other three would have been copies of a paragraph of margin
+ * arithmetic that nobody wants to get right twice. What actually differs
+ * between them is two things — what the corner of the picture says, and whether
+ * the poster is the one that travels.
+ */
+type Tile = {
+  /** React's key, and the film's identity where a shelf claims the transition. */
+  key: string;
+  href: string;
+  /** What it is, for the tooltip and the screen reader that lost the caption. */
+  name: string;
+  poster?: string;
+  posterRemote?: string;
+  artAt?: number;
+  /**
+   * The name the poster travels under, where this shelf is the one that owns
+   * it. A view-transition name has to be unique on the page: the same film can
+   * be in the upgrade queue *and* have Profile 7 to convert *and* have foreign
+   * tracks to strip, and three posters claiming one name is a page where the
+   * transition simply does not run. So one shelf claims and the rest link.
+   */
+  transitionName?: string;
+  /** The one figure worth printing over the artwork. */
+  badge?: string;
+  /**
+   * What the poster does instead of going to `href`, on the shelves whose click
+   * is a question rather than an address.
+   *
+   * The queues have one: what a poster on them stands for is a decision — take
+   * this release, convert this file, remove these tracks — and the page that
+   * decision is made on is the queue's own, which is not where you are. So the
+   * dialog comes here rather than sending you two pages away and back.
+   *
+   * `href` is still set on those tiles and still does something: it is what the
+   * dialog's own poster and title link to, so the film is one press further in
+   * rather than unreachable. Only the shelf's click changes.
+   */
+  onOpen?: () => void;
+};
 
-function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
+function Shelf({ tiles }: { tiles: Tile[] }) {
   /* The shelf is a place back returns to now, and a tile that replays its
      arrival on the way back is a tile the poster is flying home to while it
      fades in underneath. Same decision every other shelf makes — see
@@ -544,60 +824,160 @@ function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
     <ul
       className={`no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 sm:-mx-8 sm:px-8 md:mr-[calc(50%-50vw+7rem)] md:ml-[calc(50%-50vw-7rem)] md:pr-[calc(50vw-50%-7rem)] md:pl-[calc(50vw-50%+7rem)] ${SHELF_MASK}`}
     >
-      {items.map((item, i) => (
-        <li
-          key={item.posterKey}
-          style={stagger(i)}
-          className={`${entrance} w-32 shrink-0`}
-        >
-          <Link
-            href={item.href}
-            /* The name the tile no longer prints. A wall of artwork with
-               nothing written under it still has to be navigable by anything
-               that cannot see a poster, and hovering one should still say what
-               it is — so the title moves off the page and into the link. */
-            aria-label={nameOf(item)}
-            title={nameOf(item)}
-            className="glow block rounded-control"
-          >
-            <span className="relative block">
-              {item.poster || item.posterRemote ? (
-                <Art
-                  src={item.poster}
-                  remote={item.posterRemote}
-                  version={item.artAt}
-                  // A show's poster is named by its key and a film's by its
-                  // path, which is what `/library` and `/show` already do — so
-                  // the tile travels into the page it opens either way.
-                  transitionName={posterName(item.posterKey)}
-                  // 128pt of poster is 256 device pixels on the screens these
-                  // are looked at on, which is the next bucket up — w185 was
-                  // the right ask at 96 and is a soft picture at this size.
-                  // It also puts the local file on the cached 640 thumbnail
-                  // rather than a full-resolution scan off the drive: `Art`
-                  // maps the two together, and w185 was in neither map.
-                  size="w342"
-                  loading="lazy"
-                  className="h-48 w-32 rounded-control object-cover ring-1 ring-line"
-                />
-              ) : (
-                <span className="block h-48 w-32 rounded-control bg-surface-strong" />
-              )}
+      {tiles.map((tile, i) => {
+        /* The name the tile no longer prints. A wall of artwork with nothing
+           written under it still has to be navigable by anything that cannot
+           see a poster, and hovering one should still say what it is — so the
+           title moves off the page and into whatever the poster is. */
+        const named = {
+          "aria-label": tile.name,
+          title: tile.name,
+          className: "glow block w-full rounded-control text-left",
+        };
 
-              {/* How many episodes this one poster is standing in for. Over the
-                  artwork rather than under the title, because it is a fact
-                  about the picture — this is not one thing, it is twelve — and
-                  a line of text below would read as a subtitle instead. */}
-              {item.episodes !== undefined && (
-                <span className="absolute top-1.5 right-1.5 rounded-chip bg-background/85 px-1.5 py-0.5 text-[10px] font-medium tabular-nums opacity-90 ring-1 ring-line backdrop-blur">
-                  {count(item.episodes)} ep{item.episodes === 1 ? "" : "s"}
-                </span>
-              )}
-            </span>
-          </Link>
-        </li>
-      ))}
+        const picture = (
+          <span className="relative block">
+            {tile.poster || tile.posterRemote ? (
+              <Art
+                src={tile.poster}
+                remote={tile.posterRemote}
+                version={tile.artAt}
+                transitionName={tile.transitionName}
+                // 128pt of poster is 256 device pixels on the screens these
+                // are looked at on, which is the next bucket up — w185 was
+                // the right ask at 96 and is a soft picture at this size.
+                // It also puts the local file on the cached 640 thumbnail
+                // rather than a full-resolution scan off the drive: `Art`
+                // maps the two together, and w185 was in neither map.
+                size="w342"
+                loading="lazy"
+                className="h-48 w-32 rounded-control object-cover ring-1 ring-line"
+              />
+            ) : (
+              <span className="block h-48 w-32 rounded-control bg-surface-strong" />
+            )}
+
+            {/* What this poster is standing for — twelve episodes, four
+                points of score, nine gigabytes. Over the artwork rather than
+                under the title, because it is a fact about the picture and a
+                line of text below would read as a subtitle instead. */}
+            {tile.badge && (
+              <span className="absolute top-1.5 right-1.5 rounded-chip bg-background/85 px-1.5 py-0.5 text-[10px] font-medium tabular-nums opacity-90 ring-1 ring-line backdrop-blur">
+                {tile.badge}
+              </span>
+            )}
+          </span>
+        );
+
+        return (
+          <li
+            key={tile.key}
+            style={stagger(i)}
+            className={`${entrance} w-32 shrink-0`}
+          >
+            {/* A button where the click is a dialog, an anchor where it is an
+                address — never an anchor made to behave like a button. The
+                browser's own handling of a link is the reason the recent shelf
+                keeps one: middle-click, preview, open in a new tab, and the
+                crumb the delegated listener in app/return-to.tsx leaves on the
+                way out. None of that means anything for a poster that opens a
+                panel over the page you are already on, and a link that goes
+                nowhere is a promise the shelf cannot keep. */}
+            {tile.onOpen ? (
+              <button type="button" onClick={tile.onOpen} {...named}>
+                {picture}
+              </button>
+            ) : (
+              <Link href={tile.href} {...named}>
+                {picture}
+              </Link>
+            )}
+          </li>
+        );
+      })}
     </ul>
+  );
+}
+
+/** What a recent tile is, said out loud: a film, or a show and how much of it. */
+const nameOf = (item: Dashboard["recent"]["added"][number]) =>
+  item.episodes === undefined
+    ? item.title
+    : `${item.title} — ${count(item.episodes)} ${item.episodes === 1 ? "episode" : "episodes"}`;
+
+function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
+  return (
+    <Shelf
+      tiles={items.map((item) => ({
+        key: item.posterKey,
+        href: item.href,
+        name: nameOf(item),
+        poster: item.poster,
+        posterRemote: item.posterRemote,
+        artAt: item.artAt,
+        // A show's poster is named by its key and a film's by its path, which
+        // is what `/library` and `/show` already do — so the tile travels into
+        // the page it opens either way. This is the shelf that claims a film's
+        // name: it is the first on the page, and the queues below repeat each
+        // other's films where this one repeats nothing.
+        transitionName: posterName(item.posterKey),
+        badge:
+          item.episodes === undefined
+            ? undefined
+            : `${count(item.episodes)} ep${item.episodes === 1 ? "" : "s"}`,
+      }))}
+    />
+  );
+}
+
+/**
+ * The head of one backlog, as the films in it.
+ *
+ * The figures above say how much work there is; these say whose. A count is
+ * something you either act on or scroll past, and four posters of films you
+ * remember ripping is the thing that makes the queue feel owed — which is the
+ * whole argument for a shelf on a page whose rule is that everything on it has
+ * a verb.
+ *
+ * The tile opens the queue's own question, not the film.
+ *
+ * It opened the film once, on the argument that the figure above already links
+ * the list and a poster is for the one film you recognised on the way past.
+ * That is right about why the poster is there and wrong about what to do when
+ * you recognise it: what you have recognised is a film with something outstanding
+ * on it, and the film's page is not where the outstanding thing is decided. It
+ * was a page you landed on, read, and left again — three navigations to reach a
+ * dialog that could have opened where you were standing.
+ *
+ * So the poster opens the same panel the queue's own page opens on the same
+ * record — the release the sweep found, the conversion, the tracks to remove —
+ * and the film is still one press away inside it, on the poster and the name at
+ * the top, which is where all three of those dialogs put it.
+ */
+function WorkShelf<T>({
+  films,
+  badge,
+  onOpen,
+}: {
+  films: WorkFilm<T>[];
+  /** How this queue's figure reads — a gain, a size, a saving. */
+  badge: (film: WorkFilm<T>) => string;
+  /** The dialog this queue answers with, opened on the record behind the tile. */
+  onOpen: (item: T) => void;
+}) {
+  return (
+    <Shelf
+      tiles={films.map((film) => ({
+        key: film.posterKey,
+        href: film.href,
+        name: `${film.title} — ${badge(film)}`,
+        poster: film.poster,
+        posterRemote: film.posterRemote,
+        artAt: film.artAt,
+        badge: badge(film),
+        onOpen: () => onOpen(film.item),
+      }))}
+    />
   );
 }
 

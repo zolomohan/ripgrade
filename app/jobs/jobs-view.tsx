@@ -952,7 +952,7 @@ export function JobsView({
           emptier answer, and a count in front of each was a third way of
           saying what they say. */}
       {running.length > 0 && (
-        <section className="flex flex-col gap-1">
+        <section className="flex flex-col gap-5">
           <SectionHeading label="Running" />
           {/* Drawn the way the tab is being read, like everything under it. A
               page whose outstanding work is a grid and whose running job is a
@@ -994,7 +994,7 @@ export function JobsView({
           tab cannot, because a delete is over in the time it takes to unlink
           and there is nothing to wait behind. */}
       {(tab === "audio" ? audioQueued : doviQueued).length > 0 && (
-        <section className="flex flex-col gap-1">
+        <section className="flex flex-col gap-5">
           {/* No count beside it, for the reason the other two headings have
               none: the rows themselves say where in the run each of them is,
               and the job above says how far through the run the server is. */}
@@ -1013,21 +1013,22 @@ export function JobsView({
           that showed only a history would leave you to infer it from the
           absence of a list.
 
-          The heading goes when the list does, though. An empty state names its
-          own situation in bigger type than the heading above it, so the two
-          together said "Pending" over "Nothing left lying around" — a label for
-          a list that is not there, on top of the sentence explaining that it is
-          not. And with the heading gone the section can take the page's spare
-          height (`flex-1`), which is what the empty state's `my-auto` centres
-          itself in — otherwise it hangs under the running rows.
+          No heading over it. "Pending" is what the tab already is: you arrive
+          on a list of outstanding work, and the two sections that do carry a
+          name — Running, Queued — are the exceptions to it, announced because
+          they are not what you came for. A label over the main list said only
+          that the page had started. The empty states never wore it either, for
+          a reason that turns out to be the general one: they name their own
+          situation in bigger type than the heading above them.
+
+          Which leaves the section free to take the page's spare height, so an
+          empty state's `my-auto` has something to centre in rather than
+          hanging under the running rows.
 
           And the whole section goes when the only reason it is empty is that
           its last row is the one running above — see `allBusy`. */}
       {!allBusy && (
-        <section
-          className={`flex flex-col gap-1 ${pending === 0 ? "flex-1" : ""}`}
-        >
-          {pending > 0 && <SectionHeading label="Pending" />}
+        <section className="flex flex-1 flex-col gap-1">
           {tab === "dovi" ? (
             <DoviTasks
               tasks={doviPending}

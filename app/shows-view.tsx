@@ -9,7 +9,7 @@ import { posterName, showId } from "@/lib/routes";
 import type { Show } from "@/lib/shows";
 import { Art } from "./art";
 import { Bar, BarSearch, HelpTip, ICONS, MenuItem, Popover } from "./controls";
-import { scoreTheme } from "./score-circle";
+import { ScoreBadge } from "./score-circle";
 import { useEntrance } from "./return-to";
 import { stagger } from "./stagger";
 
@@ -491,11 +491,13 @@ function ShowTile({ show, index }: { show: Show; index: number }) {
             loading="lazy"
             className="h-full w-full object-cover"
           />
-          <span
-            className={`absolute top-2 right-2 rounded-full bg-background/85 px-1.5 py-0.5 font-score text-[11px] font-semibold tabular-nums backdrop-blur ${scoreTheme(show.score).text}`}
-            title={`${show.score} of 100 · average of ${show.episodeCount} episodes`}
-          >
-            {show.score}
+          {/* The shelf's badge, from the one place it is drawn — this was its
+              own copy of the library's markup, down to the class list. */}
+          <span className="absolute top-2 right-2">
+            <ScoreBadge
+              score={show.score}
+              title={`${show.score} of 100 · average of ${show.episodeCount} episodes`}
+            />
           </span>
 
           {/* What is wrong with the show, on the show: a gap in a season

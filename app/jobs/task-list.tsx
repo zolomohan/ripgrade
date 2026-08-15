@@ -4,12 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import {
-  beginConvert,
   beginConvertBatch,
-  beginFullDoviScan,
   beginStripBatch,
-  checkConvertible,
-  refreshAfterDoviScan,
+  stopConvert,
+  stopFullDoviScan,
 } from "@/app/actions";
 import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
@@ -23,11 +21,22 @@ import {
   TILE_READING,
 } from "@/app/poster-tile";
 import { rememberListing } from "@/app/return-to";
+import { SCORE_PLATE_ROOMY } from "@/app/score-circle";
 import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
 import { Tick, TickColumn } from "@/app/tick";
+import { TILE_MARK } from "@/app/tile-button";
 import { BUTTON, CONTROL_H } from "@/app/controls";
 import { ConfirmModal } from "@/app/confirm";
+import {
+  checksFirst,
+  doviRefusal,
+  DoviConvertConfirm,
+  DoviNotices,
+  EL_LABEL,
+  EL_TITLE,
+  useDoviConvert,
+} from "@/app/dovi-convert";
 import { languageKey } from "@/lib/audio-plan";
 import { languageName } from "@/lib/derive";
 import type { AudioTask, DoviTask, TaskFilm } from "@/lib/queue-tasks";
@@ -41,6 +50,7 @@ import {
 } from "@/app/grouping";
 import { Stat } from "@/app/charts";
 import { AudioPicker } from "./audio-picker";
+import { DoviDetails } from "./dovi-details";
 import { Stats } from "./stats";
 import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 
@@ -313,11 +323,31 @@ function TaskTile({
       }}
       // Named so the tile travels into the page it opens, as the row's poster
       // does — the whole frame, because the whole frame is what you clicked.
-      transitionName={posterName(task.path)}
-      title={task.title}
-      year={task.year}
-      episode={task.episode}
-      fileName={task.fileName}
+      /*
+       * The film, what the work is about, and nothing else.
+       *
+       * The year and the file name came from the rows, where there is a line
+       * spare for each. Under a poster they were two more grey lines below a
+       * caption that already names the film — and neither is a fact about the
+       * *job*: the year does not change what converting costs, and the name on
+       * disk is sixty characters cut at the front to fit a tile it cannot fit.
+       * Both are still on the row, and the row is a click away on the same
+       * page.
+       *
+       * An episode says which one it is and then which show, on one line
+       * instead of two. The number leads because that is what tells eight
+       * tiles of the same series apart, and the show's name follows it because
+       * a grid of bare codes says nothing about what you are looking at.
+       *
+       * The episode's own title is not here, and that is the point: it is
+       * parsed out of the file name, so on a release that never carried one it
+       * is whatever the parser found — "MULTI", on every episode of a
+       * multi-language rip. The rows still print it, where a wrong one is a
+       * curiosity rather than the caption.
+       */
+      title={
+        task.episodeCode ? `${task.episodeCode} · ${task.title}` : task.title
+      }
       facts={facts}
       factsTitle={factsTitle}
       mark={mark}
@@ -331,6 +361,74 @@ function TaskTile({
       selecting={selecting}
       chosen={chosen}
     />
+  );
+}
+
+/**
+ * The two marks a tile wears while there is a job to start or to stop.
+ *
+ * A word under the poster is what the row uses and what these tiles used: it
+ * can say Check or Convert, which are different promises. Over artwork there is
+ * no room for either word, and a grid of posters each with a pill under it
+ * reads as a form — so the tile says it in the shape every media control has
+ * had for fifty years, and keeps the sentence on the mark's own tooltip. What
+ * the press actually does is unchanged: a check runs, a rewrite asks first.
+ *
+ * The downloads page's transfers wear the same pair in the same corner — see
+ * app/downloads/downloads-view.tsx — because they answer the same two questions:
+ * start this, or stop the one that is going.
+ */
+function TileMark({
+  kind,
+  label,
+  title,
+  disabled,
+  busy,
+  onPress,
+}: {
+  kind: "start" | "stop";
+  label: string;
+  title?: string;
+  disabled?: boolean;
+  busy?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        // The tile navigates to the film; this does not.
+        event.stopPropagation();
+        onPress();
+      }}
+      disabled={disabled || busy}
+      aria-label={label}
+      title={title ?? label}
+      className={`${TILE_MARK} disabled:opacity-40 ${
+        kind === "stop" ? "hover:text-red-400" : ""
+      }`}
+    >
+      {busy ? (
+        <Spinner className="h-4 w-4" />
+      ) : (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={kind === "stop" ? "2.2" : "2"}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+          className="h-5 w-5"
+        >
+          {kind === "stop" ? (
+            <path d="M6 6l12 12M18 6L6 18" />
+          ) : (
+            <path d="M8 5.5v13l11-6.5z" />
+          )}
+        </svg>
+      )}
+    </button>
   );
 }
 
@@ -474,6 +572,25 @@ function TaskList({
 const kindOf = (task: TaskFilm) => (task.kind === "movie" ? "Films" : "Shows");
 const KIND_ORDER = ["Films", "Shows"];
 
+/**
+ * Films together, and every show apart.
+ *
+ * The plain two-bucket cut puts a season of one series and a season of another
+ * in a single section called "Shows", which is the one grouping nobody wants:
+ * what you do about a show is done a season at a time, and a hundred episodes
+ * of four series interleaved by size is a list you have to read to find the
+ * ones that belong together. Films are the opposite case — each is its own
+ * decision, and a section per film is a heading over every row.
+ *
+ * So the films keep one bucket and each show gets its own, named after it.
+ * `order` names only "Films": everything else is a show's title, and titles
+ * sort themselves.
+ */
+const filmsOrShow = (task: TaskFilm) =>
+  task.kind === "movie" ? "Films" : task.title;
+
+const FILMS_FIRST = ["Films"];
+
 /** The count and total beside a group's name. */
 const filmsNote = (tasks: TaskFilm[]) =>
   `${tasks.length} · ${size(tasks.reduce((n, t) => n + t.sizeBytes, 0))}`;
@@ -481,32 +598,6 @@ const filmsNote = (tasks: TaskFilm[]) =>
 // ---------------------------------------------------------------------------
 // Dolby Vision
 // ---------------------------------------------------------------------------
-
-/**
- * What a read enhancement layer is, in the names the tools use for it.
- *
- * MEL and FEL rather than a plain-English gloss: these are what dovi_tool
- * prints, what the film's own console names in its metadata table, and what
- * anyone reading about Profile 7 has already met. A chip is not the place to
- * teach the term — the tooltip does that, and the console spells it out in
- * full.
- *
- * No complex FEL among them: a file whose grade peaks above what the base layer
- * holds is never in this list, because converting it would clip those
- * highlights.
- */
-const EL_LABEL: Record<string, string> = {
-  mel: "MEL",
-  "simple-fel": "FEL",
-  unknown: "Layer unread",
-};
-
-const EL_TITLE: Record<string, string> = {
-  mel: "Minimum enhancement layer — nothing in it, so converting loses nothing at all",
-  "simple-fel":
-    "Full enhancement layer, but graded within the base layer's range — what converting drops is refinement, not picture",
-  unknown: "No pass has read the enhancement layer yet",
-};
 
 /**
  * Biggest first by default. Nothing on this tab saves space — every conversion
@@ -573,18 +664,20 @@ export const DOVI_GROUPS: GroupOption<DoviTask>[] = [
  * column already on every row.
  *
  * What varies between these files is the enhancement layer, which is why it is
- * also what the tab can be cut by: a MEL loses nothing at all in the rewrite, a
- * simple FEL loses refinement rather than picture, and a file whose layer no
- * pass has read yet is a check before it is a conversion. Three counts that
- * come to the total, in the order that reads best — most is nothing lost, and
- * the last one is the one with work still in front of it.
+ * also what the tab can be cut by: a MEL loses nothing at all in the rewrite,
+ * and a simple FEL loses refinement rather than picture. Two counts against the
+ * total, most-is-nothing-lost first.
  *
- * All three are drawn at zero rather than dropped, unlike the counts on the
- * cleanup band. A zero here is an answer and often the best one: no FELs at all
- * means every conversion on this tab loses nothing whatsoever, and nothing
- * unread means the queue is ready to run end to end. Dropped, that reads as the
- * app having nothing to say about the layer — and a band whose columns come and
- * go is one you have to re-read each visit to see what it is showing.
+ * There was a third — the files whose layer no pass has read yet — and it was
+ * the remainder rather than a reading: whatever the first number is, less the
+ * two after it. Grouping the list by layer answers the same question about the
+ * films it is actually about, and each row says what its own layer is.
+ *
+ * Both are drawn at zero rather than dropped, unlike the counts on the cleanup
+ * band. A zero here is an answer and often the best one: no FELs at all means
+ * every conversion on this tab loses nothing whatsoever. Dropped, that reads as
+ * the app having nothing to say about the layer — and a band whose columns come
+ * and go is one you have to re-read each visit to see what it is showing.
  *
  * How many have been read end to end is not up here. It is a fact about how
  * long a click takes rather than about the backlog, it is said on every row
@@ -605,7 +698,6 @@ export function DoviStats({
 
   const mel = tasks.filter((task) => task.el === "mel").length;
   const fel = tasks.filter((task) => task.el === "simple-fel").length;
-  const unread = tasks.length - mel - fel;
 
   return (
     <Stats action={action}>
@@ -622,11 +714,12 @@ export function DoviStats({
         value={fel.toLocaleString("en-GB")}
         title={EL_TITLE["simple-fel"]}
       />
-      <Stat
-        label="Layer unread"
-        value={unread.toLocaleString("en-GB")}
-        title={EL_TITLE.unknown}
-      />
+      {/* No "Layer unread" fourth. It was the remainder of the two above it —
+          the files whose enhancement layer nothing has looked at yet — and a
+          total that is only ever "the rest" says less than subtracting two
+          numbers from the first one does. What it stood for is still asked
+          where it can be acted on: the grouping cuts the list along it, and
+          each row says what its own layer is. */}
     </Stats>
   );
 }
@@ -802,12 +895,6 @@ export function DoviRun({
   );
 }
 
-/**
- * A full pass this page started, and what it started it for: the conversion the
- * pass is the first step of, or the answer the pass was run to get.
- */
-type Errand = { path: string; fileName: string; then: "convert" | "report" };
-
 /** The rows in the order this list draws them — see `audioOrder`, its twin. */
 export const doviOrder = (
   tasks: DoviTask[],
@@ -856,183 +943,67 @@ export function DoviTasks({
   /** The last row ticked by hand, which is what a shift-click measures from. */
   const anchor = useRef<number | null>(null);
 
-  const { jobs, apply, subscribe } = useJobs();
-  const { dovi: pass, convert, strip } = jobs;
-  const router = useRouter();
+  const { jobs, apply } = useJobs();
+  const { dovi: pass, convert } = jobs;
 
-  /** The film a Convert button is asking about, and whether it is working. */
+  /**
+   * The two calls that start the work, and everything that follows them.
+   *
+   * Shared with the dashboard's own copy of this queue — see
+   * app/dovi-convert.tsx, which is where the check-then-convert hand-off and
+   * the single-rewrite-at-a-time rule now live. What is left here is the list:
+   * which rows are ticked, which one is being read, and which one a cross is
+   * being pressed on.
+   */
+  const { busy, queued, starting, error, setError, notice, check, run } =
+    useDoviConvert();
+
+  /** The film a Convert button is asking about. */
   const [asking, setAsking] = useState<DoviTask | null>(null);
   const shown = useClosing(asking !== null);
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   /**
-   * What a check found, which is not an error even when it rules the film out —
-   * the row simply leaves the list, and a row that vanishes without a word is
-   * the answer withheld.
+   * And the one a tile's cross is asking about.
+   *
+   * Its own question rather than a second use of `asking`: that one starts a
+   * job and this one ends the job already going, and a dialog that has to work
+   * out which of the two it is from the state around it is a dialog that will
+   * one day say the wrong thing. The app asks before it interrupts anything
+   * running, wherever the press was made — the rail's Stop asks too.
    */
-  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(
-    null,
-  );
-
+  const [halting, setHalting] = useState<DoviTask | null>(null);
+  const haltShown = useClosing(halting !== null);
+  const [stopping, setStopping] = useState(false);
   /**
-   * The pass this page is waiting on.
+   * And the film whose tile has been opened, read whole.
    *
-   * Two errands for one job, because on a MEL the pass is a step of converting
-   * — nothing it can find changes the verdict — while on a FEL it *is* the
-   * verdict, and what follows it is a sentence rather than a rewrite.
-   *
-   * Held in a ref as well as in state because the job subscription has to see
-   * it without resubscribing every time it changes.
+   * Three dialogs for one list, each asking a different question: this one is
+   * "what am I looking at", the next is "are you sure" and the last is "stop
+   * it". Pressing through from here closes this one first — a dialog stacked on
+   * a dialog is a dialog you cannot see the edge of.
    */
-  const [pending, setPending] = useState<Errand | null>(null);
-  const wants = useRef<Errand | null>(null);
-  const intend = (next: Errand | null) => {
-    wants.current = next;
-    setPending(next);
-  };
-  /** Only a conversion has a hand-off to narrate; a check ends where it ends. */
-  const queued = pending?.then === "convert" ? pending.path : null;
-
-  // React only to the edge out of a run this page saw, exactly as the film's
-  // own console does: the server reports "done" forever after, so a status
-  // alone cannot mean "just finished" and a connect-time snapshot would look
-  // identical to a fresh one.
-  useEffect(
-    () =>
-      subscribe((next, prev) => {
-        const wasConverting = prev.convert.status === "running";
-        if (wasConverting && next.convert.status !== "running") {
-          if (next.convert.status === "error") {
-            setError(next.convert.error ?? "Conversion failed");
-          } else {
-            // The job re-probes and re-derives the rewritten file itself, so
-            // the page only needs repainting — and the row falls out of the
-            // list, because the film is not Profile 7 any more.
-            void refreshAfterDoviScan().then(() => router.refresh());
-          }
-        }
-
-        const errand = wants.current;
-        const wasReading =
-          prev.dovi.status === "running" && prev.dovi.path === errand?.path;
-        // Named endings rather than "no longer running": a snapshot already in
-        // flight when the pass started says idle, arrives just after the
-        // optimistic running one, and would read as the pass stopping.
-        const ended =
-          next.dovi.status === "done" ||
-          next.dovi.status === "error" ||
-          next.dovi.status === "cancelled";
-        if (!wasReading || !ended) return;
-
-        if (next.dovi.status !== "done" || !errand) {
-          // Failed or cancelled: whatever it was the first step of is off.
-          intend(null);
-          if (next.dovi.status === "error") {
-            setError(next.dovi.error ?? "Full pass failed");
-          }
-          return;
-        }
-
-        void refreshAfterDoviScan().then(async () => {
-          router.refresh();
-          intend(null);
-
-          // A check reports and stops. The verdict it just settled decides
-          // whether the row keeps its Convert button or leaves the list, and
-          // either way the reader asked a question and is owed the answer.
-          if (errand.then === "report") {
-            const verdict = await checkConvertible(errand.path);
-            setNotice({
-              ok: verdict.ok,
-              text: verdict.ok
-                ? `${errand.fileName} can be converted — its button is ready.`
-                : verdict.error,
-            });
-            return;
-          }
-
-          // The server re-checks the verdict against what the pass just wrote,
-          // so a film that turns out to be a complex FEL is refused here rather
-          // than converted on the strength of a sample.
-          const result = await beginConvert(errand.path);
-          if (!result.ok) {
-            setError(result.error);
-            return;
-          }
-          apply({ convert: result.job });
-        });
-      }),
-    [subscribe, router, apply],
-  );
-
+  const [reading, setReading] = useState<DoviTask | null>(null);
+  const read = useLingering(reading);
   /**
-   * Reads every frame and stops there, so the verdict is settled before
-   * anything is offered on the strength of it.
+   * Ends whichever of the two jobs this film is in the middle of.
    *
-   * Nothing is written, so nothing is confirmed: a check costs time and no
-   * film.
+   * A read and a rewrite are stopped by different calls and neither knows about
+   * the other, so which one to end is read off the same state the tile drew
+   * itself from. Both leave the file as it was: a read writes nothing, and a
+   * conversion keeps the original beside the half-written copy it abandons.
    */
-  async function check(task: DoviTask) {
+  async function halt(task: DoviTask) {
     setError(null);
-    setNotice(null);
+    setStopping(true);
 
-    const started = await beginFullDoviScan(task.path);
-    if (!started.ok) {
-      setError(started.error);
-      return;
+    if (convert.status === "running" && convert.path === task.path) {
+      await stopConvert().then((job) => apply({ convert: job }));
+    } else if (pass.status === "running" && pass.path === task.path) {
+      await stopFullDoviScan().then((job) => apply({ dovi: job }));
     }
-    intend({ path: task.path, fileName: task.fileName, then: "report" });
-    apply({
-      dovi: { status: "running", path: task.path, percent: 0, frames: 0 },
-    });
+
+    setStopping(false);
+    setHalting(null);
   }
-
-  /**
-   * Reads every frame first, when every frame has not been read.
-   *
-   * The same two-step the console runs, and reachable for the same reason: only
-   * on a film whose verdict the pass cannot overturn. Anything a full read
-   * could still rule out goes through `check` instead, and comes back here as a
-   * separate click.
-   */
-  async function run(task: DoviTask) {
-    setError(null);
-    setNotice(null);
-    setStarting(true);
-
-    if (!task.scanned) {
-      const started = await beginFullDoviScan(task.path);
-      setStarting(false);
-      setAsking(null);
-      if (!started.ok) {
-        setError(started.error);
-        return;
-      }
-      intend({ path: task.path, fileName: task.fileName, then: "convert" });
-      apply({
-        dovi: { status: "running", path: task.path, percent: 0, frames: 0 },
-      });
-      return;
-    }
-
-    const result = await beginConvert(task.path);
-    setStarting(false);
-    setAsking(null);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    apply({ convert: result.job });
-  }
-
-  // One rewrite at a time, which the server enforces anyway — the buttons say
-  // so rather than letting a click find out. A track removal counts: it is the
-  // same drive and the same file being rewritten by a different tool.
-  const busy =
-    pass.status === "running" ||
-    convert.status === "running" ||
-    strip.status === "running" ||
-    queued !== null;
 
   const ticked = (task: DoviTask) => selecting && chosen.has(task.path);
 
@@ -1067,23 +1038,7 @@ export function DoviTasks({
 
   return (
     <section className="flex flex-col gap-3">
-      {error && (
-        <p className="font-mono text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      )}
-
-      {/* Amber when the check ruled the film out, because that row has just
-          left the list and the sentence is all that is left of it. */}
-      {notice && (
-        <p
-          className={`text-sm ${
-            notice.ok ? "opacity-60" : "text-amber-600 dark:text-amber-400"
-          }`}
-        >
-          {notice.text}
-        </p>
-      )}
+      <DoviNotices error={error} notice={notice} />
 
       <Grouped items={tasks} group={grouping} note={filmsNote}>
         {(rows, offset) => (
@@ -1114,24 +1069,22 @@ export function DoviTasks({
                   : 0;
 
               /**
-               * The one thing this list offers, in both drawings of it.
+               * The one thing this list offers, as the rows draw it.
                *
                * Bordered rather than filled: twelve filled buttons down a list
                * is a column of black blobs, and the emphasis the console's own
                * button earns comes from being the one thing on that page.
                *
                * The width comes from whatever holds it and not from the word in
-               * it — the row's fixed column, the tile's own width — because a
-               * list where some say Check and some say Convert was a ragged edge
-               * of pills, each a different size for a reason nobody reading a
-               * column of them can see.
+               * it, because a list where some say Check and some say Convert
+               * was a ragged edge of pills, each a different size for a reason
+               * nobody reading a column of them can see.
                *
-               * A word rather than a mark on the artwork, which is where every
-               * other control on these tiles went. Two of the three tabs mean
-               * something irreversible by their one button and this one means
-               * two different things by it — a rewrite, or a read that settles
-               * whether the rewrite is allowed — and an icon can say neither.
-               * So it keeps the caption's own line, under the poster.
+               * Rows only now. The word is worth its line here — Check and
+               * Convert are different promises, and a row has room to say which
+               * — but under a poster it was a pill in a grid of pictures, and
+               * the tile says it as a mark in the corner instead, with the
+               * whole sentence on the tooltip. See `TileMark`.
                */
               const convertButton = (
                 <button
@@ -1182,11 +1135,22 @@ export function DoviTasks({
                   layout={layout}
                   task={task}
                   index={i}
-                  // In the choosing mode the tile is the box, and the film's own
-                  // page is a press of Cancel away. One already being worked on
-                  // answers neither: it is not waiting to be chosen.
+                  /*
+                   * In the choosing mode the tile is the box, and the film's
+                   * own page is a press of Cancel away. One already being
+                   * worked on answers neither: it is not waiting to be chosen.
+                   *
+                   * Otherwise a poster opens what the tile could not fit — see
+                   * `DoviDetails`. Only a poster: a row prints every line that
+                   * dialog holds, so its click stays the film's page, which is
+                   * where somebody reading the long form was going anyway.
+                   */
                   onOpen={
-                    selecting && !active ? (range) => pick(i, range) : undefined
+                    selecting && !active
+                      ? (range) => pick(i, range)
+                      : layout === "grid" && !active
+                        ? () => setReading(task)
+                        : undefined
                   }
                   chosen={ticked(task)}
                   selecting={selecting && !active}
@@ -1227,26 +1191,24 @@ export function DoviTasks({
                   // The sentence about what a click will cost goes with them —
                   // on a tile that is the button's own tooltip, and the one part
                   // of it worth carrying is the plate on the poster instead.
-                  facts={[
-                    "Profile 7",
-                    task.el && EL_LABEL[task.el],
-                    size(task.sizeBytes),
-                  ]}
+                  // No "Profile 7" among them. Every file on this tab is one —
+                  // that is what puts it here — so it was a word printed under
+                  // every poster that told you nothing about the one you were
+                  // looking at. What differs film to film is the layer and the
+                  // size, and those are what is left.
+                  facts={[task.el && EL_LABEL[task.el], size(task.sizeBytes)]}
                   factsTitle={task.el ? EL_TITLE[task.el] : undefined}
-                  // Only the ready ones say so. A film whose frames have been
-                  // read converts on one click, which is the difference between
-                  // this tile and the one next to it; the ones that have not
-                  // wear nothing, and the button under them says Check.
-                  note={
-                    !active && task.scanned ? (
-                      <span
-                        className={TILE_NOTE}
-                        title="Every frame has been read — this one converts straight away"
-                      >
-                        Read
-                      </span>
-                    ) : undefined
-                  }
+                  /*
+                   * No plate saying "Read".
+                   *
+                   * It marked the films whose frames have already been read —
+                   * the ones that convert without a pass first. But that is a
+                   * fact about how long the press will take, not about the
+                   * film, and it was drawn as a label on the artwork where it
+                   * read as a tag the film wears. The mark that starts the job
+                   * says it instead, in its tooltip, at the moment you are
+                   * deciding to press it. The row still prints it in words.
+                   */
                   progress={
                     active ? (
                       <>
@@ -1266,26 +1228,75 @@ export function DoviTasks({
                       </>
                     ) : undefined
                   }
-                  // The same two facts along the foot of the poster, in the
-                  // order there is room for them: the bar, then what it is a
-                  // bar of, with the figure at the end of the line rather than
-                  // in a corner of the artwork.
+                  /*
+                   * Top right, where a tile keeps the one thing it is about:
+                   * the job, started or stopped. The word under the poster is
+                   * the row's — see `TileMark`.
+                   */
+                  badge={
+                    active ? (
+                      <TileMark
+                        kind="stop"
+                        label={`Stop converting ${task.title}`}
+                        title="Stop this — the original is kept either way"
+                        onPress={() => setHalting(task)}
+                      />
+                    ) : (
+                      <TileMark
+                        kind="start"
+                        label={`${checkFirst ? "Check" : "Convert"} ${task.title}`}
+                        disabled={busy || task.offline}
+                        busy={starting && asking?.path === task.path}
+                        title={
+                          task.offline
+                            ? "The drive this file lives on is not connected"
+                            : busy
+                              ? "Something is already rewriting a file — wait for it"
+                              : checkFirst
+                                ? "Reads every frame to settle whether converting would clip anything. Nothing is written."
+                                : task.scanned
+                                  ? "Rewrite as Profile 8.1, keeping the original"
+                                  : "Read every frame, then rewrite as Profile 8.1"
+                        }
+                        onPress={() => {
+                          // A check writes nothing, so it runs on the click.
+                          // Only the rewrite is worth stopping to confirm.
+                          if (checkFirst) void check(task);
+                          else setAsking(task);
+                        }}
+                      />
+                    )
+                  }
+                  /*
+                   * The foot of the poster, drawn the way a transfer in flight
+                   * is drawn — a plate over a white bar. Same question, same
+                   * answer: how far through is this, read at a glance across a
+                   * shelf. See app/downloads/downloads-view.tsx.
+                   *
+                   * The plate says the short of it and carries the whole
+                   * sentence — which step, which tool, how many frames — on its
+                   * tooltip, because a poster is a hundred and eighty pixels
+                   * wide and the row already prints the long form.
+                   */
                   status={
                     active ? (
                       <>
-                        <div className="bar-track bar-track-thin">
+                        <span
+                          className={`${TILE_READING} max-w-full self-start truncate`}
+                          title={stage}
+                        >
+                          {Math.round(percent)}% ·{" "}
+                          {converting
+                            ? "converting"
+                            : reading
+                              ? "reading frames"
+                              : "starting"}
+                        </span>
+                        <div className="bar-track bar-track-thin bar-over">
                           <div
                             className="bar-fill motion-safe:transition-[width] motion-safe:duration-500"
                             style={{ width: `${Math.min(100, percent)}%` }}
                           />
-                        </div>
-                        <div className="flex items-baseline gap-2 text-[11px] text-white">
-                          <span className="min-w-0 truncate opacity-80">
-                            {stage}
-                          </span>
-                          <span className="ml-auto shrink-0 tabular-nums">
-                            {Math.round(percent)}%
-                          </span>
                         </div>
                       </>
                     ) : undefined
@@ -1299,7 +1310,6 @@ export function DoviTasks({
                       convertButton
                     )
                   }
-                  action={active ? undefined : convertButton}
                 />
               );
             })}
@@ -1307,24 +1317,60 @@ export function DoviTasks({
         )}
       </Grouped>
 
+      {/* What a tile could not fit, and the press it was standing in for. */}
+      {read && (
+        <DoviDetails
+          task={read}
+          open={reading !== null}
+          layer={read.el ? EL_LABEL[read.el] : undefined}
+          layerTitle={read.el ? EL_TITLE[read.el] : undefined}
+          size={size(read.sizeBytes)}
+          checkFirst={checksFirst(read)}
+          refusal={doviRefusal(read, busy)}
+          href={hrefFor(read)}
+          onStart={() => {
+            // The details close on the way through, whichever of the two this
+            // is: a check runs here and now, a rewrite hands over to the
+            // question below.
+            setReading(null);
+            if (checksFirst(read)) void check(read);
+            else setAsking(read);
+          }}
+          onClose={() => setReading(null)}
+        />
+      )}
+
       {shown && asking && (
-        <ConfirmModal
+        <DoviConvertConfirm
+          task={asking}
           open={asking !== null}
-          title="Convert to Profile 8.1?"
-          confirmLabel={asking.scanned ? "Convert" : "Read, then convert"}
+          keepingEl={keepingEl}
           busy={starting}
-          onConfirm={() => run(asking)}
+          onConfirm={() => void run(asking).then(() => setAsking(null))}
           onCancel={() => setAsking(null)}
+        />
+      )}
+
+      {/* The other half of the tile's pair. Worded like the rail's Stop,
+          because it ends the same job by the same call — what differs is only
+          that you pressed it on the film rather than on the bar. */}
+      {haltShown && halting && (
+        <ConfirmModal
+          open={halting !== null}
+          title={
+            convert.status === "running" && convert.path === halting.path
+              ? "Stop the conversion?"
+              : "Stop reading the frames?"
+          }
+          confirmLabel={stopping ? "Stopping" : "Stop"}
+          busy={stopping}
+          onConfirm={() => halt(halting)}
+          onCancel={() => setHalting(null)}
         >
-          <span className="font-mono">{asking.fileName}</span> is rewritten in
-          place and the Profile 7 original is kept beside it, so this can be
-          undone from the film&rsquo;s own page.{" "}
-          {keepingEl &&
-            "The enhancement layer is set aside in an archive of its own first, so it survives deleting that original. "}
-          {asking.scanned
-            ? "It takes a while — the whole file is rewritten."
-            : "Every frame is read first, so it takes a while."}{" "}
-          Leaving this page will not stop it.
+          <span className="font-mono">{halting.fileName}</span> is left exactly
+          as it is — a read writes nothing, and a conversion keeps the Profile 7
+          original beside the copy it abandons. Anything a run had not reached
+          goes back to the list.
         </ConfirmModal>
       )}
     </section>
@@ -1386,9 +1432,23 @@ export const AUDIO_SORTS: SortOption<AudioTask>[] = [
  * same foreign tracks and are worth doing together.
  */
 export const AUDIO_GROUPS: GroupOption<AudioTask>[] = [
+  /*
+   * First, and so the tab's own default — see `pickGroup`.
+   *
+   * This is the only list of the three whose rows arrive in runs: a series
+   * ripped in one go is forty files with the same tracks to lose, and ungrouped
+   * they are forty rows scattered through the list by size. Cut this way the
+   * page opens as what it actually is — the films, then each show that has
+   * something to strip.
+   */
+  {
+    key: "kind",
+    label: "Films and shows",
+    of: filmsOrShow,
+    order: FILMS_FIRST,
+  },
   { key: "none", label: "No grouping", of: () => "" },
   { key: "title", label: "Show or film", of: (task) => task.title },
-  { key: "kind", label: "Films and shows", of: kindOf, order: KIND_ORDER },
   {
     // Which languages a rip carries says who pressed the disc, and a whole
     // region's worth of tracks is one decision rather than forty.
@@ -2091,10 +2151,12 @@ export function AudioTasks({
                     {languageLine(task.languages)} · {size(task.sizeBytes)} file
                   </span>
                 }
-                facts={[
-                  languageLine(task.languages),
-                  `${size(task.sizeBytes)} file`,
-                ]}
+                // The languages, and only those. The file's own size was the
+                // second half of this line and a size in the corner above it —
+                // two figures in gigabytes on one tile, and at a glance the
+                // pair read as the same fact said twice. The corner keeps the
+                // one this tab is about; the row still prints both.
+                facts={[languageLine(task.languages)]}
                 figure={
                   <>
                     <span
@@ -2117,15 +2179,22 @@ export function AudioTasks({
                 // green is what makes it a saving, and green over a bright
                 // poster is the one thing `OVER_ART` cannot carry.
                 badge={
+                  // No minus and no green. A tab called Strip Tracks, ranked by
+                  // what it frees, does not need the one figure on the tile
+                  // coloured to say it is a saving — the tab is the context,
+                  // and the sign read as part of the number. In the theme's own
+                  // ink, which is what the cleanup tab's identical badge has
+                  // always used. The `≈` stays: not decoration, but a caveat
+                  // about the number itself.
                   <span
-                    className={`${TILE_READING} text-emerald-600 dark:text-emerald-400`}
+                    className={SCORE_PLATE_ROOMY}
                     title={
                       task.estimated
                         ? "Part of this total is worked out from bitrate rather than counted"
                         : "What removing the proposed tracks frees"
                     }
                   >
-                    {task.estimated ? "≈" : "−"}
+                    {task.estimated && "≈"}
                     {size(task.freedBytes)}
                   </span>
                 }
