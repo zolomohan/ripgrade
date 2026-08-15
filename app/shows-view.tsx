@@ -3,7 +3,15 @@
 import { useSearchParams } from "next/navigation";
 
 import { openIssues } from "@/lib/derive";
+import type { LibraryItem } from "@/lib/library";
 import { posterName, showId } from "@/lib/routes";
+import {
+  SHOW_VERDICT_ORDER,
+  episodesOf,
+  shared,
+  showGaps as missing,
+  showVerdict,
+} from "@/lib/show-verdict";
 import type { Show } from "@/lib/shows";
 import { Bar, HelpTip, ICONS, MenuItem, Popover } from "./controls";
 import { EmptyState } from "./empty-state";
@@ -39,35 +47,19 @@ import { size } from "./format";
  * the way a shelf of films can.
  */
 
-/** One episode, as the facets and the cuts below both have to name it. */
-type Episode = Show["seasons"][number]["episodes"][number];
-
-/** Every episode of a show, which is what most of the facets ask about. */
-const episodesOf = (show: Show) => show.seasons.flatMap((s) => s.episodes);
-
-const missing = (show: Show) =>
-  show.seasons.reduce(
-    (n, s) => n + (s.total === undefined ? 0 : s.missing.length),
-    0,
-  );
-
 const issuesOf = (show: Show) =>
-  episodesOf(show).reduce((n, e) => n + openIssues(e.item).length, 0);
+  episodesOf(show).reduce((n, e) => n + openIssues(e).length, 0);
 
 /**
  * A property is claimed for a show when every episode has it — "Dolby Vision"
  * on a show where one episode is SDR would be a lie, and the one episode that
  * breaks the run is exactly what you are looking for.
  */
-const all = (
-  show: Show,
-  test: (episode: Show["seasons"][number]["episodes"][number]) => boolean,
-) => episodesOf(show).every(test);
+const all = (show: Show, test: (episode: LibraryItem) => boolean) =>
+  episodesOf(show).every(test);
 
-const any = (
-  show: Show,
-  test: (episode: Show["seasons"][number]["episodes"][number]) => boolean,
-) => episodesOf(show).some(test);
+const any = (show: Show, test: (episode: LibraryItem) => boolean) =>
+  episodesOf(show).some(test);
 
 const FACETS: {
   key: string;
@@ -81,18 +73,17 @@ const FACETS: {
       {
         key: "res-2160p",
         label: "2160p",
-        test: (s) => all(s, (e) => e.item.resolution === "2160p"),
+        test: (s) => all(s, (e) => e.resolution === "2160p"),
       },
       {
         key: "res-1080p",
         label: "1080p",
-        test: (s) => all(s, (e) => e.item.resolution === "1080p"),
+        test: (s) => all(s, (e) => e.resolution === "1080p"),
       },
       {
         key: "res-mixed",
         label: "Mixed",
-        test: (s) =>
-          new Set(episodesOf(s).map((e) => e.item.resolution)).size > 1,
+        test: (s) => new Set(episodesOf(s).map((e) => e.resolution)).size > 1,
       },
     ],
   },
@@ -103,17 +94,17 @@ const FACETS: {
       {
         key: "dv",
         label: "Dolby Vision",
-        test: (s) => any(s, (e) => e.item.hdr === "Dolby Vision"),
+        test: (s) => any(s, (e) => e.hdr === "Dolby Vision"),
       },
       {
         key: "hdr10",
         label: "HDR10",
-        test: (s) => any(s, (e) => e.item.hdr === "HDR10"),
+        test: (s) => any(s, (e) => e.hdr === "HDR10"),
       },
       {
         key: "sdr",
         label: "SDR",
-        test: (s) => all(s, (e) => e.item.hdr === "SDR"),
+        test: (s) => all(s, (e) => e.hdr === "SDR"),
       },
     ],
   },
@@ -124,17 +115,17 @@ const FACETS: {
       {
         key: "remux",
         label: "REMUX",
-        test: (s) => all(s, (e) => e.item.releaseType === "REMUX"),
+        test: (s) => all(s, (e) => e.releaseType === "REMUX"),
       },
       {
         key: "web",
         label: "WEB-DL",
-        test: (s) => all(s, (e) => e.item.releaseType === "WEB-DL"),
+        test: (s) => all(s, (e) => e.releaseType === "WEB-DL"),
       },
       {
         key: "encode",
         label: "Encode",
-        test: (s) => any(s, (e) => e.item.releaseType === "ENCODE"),
+        test: (s) => any(s, (e) => e.releaseType === "ENCODE"),
       },
     ],
   },
@@ -200,31 +191,19 @@ function matches(show: Show, selection: Selection): boolean {
 }
 
 /**
- * The one property a whole show can be said to have, or "Mixed".
- *
- * The facets above already take this line — a format is claimed for a show only
- * when every episode has it — and a cut has to answer for every show rather
- * than only the ones that agree with themselves. So a run that is 2160p
- * throughout is 2160p, and a run that changed resolution halfway through its
- * third season is Mixed, which is a fact worth its own section.
- */
-const shared = (show: Show, of: (episode: Episode) => string) => {
-  const values = new Set(episodesOf(show).map(of));
-  return values.size === 1
-    ? [...values][0]
-    : values.size === 0
-      ? "Unknown"
-      : "Mixed";
-};
-
-/**
  * How the shelf can be cut, mirroring the film shelf's own menu.
  *
- * The first is the default, and it is the same choice the films make: the cut
- * that says what needs doing rather than the one that sorts by an attribute. A
- * show with a hole in a season is the thing this shelf exists to surface, so it
- * leads — and "Complete" is the section you scroll past rather than the one you
- * came for.
+ * The first is the default, and it is the same cut the films default to, by the
+ * same name: what needs doing rather than an attribute to sort on. It used to
+ * be a shelf-local "State" — missing / has issues / complete — which answered a
+ * narrower question in vocabulary this app uses nowhere else, so the two tabs
+ * of one switch grouped by two different ideas of what is wrong with something.
+ * Verdict is the app's word, and it says more: a complete show whose every
+ * episode wants upgrading was "Complete" before, which is true and useless.
+ *
+ * The verdict itself is `lib/show-verdict.ts` rather than a rule of this file:
+ * `/stats` counts the same buckets, and a verdict computed in two places is a
+ * verdict that will eventually be computed two ways.
  */
 const GROUPS: {
   key: string;
@@ -234,32 +213,27 @@ const GROUPS: {
   order?: string[];
 }[] = [
   {
-    key: "state",
-    label: "State",
-    of: (show) =>
-      missing(show) > 0
-        ? "Missing episodes"
-        : issuesOf(show) > 0
-          ? "Has issues"
-          : "Complete",
-    order: ["Missing episodes", "Has issues", "Complete"],
+    key: "verdict",
+    label: "Verdict",
+    of: showVerdict,
+    order: [...SHOW_VERDICT_ORDER],
   },
   {
     key: "resolution",
     label: "Resolution",
-    of: (show) => shared(show, (episode) => episode.item.resolution),
+    of: (show) => shared(show, (episode) => episode.resolution),
     order: ["2160p", "1080p", "720p", "SD", "Mixed", "Unknown"],
   },
   {
     key: "release",
     label: "Release type",
-    of: (show) => shared(show, (episode) => episode.item.releaseType),
+    of: (show) => shared(show, (episode) => episode.releaseType),
     order: ["REMUX", "WEB-DL", "ENCODE", "UNKNOWN", "Mixed", "Unknown"],
   },
   {
     key: "hdr",
     label: "Dynamic range",
-    of: (show) => shared(show, (episode) => episode.item.hdr),
+    of: (show) => shared(show, (episode) => episode.hdr),
     order: ["Dolby Vision", "HDR10+", "HDR10", "SDR", "Mixed", "Unknown"],
   },
   { key: "none", label: "No grouping", of: () => "" },
@@ -423,7 +397,10 @@ export function ShowsView({
               buttonClassName="rounded-l-full"
             >
               {() => (
-                <div className="flex flex-col gap-3 p-4">
+                /* The film shelf's spacing, for the reason given there: the two
+                   tabs open the same panel, and a Shows filter packed tighter
+                   than a Films one is a difference nobody chose. */
+                <div className="flex flex-col gap-5 p-4">
                   {/* Heading over the same fading hairline every other head in
                       the app stands on, so the panel's title is a title here
                       too and not just the first line of the list. */}

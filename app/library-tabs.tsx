@@ -61,7 +61,8 @@ export function LibraryTabs({
   );
 
   /**
-   * The forced sweep, at the end of both shelves' rows.
+   * The shelf's own refresh, at the end of both shelves' rows: read the
+   * folders, then ask the indexers about what is in them.
    *
    * This page inherited the queue's job when the queue page went — the films
    * something better has been found for are a section of this shelf now — and
@@ -77,11 +78,18 @@ export function LibraryTabs({
    * included. The same argument that keeps it at the head of the wishlist
    * rather than on one of its sections.
    *
+   * The drive pass in front of it is `readDrive`, and it is here for the same
+   * reason the sweep is: this page is the drive, and a shelf that could ask
+   * other people's machines about your films but not look at the films
+   * themselves had the two halves the wrong way round. The scan runs first —
+   * a release is only better than what you have if what you have is what the
+   * library thinks it is — and the sweep follows it on the server.
+   *
    * Here rather than inside either shelf, for the reason `tabs` is here: it
    * belongs to the page, and a row split across two components is a row that
    * cannot be one line.
    */
-  const action = <RescanButton jackettReady={jackettReady} />;
+  const action = <RescanButton jackettReady={jackettReady} readDrive />;
 
   return tab === "movies" ? (
     <LibraryView

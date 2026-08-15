@@ -111,47 +111,71 @@ export function jobRows(
   }
 
   if (sweep.status === "running") {
-    // One job, two halves. The rail names whichever is running rather than
+    // One job, three parts. The rail names whichever is running rather than
     // averaging them into a number that describes neither.
     const wishing = sweep.phase === "wishlist";
-    const done = wishing ? sweep.wishDone : sweep.done;
-    const total = wishing ? sweep.wishTotal : sweep.total;
+    const discing = sweep.phase === "discs";
+    const done = discing
+      ? sweep.discDone
+      : wishing
+        ? sweep.wishDone
+        : sweep.done;
+    const total = discing
+      ? sweep.discTotal
+      : wishing
+        ? sweep.wishTotal
+        : sweep.total;
 
     rows.push({
       key: "sweep",
       // What it is doing, not how far along it is: the bar under this line is
       // already the fraction, and saying it twice makes the name a readout.
-      name: wishing ? "Finding Wishlist" : "Finding Upgrades",
+      name: discing
+        ? "Finding Discs"
+        : wishing
+          ? "Finding Wishlist"
+          : "Finding Upgrades",
       percent: total ? (done / total) * 100 : 0,
       detail: {
-        title: wishing ? "Searching for wanted films" : "Sweeping for upgrades",
+        title: discing
+          ? "Looking up the best releases"
+          : wishing
+            ? "Searching for wanted films"
+            : "Sweeping for upgrades",
         percent: total ? (done / total) * 100 : 0,
         rows: [
           ...(sweep.current
             ? [{ label: "Film", value: sweep.current, mono: true }]
             : []),
-          ...(wishing
+          ...(discing
             ? [
-                { label: "Searched", value: count(sweep.wishDone) },
-                { label: "To search", value: count(sweep.wishTotal) },
-                { label: "Found", value: count(sweep.wishFound) },
-                { label: "Upgrades found", value: count(sweep.found) },
+                { label: "Looked up", value: count(sweep.discDone) },
+                { label: "To look up", value: count(sweep.discTotal) },
               ]
-            : [
-                { label: "Checked", value: count(sweep.done) },
-                { label: "To check", value: count(sweep.total) },
-                { label: "Found", value: count(sweep.found) },
-                {
-                  label: "Fresh enough",
-                  value: count(sweep.skipped),
-                  quiet: !sweep.skipped,
-                },
-              ]),
+            : wishing
+              ? [
+                  { label: "Searched", value: count(sweep.wishDone) },
+                  { label: "To search", value: count(sweep.wishTotal) },
+                  { label: "Found", value: count(sweep.wishFound) },
+                  { label: "Upgrades found", value: count(sweep.found) },
+                ]
+              : [
+                  { label: "Checked", value: count(sweep.done) },
+                  { label: "To check", value: count(sweep.total) },
+                  { label: "Found", value: count(sweep.found) },
+                  {
+                    label: "Fresh enough",
+                    value: count(sweep.skipped),
+                    quiet: !sweep.skipped,
+                  },
+                ]),
         ],
         startedAt: sweep.startedAt,
-        note: wishing
-          ? "Films you want but do not have, asked of the same indexers."
-          : "Stopping keeps every check already made; the next run resumes.",
+        note: discing
+          ? "The ceiling each search is scored against, fetched from Blu-ray.com before any indexer is asked."
+          : wishing
+            ? "Films you want but do not have, asked of the same indexers."
+            : "Stopping keeps every check already made; the next run resumes.",
       },
       stop: () => stopUpgradeSweep().then((job) => apply({ sweep: job })),
     });

@@ -161,6 +161,7 @@ import {
   removeFromWishlist,
   type WishKind,
 } from "@/lib/wishlist";
+import { clearWishlistCheck } from "@/lib/wishlist-search";
 import { imageUrl } from "@/lib/image-url";
 import { getShow, getShows, type Show } from "@/lib/shows";
 import {
@@ -326,7 +327,32 @@ export async function stopThumbRebuild(): Promise<ThumbJob> {
   return cancelThumbRebuild();
 }
 
+/** The maintenance scan: read the folders, and leave the asking cheap. */
 export async function beginScan(): Promise<ScanState> {
+  return scanLibrary(false);
+}
+
+/**
+ * The library shelf's own button: read the folders, then ask about everything.
+ *
+ * The shelf shows two things that go stale in two different ways — the films
+ * themselves, which change when you move a file, and the "Upgrades found"
+ * section, which changes when someone seeds something better. Pressing one
+ * button on that page should settle both, in that order: a release is judged
+ * against the film's score, so the score has to be right before the question
+ * is worth asking.
+ *
+ * The forcing is the same argument `rescanUpgradeQueue` makes below, and this
+ * is where that button went — the sweep it started is now the second half of
+ * this one. Nothing here refuses without Jackett: the drive is still read, and
+ * the pass simply ends after the half that needs nobody else's machine.
+ */
+export async function rescanLibrary(): Promise<ScanState> {
+  return scanLibrary(true);
+}
+
+/** Both of the above, which differ only in what happens once the drive is read. */
+function scanLibrary(force: boolean): ScanState {
   const roots = getLibraryRoots();
   if (roots.length === 0) {
     return {
@@ -353,7 +379,7 @@ export async function beginScan(): Promise<ScanState> {
       error: "No library folder selected.",
     };
   }
-  return startScan(roots);
+  return startScan(roots, { force });
 }
 
 /** Re-derives from cached probes and TMDb records — no disk, no network. */
@@ -838,6 +864,9 @@ export async function linkDisc(
     const lookup = await setManualDisc(tmdbId, candidate);
     if (lookup.error) return { ok: false, error: lookup.error };
     deriveAll();
+    // A want's stored search was scored against whatever was known then. This
+    // is that changing, so what it said no longer applies; see the note there.
+    clearWishlistCheck(tmdbId);
     refresh();
     return { ok: true };
   } catch (err) {
@@ -882,6 +911,7 @@ export async function enterDisc(
   try {
     setEnteredDisc(tmdbId, clean);
     deriveAll();
+    clearWishlistCheck(tmdbId);
     refresh();
     return { ok: true };
   } catch (err) {
@@ -899,6 +929,9 @@ export async function unlinkDisc(
   try {
     clearDisc(tmdbId);
     deriveAll();
+    // Unlinking moves the ground the same way linking does: the scale a stored
+    // search used has gone, and its number would be read as the other kind.
+    clearWishlistCheck(tmdbId);
     refresh();
     return { ok: true };
   } catch (err) {
@@ -2308,11 +2341,14 @@ export async function stopUpgradeSweep(): Promise<SweepJob> {
  * pays for the searches.
  *
  * Reached from the Scan pill at the head of the wishlist page — see
- * app/rescan-button.tsx, the app's one way to ask for a pass on demand. Both
- * halves are refreshed by the one press even though only one of them is on
- * that page: `startSweep` passes the force through to the films you own as
- * well as to the wants, and what it finds for those lands on the library
- * shelf under "Upgrades found".
+ * app/rescan-button.tsx. Both halves are refreshed by the one press even
+ * though only one of them is on that page: `startSweep` passes the force
+ * through to the films you own as well as to the wants, and what it finds for
+ * those lands on the library shelf under "Upgrades found".
+ *
+ * The library shelf's copy of that button no longer comes through here: it
+ * reads the drive first and gets this same forced sweep at the end of the
+ * scan. See `rescanLibrary` above.
  */
 export async function rescanUpgradeQueue(): Promise<SweepJob> {
   return sweep(true);

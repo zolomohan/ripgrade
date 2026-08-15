@@ -473,8 +473,14 @@ async function probeAll(files: FoundFile[]) {
  * Needs Jackett and nothing else. Its absence is no more a failed scan than a
  * missing TMDb token is, and it needs nothing further from TMDb either — a
  * want is already a TMDb film by the time it reaches the list.
+ *
+ * @param toSweep The sweep this scan ends with is a forced one, and a forced
+ *   sweep asks about every want itself. Searching them here as well would be
+ *   the same questions put to the same indexers twice, a minute apart. The
+ *   pruning still runs: it reads the drive's own rows, costs nothing, and the
+ *   sweep does not do it.
  */
-async function runWishlistPass(): Promise<void> {
+async function runWishlistPass(toSweep = false): Promise<void> {
   /*
    * Wants the drive has answered come off the list first, and unconditionally:
    * this is the app reading its own library, so it is right with no indexer,
@@ -483,7 +489,7 @@ async function runWishlistPass(): Promise<void> {
    */
   pruneOwnedWishes();
 
-  if (!hasJackett()) return;
+  if (toSweep || !hasJackett()) return;
 
   setState({ ...current(), status: "wishlist", current: undefined });
 
@@ -525,14 +531,35 @@ async function runWishlistPass(): Promise<void> {
  * moment the job is running, it is a no-op while one already is, and it skips
  * anything checked in the last day, so a scan on every start does not mean a
  * full search on every start.
+ *
+ * Unless the scan was asked for by name: see `force` on `startScan`.
  */
-function sweepAfterScan(): void {
+function sweepAfterScan(force: boolean): void {
   if (!hasJackett()) return;
-  startSweep();
+  startSweep({ force });
 }
 
-export function startScan(roots: string[]): ScanState {
+export function startScan(
+  roots: string[],
+  /**
+   * Whether the sweep at the end asks about every film and want, however
+   * recently it asked.
+   *
+   * False for the scan that runs itself at start-up, which nobody requested and
+   * which should stay cheap. True for the library shelf's own button: someone
+   * pressed it, and what they pressed it for is both halves of the answer —
+   * what is on the drive now, and what is out there that beats it. A pass that
+   * read the drive and then declined to ask because it had asked this morning
+   * would report itself done having done half the job.
+   */
+  { force = false } = {},
+): ScanState {
   if (current().status === "scanning") return current();
+
+  // Both places the wishlist pass is reached from need to know whether the
+  // forced sweep is really coming — without Jackett there is no sweep at all,
+  // and deferring to it would drop the wants on the floor.
+  const forcedSweep = force && hasJackett();
 
   setState({
     ...IDLE,
@@ -598,7 +625,7 @@ export function startScan(roots: string[]): ScanState {
           .map((u) => `${u.root} (${u.why})`)
           .join(", ")}`;
 
-        await runWishlistPass();
+        await runWishlistPass(forcedSweep);
 
         setState({
           ...current(),
@@ -607,7 +634,7 @@ export function startScan(roots: string[]): ScanState {
           error: message,
           finishedAt: Date.now(),
         });
-        sweepAfterScan();
+        sweepAfterScan(force);
 
         // Said once, and then watched for rather than left standing: this is
         // the answer at one instant, and the drive it is about is the kind of
@@ -818,7 +845,7 @@ export function startScan(roots: string[]): ScanState {
         if (pending.length > 0) deriveAll();
       }
 
-      await runWishlistPass();
+      await runWishlistPass(forcedSweep);
 
       setState({
         ...current(),
@@ -826,7 +853,7 @@ export function startScan(roots: string[]): ScanState {
         current: undefined,
         finishedAt: Date.now(),
       });
-      sweepAfterScan();
+      sweepAfterScan(force);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setState({

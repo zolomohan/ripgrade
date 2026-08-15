@@ -282,13 +282,24 @@ export function Switch({
 
 export const ICONS = {
   filter: "M3 5h18l-7 8.2V19l-4 2v-7.8z",
-  sort: "M3 6h13M3 12h9M3 18h5",
+  /**
+   * Two arrows pointing opposite ways: an order, and the fact that it can be
+   * turned round.
+   *
+   * It was a stack of shortening lines, which is a picture of a list that has
+   * been sorted — indistinguishable at 16px from `group` above it, and from
+   * the filter beside it, all three being horizontal rules in a row. The two
+   * arrows say the thing the button actually does rather than what the list
+   * looks like afterwards, and they are the only mark in the bar with a
+   * vertical in it.
+   */
+  sort: "M3 9l4 -4l4 4m-4 -4v14M21 15l-4 4l-4 -4m4 4v-14",
   group: "M4 5h16M4 10h16M8 15h12M8 19h12",
   // The two shapes a list can be read in, drawn as what they produce rather
   // than as an idea about it: four tiles, and two bands running the width of
-  // the page. Deliberately not a third set of horizontal lines — `sort` and
-  // `group` are already two of those, and a third in the same bar would be a
-  // button you have to click to find out what it was.
+  // the page. Deliberately not another set of horizontal lines — `group` is
+  // already one, and a second in the same bar would be a button you have to
+  // click to find out what it was.
   grid: "M4 5h6v6H4zM14 5h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   rows: "M4 6h16v4H4zM4 14h16v4H4z",
   /**
@@ -304,10 +315,30 @@ export const ICONS = {
    * and says nothing about what the again is. Two controls that reach the same
    * machines should carry the same mark; a reader who has met it once in ⌘F has
    * been told what it means, and a reload arrow could have meant re-reading the
-   * drive — which is a different button, in the rail, doing a different thing.
+   * drive — which was, then, a different button doing a different thing.
+   *
+   * It stays on the wishlist's button, which is still only that: a page of
+   * films nobody has, asking other people's machines about them. The library
+   * shelf's button has grown a drive pass in front of its search and wears
+   * `scan` below, for the reason given there.
    */
   indexers:
     "M12 12h.01M8.6 15.4a4.8 4.8 0 0 1 0-6.8M15.4 8.6a4.8 4.8 0 0 1 0 6.8M5.6 18.4a8.9 8.9 0 0 1 0-12.8M18.4 5.6a8.9 8.9 0 0 1 0 12.8",
+  /**
+   * Four corners and a beam across them: something being read.
+   *
+   * For the button that stopped being a single question. It reads the library
+   * folders and then asks the indexers — two places, one press — and no
+   * picture of either half is honest about the other: a signal going out says
+   * nothing about the drive, and a drive says nothing about the search. A
+   * scanner's frame is not a picture of either place. It is a picture of the
+   * act both halves are, which is the thing the press actually means.
+   *
+   * The corners are also the app's own shape for "what is inside this" — the
+   * four brackets a viewfinder draws round whatever it is pointed at, here
+   * pointed at the shelf underneath the button.
+   */
+  scan: "M5 12h14M3 7v-2a2 2 0 0 1 2 -2h2M3 17v2a2 2 0 0 0 2 2h2M17 3h2a2 2 0 0 1 2 2v2M17 21h2a2 2 0 0 0 2 -2v-2",
 };
 
 /**

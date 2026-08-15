@@ -163,19 +163,44 @@ export function Modal({
 
   if (!rendered || !target) return null;
 
+  /*
+   * Three elements where two would do, and the third one is the whole reason
+   * every dialog in the app is frosted glass rather than a flat pane.
+   *
+   * A `backdrop-filter` filters what is painted behind it *within its backdrop
+   * root* — and an element that has one becomes the backdrop root for its own
+   * descendants. The veil has one: it is what puts the page out of focus. So
+   * while the panel was a child of the veil, its own blur was reaching for a
+   * backdrop that held nothing but the veil's flat dark fill. It blurred a
+   * plain colour, changed nothing, and the page underneath came through the
+   * panel's translucency exactly as sharp as it was drawn — the one surface in
+   * the app that said "glass" and did not do it. The filter menu never had the
+   * problem: it hangs over the page directly, with no veil above it.
+   *
+   * A sibling is not in the veil's backdrop root, so the veil's *result* —
+   * page, dimmed and softened — is part of what the panel gets to filter, and
+   * it diffuses like every other pane here. Hence the empty div: the sheet is
+   * a layer of its own now, and this outer box is only the frame that centres
+   * the dialog and catches the click outside it.
+   */
   return createPortal(
     <div
-      className={`modal-veil fixed inset-0 z-50 flex items-center justify-center p-6 ${
-        leaving ? "is-leaving" : ""
-      }`}
+      className="fixed inset-0 z-50 flex items-center justify-center p-6"
       onClick={() => dismissible && onClose()}
     >
+      <div
+        aria-hidden
+        className={`modal-veil absolute inset-0 ${leaving ? "is-leaving" : ""}`}
+      />
+
       <div
         role="dialog"
         aria-modal="true"
         aria-label={label}
         onClick={(event) => event.stopPropagation()}
-        className={`modal-panel ${leaving ? "is-leaving" : ""} ${panelClassName ?? ""}`}
+        // `relative` only so it is painted after the sheet it stands on: both
+        // are positioned, so the order is the one they are written in.
+        className={`modal-panel relative ${leaving ? "is-leaving" : ""} ${panelClassName ?? ""}`}
       >
         {children}
       </div>

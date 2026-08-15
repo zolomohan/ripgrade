@@ -209,6 +209,42 @@ body {
 }
 
 /*
+ * A pointer on the things that are pressed.
+ *
+ * Tailwind's reset hands `button` the arrow — `cursor: default`, which is what
+ * the native control has always had — and every button in the app inherited it:
+ * nothing under the pointer said it was pressable until it had been pressed.
+ * The few places that had noticed were each writing `cursor-pointer` by hand,
+ * which is how a default gets fixed one control at a time and stays broken
+ * everywhere nobody looked.
+ *
+ * `summary` and `[role="button"]` are here for the same reason rather than as
+ * an afterthought: this app is full of rows, posters and disclosure headings
+ * that are buttons without being `<button>`, and a thing that acts like one
+ * should feel like one under the hand.
+ *
+ * In `@layer base`, unlike the focus rule above, and deliberately: a control
+ * with something else to say — `cursor-not-allowed` on a tick that cannot be
+ * ticked, `cursor-grab` on something dragged — has to be able to say it, and a
+ * utility only wins against a rule that is in a layer.
+ */
+@layer base {
+  button,
+  summary,
+  select,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  /* Nothing happens on the press, so nothing should invite it. */
+  button:disabled,
+  select:disabled,
+  [aria-disabled="true"] {
+    cursor: default;
+  }
+}
+
+/*
  * Rows and cards ease rather than snap when filters change the list.
  *
  * `--i` is the item's place in its list, set by `stagger()`. Each one waits its

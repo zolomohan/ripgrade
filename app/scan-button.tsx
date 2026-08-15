@@ -25,16 +25,16 @@ import { Spinner } from "./spinner";
  * a page where it could be scanning anything else.
  *
  * `BUTTON.secondary` rather than the shelf row's height: this stopped standing
- * in a row of controls when the library bar moved to `/library`, and its two
- * homes now are the foot of the rail and a settings row, where the thing to
- * agree with is every other button in the app.
+ * in a row of controls when the library bar moved to `/library`, and its one
+ * home now is a settings row, where the thing to agree with is every other
+ * button in the app.
  *
- * Those two homes want two widths, which is the whole of what `className` is
- * for: the rail's foot is a column and a button that stops short of its edges
- * reads as loose in it, while the settings row holds its button beside a
- * sentence and wants it the size of its own word.
+ * One home, so no width to pass in — the row holds this beside a sentence and
+ * wants it the size of its own word. It stood at the foot of the rail as well
+ * for a while, full width; that copy has gone, for the reason app/sidebar.tsx
+ * gives where it was.
  */
-export function ScanButton({ className = "" }: { className?: string }) {
+export function ScanButton() {
   const { state, start, busy } = useScan();
 
   const label =
@@ -51,9 +51,11 @@ export function ScanButton({ className = "" }: { className?: string }) {
   return (
     <button
       type="button"
-      onClick={start}
+      // Wrapped rather than handed straight over: `start` takes options now,
+      // and a click handler passed by name would hand it a mouse event.
+      onClick={() => void start()}
       disabled={busy}
-      className={`${BUTTON.secondary} ${className}`}
+      className={BUTTON.secondary}
     >
       {/* The label already names the phase — Scanning, Matching, Discs. The
           wheel is only there to say it is still going, and it is the one mark

@@ -240,6 +240,16 @@ export function removeFromWishlist(
     tmdbId,
     kind,
   );
+
+  // And what the indexers said about it, for the same reason `pruneOwnedWishes`
+  // drops it: a check outlives the want it was made for, and re-adding a film
+  // within the day would otherwise inherit a search made under conditions that
+  // no longer hold — before its disc was known, most of all. Films only, since
+  // only films are ever checked; a show's id is another film's id, so the kind
+  // is what stops one list deleting the other's row.
+  if (kind === "movie") {
+    db.prepare("DELETE FROM wishlist_checks WHERE tmdb_id = ?").run(tmdbId);
+  }
 }
 
 /**

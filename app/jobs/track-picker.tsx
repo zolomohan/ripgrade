@@ -335,15 +335,15 @@ export function TrackPicker({
     onClose();
   }
 
-  /** The chip that says a row is one the preference keeps. */
-  const chip = (title: string) => (
-    <span
-      title={title}
-      className="rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-60 ring-1 ring-line-strong ring-inset"
-    >
-      KEPT
-    </span>
-  );
+  /*
+   * A KEPT chip used to sit beside the language on every row the preference
+   * keeps, which was most of the table: a badge that appears on the majority
+   * of rows says nothing about any of them, and it was answering a question
+   * the table already answers twice over — the tick box is empty and the row
+   * is not struck through. What is kept is what you have not ticked. The rows
+   * the preference keeps still come first, which is the ordering that fact was
+   * worth.
+   */
 
   /** What the line above the buttons reads, which is the step's own answer. */
   const reading =
@@ -553,12 +553,6 @@ export function TrackPicker({
               {order.map((ordinal) => {
                 const track = tracks[ordinal];
                 const ticked = selected.has(ordinal);
-                // Everything the queue did not propose is a track the
-                // preference keeps — which is the whole reason it is unticked,
-                // and why it is sitting at the top of the table.
-                const kept =
-                  track.language !== undefined &&
-                  !task.proposed.includes(ordinal);
 
                 return (
                   <tr
@@ -588,13 +582,7 @@ export function TrackPicker({
                       {track.label}
                     </td>
                     <td className="px-4 py-2 opacity-70">
-                      <span className="flex items-center gap-1.5">
-                        {track.language ? languageName(track.language) : "—"}
-                        {kept &&
-                          chip(
-                            "One of the languages you keep — set in Settings",
-                          )}
-                      </span>
+                      {track.language ? languageName(track.language) : "—"}
                     </td>
                     <td className="px-4 py-2 opacity-70">
                       {[
@@ -644,7 +632,6 @@ export function TrackPicker({
               {orderText.map((ordinal) => {
                 const track = subtitles[ordinal];
                 const ticked = selectedText.has(ordinal);
-                const kept = !task.proposedSubtitles.includes(ordinal);
 
                 return (
                   <tr
@@ -664,15 +651,7 @@ export function TrackPicker({
                       {track.format}
                     </td>
                     <td className="px-4 py-2 opacity-70">
-                      <span className="flex items-center gap-1.5">
-                        {track.language ? languageName(track.language) : "—"}
-                        {kept &&
-                          chip(
-                            track.forced
-                              ? "Forced — kept whatever language it names"
-                              : "One of the subtitle languages you keep — set in Settings",
-                          )}
-                      </span>
+                      {track.language ? languageName(track.language) : "—"}
                     </td>
                     <td className="px-4 py-2 opacity-70">
                       {track.title || "—"}
@@ -779,10 +758,10 @@ export function TrackPicker({
 
                 "Removing" and "Keeping" rather than the "Going" and "Staying"
                 these were first written as. Every other surface in the app
-                already says both words — the button under this reads Remove, the
-                chips in the tables read KEPT, and Settings asks which languages
-                you keep — so a review screen that invented a third pair was the
-                only place in the app using them.
+                already says both words — the button under this reads Remove,
+                the tables ask which tracks to remove, and Settings asks which
+                languages you keep — so a review screen that invented a third
+                pair was the only place in the app using them.
 
                 The two stay side by side because the reassurance is only
                 reassuring next to the thing it answers — read one under the

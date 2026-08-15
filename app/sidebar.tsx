@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 
 import { SLIDE, useSlider } from "./controls";
-import { ScanButton } from "./scan-button";
 import { useSearchDialog } from "./search/dialog";
 import { SidebarProcesses } from "./sidebar-processes";
 
@@ -493,40 +492,26 @@ export function Sidebar() {
         </nav>
 
         {/*
-         * The foot of the rail: what is running, and the one verb that starts
-         * it.
+         * The foot of the rail: what is running.
          *
-         * The scan button was on the dashboard, beside the greeting, which made
-         * the page that says what to do about the library also the only place
-         * you could ask it to go and look — and the rail is where this app
-         * keeps the things that are true from wherever you are standing. A scan
-         * is one of those: started from a page and finished somewhere else,
-         * already reporting itself here.
+         * A Scan button stood under this for a while, on the argument that the
+         * rail is where the app keeps what is true from wherever you are
+         * standing, and a scan is one of those. What it was not was something
+         * you press from wherever you are standing: the shelf has its own now,
+         * beside the shelf it refreshes, and Settings keeps the one for the odd
+         * time you have moved a file by hand. A verb parked in the furniture of
+         * every page, three inches from a shelf with the same word on it, was
+         * the third place to press for a thing there is now one place to press
+         * for.
          *
-         * Which is why the two are one group and not two things that happen to
-         * be last. The aside sets its parts `gap-8` apart, and at that distance
-         * the button read as unattached — the floor of the rail rather than the
-         * control belonging to the block above it. `gap-3` is the distance
-         * between a thing and its own progress.
-         *
-         * The button is last within it, because a control that jumps down
-         * whenever a job starts is a control you have to look for.
+         * What is left is the report, which was always the part that had to be
+         * here. Renders nothing when nothing runs. `min-w-0` is what the
+         * truncation inside actually truncates against, and `overflow-hidden`
+         * is the backstop for anything that forgets to — a job with a long
+         * subtitle should not be able to widen the column it is reporting in.
          */}
-        <div className="flex flex-col gap-3">
-          {/* Renders nothing when nothing runs. `min-w-0` is what the
-              truncation inside actually truncates against, and
-              `overflow-hidden` is the backstop for anything that forgets to
-              — a job with a long subtitle should not be able to widen the
-              column it is reporting in. */}
-          <div className="min-w-0 overflow-hidden empty:hidden">
-            <SidebarProcesses />
-          </div>
-
-          {/* The rail's own width, at both of its widths: a button set short of
-              the edges of a stack reads as loose in it. It was the size of its
-              own word on a narrow screen, back when the rail there was a row —
-              in a drawer it is in a column like everything else. */}
-          <ScanButton className="w-full" />
+        <div className="min-w-0 overflow-hidden empty:hidden">
+          <SidebarProcesses />
         </div>
       </aside>
     </>

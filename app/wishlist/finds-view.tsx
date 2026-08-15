@@ -649,7 +649,9 @@ export function DownloadsView({
         <EmptyState icon={SWEEP_ICON} title="Sweeping the wishlist">
           {sweep.phase === "wishlist"
             ? `${sweep.wishDone} of ${sweep.wishTotal} wants checked — anything found lands here as it turns up.`
-            : "The films you own are being checked first; your wishlist follows in the same pass."}
+            : sweep.phase === "discs"
+              ? `${sweep.discDone} of ${sweep.discTotal} discs looked up — the ceiling each want is scored against, before the searching starts.`
+              : "The films you own are being checked first; your wishlist follows in the same pass."}
         </EmptyState>
       ) : wants === 0 ? (
         <EmptyState

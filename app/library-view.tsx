@@ -651,7 +651,14 @@ export function LibraryView({
               buttonClassName="rounded-l-full"
             >
               {() => (
-                <div className="flex flex-col gap-3 p-4">
+                /* `gap-5` between the facets and `gap-1.5` inside one, which is
+                   the whole of what makes this a set of rows rather than a wall
+                   of chips: a heading 6px above its own options and 12px from
+                   the next facet's was nearly equidistant, so the eye had to
+                   read the labels to find where one row ended. Three times the
+                   distance between the groups is enough to see the grouping
+                   without a rule drawn between them. */
+                <div className="flex flex-col gap-5 p-4">
                   {/* Heading over the same fading hairline every other head in
                       the app stands on, so the panel's title is a title here
                       too and not just the first line of the list. */}

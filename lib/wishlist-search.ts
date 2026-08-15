@@ -1,7 +1,7 @@
 import "server-only";
 
 import { db } from "./db";
-import { getDisc } from "./disc";
+import { fetchDisc } from "./disc";
 import { bestUpgrade } from "./upgrades";
 import { queueFilter, trim, type StoredHit } from "./upgrade-sweep";
 import { getWishlist, type WishlistEntry } from "./wishlist";
@@ -135,6 +135,31 @@ export async function searchWishlist(
     options.onProgress?.({ ...progress });
 
     try {
+      /*
+       * The disc first, looked up rather than merely read.
+       *
+       * Which of the two scales a search used — a fraction of the disc, or the
+       * bare rubric — is frozen into the result it stores, so a want searched
+       * with no disc known carries a number that answers a different question
+       * from every other row on the queue. It reads as a low score when it is
+       * really an unanswered one, and at a high threshold it is not read at
+       * all.
+       *
+       * `addWish` fetches the disc for a film as it goes on the list, but that
+       * only covers wants added since; the scan's own disc pass walks the
+       * drive, and a want is by definition not on it. So nothing but somebody
+       * opening the film's page ever filled this in, and a want nobody visited
+       * was searched blind every sweep, forever. Here it is filled in by the
+       * pass that needs it.
+       *
+       * Cheap to leave in: `fetchDisc` returns the cached lookup untouched
+       * when there is one, and caches the failure too, so this is one extra
+       * scrape per want in the whole life of the list rather than one a sweep.
+       */
+      const disc = await fetchDisc(entry.tmdbId, entry.title, entry.year).catch(
+        () => undefined,
+      );
+
       // No `currentScore`: there is nothing of yours to measure against, so
       // the prediction stands on its own. The disc is still worth passing —
       // where one has been looked up, it is what makes a score mean "as good
@@ -143,7 +168,7 @@ export async function searchWishlist(
         kind: "movie",
         title: entry.title,
         year: entry.year,
-        disc: getDisc(entry.tmdbId),
+        disc,
       });
 
       write.run(
@@ -218,6 +243,24 @@ export function getWishlistFinds(): WishlistFind[] {
       (b.hit.seeders ?? 0) - (a.hit.seeders ?? 0) ||
       a.title.localeCompare(b.title),
   );
+}
+
+/**
+ * Forgets what the indexers said about one want, so the next sweep asks again.
+ *
+ * For when the ground the answer stood on has moved. A stored hit remembers the
+ * score it was given but not the scale it was given on, and linking a disc by
+ * hand changes that scale: what was a rubric total becomes a fraction of the
+ * disc, and the old number goes on being read as the new kind. Dropping the row
+ * is the honest version of that — it says the film has not been asked about
+ * since, which is true, rather than answering with the reading from before.
+ *
+ * The check, not the want: the film stays on the list, and the queue simply has
+ * nothing to show for it until the next sweep. Which is at most a day, and is
+ * now if you press Scan.
+ */
+export function clearWishlistCheck(tmdbId: number): void {
+  db.prepare("DELETE FROM wishlist_checks WHERE tmdb_id = ?").run(tmdbId);
 }
 
 /** How many wants have been looked up at all, for the empty states. */

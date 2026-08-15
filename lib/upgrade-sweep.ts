@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { db, getSetting, setSetting } from "./db";
 import { duplicateKey } from "./derive";
-import { discIds, getDisc } from "./disc";
+import { discIds, fetchDisc, getDisc, hasDisc } from "./disc";
 import { notifyJobs } from "./job-events";
 import { getMovies, type LibraryItem } from "./library";
 import { guessFromTitle } from "./release-title";
@@ -29,11 +29,15 @@ import { bestUpgrade, type ScoredRelease } from "./upgrades";
 export type SweepJob = {
   status: "idle" | "running" | "done" | "cancelled" | "error";
   /**
-   * Which half is running. A sweep fills the whole queue — the films you have
+   * Which part is running. A sweep fills the whole queue — the films you have
    * and then the films you want — and the two are counted separately because
    * they are different questions asked of the same indexers.
+   *
+   * `discs` comes before either, and is not a question for an indexer at all:
+   * it is the ceiling the other two are scored against, fetched for the wants
+   * that have none. See the phase itself for why it goes first.
    */
-  phase: "films" | "wishlist";
+  phase: "discs" | "films" | "wishlist";
   total: number;
   done: number;
   /** Films where something better turned up, so far. */
@@ -44,6 +48,9 @@ export type SweepJob = {
   wishTotal: number;
   wishDone: number;
   wishFound: number;
+  /** The disc pass's, likewise. Zero when every want already had one. */
+  discTotal: number;
+  discDone: number;
   current?: string;
   startedAt?: number;
   finishedAt?: number;
@@ -60,6 +67,8 @@ const IDLE: SweepJob = {
   wishTotal: 0,
   wishDone: 0,
   wishFound: 0,
+  discTotal: 0,
+  discDone: 0,
 };
 
 /**
@@ -210,13 +219,15 @@ export function startSweep({ force = false } = {}): SweepJob {
   setJob({
     ...IDLE,
     status: "running",
-    phase: "films",
+    phase: "discs",
     startedAt: Date.now(),
   });
 
   // Not awaited: the caller returns at once and the job stream reports.
   void (async () => {
     try {
+      await sweepDiscs();
+
       const candidates = sweepCandidates();
 
       const checked = new Map(
@@ -240,6 +251,8 @@ export function startSweep({ force = false } = {}): SweepJob {
 
       setJob({
         ...current(),
+        phase: "films",
+        current: undefined,
         total: stale.length,
         skipped: candidates.length - stale.length,
       });
@@ -349,6 +362,59 @@ export function startSweep({ force = false } = {}): SweepJob {
  * module for the stored-release shape, and statically it would be a cycle —
  * the same reason dovi.ts reaches for library.ts this way.
  */
+/**
+ * The ceilings, before a single indexer is asked anything.
+ *
+ * A release is scored one of two ways — as a fraction of the disc where one is
+ * known, on the bare rubric where none is — and which of those a search used is
+ * frozen into the result it stores. So the disc has to exist *before* the
+ * search, or the whole pass writes numbers on the wrong scale and goes on
+ * showing them until the check expires a day later.
+ *
+ * Wants are where they go missing. `addWish` fetches the disc as a film joins
+ * the list, but only for films added since that was written; the scan's disc
+ * pass walks the drive, and a want is by definition not on it. That left the
+ * gap this fills: a want nobody had opened the page for had no ceiling, and
+ * every sweep searched it blind, forever.
+ *
+ * First rather than alongside, and this is the part that matters. Blu-ray.com
+ * and Jackett are unrelated services, but the film pass gives up after three
+ * failures in a row — the right call when Jackett is down, and it returns from
+ * the whole job when it does. Anything downstream of that never runs. Putting
+ * the scrape here means a dead Jackett costs you the searches and nothing else:
+ * the ceilings still land, and the next sweep with Jackett up scores against
+ * them.
+ *
+ * Nothing here can fail the sweep either. A ceiling that could not be fetched
+ * leaves the film exactly as it was — scored on the rubric, which is what it
+ * was already — so it is not a reason to stop asking about the rest.
+ */
+async function sweepDiscs(): Promise<void> {
+  // Dynamically, for the cycle described on sweepWishlist below.
+  const { wishlistCandidates } = await import("./wishlist-search");
+
+  const pending = wishlistCandidates().filter(
+    (entry) => !hasDisc(entry.tmdbId),
+  );
+  if (pending.length === 0) return;
+
+  setJob({ ...current(), discTotal: pending.length, discDone: 0 });
+
+  for (const entry of pending) {
+    if (globalForSweep.medlibSweepCancel) return;
+
+    setJob({ ...current(), current: entry.title });
+    try {
+      await fetchDisc(entry.tmdbId, entry.title, entry.year);
+    } catch {
+      // Left with no ceiling, to be tried again by the next sweep. A lookup
+      // that merely found nothing is not this: that answer is cached, and the
+      // film is not asked about again.
+    }
+    setJob({ ...current(), discDone: current().discDone + 1 });
+  }
+}
+
 async function sweepWishlist(force: boolean): Promise<void> {
   setJob({ ...current(), phase: "wishlist", current: undefined });
 
