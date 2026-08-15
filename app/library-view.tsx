@@ -6,13 +6,15 @@ import { useState } from "react";
 import { openIssues, titleKey } from "@/lib/derive";
 import type { LibraryItem } from "@/lib/library";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
-import { ago } from "./format";
+import { ago, size } from "./format";
 import { useLingering } from "./modal";
 import { ReleaseSearchModal } from "./release-search";
 import { rememberListing } from "./return-to";
 import { ReleaseDetails, ReleaseMark } from "./release-details";
 import { Bar, HelpTip, ICONS, MenuItem, Popover } from "./controls";
+import { EmptyState } from "./empty-state";
 import { PosterTile, TILE_GRID } from "./poster-tile";
+import { ShelfTotal } from "./shelf-total";
 import { ScoreBadge, SCORE_PLATE, STATUS_THEME } from "./score-circle";
 import { compareId, movieId, posterName } from "@/lib/routes";
 
@@ -330,12 +332,6 @@ const SORTS: {
   },
 ];
 
-function size(bytes: number) {
-  return bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : `${(bytes / 1e9).toFixed(1)} GB`;
-}
-
 /**
  * The same film as a poster.
  *
@@ -477,6 +473,7 @@ export function LibraryView({
   upgrades,
   jackettReady,
   tabs,
+  action,
 }: {
   movies: LibraryItem[];
   /** The better copies the sweep found, by the path of the film they beat. */
@@ -485,6 +482,14 @@ export function LibraryView({
   jackettReady: boolean;
   /** The shelf switch, at the head of this shelf's own row of controls. */
   tabs: React.ReactNode;
+  /**
+   * The page's own control, at the end of the row after the three menus.
+   *
+   * The forced sweep, in practice — see app/library-tabs.tsx. A slot rather
+   * than the button itself, for the reason `ListingBar` gives: what the shelf
+   * knows is where the row ends, not what the page wants to put there.
+   */
+  action?: React.ReactNode;
 }) {
   const router = useRouter();
 
@@ -635,7 +640,7 @@ export function LibraryView({
       <div className="flex flex-wrap items-center gap-3">
         {tabs}
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex flex-wrap items-center gap-3">
           <Bar>
             <Popover
               icon={ICONS.filter}
@@ -747,7 +752,17 @@ export function LibraryView({
             <Popover
               icon={ICONS.group}
               label="Group by"
-              value={(GROUPS.find((o) => o.key === group) ?? GROUPS[0]).label}
+              // "Group" rather than "No grouping" when the shelf is flat: the
+              // button has to say what it is before it says what it is set to.
+              // Every other state names the cut instead, which is the state you
+              // put it in. `ListingControls` has always said it this way and
+              // this shelf said "No grouping" — one control, two words for one
+              // state, depending on which page you were standing on.
+              value={
+                grouping.key === "none"
+                  ? "Group"
+                  : (GROUPS.find((o) => o.key === group) ?? GROUPS[0]).label
+              }
               // The bar's last slot, so the fill follows its rounded end.
               buttonClassName="rounded-r-full"
             >
@@ -769,6 +784,8 @@ export function LibraryView({
               )}
             </Popover>
           </Bar>
+
+          {action}
         </div>
       </div>
 
@@ -779,16 +796,27 @@ export function LibraryView({
           now, where the filters themselves are. */}
 
       {shown.length === 0 && (
-        <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
-          <p className="text-sm opacity-50">Nothing matches those filters.</p>
-          <button
-            type="button"
-            onClick={() => update({ f: [] })}
-            className="mt-2 text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
-          >
-            Clear filters
-          </button>
-        </div>
+        <EmptyState
+          icon={
+            <>
+              <path d="M3 5h18l-7 8.2V19l-4 2v-7.8z" />
+              <path d="m3.5 3.5 17 17" />
+            </>
+          }
+          title="Nothing matches those filters"
+          action={
+            <button
+              type="button"
+              onClick={() => update({ f: [] })}
+              className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+            >
+              Clear filters
+            </button>
+          }
+        >
+          Every film on the shelf has been ruled out by the options set in the
+          Filters panel.
+        </EmptyState>
       )}
 
       {/* Ungrouped, there is no header to stand the shelf under — but the
@@ -826,14 +854,14 @@ export function LibraryView({
       {/* A total reads as a total at the foot of what it counts; above the
           shelf it was just another line between the controls and the films. */}
       {shown.length > 0 && (
-        <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-4 text-xs opacity-45">
-          <p>
-            {shown.length === movies.length
+        <ShelfTotal
+          left={
+            shown.length === movies.length
               ? `${movies.length} films`
-              : `${shown.length} of ${movies.length} films`}
-          </p>
-          <p>{size(shown.reduce((sum, m) => sum + m.sizeBytes, 0))}</p>
-        </div>
+              : `${shown.length} of ${movies.length} films`
+          }
+          right={size(shown.reduce((sum, m) => sum + m.sizeBytes, 0))}
+        />
       )}
 
       {/* What the sweep found, read whole — the same dialog the queue opens,

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { addTransitionType, useTransition, ViewTransition } from "react";
 
 import { removeWish } from "@/app/actions";
@@ -10,10 +10,14 @@ import { Switch } from "@/app/controls";
 import type { GroupOption } from "@/app/grouping";
 import { ListingControls, useListingOptions } from "@/app/listing";
 import { SectionHeading } from "@/app/section-heading";
+import { EmptyState } from "@/app/empty-state";
+import { TILE_FRAME, TILE_GRID_RULED } from "@/app/poster-tile";
+import { ShelfTotal } from "@/app/shelf-total";
 import { movieId, posterName, showId } from "@/lib/routes";
 import { stagger } from "@/app/stagger";
 import { RemoveButton } from "@/app/tile-button";
 import { RescanButton } from "@/app/rescan-button";
+import { useTabParam } from "@/app/tab-param";
 import { DOWNLOAD_SORTS, DownloadsView, RELEASE_GROUPS } from "./finds-view";
 import type { WishlistEntry } from "@/lib/wishlist";
 import type { WishlistFind } from "@/lib/wishlist-search";
@@ -109,6 +113,9 @@ function wishGroups(
   ];
 }
 
+/** The two lists, as the values the address may carry — the library's own. */
+const TABS = ["movies", "tv"] as const;
+
 /** How many paces the ladder in globals.css defines before it repeats. */
 const WISH_STEPS = 6;
 
@@ -191,7 +198,7 @@ function Tile({
             hangs still while the picture it belongs to moves. That puts the
             link inside as well — an anchor cannot hold a button, so the anchor
             is what gives way. */}
-        <div className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+        <div className={TILE_FRAME}>
           <Link
             href={`/discover/${entry.kind}/${entry.tmdbId}`}
             aria-label={entry.title}
@@ -281,18 +288,10 @@ export function WishlistView({
   const groups = wishGroups(byId, finds);
   const listing = useListingOptions(DOWNLOAD_SORTS, groups);
 
-  // The same `t` the library reads, so the two shelves and the two lists all
-  // answer to one word in the URL; see app/library-tabs.tsx.
-  const searchParams = useSearchParams();
-  const tab = searchParams.get("t") === "tv" ? "tv" : "movies";
-
-  function select(next: "movies" | "tv") {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === "tv") params.set("t", "tv");
-    else params.delete("t");
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
-  }
+  // The same `t` the library reads, through the same hook, so the two shelves
+  // and the two lists all answer to one word in the URL and cross over the same
+  // way; see app/tab-param.ts and app/library-tabs.tsx.
+  const [tab, select] = useTabParam("t", TABS, "movies");
 
   const list = entries.filter((e) =>
     tab === "tv" ? e.kind === "tv" : e.kind === "movie",
@@ -360,7 +359,7 @@ export function WishlistView({
       <div className="flex flex-wrap items-center gap-3">
         <Switch
           value={tab}
-          onChange={(next) => select(next as "movies" | "tv")}
+          onChange={select}
           options={[
             { key: "movies", label: "Films" },
             { key: "tv", label: "Shows" },
@@ -417,13 +416,17 @@ export function WishlistView({
         )}
 
         {list.length === 0 ? (
-          <div className="rounded-card border border-line bg-surface px-4 py-12 text-center">
-            <p className="text-sm opacity-50">
-              {tab === "tv"
-                ? "No shows on the list yet. Search from anywhere — the button in the corner — and heart the series you are hunting for."
-                : "Nothing on the list yet. Search from anywhere — the button in the corner — and heart the films you are hunting for."}
-            </p>
-          </div>
+          <EmptyState
+            icon={
+              <>
+                <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 1 0-7.8 7.8l1 1.1L12 21.2l7.8-7.7 1-1.1a5.5 5.5 0 0 0 0-7.8z" />
+              </>
+            }
+            title={tab === "tv" ? "No shows wanted yet" : "Nothing wanted yet"}
+          >
+            Search from anywhere — the button in the corner, or ⌘F — and heart
+            the {tab === "tv" ? "series" : "films"} you are hunting for.
+          </EmptyState>
         ) : (
           <section className="flex flex-col gap-5">
             {/* Named only where there is something to be named apart from.
@@ -448,10 +451,11 @@ export function WishlistView({
                   waiting above.
                 </p>
               ) : (
-                // `TILE_GRID_RULED`'s own shape, so this grid clears the
-                // rule above it by exactly as much as every other grid on
-                // the page does.
-                <div className="grid grid-cols-2 gap-6 pt-3 sm:grid-cols-3 lg:grid-cols-5">
+                // `TILE_GRID_RULED` itself, so this grid clears the rule above
+                // it by exactly as much as every other grid on the page does —
+                // it was that constant's shape written out by hand, naming the
+                // thing it was declining to import.
+                <div className={TILE_GRID_RULED}>
                   {unanswered.map((entry, n) => (
                     <Tile
                       key={`${entry.kind}-${entry.tmdbId}`}
@@ -468,19 +472,18 @@ export function WishlistView({
                       heading above carries its own count. A page foot that
                       reported only what is under it would say the wishlist had
                       shrunk every time the sweep found something. */}
-              <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-4 text-xs opacity-45">
-                <p>
-                  {list.length}{" "}
-                  {tab === "tv"
+              <ShelfTotal
+                left={`${list.length} ${
+                  tab === "tv"
                     ? list.length === 1
                       ? "show"
                       : "shows"
                     : list.length === 1
                       ? "film"
-                      : "films"}
-                </p>
-                {owned > 0 && <p>{owned} now in the library</p>}
-              </div>
+                      : "films"
+                }`}
+                right={owned > 0 ? `${owned} now in the library` : undefined}
+              />
             </div>
           </section>
         )}

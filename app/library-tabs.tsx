@@ -1,12 +1,12 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-
 import type { LibraryItem } from "@/lib/library";
 import type { Show } from "@/lib/shows";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import { Switch } from "./controls";
+import { useTabParam } from "./tab-param";
 import { LibraryView } from "./library-view";
+import { RescanButton } from "./rescan-button";
 import { ShowsView } from "./shows-view";
 
 /**
@@ -15,8 +15,14 @@ import { ShowsView } from "./shows-view";
  * which is read season by season. One switch, two shelves.
  *
  * In the URL like every other library control, so opening a show and coming
- * back returns to the tab you were on.
+ * back returns to the tab you were on — through `useTabParam`, which is where
+ * that reading and writing lives now, and which carries the switch over as a
+ * flight rather than a cut. See app/tab-param.ts.
  */
+
+/** The two shelves, as the values the address may carry. */
+const TABS = ["movies", "tv"] as const;
+
 export function LibraryTabs({
   movies,
   shows,
@@ -35,16 +41,7 @@ export function LibraryTabs({
   upgrades: UpgradeQueueItem[];
   jackettReady: boolean;
 }) {
-  const searchParams = useSearchParams();
-  const tab = searchParams.get("t") === "tv" ? "tv" : "movies";
-
-  function select(next: "movies" | "tv") {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next === "tv") params.set("t", "tv");
-    else params.delete("t");
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
-  }
+  const [tab, select] = useTabParam("t", TABS, "movies");
 
   const options = [
     { key: "movies" as const, label: "Films" },
@@ -60,13 +57,31 @@ export function LibraryTabs({
    * row split across two components is a row that cannot be one line.
    */
   const tabs = (
-    <Switch
-      value={tab}
-      onChange={(next) => select(next as "movies" | "tv")}
-      options={options}
-      className="-ml-2"
-    />
+    <Switch value={tab} onChange={select} options={options} className="-ml-2" />
   );
+
+  /**
+   * The forced sweep, at the end of both shelves' rows.
+   *
+   * This page inherited the queue's job when the queue page went — the films
+   * something better has been found for are a section of this shelf now — and
+   * it inherited the queue's dead end with it. A card here opens a release
+   * stamped "Checked 20 h ago", and the sweep that wrote that line skips
+   * anything checked within the day: a reading on screen with nothing to do
+   * about it, which is precisely the state `RescanButton` was written to end.
+   * It was left on the wishlist alone, while the page that actually shows the
+   * releases had no trigger at all.
+   *
+   * On both tabs, and deliberately so even though the sweep only searches films
+   * — what it starts is not this tab's pass but a pass over everything, wants
+   * included. The same argument that keeps it at the head of the wishlist
+   * rather than on one of its sections.
+   *
+   * Here rather than inside either shelf, for the reason `tabs` is here: it
+   * belongs to the page, and a row split across two components is a row that
+   * cannot be one line.
+   */
+  const action = <RescanButton jackettReady={jackettReady} />;
 
   return tab === "movies" ? (
     <LibraryView
@@ -74,8 +89,9 @@ export function LibraryTabs({
       upgrades={upgrades}
       jackettReady={jackettReady}
       tabs={tabs}
+      action={action}
     />
   ) : (
-    <ShowsView shows={shows} tabs={tabs} />
+    <ShowsView shows={shows} tabs={tabs} action={action} />
   );
 }

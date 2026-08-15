@@ -1,13 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import {
   Fragment,
   useLayoutEffect,
   useRef,
   useState,
-  useTransition,
   ViewTransition,
 } from "react";
 
@@ -24,6 +22,7 @@ import {
   filmKey,
   posterName,
 } from "@/lib/routes";
+import { useTabParam } from "@/app/tab-param";
 import { NewCollection } from "./new-collection";
 
 /**
@@ -71,6 +70,17 @@ const SEED = PACE_STEPS;
  * Keyed on what the measurement depends on, so a renamed set measures afresh.
  */
 const measured = new Map<string, number>();
+
+/**
+ * The two halves, as the values the address may carry.
+ *
+ * Yours is the half you arrive on, because it is the half you can act on: the
+ * TMDb sets are a finding about the library and will be there whenever you want
+ * them, and the ones you wrote are the ones you came to add to. So `custom` is
+ * the fallback, and the address only ever carries the other one — which is what
+ * makes a plain /collections the one your own sets answer.
+ */
+const TABS = ["custom", "tmdb"] as const;
 
 /**
  * Which pace a poster travels at, by its place in the set.
@@ -615,61 +625,24 @@ export function CollectionsView({
    * changes nothing the server has to answer for, and a navigation per tap
    * would put a stop on the back button for each one.
    */
-  const searchParams = useSearchParams();
-  /*
-   * Yours is the half you arrive on, because it is the half you can act on:
-   * the TMDb sets are a finding about the library and will be there whenever
-   * you want them, and the ones you wrote are the ones you came to add to. The
-   * address only carries the other one, which is what makes the plain
-   * /collections the one your own sets answer.
-   */
   /**
-   * Which half is being read, held here as well as written to the address.
+   * Which half is being read, held as state as well as written to the address.
    *
-   * The address is still the record — it is what a set's page comes back to —
-   * but it cannot be the thing that renders, because a `replaceState` is not an
-   * update React is holding the reins of. A view transition only happens for a
-   * change React made inside `startTransition`, so the change has to be a piece
-   * of state this component owns and hands to `startTransition` itself.
+   * Swapping halves is drawn as the same flight the rest of the page uses. A
+   * film can be in a franchise TMDb publishes *and* on a list you wrote, and
+   * this was a cut once: the row it was on vanished and the row it was on
+   * appeared, with no way to see that it was the same film in both. It is the
+   * same poster under the same name, which is all a shared transition has ever
+   * needed — so it flies from the one row to the other, at the ladder's own
+   * pace, and everything with nothing on the other side simply changes over
+   * underneath it (`default="none"`, as everywhere).
    *
-   * Seeded from the address and never resynced, which is exactly right for a
-   * switch written with `replaceState`: nothing else on this page moves the
-   * parameter, and coming back from a set's page mounts this afresh and reads
-   * it again.
+   * The mechanism this page worked out is `useTabParam`'s now, and the library
+   * and the wishlist switch the same way because of it — they were both plain
+   * `replaceState`, which is why Films ↔ Shows used to cut while this glided.
+   * See app/tab-param.ts for why the tab has to be state at all.
    */
-  const [tab, setTab] = useState<"tmdb" | "custom">(
-    searchParams.get("t") === "tmdb" ? "tmdb" : "custom",
-  );
-  const [, startTransition] = useTransition();
-
-  /**
-   * Swapping halves, drawn as the same flight the rest of the page uses.
-   *
-   * A film can be in a franchise TMDb publishes *and* on a list you wrote, and
-   * until now switching between the two halves was a cut: the row it was on
-   * vanished and the row it was on appeared, with no way to see that it was the
-   * same film in both. It is the same poster under the same name, which is all a
-   * shared transition has ever needed — so it flies from the one row to the
-   * other, at the ladder's own pace, and everything with nothing on the other
-   * side simply changes over underneath it (`default="none"`, as everywhere).
-   *
-   * The address is written inside the same transition rather than beside it, so
-   * the router's own repaint is part of the change being animated instead of a
-   * second render arriving in the middle of it.
-   */
-  function select(next: string) {
-    if (next === tab) return;
-
-    startTransition(() => {
-      setTab(next === "tmdb" ? "tmdb" : "custom");
-
-      const params = new URLSearchParams(searchParams.toString());
-      if (next === "tmdb") params.set("t", "tmdb");
-      else params.delete("t");
-      const qs = params.toString();
-      window.history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
-    });
-  }
+  const [tab, select] = useTabParam("t", TABS, "custom");
 
   return (
     <>
