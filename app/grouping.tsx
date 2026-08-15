@@ -11,8 +11,15 @@
  *
  * The same declaration the library's `GROUPS` uses — a key, a label, and what
  * bucket an item falls in — so the two behave alike and the menu is the same
- * menu. Every list here keeps "No grouping" as its first option: these are
- * ranked lists first, and a ranking cut into sections is no longer one.
+ * menu.
+ *
+ * The first option is the list's default, which is what `pickGroup` falls back
+ * to and what the bar leaves out of the address. Most lists put "No grouping"
+ * there: they are rankings first, and a ranking cut into sections is no longer
+ * one. The exceptions are the lists that are not rankings — the jobs page's
+ * audio tab, whose rows arrive in runs, and the downloads record, whose two
+ * halves are different kinds of thing rather than different degrees of one.
+ * Both say so where they declare it.
  */
 export type GroupOption<T> = {
   key: string;

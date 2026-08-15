@@ -169,8 +169,8 @@ const ACTIVE_GROUPS: GroupOption<DownloadEntry>[] = [
 ];
 
 /**
- * The record is cut one way, and it is the only cut it has ever wanted: did
- * this fetch finish.
+ * The record is cut one way, it opens cut, and it is the only cut it has ever
+ * wanted: did this fetch finish.
  *
  * Every other fact about a finished download — which list sent it, what it was
  * called, how big it was — is printed on the row and worth ranking by at most.
@@ -184,8 +184,19 @@ const ACTIVE_GROUPS: GroupOption<DownloadEntry>[] = [
  * what happened to the torrent afterwards is a different subject.
  */
 const HISTORY_GROUPS: GroupOption<DownloadEntry>[] = [
-  { key: "none", label: "No grouping", of: () => "" },
   {
+    /*
+     * First, and so the tab's own default — see `pickGroup`, and `AUDIO_GROUPS`
+     * on the jobs page, which is the other list that opens cut.
+     *
+     * Most lists here open flat because they are rankings, and a ranking cut
+     * into sections is no longer one. The record is not a ranking: it is a log,
+     * and the two things in it are not the same kind of thing. Flat, a fetch
+     * that died at 4% sits between two that landed, wearing a plate that says
+     * what it would have scored had it arrived — which is the log inviting you
+     * to read a prediction as an outcome. Cut, the heading says which you are
+     * looking at before any row does.
+     */
     key: "outcome",
     label: "Outcome",
     of: (entry) => (entry.completedAt ? "Completed" : "Cancelled"),
@@ -193,6 +204,7 @@ const HISTORY_GROUPS: GroupOption<DownloadEntry>[] = [
     // you came to check. A cancelled fetch is a thing you go looking for.
     order: ["Completed", "Cancelled"],
   },
+  { key: "none", label: "No grouping", of: () => "" },
 ];
 
 const GROUPS: Record<Tab, GroupOption<DownloadEntry>[]> = {
