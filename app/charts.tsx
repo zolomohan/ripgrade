@@ -326,10 +326,26 @@ export function Columns({
 export function Coverage({
   segments,
   tones,
+  share = true,
 }: {
   segments: { label: string; count: number }[];
   /** One background class per segment, where the categories have colours. */
   tones?: string[];
+  /**
+   * Whether each band prints its share of the whole beside its count.
+   *
+   * On by default, because that is what a coverage bar is normally for: `/stats`
+   * asks how much of the library has been matched, and "1,204" is only an answer
+   * next to the percentage that says how much of it that is.
+   *
+   * Off where the bands are a backlog rather than a census. The dashboard's open
+   * issues are three severities of outstanding work, and a share there is the
+   * proportion of a number that is itself the thing you want smaller — "62%
+   * Info" reads as reassurance about a tally whose whole point is that it should
+   * not exist. What matters is how many criticals there are, and the bar already
+   * draws the mix.
+   */
+  share?: boolean;
 }) {
   const total = segments.reduce((n, s) => n + s.count, 0) || 1;
   const inks = tones ?? [
@@ -352,18 +368,33 @@ export function Coverage({
         ))}
       </div>
 
+      {/* The bands that are actually in the bar, and only those.
+
+          The legend used to run the whole list and the bar only the non-empty
+          part of it, so an empty band was a coloured dot and a label standing
+          for a stripe that is not drawn anywhere above it — a key to a chart
+          that does not use it. "Critical 0" is also the one line here nobody
+          needs: a severity with nothing in it is not a fact about the library,
+          it is the absence of one, and a list of outstanding work that spends a
+          row saying what is not outstanding is a list you read more slowly.
+
+          Which means an all-zero bar draws nothing at all. That is right: every
+          caller decides whether there is anything worth a chart before it asks
+          for one — see the dashboard's `filmsAffected > 0`. */}
       <div className="flex flex-wrap gap-x-6 gap-y-1.5">
-        {segments.map((segment, i) => (
+        {present.map((segment) => (
           <span key={segment.label} className="flex items-center gap-2 text-xs">
             <span
-              className={`h-2 w-2 shrink-0 rounded-full ${inks[i]}`}
+              className={`h-2 w-2 shrink-0 rounded-full ${inks[segments.indexOf(segment)]}`}
               aria-hidden
             />
             <span className="opacity-60">{segment.label}</span>
             <span className="tabular-nums">{count(segment.count)}</span>
-            <span className="opacity-35 tabular-nums">
-              {Math.round((segment.count / total) * 100)}%
-            </span>
+            {share && (
+              <span className="opacity-35 tabular-nums">
+                {Math.round((segment.count / total) * 100)}%
+              </span>
+            )}
           </span>
         ))}
       </div>

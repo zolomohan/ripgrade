@@ -75,7 +75,6 @@ export type Dashboard = {
      */
     upgrades: {
       count: number;
-      totalGain: number;
       films: WorkFilm<UpgradeQueueItem>[];
     };
     dovi: {
@@ -227,7 +226,6 @@ export async function getDashboard(): Promise<Dashboard> {
     work: {
       upgrades: {
         count: queue.length,
-        totalGain: queue.reduce((n, item) => n + item.hit.delta, 0),
         // The queue's own order, which is not the gain: `getUpgradeQueue` puts
         // the releases that would finish a film off the hunt first. The shelf
         // is the head of that queue rather than a ranking of its own.
@@ -423,7 +421,11 @@ function audioOf(audio: AudioTask[]): Dashboard["work"]["audio"] {
     // that is partly counted and partly inferred is inferred.
     estimated: audio.some((task) => task.estimated),
     offline: audio.filter((task) => task.offline).length,
-    films: shelfOf(audio, (task) => task.freedBytes, (task) => task.estimated),
+    films: shelfOf(
+      audio,
+      (task) => task.freedBytes,
+      (task) => task.estimated,
+    ),
   };
 }
 
