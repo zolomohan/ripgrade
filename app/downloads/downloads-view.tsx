@@ -795,14 +795,23 @@ function DownloadTile({
               {busy ? (
                 <Spinner className="h-6 w-6" />
               ) : (
-                /* Nudged right by a hair: a triangle is visually heavier on its
-                   flat edge, so a play mark centred by its bounding box reads
-                   as sitting left of centre. */
+                /*
+                 * No nudge. A right-pointing triangle does need one — its mass
+                 * sits on the flat edge, so centring it by its bounding box
+                 * reads as left of centre — but this path already carries it:
+                 * it spans 8 to 19 in a 24-wide box, which puts its bounding
+                 * box 1.5 right of the middle and its centroid at 11.67,
+                 * against a centre of 12. That is the correction, drawn in.
+                 *
+                 * Adding `ml-0.5` on top applied it twice and put the ink 2.75px
+                 * right of the ring it stands in — which is the kind of thing
+                 * that reads as wrong long before anybody can say why.
+                 */
                 <svg
                   viewBox="0 0 24 24"
                   fill="currentColor"
                   aria-hidden
-                  className="ml-0.5 h-7 w-7"
+                  className="h-7 w-7"
                 >
                   <path d="M8 5.5v13l11-6.5z" />
                 </svg>
