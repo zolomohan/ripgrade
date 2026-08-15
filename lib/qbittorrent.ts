@@ -1,7 +1,7 @@
 import "server-only";
 
 import { db, getSetting, setSetting } from "./db";
-import { titleKey } from "./derive";
+import { titleKey, type Status } from "./derive";
 import { getMovies, type LibraryItem } from "./library";
 import { guessFromTitle, type ReleaseTags } from "./release-title";
 import { getWishlist, type WishlistEntry } from "./wishlist";
@@ -244,6 +244,15 @@ export type FilmContext = {
    */
   poster?: string;
   artAt?: number;
+  /**
+   * How long the film runs, where the library holds it.
+   *
+   * Not for showing — for scoring. A release's video score leans on its bitrate,
+   * and a bitrate is a size divided by a runtime: without one the scorer can
+   * only read what the name states outright. The library is the one place that
+   * knows, so it is carried out of the match for the guess to use.
+   */
+  runtimeMinutes?: number;
 };
 
 /**
@@ -521,6 +530,27 @@ export type DownloadEntry = {
    */
   filmPath?: string;
   /**
+   * What this release is predicted to score, read off its own name.
+   *
+   * The same rubric and the same reading the queue and the search window put on
+   * every release before you fetch it — `guessFromTitle` — so a row in this log
+   * wears the number it wore on the button you pressed. That is the honest one
+   * to print here: a download has no measured score of its own until the file
+   * lands and a scan reads it, and the log is a record of what was fetched
+   * rather than of what the library currently holds.
+   *
+   * It is deliberately *not* the library's score for the film. That number
+   * belongs to whatever copy is on the drive right now, which for an upgrade
+   * fetched an hour ago is still the copy being replaced — so a history row
+   * would have reported the old file's score as though it were the new one's.
+   *
+   * A prediction, and it says so by being one: the name states what it states,
+   * and the bitrate behind the video half is inferred from the transfer's size
+   * over the film's runtime where both are known. See `FilmContext.runtimeMinutes`.
+   */
+  score?: number;
+  status?: Status;
+  /**
    * Which of the two pages that send releases this transfer belongs under.
    *
    * Always answered, never absent: every row has to be drawn somewhere, and a
@@ -619,6 +649,9 @@ function resolveFilm(
         path: movie.path,
         poster: movie.poster,
         artAt: movie.artAt,
+        runtimeMinutes: movie.durationSec
+          ? Math.round(movie.durationSec / 60)
+          : undefined,
       };
     }
 
@@ -710,13 +743,31 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
      * is one — it is the name qBittorrent resolved from the magnet, and the
      * magnet's display name can be the shorter of the two.
      */
-    const guess = guessFromTitle(current?.name ?? row.title);
-    const { facts } = guess;
+    const name = current?.name ?? row.title;
+    const parsed = guessFromTitle(name);
 
     // Run for every row, not only the ones with no film yet: the title and
     // poster are stored once and stay, but where the film sits in the library
     // is only true until the next scan, so it is asked again each read.
-    const film = resolveFilm(guess.tags, library);
+    const film = resolveFilm(parsed.tags, library);
+
+    /*
+     * And scored again once the film is known.
+     *
+     * The first pass reads the name, which is all `resolveFilm` needs. This one
+     * adds the two things that turn a stated resolution into a judged one: the
+     * transfer's real size from the client, and the runtime from the library.
+     * Bitrate is one over the other, and without it the scorer can only credit
+     * what the name says outright.
+     */
+    const guess =
+      current?.sizeBytes !== undefined || film?.runtimeMinutes !== undefined
+        ? guessFromTitle(name, {
+            sizeBytes: current?.sizeBytes,
+            runtimeMinutes: film?.runtimeMinutes,
+          })
+        : parsed;
+    const { facts } = guess;
 
     if (!row.film_title && film) {
       row.film_title = film.title ?? null;
@@ -755,6 +806,11 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
       poster: film?.poster,
       artAt: film?.artAt,
       filmPath: film?.path,
+      // The library's reading of what landed, where the film is on the drive.
+      // What the name promises, on the rubric every release in the app is read
+      // by — see `DownloadEntry.score`.
+      score: guess.scores.overall,
+      status: guess.status,
       // What the send said, or what the library can still say. `filmPath` is
       // the library's answer and only the library's — `resolveFilm` matches
       // the wishlist too, and a want it matched has no file, so a row that
@@ -885,9 +941,7 @@ export async function alreadyFetching(): Promise<
   }
 
   return (release) => {
-    const hash = release.magnet
-      ? parseMagnet(release.magnet).hash
-      : undefined;
+    const hash = release.magnet ? parseMagnet(release.magnet).hash : undefined;
     if (hash && hashes.has(hash)) return true;
     return films.has(titleKey(release.title));
   };

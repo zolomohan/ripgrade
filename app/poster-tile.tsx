@@ -97,6 +97,35 @@ export const TILE_READING =
 export const TILE_NOTE =
   "truncate rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium backdrop-blur";
 
+/**
+ * A word on the plate a *score* wears, for the one case where the two share a
+ * line.
+ *
+ * `TILE_NOTE` is the quieter of the two and right nearly everywhere: a note is
+ * a remark about a tile and sits below the reading rather than opposite it. The
+ * downloads log is the exception — which list a fetch came off is as much of a
+ * fact about it as what it scored, and the two stand in facing corners of the
+ * same poster. At `TILE_NOTE`'s ten point against the badge's eleven they were
+ * two plates of two heights on one line, which reads as a mistake before it
+ * reads as two facts.
+ *
+ * So: `SCORE_PLATE`'s box exactly — the same radius, padding, fill and blur —
+ * with the score's machine face and tabular figures swapped for the app's own,
+ * because what stands on this one is a word. Written out rather than composed
+ * from `SCORE_PLATE`, for the reason `BUTTON.confirm` gives: two `font-*` or
+ * two `text-*` in one class string are settled by Tailwind's emit order rather
+ * than by which was written last.
+ *
+ * The line height is stated rather than left to the face, and that is the part
+ * that actually does the work. `font-score` is a different family with tighter
+ * metrics, so at the same size and the same padding its plate came to 18px and
+ * this one to 20.5 — two and a half pixels, which is invisible as a number and
+ * unmissable as a pair of boxes on one line. 14px of leading inside `py-0.5`
+ * is the score's own 18, arrived at deliberately instead of by luck.
+ */
+export const TILE_PLATE =
+  "truncate rounded-full bg-background/85 px-1.5 py-0.5 text-[11px] leading-[14px] font-semibold backdrop-blur";
+
 export function PosterTile({
   poster,
   transitionName,

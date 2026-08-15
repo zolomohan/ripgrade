@@ -880,8 +880,9 @@ export function JobsView({
           counts rows the drive is currently hiding. Each returns nothing on an
           empty tab, where the list's empty state is the whole answer.
 
-          `-mt-5` cancels the space the listing bar keeps under itself, which is
-          there so a *list* does not read as a fourth control. This band is not
+          `-mt-8` cancels the space the listing bar keeps under itself, which is
+          there so a *list* does not read as a fourth control. It tracks that
+          bar's own margin and has to move with it. This band is not
           a list, and left in place that space put the figures further from the
           bar than from the section under them — a band floating between two
           things it belongs to neither of. Cancelled, its own `py-3` and the
@@ -891,7 +892,7 @@ export function JobsView({
           return nothing either way: the wrapper is a flex child of the page,
           and an empty one still takes a gap. */}
       {pending > 0 && (
-        <div className="-mt-5">
+        <div className="-mt-8">
           {tab === "dovi" ? (
             <DoviStats
               tasks={selecting ? doviChosen : doviPending}

@@ -83,6 +83,7 @@ export function RemoveButton({
   title,
   disabled,
   onClick,
+  icon = "cross",
 }: {
   /** What is being taken out, for a screen reader. */
   label: string;
@@ -90,6 +91,20 @@ export function RemoveButton({
   title: string;
   disabled?: boolean;
   onClick: () => void;
+  /**
+   * Which mark it wears, because the corner holds two different promises.
+   *
+   * A cross takes a film off a list and leaves everything else alone — the
+   * wishlist's, a set of your own — and the film is one search away from going
+   * back on. A bin destroys a record: the downloads log's entry is the only
+   * thing that remembers a fetch happened, and clearing it is the end of it.
+   * Those deserve different marks, and a cross for both would be the app
+   * promising the reversible one twice.
+   *
+   * The corner, the size, the hover and the red are the same either way, which
+   * is what keeps it one button rather than two.
+   */
+  icon?: "cross" | "bin";
 }) {
   return (
     <button
@@ -106,12 +121,21 @@ export function RemoveButton({
         stroke="currentColor"
         strokeWidth="2.2"
         strokeLinecap="round"
+        strokeLinejoin="round"
         aria-hidden
         // Sized to the heart across the tile from it, which is the only other
         // thing that shares a poster's top edge.
         className="h-5 w-5"
       >
-        <path d="M6 6l12 12M18 6L6 18" />
+        {icon === "bin" ? (
+          <>
+            <path d="M5 7h14" />
+            <path d="M9.5 7V4.8h5V7" />
+            <path d="M6.9 7l.8 11.5a1.7 1.7 0 0 0 1.7 1.6h5.2a1.7 1.7 0 0 0 1.7-1.6L17.1 7" />
+          </>
+        ) : (
+          <path d="M6 6l12 12M18 6L6 18" />
+        )}
       </svg>
     </button>
   );

@@ -182,27 +182,14 @@ export function useListing<T extends string>(
   return { ...options, tab, tabs, update };
 }
 
-/**
- * Posters or rows, on its own — for a page that has nothing else to ask.
- *
- * The downloads page is one: what is moving and what has been sent are two
- * sections rather than a list you would sort, and neither can be cut by
- * anything a menu could name. What is left of the listing bar there is this one
- * button, so it is a hook rather than a slice of `useListingOptions`.
+/*
+ * There was a `useLayout` here — posters or rows on its own, for a page with
+ * nothing else to ask. The downloads page was the only one that ever asked it,
+ * on the grounds that what is moving and what has been sent are two sections
+ * rather than a list you would rank. That page asks all three questions now,
+ * through `useListing` like every other list here, and a hook kept for nobody
+ * is a second way of doing something with no one left doing it.
  */
-export function useLayout(): [Layout, (next: Layout) => void] {
-  const searchParams = useSearchParams();
-  const layout: Layout = searchParams.get("v") === "rows" ? "rows" : "grid";
-
-  return [
-    layout,
-    (next) => {
-      const params = new URLSearchParams(searchParams.toString());
-      set(params, "v", next, "grid");
-      commit(params);
-    },
-  ];
-}
 
 /**
  * The third question about the list, drawn the way the two menus are.
@@ -301,33 +288,43 @@ export function ListingControls({ listing }: { listing: ListingOptions }) {
         )}
       </Popover>
 
-      <Popover
-        icon={ICONS.group}
-        label="Group by"
-        // "Group" rather than "No grouping" when the list is flat: the button
-        // has to say what it is before it says what it is set to. Every other
-        // state names the cut instead, which is the state you put it in — every
-        // list now opens as one ranked list, so "Group" is what an untouched
-        // button says.
-        value={grouping.key === "none" ? "Group" : grouping.label}
-      >
-        {(close) => (
-          <div className="py-1">
-            {groups.map((option) => (
-              <MenuItem
-                key={option.key}
-                active={option.key === grouping.key}
-                onClick={() => {
-                  update({ g: option.key });
-                  close();
-                }}
-              >
-                {option.label}
-              </MenuItem>
-            ))}
-          </div>
-        )}
-      </Popover>
+      {/* Only where there is a choice to make. A list that can be cut one way
+          — which is to say not at all — would otherwise carry a button that
+          opens a menu of a single item saying "No grouping", which is a control
+          that exists to tell you it does nothing. The downloads page is the one
+          that asks: what is arriving and what has arrived are ranked but never
+          cut, since every cut worth naming there is a fact printed on the row
+          itself. Written as a length rather than a flag so a page declares its
+          cuts and the bar draws what it was given. */}
+      {groups.length > 1 && (
+        <Popover
+          icon={ICONS.group}
+          label="Group by"
+          // "Group" rather than "No grouping" when the list is flat: the button
+          // has to say what it is before it says what it is set to. Every other
+          // state names the cut instead, which is the state you put it in —
+          // every list now opens as one ranked list, so "Group" is what an
+          // untouched button says.
+          value={grouping.key === "none" ? "Group" : grouping.label}
+        >
+          {(close) => (
+            <div className="py-1">
+              {groups.map((option) => (
+                <MenuItem
+                  key={option.key}
+                  active={option.key === grouping.key}
+                  onClick={() => {
+                    update({ g: option.key });
+                    close();
+                  }}
+                >
+                  {option.label}
+                </MenuItem>
+              ))}
+            </div>
+          )}
+        </Popover>
+      )}
 
       {/* The third question about the list, in the bar the other two are in:
           the same frame, the same rule between the parts, the same cap on the
@@ -362,7 +359,7 @@ export function ListingBar<T extends string>({
     /* Its own space below it rather than the column's gap: this row is the
        page's own furniture, and a list that begins one gap under it reads as a
        fourth control rather than as what the controls act on. */
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
       {/* Scrolls rather than clips at the fifth tab. The switch sets its own
           width from its labels and refuses to shrink, which is right — a
           segmented control with squeezed words is unreadable — but on a phone
