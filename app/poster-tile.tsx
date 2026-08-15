@@ -63,6 +63,25 @@ export const TILE_GRID = "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5";
 export const TILE_GRID_RULED = `${TILE_GRID} pt-3`;
 
 /**
+ * The frame itself: the box a poster is drawn in, wherever it is drawn.
+ *
+ * `PosterTile` is the whole tile — frame, caption, corners, entrance — and it is
+ * what a shelf should reach for. But a handful of tiles are genuinely their own
+ * thing: the wishlist's carries a heart *and* a cross inside the picture, the
+ * search's two halves link to different places, a collection's is a link with
+ * nothing on it at all. Those were never going to fit the four corners, and
+ * forcing them through would be a component with a prop per exception.
+ *
+ * What they must not disagree about is the box. That string — the lift, the
+ * tilt, the ratio, the radius, the hairline ring — was copied out by hand seven
+ * times, and a shelf whose posters ring at two different weights is a shelf that
+ * looks broken before anybody can say why. So the frame is the constant and the
+ * contents stay each caller's business.
+ */
+export const TILE_FRAME =
+  "glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line";
+
+/**
  * The plate a *reading* wears over artwork — a size freed, a place in a queue, a
  * score.
  *
@@ -281,7 +300,7 @@ export function PosterTile({
   const line = [year, ...(facts ?? [])].filter(Boolean).join(" · ");
 
   const frame = (
-    <div className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+    <div className={TILE_FRAME}>
       {art}
       {cover}
 

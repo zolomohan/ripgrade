@@ -291,6 +291,23 @@ export const ICONS = {
   // button you have to click to find out what it was.
   grid: "M4 5h6v6H4zM14 5h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   rows: "M4 6h16v4H4zM4 14h16v4H4z",
+  /**
+   * A signal going out: a dot with arcs radiating either side of it.
+   *
+   * The app's word for the one thing that is not this machine answering — a
+   * question put to other people's, which is what an indexer search is. It was
+   * written for the search window's scope menu, where it stands against a shelf
+   * of tiles for the library and a globe for TMDb, and it is here because a
+   * second thing now needs it: the button that asks the indexers again.
+   *
+   * That button wore a circular arrow, which is the mark for "do that again"
+   * and says nothing about what the again is. Two controls that reach the same
+   * machines should carry the same mark; a reader who has met it once in ⌘F has
+   * been told what it means, and a reload arrow could have meant re-reading the
+   * drive — which is a different button, in the rail, doing a different thing.
+   */
+  indexers:
+    "M12 12h.01M8.6 15.4a4.8 4.8 0 0 1 0-6.8M15.4 8.6a4.8 4.8 0 0 1 0 6.8M5.6 18.4a8.9 8.9 0 0 1 0-12.8M18.4 5.6a8.9 8.9 0 0 1 0 12.8",
 };
 
 /**

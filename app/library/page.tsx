@@ -7,6 +7,8 @@ import { alreadyFetching } from "@/lib/qbittorrent";
 import { getShows } from "@/lib/shows";
 import { getUpgradeQueue } from "@/lib/upgrade-sweep";
 import { LibraryTabs } from "@/app/library-tabs";
+import { BUTTON } from "@/app/controls";
+import { EmptyState } from "@/app/empty-state";
 
 // Every render reads the local database, so there is nothing worth prerendering.
 export const dynamic = "force-dynamic";
@@ -49,22 +51,29 @@ export default async function Page() {
         // where to go rather than simply being blank. Scanning happens on
         // start-up and is triggered from Settings, so this offers the one
         // thing that is not already under way: somewhere to point it.
-        <div className="flex flex-col items-center gap-3 rounded-card border border-line bg-surface px-4 py-12 text-center">
-          <p className="text-sm opacity-60">
-            {roots.length > 0
-              ? "Nothing scanned yet — the scan runs when the app starts, or on demand from Settings."
-              : "No library folder chosen yet."}
-          </p>
-
-          <Link
-            href="/settings"
-            className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
-          >
-            {roots.length > 0
-              ? "Manage folders in Settings"
-              : "Choose one in Settings"}
-          </Link>
-        </div>
+        //
+        // The app's own empty state, like every other empty page here — a mark
+        // that reads before the words do, and the way out as an action rather
+        // than a link trailing a paragraph.
+        <EmptyState
+          icon={
+            <>
+              <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h9a1.5 1.5 0 0 1 1.5 1.5v7.5A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" />
+            </>
+          }
+          title={
+            roots.length > 0 ? "Nothing scanned yet" : "No library folder yet"
+          }
+          action={
+            <Link href="/settings" className={BUTTON.secondary}>
+              {roots.length > 0 ? "Manage folders" : "Choose a folder"}
+            </Link>
+          }
+        >
+          {roots.length > 0
+            ? "The scan runs when the app starts, or on demand from Settings."
+            : "Point the app at where the films are and a scan will read them."}
+        </EmptyState>
       )}
     </main>
   );

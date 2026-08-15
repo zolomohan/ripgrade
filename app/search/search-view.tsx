@@ -16,6 +16,7 @@ import {
 import { Art } from "@/app/art";
 import { Bar, BarSearch, ICONS, MenuItem, Popover } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
+import { TILE_FRAME, TILE_GRID } from "@/app/poster-tile";
 import { Heart } from "@/app/heart";
 import { Result, SORTS, type Sort } from "@/app/release-search";
 import { scoreTheme, STATUS_THEME } from "@/app/score-circle";
@@ -108,11 +109,12 @@ const SCOPES: { key: Mode; label: string; icon: string }[] = [
   },
   // And a signal going out for the indexers, because that is the difference
   // that matters: this one is a question put to other people's machines.
-  {
-    key: INDEXER,
-    label: "Indexers",
-    icon: "M12 12h.01M8.6 15.4a4.8 4.8 0 0 1 0-6.8M15.4 8.6a4.8 4.8 0 0 1 0 6.8M5.6 18.4a8.9 8.9 0 0 1 0-12.8M18.4 5.6a8.9 8.9 0 0 1 0 12.8",
-  },
+  //
+  // Shared with the button that asks them again — see `ICONS.indexers`. It was
+  // written here and lifted out when the rescan button wanted it: the two are
+  // the only controls in the app that reach off this machine, and they should
+  // not be two marks for that.
+  { key: INDEXER, label: "Indexers", icon: ICONS.indexers },
 ];
 
 /**
@@ -264,7 +266,7 @@ function OwnedTile({ hit, index }: { hit: LibraryHit; index: number }) {
     <Tile index={index}>
       <Link
         href={series ? `/show/${hit.id}` : `/film/${hit.id}`}
-        className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line"
+        className={TILE_FRAME}
       >
         <Art
           src={hit.poster}
@@ -324,7 +326,7 @@ function DiscoverTile({
           it sits still while the picture it belongs to moves, which reads as
           two objects that happen to overlap. That puts the link inside too —
           an anchor cannot hold a button, so the anchor is what gives way. */}
-      <div className="glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
+      <div className={TILE_FRAME}>
         <Link
           href={`/discover/${hit.kind}/${hit.id}`}
           aria-label={hit.title}
@@ -406,13 +408,9 @@ function Section({
   );
 }
 
-/** The shelf itself: the library's own grid, at the library's own gaps. */
+/** The shelf itself: the library's own grid, from the library's own constant. */
 function Grid({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
-      {children}
-    </div>
-  );
+  return <div className={TILE_GRID}>{children}</div>;
 }
 
 /**
@@ -479,7 +477,7 @@ const NO_RELEASES_ICON = (
 function ResultsSkeleton() {
   return (
     <div aria-hidden className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
+      <div className={TILE_GRID}>
         {Array.from({ length: 12 }, (_, i) => (
           <div key={i} className="flex flex-col gap-2">
             <div className="skeleton aspect-[2/3] rounded-card" />

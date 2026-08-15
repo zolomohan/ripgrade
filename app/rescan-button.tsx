@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 
 import { rescanUpgradeQueue } from "@/app/actions";
-import { CONTROL_H } from "@/app/controls";
+import { CONTROL_H, ICONS } from "@/app/controls";
 import { useJobs } from "@/app/jobs-provider";
 import { Spinner } from "@/app/spinner";
 
@@ -84,9 +84,16 @@ export function RescanButton({
       {busy ? (
         <Spinner />
       ) : (
-        /* A full turn of the arrow: what was checked is checked again. The
-           wheel takes its place while it runs, which is the same gesture
-           still turning. */
+        /* A signal going out — the app's own mark for the indexers, from the
+           scope menu in ⌘F. See `ICONS.indexers`.
+
+           It was a circular arrow, and a circular arrow is the mark for "again"
+           rather than for what is being done again. That is the wrong half of
+           this button to draw: the rail holds a *Scan* of its own three inches
+           away, which reads the drive, and a reload glyph beside a word that
+           also says "Scan" invited exactly the reading that the two were one
+           control. What separates them is not that this one repeats — it is
+           where it asks. */
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -97,8 +104,7 @@ export function RescanButton({
           aria-hidden
           className="h-3.5 w-3.5"
         >
-          <path d="M20 11a8 8 0 1 0-.6 4" />
-          <path d="M20 5v6h-6" />
+          <path d={ICONS.indexers} />
         </svg>
       )}
       {busy ? "Searching…" : label}

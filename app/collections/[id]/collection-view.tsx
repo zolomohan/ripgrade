@@ -6,6 +6,7 @@ import { useState, useTransition, ViewTransition } from "react";
 
 import { addWish, removeWish } from "@/app/actions";
 import { Art } from "@/app/art";
+import { TILE_FRAME } from "@/app/poster-tile";
 import { Heart } from "@/app/heart";
 import { scoreTheme } from "@/app/score-circle";
 import { OVER_ART, RemoveButton, WANTED_ART } from "@/app/tile-button";
@@ -35,9 +36,6 @@ import type { CollectionFilm, CollectionSet } from "@/lib/collections";
  * no such thing as removing a film from a franchise.
  */
 const GRID = "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5";
-
-const FRAME =
-  "glow glow-over tilt relative aspect-[2/3] overflow-hidden rounded-card bg-surface-strong ring-1 ring-line";
 
 const POSTER = "h-full w-full object-cover";
 
@@ -77,10 +75,10 @@ function Held({
         default="none"
       >
         {/* The frame is the thing that lifts, so the frame is what everything
-            drawn on the poster has to be inside — see FRAME. That puts the
+            drawn on the poster has to be inside — see TILE_FRAME. That puts the
             link inside it rather than around it: an anchor cannot hold a
             button, so the one that has to give way is the anchor. */}
-        <div className={FRAME}>
+        <div className={TILE_FRAME}>
           <Link href={href} aria-label={film.title} className="block h-full">
             <Art
               src={owned.poster}
@@ -164,7 +162,7 @@ function Absent({
           is the thing that lifts under the pointer — a heart pinned outside it
           hangs in the air while the picture behind it moves. The link goes
           inside for the same reason, since an anchor cannot hold a button. */}
-      <div className={FRAME}>
+      <div className={TILE_FRAME}>
         {film.tmdbId === undefined ? (
           /*
            * A film only a set of your own could hold: one that was on the drive
