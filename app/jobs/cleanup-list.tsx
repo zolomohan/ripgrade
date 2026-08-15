@@ -29,6 +29,7 @@ import { Stat } from "@/app/charts";
 import { Poster } from "./poster";
 import { Stats } from "./stats";
 import { byTitle, pickSort, type SortOption } from "@/app/sorts";
+import { size } from "@/app/format";
 
 /**
  * What is lying beside the films, and the one thing to do about it.
@@ -56,14 +57,6 @@ import { byTitle, pickSort, type SortOption } from "@/app/sorts";
  * of a few kilobytes rounded up to "1 MB" is a row overstating what deleting
  * it gets you.
  */
-const size = (bytes: number) =>
-  bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : bytes >= 1e9
-      ? `${(bytes / 1e9).toFixed(1)} GB`
-      : bytes >= 1e6
-        ? `${Math.round(bytes / 1e6)} MB`
-        : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
 
 /** How long it has been sitting there — the whole case against keeping it. */
 function since(then: number): string {

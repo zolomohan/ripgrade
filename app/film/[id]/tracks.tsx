@@ -27,6 +27,7 @@ import type { AudioTrack, SubtitleTrack } from "@/lib/derive";
 import { BUTTON } from "@/app/controls";
 import { Tick } from "@/app/tick";
 import { ConfirmModal } from "@/app/confirm";
+import { size } from "@/app/format";
 
 /**
  * What a file's tracks are, and the one thing worth doing about them.
@@ -62,14 +63,6 @@ import { ConfirmModal } from "@/app/confirm";
  * makes about the thumbnail cache, arriving on a list of tracks: rounding 40 MB
  * to nothing is not a coarser answer, it is a wrong one.
  */
-const size = (bytes: number) =>
-  bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : bytes >= 1e9
-      ? `${(bytes / 1e9).toFixed(1)} GB`
-      : bytes >= 1e6
-        ? `${Math.round(bytes / 1e6)} MB`
-        : `${Math.round(bytes / 1e3)} kB`;
 
 /** A count with its noun, which four separate sentences below all wanted. */
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
@@ -157,7 +150,9 @@ export function TrackTables({
   // -------------------------------------------------------------------------
 
   const chosen = tracks.filter((_, ordinal) => selected.has(ordinal));
-  const chosenText = subtitles.filter((_, ordinal) => selectedText.has(ordinal));
+  const chosenText = subtitles.filter((_, ordinal) =>
+    selectedText.has(ordinal),
+  );
   const total = selected.size + selectedText.size;
 
   // Worked out before anything runs, and worded by which of its three answers
@@ -244,9 +239,9 @@ export function TrackTables({
   const isOriginalTag = (language?: string) =>
     Boolean(
       preference.original &&
-        originalLanguage &&
-        language &&
-        languageKey(language) === languageKey(originalLanguage),
+      originalLanguage &&
+      language &&
+      languageKey(language) === languageKey(originalLanguage),
     );
 
   /** True of a track kept only because it is the film's own language. */

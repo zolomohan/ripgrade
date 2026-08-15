@@ -53,6 +53,7 @@ import { TrackPicker } from "./track-picker";
 import { DoviDetails } from "./dovi-details";
 import { Stats } from "./stats";
 import { byTitle, pickSort, type SortOption } from "@/app/sorts";
+import { size } from "@/app/format";
 
 /**
  * The two lists of work the library can do to its own files.
@@ -94,14 +95,6 @@ import { byTitle, pickSort, type SortOption } from "@/app/sorts";
  * makes about the thumbnail cache, arriving on a list of tracks: rounding 40 MB
  * to nothing is not a coarser answer, it is a wrong one.
  */
-const size = (bytes: number) =>
-  bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : bytes >= 1e9
-      ? `${(bytes / 1e9).toFixed(1)} GB`
-      : bytes >= 1e6
-        ? `${Math.round(bytes / 1e6)} MB`
-        : `${Math.round(bytes / 1e3)} kB`;
 
 /** The release modal's chip, so a fact reads the same wherever it appears. */
 function Chip({
@@ -1423,9 +1416,7 @@ export const AUDIO_SORTS: SortOption<AudioTask>[] = [
     label: "Most tracks removed",
     // Both kinds, because both go in the one remux the row starts.
     compare: (a, b) =>
-      b.removing +
-        b.removingSubtitles -
-        (a.removing + a.removingSubtitles) ||
+      b.removing + b.removingSubtitles - (a.removing + a.removingSubtitles) ||
       b.freedBytes - a.freedBytes,
   },
   {
@@ -1676,8 +1667,7 @@ export function AudioRun({
         removed: first.proposed.length,
         kept: first.tracks.length - first.proposed.length,
         removedSubtitles: first.proposedSubtitles.length,
-        keptSubtitles:
-          first.subtitles.length - first.proposedSubtitles.length,
+        keptSubtitles: first.subtitles.length - first.proposedSubtitles.length,
         freedBytes: first.freedBytes || undefined,
         ...(waiting.length && {
           batch: { index: 1, total: tasks.length, failed: 0 },

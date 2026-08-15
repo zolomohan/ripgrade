@@ -29,6 +29,7 @@ import type {
   ShowEpisode,
   ShowSeason,
 } from "@/lib/shows";
+import { size } from "@/app/format";
 
 /**
  * A show, season by season.
@@ -41,11 +42,6 @@ import type {
 /** The collections list's rule: fades at both ends, marks where one thing stops. */
 const RULE =
   "h-px shrink-0 bg-gradient-to-r from-transparent via-line-strong to-transparent";
-
-const size = (bytes: number) =>
-  bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : `${(bytes / 1e9).toFixed(1)} GB`;
 
 const SCORE_RING = (score: number) =>
   score >= 78

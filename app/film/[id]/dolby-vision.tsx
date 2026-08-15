@@ -29,6 +29,7 @@ import {
 import { CloseButton, Modal, useClosing } from "@/app/modal";
 import { BUTTON } from "@/app/controls";
 import { ConfirmModal } from "@/app/confirm";
+import { size } from "@/app/format";
 
 /**
  * What is inside the Dolby Vision stream, and for a Profile 7 file the one
@@ -51,10 +52,6 @@ const count = (n: number) => n.toLocaleString("en-GB");
 const nits = (n: number) => (n >= 1 ? count(Math.round(n)) : n);
 
 /** Same two-tier form the library list and the title block use. */
-const size = (bytes: number) =>
-  bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : `${(bytes / 1e9).toFixed(1)} GB`;
 
 // ---------------------------------------------------------------------------
 // The verdict

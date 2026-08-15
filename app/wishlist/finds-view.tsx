@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Art } from "@/app/art";
 import { EmptyState } from "@/app/empty-state";
+import { ago } from "@/app/format";
 import { useJobs } from "@/app/jobs-provider";
 import type { Layout } from "@/app/listing";
 import { MagnetAction } from "@/app/magnet-action";
@@ -50,15 +51,6 @@ import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 
 const gigabytes = (bytes?: number) =>
   bytes === undefined ? undefined : `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-
-/** "3 h ago" — precise enough for "is this listing stale". */
-function ago(then: number): string {
-  const mins = Math.max(1, Math.round((Date.now() - then) / 60_000));
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours} h ago`;
-  return `${Math.round(hours / 24)} d ago`;
-}
 
 const ROW_ACTION =
   "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong";

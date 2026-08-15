@@ -16,21 +16,34 @@
 export const count = (n: number) => n.toLocaleString("en-GB");
 
 /**
- * Terabytes above a terabyte, gigabytes below, and no decimal on the
- * gigabytes: this is storage on a drive you can see, and "1,847 GB" answers
- * the question "is that a lot" better than "1,847.3 GB" does.
+ * Every byte count in the app, at four steps: terabytes, gigabytes, megabytes,
+ * kilobytes.
  *
- * Megabytes below a gigabyte, which is not a case a shelf of remuxes ever
- * reaches and the thumbnail cache reaches immediately. Rounding 190 MB to
- * "0 GB" is not a coarser answer, it is a wrong one — it says there is nothing
- * there.
+ * The one decimal on the gigabytes is what a film is told apart by. A shelf of
+ * remuxes lives between 20 and 90 GB and a third of them round to the same
+ * whole number, so "12 GB" and "12 GB" are two different films reporting the
+ * same size — where "12.3" and "11.8" are the two facts you are comparing. The
+ * terabytes keep two for the same reason a step up, and the megabytes keep none
+ * because nothing is ever chosen between at that size.
+ *
+ * Megabytes and kilobytes below a gigabyte, which no film reaches and the
+ * thumbnail cache reaches immediately. Rounding 190 MB to "0.2 GB" is not a
+ * coarser answer, it is a wrong one — it says the cache is a fifth of a
+ * gigabyte when it is a rounding error away from empty.
+ *
+ * This was twelve functions in twelve files and four of them disagreed: the
+ * same film read "12 GB" on the dashboard and "12.3 GB" on its own page, and
+ * an 800 MB file read "0.8 GB" on the library shelf. A figure that changes as
+ * you navigate is a figure nobody can hold in their head.
  */
 export const size = (bytes: number) =>
   bytes >= 1e12
     ? `${(bytes / 1e12).toFixed(2)} TB`
     : bytes >= 1e9
-      ? `${(bytes / 1e9).toFixed(0)} GB`
-      : `${(bytes / 1e6).toFixed(0)} MB`;
+      ? `${(bytes / 1e9).toFixed(1)} GB`
+      : bytes >= 1e6
+        ? `${(bytes / 1e6).toFixed(0)} MB`
+        : `${Math.ceil(bytes / 1e3)} KB`;
 
 /**
  * "3 h ago" — precise enough for "is this reading stale", and no more.

@@ -25,6 +25,7 @@ import { Row } from "./parts";
 import { SettingsTabs } from "./settings-tabs";
 import { Tmdb } from "./tmdb";
 import { DEFAULT_ROOT } from "@/lib/browse";
+import { size } from "@/app/format";
 
 export const metadata = { title: "Settings — RipGrade" };
 
@@ -66,12 +67,6 @@ function Setting({
 }
 
 /** The cache's size, said the way the setting itself says it. */
-const size = (bytes: number) =>
-  bytes >= 1e9
-    ? `${(bytes / 1e9).toFixed(1)} GB`
-    : bytes >= 1e6
-      ? `${(bytes / 1e6).toFixed(1)} MB`
-      : `${Math.ceil(bytes / 1e3)} KB`;
 
 export default async function SettingsPage() {
   const roots = await getLibraryFolders();
@@ -287,7 +282,7 @@ export default async function SettingsPage() {
         <Setting
           title="qBittorrent"
           summary={qb.configured ? (qb.url ?? "Connected") : "Not connected"}
-          hint="Connect qBittorrent and every download button hands the release to it directly, with progress shown on the Upgrades page. Without it, magnets open in whatever the system has registered."
+          hint="Connect qBittorrent and every download button hands the release to it directly, with progress shown on the Downloads page. Without it, magnets open in whatever the system has registered."
         >
           <Qbittorrent
             configured={qb.configured}

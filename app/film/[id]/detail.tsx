@@ -42,6 +42,7 @@ import { ExtendedCut } from "./extended-cut";
 import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
 import { ScoreBreakdown } from "./score-breakdown";
+import { size } from "@/app/format";
 
 const SEVERITY_TONE: Record<string, string> = {
   critical: "text-red-600 dark:text-red-400",
@@ -59,12 +60,6 @@ const STATUS_THEME: Record<Status, { ring: string }> = {
   "Must Upgrade": { ring: "stroke-red-500" },
 };
 
-function bytes(n: number) {
-  return n >= 1e12
-    ? `${(n / 1e12).toFixed(2)} TB`
-    : `${(n / 1e9).toFixed(1)} GB`;
-}
-
 function duration(seconds?: number) {
   if (!seconds) return "unknown";
   const h = Math.floor(seconds / 3600);
@@ -75,7 +70,7 @@ function duration(seconds?: number) {
 function Spec({ movie }: { movie: LibraryItem }) {
   const rows: [string, string][] = [
     ["File", movie.fileName],
-    ["Size", bytes(movie.sizeBytes)],
+    ["Size", size(movie.sizeBytes)],
     ["Runtime", duration(movie.durationSec)],
     [
       "Video",
@@ -377,7 +372,7 @@ export async function DetailPage({
               )}
               <span>· {movie.resolution}</span>
               <span>· {movie.releaseType}</span>
-              <span>· {bytes(movie.sizeBytes)}</span>
+              <span>· {size(movie.sizeBytes)}</span>
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <FormatBadges movie={movie} />
@@ -989,7 +984,7 @@ export async function DetailPage({
               ? `${movie.width}×${movie.height}`
               : movie.resolution,
             movie.videoCodec,
-            bytes(movie.sizeBytes),
+            size(movie.sizeBytes),
           ]
             .filter(Boolean)
             .join(" · ")}

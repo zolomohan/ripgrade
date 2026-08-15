@@ -7,6 +7,7 @@ import { clearThumbs, rebuildThumbs } from "../actions";
 import { useJobs } from "../jobs-provider";
 import { Spinner } from "../spinner";
 import { PRIMARY, QUIET } from "./parts";
+import { size } from "@/app/format";
 
 /**
  * The thumbnail cache: how big it has grown, and the two things worth doing
@@ -20,13 +21,6 @@ import { PRIMARY, QUIET } from "./parts";
  * for — and the progress here is deliberately only a word: two bars counting
  * the same thing in two places is one too many.
  */
-
-const size = (bytes: number) =>
-  bytes >= 1e9
-    ? `${(bytes / 1e9).toFixed(1)} GB`
-    : bytes >= 1e6
-      ? `${(bytes / 1e6).toFixed(1)} MB`
-      : `${Math.ceil(bytes / 1e3)} KB`;
 
 export function Thumbs({ files, bytes }: { files: number; bytes: number }) {
   const [note, setNote] = useState<string | null>(null);

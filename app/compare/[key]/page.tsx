@@ -7,15 +7,10 @@ import { languageName } from "@/lib/derive";
 import { findDuplicateGroup, type LibraryItem } from "@/lib/library";
 import { decodeId, posterName } from "@/lib/routes";
 import { storedHitFor, type StoredHit } from "@/lib/upgrade-sweep";
+import { size } from "@/app/format";
 import { BackButton } from "./back-button";
 
 export const dynamic = "force-dynamic";
-
-function bytes(n: number) {
-  return n >= 1e12
-    ? `${(n / 1e12).toFixed(2)} TB`
-    : `${(n / 1e9).toFixed(1)} GB`;
-}
 
 function runtime(seconds?: number) {
   if (!seconds) return "unknown";
@@ -256,9 +251,9 @@ function buildRows(copies: LibraryItem[], hit: StoredHit | null): Row[] {
     ),
     row("Runtime", (m) => runtime(m.durationSec)),
     // Bigger is not automatically better, so this is reported without a winner.
-    row("File size", (m) => bytes(m.sizeBytes), {
+    row("File size", (m) => size(m.sizeBytes), {
       predicted: (h) =>
-        h.sizeBytes !== undefined ? bytes(h.sizeBytes) : undefined,
+        h.sizeBytes !== undefined ? size(h.sizeBytes) : undefined,
     }),
     row(
       "Issues",
@@ -375,9 +370,7 @@ export default async function ComparePage({
                 {[
                   hit.resolution,
                   hit.releaseType,
-                  hit.sizeBytes !== undefined
-                    ? bytes(hit.sizeBytes)
-                    : undefined,
+                  hit.sizeBytes !== undefined ? size(hit.sizeBytes) : undefined,
                 ]
                   .filter(Boolean)
                   .join(" · ")}{" "}
@@ -393,7 +386,7 @@ export default async function ComparePage({
               </p>
             ) : (
               <p className="text-sm opacity-55">
-                {[keep.resolution, keep.releaseType, bytes(keep.sizeBytes)]
+                {[keep.resolution, keep.releaseType, size(keep.sizeBytes)]
                   .filter(Boolean)
                   .join(" · ")}{" "}
                 ·{" "}
@@ -424,7 +417,7 @@ export default async function ComparePage({
                 Keep {keep.releaseType} · score {keep.scores.overall}
               </span>{" "}
               — deleting the {drop.length === 1 ? "other copy" : "other copies"}{" "}
-              reclaims <span className="font-medium">{bytes(reclaim)}</span>.
+              reclaims <span className="font-medium">{size(reclaim)}</span>.
             </p>
             <p className="mt-1 font-mono text-xs opacity-60">{keep.fileName}</p>
           </div>

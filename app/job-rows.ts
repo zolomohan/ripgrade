@@ -7,6 +7,7 @@ import {
   stopThumbRebuild,
   stopUpgradeSweep,
 } from "@/app/actions";
+import { count, size } from "@/app/format";
 import type { ProcessDetail } from "@/app/process-details";
 import type { JobsSnapshot } from "@/lib/job-events";
 
@@ -27,14 +28,6 @@ import type { JobsSnapshot } from "@/lib/job-events";
  * plain function that both a rail and a page can call from wherever they hold
  * their own hooks.
  */
-
-const count = (n: number) => n.toLocaleString("en-GB");
-
-/** The two-tier form the library list and the film page both set sizes in. */
-const gigabytes = (bytes: number) =>
-  bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : `${(bytes / 1e9).toFixed(1)} GB`;
 
 /** A running job, as both the rail draws it and the dialog explains it. */
 export type JobRow = {
@@ -297,7 +290,7 @@ export function jobRows(
             ? [{ label: "Keeping", value: count(strip.kept) }]
             : []),
           ...(strip.freedBytes !== undefined
-            ? [{ label: "Frees", value: gigabytes(strip.freedBytes) }]
+            ? [{ label: "Frees", value: size(strip.freedBytes) }]
             : []),
           ...(strip.batch
             ? [

@@ -13,6 +13,7 @@ import { keptFirst, savingsOf, tickRange } from "@/lib/audio-plan";
 import { languageName } from "@/lib/derive";
 import type { AudioTrack, SubtitleTrack } from "@/lib/derive";
 import type { AudioTask } from "@/lib/queue-tasks";
+import { size } from "@/app/format";
 
 /**
  * Which tracks actually go, asked where the row is.
@@ -58,14 +59,6 @@ import type { AudioTask } from "@/lib/queue-tasks";
  * makes about the thumbnail cache, arriving on a list of tracks: rounding 40 MB
  * to nothing is not a coarser answer, it is a wrong one.
  */
-const size = (bytes: number) =>
-  bytes >= 1e12
-    ? `${(bytes / 1e12).toFixed(2)} TB`
-    : bytes >= 1e9
-      ? `${(bytes / 1e9).toFixed(1)} GB`
-      : bytes >= 1e6
-        ? `${Math.round(bytes / 1e6)} MB`
-        : `${Math.round(bytes / 1e3)} kB`;
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
@@ -202,7 +195,8 @@ export function TrackPicker({
    * it was clicked.
    */
   const order = useMemo(
-    () => keptFirst(tracks, (_track, ordinal) => !task.proposed.includes(ordinal)),
+    () =>
+      keptFirst(tracks, (_track, ordinal) => !task.proposed.includes(ordinal)),
     [tracks, task.proposed],
   );
   const orderText = useMemo(
@@ -597,7 +591,9 @@ export function TrackPicker({
                       <span className="flex items-center gap-1.5">
                         {track.language ? languageName(track.language) : "—"}
                         {kept &&
-                          chip("One of the languages you keep — set in Settings")}
+                          chip(
+                            "One of the languages you keep — set in Settings",
+                          )}
                       </span>
                     </td>
                     <td className="px-4 py-2 opacity-70">
@@ -817,7 +813,8 @@ export function TrackPicker({
                     heading: "Removing",
                     groups: removingGroups,
                     tone: "text-red-700 dark:text-red-300",
-                    empty: "Nothing ticked — the file is left exactly as it is.",
+                    empty:
+                      "Nothing ticked — the file is left exactly as it is.",
                     sizes: true,
                   },
                 ] as const
