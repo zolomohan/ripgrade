@@ -23,7 +23,6 @@ import { posterName } from "@/lib/routes";
 import {
   CLEANUP_GROUPS,
   CLEANUP_SORTS,
-  CleanAll,
   CleanupList,
   cleanupOrder,
   CleanupRun,
@@ -850,9 +849,11 @@ export function JobsView({
           conversions, a run of removals, or a delete — each list's own, said in
           the band of figures where the count is.
 
-          The cleanup tab keeps Clean all beside it. That one is the answer to
-          the whole tab and has been since before there was a way to choose, and
-          the two do not compete: one is "all of it", the other is "these".
+          The cleanup tab had a Clean all beside it, and it has gone: on a tab
+          whose rows are half dead wreckage and half the originals that make a
+          conversion undoable, "all of it" is not a set anybody can picture
+          before pressing. Select and tick is one gesture more and shows you the
+          count and the size first. See `cleanup-list.tsx`.
 
           Nothing to select on an empty list, and nothing to select while every
           row on it is already running or queued. */}
@@ -860,16 +861,11 @@ export function JobsView({
         listing={listing}
         action={
           pending > 0 ? (
-            <div className="flex shrink-0 items-center gap-2">
-              {tab === "cleanup" && !selecting && <CleanAll files={cleanup} />}
-              <SelectFilms
-                selecting={selecting}
-                onToggle={() =>
-                  selecting ? stopSelecting() : setChosen(EMPTY)
-                }
-                what={PICKING[tab]}
-              />
-            </div>
+            <SelectFilms
+              selecting={selecting}
+              onToggle={() => (selecting ? stopSelecting() : setChosen(EMPTY))}
+              what={PICKING[tab]}
+            />
           ) : undefined
         }
       />

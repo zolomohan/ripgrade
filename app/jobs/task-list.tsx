@@ -1892,20 +1892,19 @@ function ordinal(n: number): string {
 /**
  * The button that puts the list into choosing rows rather than reading them.
  *
- * In the bar over the page rather than on the list, where the cleanup tab's
- * Clean all already stands: it is a statement about the whole tab, and a
- * control that turns forty rows into checkboxes is not something to come across
- * halfway down them.
+ * In the bar over the page rather than on the list: it is a statement about the
+ * whole tab, and a control that turns forty rows into checkboxes is not
+ * something to come across halfway down them.
  *
  * A mode at all — rather than boxes that are simply always there — because
  * ticking films is the rarer of the two things this list is for. Most visits
  * are one film, opened, argued with and started; a box in the corner of every
  * row would be furniture on all of them for the sake of the other visit.
  *
- * A mark rather than a word, and outlined rather than filled: Clean all is the
- * answer to its whole tab and is drawn as one, while this only opens a way of
- * asking. The two sit in the same slot on neighbouring tabs, and a second solid
- * button there would have made "select" look like the thing this page is for.
+ * A mark rather than a word, and outlined rather than filled: this only opens a
+ * way of asking, and a solid button in that slot would have made "select" look
+ * like the thing this page is for. It shared the slot with the cleanup tab's
+ * Clean all until that went; what it says of itself has not changed.
  *
  * The icon changes rather than a label under it. Off, it is a list with ticks
  * beside it, which is what pressing it produces; on, it is the cross every

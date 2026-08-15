@@ -14,7 +14,7 @@ import { SCORE_PLATE_ROOMY } from "@/app/score-circle";
 import { stagger } from "@/app/stagger";
 import { Tick, TickColumn } from "@/app/tick";
 import { TILE_MARK } from "@/app/tile-button";
-import { BUTTON, CONTROL_H } from "@/app/controls";
+import { BUTTON } from "@/app/controls";
 import { ConfirmModal } from "@/app/confirm";
 import type { CleanupFile, CleanupKind } from "@/lib/queue-tasks";
 import { movieId } from "@/lib/routes";
@@ -138,10 +138,10 @@ const CONSEQUENCE: Record<CleanupKind, string> = {
 /**
  * The one call every delete on this page makes, and the repaint after it.
  *
- * Three places ask now — a row, the leftover sweep, and the button in the
- * page's header — and they sit in three different parts of the tree, so each
- * keeps its own question. What they share is this: the call, whether it is in
- * flight, and what it said if it failed.
+ * Three places ask — a row, the leftover sweep, and the run over what you have
+ * ticked — and they sit in three different parts of the tree, so each keeps its
+ * own question. What they share is this: the call, whether it is in flight, and
+ * what it said if it failed.
  */
 function useDiscard() {
   const router = useRouter();
@@ -165,100 +165,22 @@ function useDiscard() {
   return { busy, error, run };
 }
 
-/** Everything on the tab that this page is actually allowed to delete. */
-const deletableIn = (files: CleanupFile[]) =>
-  files.filter((file) => !file.offline);
-
-/**
- * Empty the whole tab, from the page's own header.
+/*
+ * There was a `CleanAll` here — one press in the page's header that emptied the
+ * whole tab, dialog and all.
  *
- * Up there rather than over the list because it is the page's action and not
- * the list's, and primary because on a tab whose every row is a file waiting to
- * be deleted it is what the tab is for. No red on it: this app puts that in the
- * dialog, and the dialog is where what it costs gets said.
+ * It has gone because of what it could take. Every other delete on this page
+ * asks about something you are looking at: a row's own Delete names the file,
+ * and Select names the set you ticked. "All of it" names nothing, and on this
+ * tab the set it stands for is not one kind of thing — it is the wreckage of
+ * dead jobs mixed in with the originals held beside converted films, which are
+ * the only irreversible deletions in this app. The dialog argued that case in a
+ * paragraph, which is the shape of a control that should not be one press.
  *
- * Stays on the page when there is nothing it may take, off and saying why,
- * exactly as each row's own Delete does — rows that all refuse with a reason,
- * under a header with no button at all, would read as a page with no bulk
- * action rather than one whose drive is unplugged.
+ * Selecting every row and deleting those is still one gesture more than this
+ * was, and it is the right one more: it puts the count and the size of what you
+ * are about to lose in front of you before you ask for it.
  */
-export function CleanAll({ files }: { files: CleanupFile[] }) {
-  const [asking, setAsking] = useState(false);
-  const shown = useClosing(asking);
-  const { busy, error, run } = useDiscard();
-
-  const deletable = deletableIn(files);
-  const bytes = deletable.reduce((sum, file) => sum + file.bytes, 0);
-  const originals = deletable.filter((file) => file.kind !== "leftover").length;
-
-  if (files.length === 0) return null;
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setAsking(true)}
-        disabled={busy || deletable.length === 0}
-        title={
-          deletable.length === 0
-            ? "Every row here is on a drive that is not connected"
-            : undefined
-        }
-        // The bar's height rather than the button's own. `BUTTON.primary` sizes
-        // itself from its padding, which is right in a row of buttons and wrong
-        // on this line: the tabs and the sort-and-cut bar are both a stated
-        // `CONTROL_H`, and a third control coming to eight pixels less reads as
-        // something that wandered in. The padding stays and simply sits inside
-        // the taller box. Same swap the upgrades page makes for its rescan
-        // button, which fills this slot on that page.
-        className={`${BUTTON.primary} ${CONTROL_H}`}
-      >
-        Clean all
-      </button>
-
-      {shown && (
-        <ConfirmModal
-          open={asking}
-          title={`Delete all ${deletable.length} files?`}
-          confirmLabel={`Delete ${size(bytes)}`}
-          tone="danger"
-          busy={busy}
-          onConfirm={async () => {
-            if (await run(deletable)) setAsking(false);
-          }}
-          onCancel={() => setAsking(false)}
-        >
-          {/* The one dialog here that has to argue against itself: the button
-              behind it says two words, and the originals it would take are the
-              only irreversible thing in the app. So the count of those leads,
-              ahead of the figure anybody pressed it for. */}
-          {originals > 0 && (
-            <>
-              {originals === 1
-                ? "One of these is an original"
-                : `${originals} of these are originals`}{" "}
-              kept beside a film so its rewrite could be undone. Deleting them
-              ends that: what they hold exists only on the discs the films were
-              ripped from, and no conversion or track removal among them can be
-              walked back.{" "}
-            </>
-          )}
-          {size(bytes)} comes back.
-          {files.length > deletable.length &&
-            " The rows whose drive is not connected are left where they are."}
-          {/* A failure holds the dialog open. The button that raised it is up
-              in the header, and a message printed down the page beside a list
-              that did not change would be nowhere near what was asked. */}
-          {error && (
-            <span className="mt-3 block font-mono text-sm text-red-600 dark:text-red-400">
-              {error}
-            </span>
-          )}
-        </ConfirmModal>
-      )}
-    </>
-  );
-}
 
 /** The rows in the order this list draws them — see `audioOrder`, its twin. */
 export const cleanupOrder = (
@@ -274,16 +196,15 @@ export const cleanupOrder = (
 /**
  * Delete every row that has been ticked, beside the figures for them.
  *
- * The one bulk delete on this page that is neither "all of it" nor "one of
- * them", and the only one that can take originals in a single answer. So the
- * dialog leads with how many of those are in the set, ahead of the figure
- * anybody pressed the button for: the leftovers are wreckage and the originals
- * are undos somebody is still holding, and the two arrive here wearing the same
- * row.
+ * The bulk delete on this page, and the only one that can take originals in a
+ * single answer. So the dialog leads with how many of those are in the set,
+ * ahead of the figure anybody pressed the button for: the leftovers are
+ * wreckage and the originals are undos somebody is still holding, and the two
+ * arrive here wearing the same row.
  *
- * One call rather than one per file — `discardCleanup` already takes a list,
- * which is what the header's Clean all hands it. Nothing here is a job: a
- * delete is an unlink, and a hundred of them are over before the page repaints.
+ * One call rather than one per file — `discardCleanup` takes a list. Nothing
+ * here is a job: a delete is an unlink, and a hundred of them are over before
+ * the page repaints.
  */
 export function CleanupRun({
   files,
