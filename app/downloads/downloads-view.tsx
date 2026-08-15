@@ -669,8 +669,14 @@ function DownloadTile({
    * sentence for a row, and a poster has room for the first word of it.
    */
   const state = STATE_LABEL[d.state]?.split(" — ")[0];
+  /*
+   * Nothing where it is paused: the scrim over the whole poster says that, and
+   * says it from further away than a word on a plate ever could. What the plate
+   * keeps is the half the scrim cannot — how far in it got — because a paused
+   * transfer at 4% and one at 96% are different things to come back to.
+   */
   const detail = paused
-    ? "paused"
+    ? undefined
     : d.speedBps > 0
       ? speed(d.speedBps)
       : (state ?? eta(d.etaSec));
@@ -719,20 +725,25 @@ function DownloadTile({
        */
       tools={
         <>
-          <button
-            type="button"
-            onClick={onPause}
-            disabled={busy}
-            aria-label={paused ? "Resume this download" : "Pause this download"}
-            title={paused ? "Resume" : "Pause"}
-            className={`${TILE_MARK} disabled:opacity-50`}
-          >
-            {busy ? (
-              <Spinner className="h-4 w-4" />
-            ) : (
-              <TransportIcon paused={paused} />
-            )}
-          </button>
+          {/* Only while it is running. Paused, the whole poster is the resume
+              button — a second one up here would be two ways to do the same
+              thing on one tile, and the smaller of the two. */}
+          {!paused && (
+            <button
+              type="button"
+              onClick={onPause}
+              disabled={busy}
+              aria-label="Pause this download"
+              title="Pause"
+              className={`${TILE_MARK} disabled:opacity-50`}
+            >
+              {busy ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <TransportIcon paused={false} />
+              )}
+            </button>
+          )}
 
           {/* Red on the pointer rather than always, which is `RemoveButton`'s
               rule and `BUTTON.danger`'s: a mark announces what it will do at
@@ -752,6 +763,53 @@ function DownloadTile({
             <CrossIcon />
           </button>
         </>
+      }
+      /*
+       * Stopped, drawn as the state of the whole tile.
+       *
+       * The scrim is the reading: a grid of transfers says which of them are
+       * going and which are not before you have read a word, which is what a
+       * plate saying "paused" in eleven-point could never do from across the
+       * page. And the thing you would reach for is the thing it dims — so the
+       * whole picture is the button that starts it again, rather than a mark
+       * you have to find first.
+       *
+       * The progress bar and the percentage stay under it. Where a transfer got
+       * to is exactly the fact you want while deciding whether to resume it or
+       * throw it away, and it is the one thing the scrim itself cannot say.
+       */
+      overlay={
+        paused && (
+          <button
+            type="button"
+            onClick={onPause}
+            disabled={busy}
+            aria-label="Resume this download"
+            title="Resume"
+            className="absolute inset-0 z-10 grid place-items-center bg-black/55 text-white transition-colors hover:bg-black/40 disabled:opacity-60"
+          >
+            {/* A ring rather than a filled disc, which is the app's habit over
+                artwork: an outline and a shadow carry on any picture, where a
+                solid plate this size would be a hole cut in the poster. */}
+            <span className="grid h-14 w-14 place-items-center rounded-full ring-2 ring-white/80 backdrop-blur-[2px] drop-shadow-[0_1px_6px_rgba(0,0,0,0.55)]">
+              {busy ? (
+                <Spinner className="h-6 w-6" />
+              ) : (
+                /* Nudged right by a hair: a triangle is visually heavier on its
+                   flat edge, so a play mark centred by its bounding box reads
+                   as sitting left of centre. */
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden
+                  className="ml-0.5 h-7 w-7"
+                >
+                  <path d="M8 5.5v13l11-6.5z" />
+                </svg>
+              )}
+            </span>
+          </button>
+        )
       }
       /*
        * What the release is predicted to score, in the corner every tile in the

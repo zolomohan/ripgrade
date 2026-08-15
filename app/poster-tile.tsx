@@ -138,6 +138,7 @@ export function PosterTile({
   mark,
   remove,
   tools,
+  overlay,
   badge,
   note,
   actions,
@@ -213,6 +214,21 @@ export function PosterTile({
    * app/tile-button.tsx, which is what belongs here.
    */
   remove?: React.ReactNode;
+  /**
+   * The whole picture, for a state that is about the tile rather than about a
+   * corner of it.
+   *
+   * A paused transfer is the case it was built for. Pausing is not a fact you
+   * note in a corner and move on from — it is the tile's condition, the reason
+   * nothing is happening, and the one thing you would reach for the tile to
+   * undo. Drawn over all of it, the grid says which are stopped from across the
+   * room, and the way to start one again is the largest target on it rather
+   * than a nine-pixel mark.
+   *
+   * Rendered before the corner slots so those paint over it: a scrim that hid
+   * the reading it is standing beside would be trading one fact for another.
+   */
+  overlay?: React.ReactNode;
   /**
    * Top left as well: a row of controls, for the tiles whose top-left corner is
    * not spent on a tick or a cross.
@@ -382,6 +398,8 @@ export function PosterTile({
           carries the corner and the hover with it, so the same cross sits in
           the same place whether a tile is built out of this component or by
           hand — see the wishlist's, which is not. */}
+      {overlay}
+
       {remove}
 
       {/* `top-1 left-1` is `RemoveButton`'s own inset, so a row of controls
