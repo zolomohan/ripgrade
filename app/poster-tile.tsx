@@ -137,6 +137,7 @@ export function PosterTile({
   factsTitle,
   mark,
   remove,
+  tools,
   badge,
   note,
   actions,
@@ -212,6 +213,27 @@ export function PosterTile({
    * app/tile-button.tsx, which is what belongs here.
    */
   remove?: React.ReactNode;
+  /**
+   * Top left as well: a row of controls, for the tiles whose top-left corner is
+   * not spent on a tick or a cross.
+   *
+   * The corner's usual job is to say what a tile is *in* — chosen, or on a list
+   * it can be taken off. A transfer is in neither: nothing is ticking the grid
+   * and there is no list to leave, so the corner is free, and what a download
+   * needs within reach is the pair of things you can do to it.
+   *
+   * It exists because the opposite corner stopped being available. The controls
+   * sat there while a transfer had no reading to show; now it carries the score
+   * the release is predicted to land, which is what every other tile in the app
+   * keeps in that corner — so the controls move rather than the reading.
+   *
+   * A row, not a mark, and positioned here rather than by its children: two
+   * absolutely-positioned buttons cannot be a flex row, which is the same
+   * reason `TILE_MARK` is split from `TILE_BUTTON`.
+   *
+   * Never passed alongside `mark` or `remove`; the three share one corner.
+   */
+  tools?: React.ReactNode;
   /** Top right: the reading this list is ranked by. */
   badge?: React.ReactNode;
   /** Bottom left: what is happening to it, in a word. */
@@ -361,6 +383,14 @@ export function PosterTile({
           the same place whether a tile is built out of this component or by
           hand — see the wishlist's, which is not. */}
       {remove}
+
+      {/* `top-1 left-1` is `RemoveButton`'s own inset, so a row of controls
+          starts exactly where the single cross would have. */}
+      {tools && (
+        <div className="absolute top-1 left-1 z-10 flex items-center">
+          {tools}
+        </div>
+      )}
 
       {badge && <div className="absolute top-2 right-2 z-10">{badge}</div>}
 

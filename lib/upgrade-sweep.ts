@@ -495,6 +495,56 @@ export type UpgradeQueueItem = {
  * check time — replace the file and rescan, and the entry falls out of the
  * queue by itself instead of celebrating an upgrade you already made.
  */
+/**
+ * One stored check, as the queue would carry it — or null where the find no
+ * longer earns a place: it fails the rules the queue is read under, or the
+ * copy on the drive has caught up with it since the sweep ran.
+ *
+ * Shared with `upgradeFor` below, so a film's own page and the shelf can never
+ * disagree about whether there is something better to be had.
+ */
+function queueItem(
+  movie: LibraryItem,
+  row: { checked_at: number; best: string },
+  passes: ReturnType<typeof queueFilter>,
+): UpgradeQueueItem | null {
+  const hit = JSON.parse(row.best) as StoredHit;
+  if (!passes(hit, movie.tmdb?.id)) return null;
+
+  const delta = hit.score - movie.scores.overall;
+  if (delta <= 0) return null;
+
+  return {
+    path: movie.path,
+    compareKey: duplicateKey(movie),
+    title: movie.tmdb?.title ?? movie.title,
+    year: movie.tmdb?.year ?? movie.year,
+    poster: movie.poster,
+    posterRemote: movie.art.poster,
+    artAt: movie.artAt,
+    currentScore: movie.scores.overall,
+    checkedAt: row.checked_at,
+    hit: { ...hit, delta },
+  };
+}
+
+/**
+ * What the sweep found for this one film, on the queue's own terms.
+ *
+ * The film page asks it of the film it is already drawing, which is why this
+ * takes the item rather than a path: the delta is measured against the score
+ * that page is showing, not the one the sweep saw.
+ */
+export function upgradeFor(movie: LibraryItem): UpgradeQueueItem | null {
+  const row = db
+    .prepare(
+      "SELECT checked_at, best FROM upgrade_checks WHERE path = ? AND best IS NOT NULL",
+    )
+    .get(movie.path) as { checked_at: number; best: string } | undefined;
+
+  return row ? queueItem(movie, row, queueFilter()) : null;
+}
+
 export function getUpgradeQueue(
   movies: LibraryItem[] = getMovies(),
 ): UpgradeQueueItem[] {
@@ -512,24 +562,8 @@ export function getUpgradeQueue(
     const movie = byPath.get(row.path);
     if (!movie) continue; // Deleted or unplugged since the sweep.
 
-    const hit = JSON.parse(row.best) as StoredHit;
-    if (!passes(hit, movie.tmdb?.id)) continue;
-
-    const delta = hit.score - movie.scores.overall;
-    if (delta <= 0) continue;
-
-    items.push({
-      path: movie.path,
-      compareKey: duplicateKey(movie),
-      title: movie.tmdb?.title ?? movie.title,
-      year: movie.tmdb?.year ?? movie.year,
-      poster: movie.poster,
-      posterRemote: movie.art.poster,
-      artAt: movie.artAt,
-      currentScore: movie.scores.overall,
-      checkedAt: row.checked_at,
-      hit: { ...hit, delta },
-    });
+    const item = queueItem(movie, row, passes);
+    if (item) items.push(item);
   }
 
   return items.sort((a, b) => {

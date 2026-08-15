@@ -24,6 +24,7 @@ import { entryFromSpec, qualityLabel } from "@/lib/disc-entry";
 import { hasJackett } from "@/lib/jackett";
 import { getMovie, type LibraryItem } from "@/lib/library";
 import { canRevealInFinder } from "@/lib/system";
+import { upgradeFor } from "@/lib/upgrade-sweep";
 import { Art } from "@/app/art";
 import { HERO_BOX, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { DiscHeading } from "@/app/disc-heading";
@@ -241,6 +242,11 @@ export async function DetailPage({
   // Full specs live in the disc table; the derived payload only carries the gaps.
   const disc = movie.tmdb ? getDisc(movie.tmdb.id) : undefined;
   const jackettReady = hasJackett();
+  // What the last sweep found for this film, if it found anything and the find
+  // still stands. The Upgrade button opens it rather than a fresh search —
+  // see `UpgradeButton`. Films only: the sweep runs over the shelf of films,
+  // so an episode has never been checked and never has one of these.
+  const found = movie.kind === "movie" ? upgradeFor(movie) : null;
   // The track the audio summary names — the same one the spec grid calls the
   // file's audio, so the shut panel and the open one cannot disagree.
   const bestTrack =
@@ -416,6 +422,7 @@ export async function DetailPage({
                 subtitle={movie.year ? String(movie.year) : undefined}
                 posterPath={movie.art.poster}
                 configured={jackettReady}
+                found={found ?? undefined}
               />
             )}
             {/* An episode's search asks for this one episode by its numbers —

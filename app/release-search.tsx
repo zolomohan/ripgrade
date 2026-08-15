@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
 import {
@@ -12,10 +13,15 @@ import {
 } from "@/app/actions";
 import { BUTTON, FIELD } from "@/app/controls";
 import { qualityLabel } from "@/lib/disc-entry";
+import { ago } from "@/app/format";
 import { MagnetAction } from "@/app/magnet-action";
 import type { DownloadSource, FilmContext } from "@/lib/qbittorrent";
+import { ReleaseDetails } from "@/app/release-details";
+import { rememberListing } from "@/app/return-to";
+import { compareId, movieId } from "@/lib/routes";
 import { ScoreDial } from "@/app/score-circle";
 import type { DiscSummary, ScoredRelease, Standing } from "@/lib/upgrades";
+import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import { CloseButton, Modal, useClosing } from "@/app/modal";
 
 /**
@@ -723,6 +729,7 @@ export function UpgradeButton({
   subtitle,
   posterPath,
   configured,
+  found,
   label = "Upgrade",
 }: {
   subject: Subject;
@@ -730,8 +737,26 @@ export function UpgradeButton({
   subtitle?: string;
   posterPath?: string;
   configured: boolean;
+  /**
+   * What the sweep already found for this film, where it found anything.
+   *
+   * The press then opens the release itself rather than a search: the question
+   * "is there something better" has an answer on file, and asking the indexers
+   * again to arrive back at the same row is a wait for nothing. The search is
+   * still one press away, behind "Other releases" — the same way out the queue
+   * and the shelf give, because it is the same doubt about the same word.
+   */
+  found?: UpgradeQueueItem;
   label?: string;
 }) {
+  const router = useRouter();
+
+  // Two dialogs and one button. `reading` is the found release; `open` is the
+  // whole field, reached either straight from the button — where there is no
+  // find to read — or from inside the first, which closes as it goes: a dialog
+  // stacked on a dialog is a dialog you cannot see the edge of.
+  const [reading, setReading] = useState(false);
+  const read = useClosing(reading);
   const [open, setOpen] = useState(false);
   const mounted = useClosing(open);
 
@@ -739,7 +764,7 @@ export function UpgradeButton({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => (found ? setReading(true) : setOpen(true))}
         // h-8 to sit level with the icon buttons beside it, which are the same
         // pill with equal sides. It agrees with the padding rather than
         // fighting it: 20px of line plus 6px either side is the 32px asked
@@ -749,6 +774,40 @@ export function UpgradeButton({
         {label}
       </button>
 
+      {/* The shelf's dialog, unchanged: nothing about a release is different
+          for being reached from the film's own page. */}
+      {found && read && (
+        <ReleaseDetails
+          open={reading}
+          title={found.title}
+          year={found.year}
+          poster={found.poster}
+          posterRemote={found.posterRemote}
+          posterVersion={found.artAt}
+          hit={found.hit}
+          gain={found.hit.delta}
+          currentScore={found.currentScore}
+          checkedLabel={`Checked ${ago(found.checkedAt)}`}
+          source="upgrade"
+          film={{ href: `/film/${movieId(found.path)}` }}
+          onward={{
+            label: "Compare",
+            go: () => {
+              // The crumb the queue's own rows leave: the delegated listener in
+              // return-to.tsx only sees anchors, and this navigates from a
+              // handler. It is a no-op off a listing, which the film page is.
+              rememberListing();
+              router.push(`/compare/${compareId(found.compareKey)}`);
+            },
+          }}
+          onMore={() => {
+            setReading(false);
+            setOpen(true);
+          }}
+          onClose={() => setReading(false)}
+        />
+      )}
+
       {mounted && (
         <ReleaseSearchModal
           open={open}
@@ -756,6 +815,9 @@ export function UpgradeButton({
           title={title}
           subtitle={subtitle}
           posterPath={posterPath}
+          // Where a find is what was pressed, a fetch from the field behind it
+          // is still the queue's business, and reports under it.
+          source={found ? "upgrade" : undefined}
           configured={configured}
           onClose={() => setOpen(false)}
         />

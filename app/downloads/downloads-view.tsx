@@ -703,18 +703,37 @@ function DownloadTile({
         SOURCE_LABEL[entry.source],
       ]}
       /*
-       * Top right, where every tile in the app keeps the thing its list is
-       * about. On a shelf that is a score; on a transfer nothing is ranked, and
-       * what belongs in reach is the pair of things you can do to it.
+       * Both controls, top left, in a row.
        *
-       * A row of marks rather than one, which the queue's own tiles already
-       * carry — see `TILE_MARK`. The stop sits in the corner itself, where the
-       * pointer lands and where the one control you actually reach for should
-       * be; the cancel is the one further in, since it is the press there is
-       * no taking back.
+       * They were in the opposite corner while a transfer had no reading to
+       * show there. It has one now — the score the release is predicted to
+       * land — and that corner belongs to the reading on every other tile in
+       * the app, so the controls moved rather than the number. The corner they
+       * moved into is free on a transfer for the reason it is spoken for
+       * everywhere else: nothing is ticking this grid and a download is not on
+       * a list it can be taken off, so neither the tick nor the cross wants it.
+       *
+       * The stop sits outermost, in the corner itself, where the pointer lands
+       * and where the control you actually reach for should be. The cancel is
+       * the one further in, since it is the press there is no taking back.
        */
-      badge={
-        <div className="flex items-center">
+      tools={
+        <>
+          <button
+            type="button"
+            onClick={onPause}
+            disabled={busy}
+            aria-label={paused ? "Resume this download" : "Pause this download"}
+            title={paused ? "Resume" : "Pause"}
+            className={`${TILE_MARK} disabled:opacity-50`}
+          >
+            {busy ? (
+              <Spinner className="h-4 w-4" />
+            ) : (
+              <TransportIcon paused={paused} />
+            )}
+          </button>
+
           {/* Red on the pointer rather than always, which is `RemoveButton`'s
               rule and `BUTTON.danger`'s: a mark announces what it will do at
               the moment you reach for it, not from across the grid.
@@ -732,27 +751,35 @@ function DownloadTile({
           >
             <CrossIcon />
           </button>
-
-          <button
-            type="button"
-            onClick={onPause}
-            disabled={busy}
-            aria-label={paused ? "Resume this download" : "Pause this download"}
-            title={paused ? "Resume" : "Pause"}
-            className={`${TILE_MARK} disabled:opacity-50`}
-          >
-            {busy ? (
-              <Spinner className="h-4 w-4" />
-            ) : (
-              <TransportIcon paused={paused} />
-            )}
-          </button>
-        </div>
+        </>
+      }
+      /*
+       * What the release is predicted to score, in the corner every tile in the
+       * app keeps its reading in — the same badge the history tiles below wear,
+       * read off the same name by the same rubric.
+       *
+       * Nothing here is measured and nothing can be: most of the file is not on
+       * the drive yet. This is the number the queue put on the button you
+       * pressed, which is exactly the thing worth seeing while you wait — it is
+       * what you are waiting *for*.
+       */
+      badge={
+        entry.score !== undefined && (
+          <ScoreBadge
+            score={entry.score}
+            theme={entry.status ? STATUS_THEME[entry.status] : undefined}
+            title={
+              entry.status
+                ? `${entry.status} · ${entry.score} of 100`
+                : `${entry.score} of 100`
+            }
+          />
+        )
       }
       status={
         <>
-          {/* The plate has the line to itself now that both controls are in the
-              corner above. `self-start` so it is the width of what it says
+          {/* The plate has the line to itself, both controls having moved to
+              the corner opposite the score. `self-start` so it is the width of what it says
               rather than the width of the poster — a plate ruled edge to edge
               is a banner. */}
           <span
@@ -1576,6 +1603,26 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
                             .join(" · ")}
                         </p>
                       </div>
+
+                      {/* The reading, where the history rows keep theirs: a row
+                        is read left to right and the score is the last word on
+                        it before the controls. The same badge the tiles wear in
+                        their top corner, off the same name. */}
+                      {entry.score !== undefined && (
+                        <ScoreBadge
+                          score={entry.score}
+                          theme={
+                            entry.status
+                              ? STATUS_THEME[entry.status]
+                              : undefined
+                          }
+                          title={
+                            entry.status
+                              ? `${entry.status} · ${entry.score} of 100`
+                              : `${entry.score} of 100`
+                          }
+                        />
+                      )}
 
                       {/* The same ellipsis the history rows carry, so one column
                         of marks runs down the page whatever state a row is in. */}
