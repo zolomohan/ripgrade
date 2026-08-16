@@ -3,7 +3,6 @@ import Link from "next/link";
 import { getLibraryFolders } from "@/app/actions";
 import { hasJackett } from "@/lib/jackett";
 import { getMovies } from "@/lib/library";
-import { alreadyFetching } from "@/lib/qbittorrent";
 import { getShows } from "@/lib/shows";
 import { getUpgradeQueue } from "@/lib/upgrade-sweep";
 import { LibraryTabs } from "@/app/library-tabs";
@@ -25,17 +24,21 @@ export default async function Page() {
    *
    * The read the queue page used to make, against the same list of films —
    * which is why that page has gone: everything on it was about a film already
-   * on this shelf, and the shelf can say so on the film itself. A release
-   * already in qBittorrent comes off, as it did there: it has stopped being an
-   * upgrade to find and become one to watch arrive, on the downloads page.
+   * on this shelf, and the shelf can say so on the film itself.
    *
-   * Two local reads: the sweep's own table, and the download log joined to
-   * whatever the client says about it. Neither goes near an indexer.
+   * A release already in qBittorrent stays on the shelf. It used to come off,
+   * on the reading that it had stopped being an upgrade to find and become one
+   * to watch arrive — but the film's own page never agreed: `upgradeFor` asks
+   * the sweep's table and nothing else, so `/film/…` kept showing a find this
+   * shelf had dropped. What the sweep found is a fact about the copy on the
+   * drive, and it holds until a better file lands and the next scan rescores
+   * the film. A send is not an arrival.
+   *
+   * One local read: the sweep's own table. It goes nowhere near an indexer, and
+   * no longer near the download client either — which also means this shelf
+   * reads the same whether or not qBittorrent is answering.
    */
-  const fetching = await alreadyFetching();
-  const upgrades = getUpgradeQueue(movies).filter(
-    (item) => !fetching({ title: item.title, magnet: item.hit.magnet }),
-  );
+  const upgrades = getUpgradeQueue(movies);
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-8 sm:px-8">

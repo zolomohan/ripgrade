@@ -193,24 +193,31 @@ export async function getDashboard(): Promise<Dashboard> {
   const cleanup = cleanupFiles(library);
 
   /*
-   * What is already coming does not need fetching again.
+   * A want that is coming has been answered. An upgrade that is coming has not.
    *
-   * The same cut `/library` and `/wishlist` make, and it has to be made here
-   * too or the front page contradicts the two pages its figures link to: a
-   * release sent to qBittorrent leaves both of those lists the moment it is
-   * sent, and this one went on counting it — "43 upgrades found" over a shelf
-   * whose first poster was a film already downloading, and a figure you could
-   * not make go down by doing the thing it was asking for.
+   * The two lists look alike and are not the same question. A wishlist find is
+   * a thing to fetch, and once it is fetching there is nothing left to do about
+   * it — it belongs on the downloads page, and it comes off here. An upgrade is
+   * a fact about a film that is on the drive right now: the sweep found a
+   * better copy than the one you own, and that stays true for as long as the
+   * one you own is the one you own. Sending the magnet does not change it.
    *
-   * It is also the half of cancelling that is easy to miss. `alreadyFetching`
-   * reads a fetch that never finished and is no longer in the client as one
-   * that was called off, so cancelling a download puts the film back on the
-   * lists it left — and this page is one of them.
+   * So the cut is made on finds alone. It used to be made on both, and the
+   * queue then disagreed with the film's own page about the same film —
+   * `upgradeFor` has never asked the client anything, so `/film/…` went on
+   * showing a find that the shelf and this page had dropped.
+   *
+   * The price is a figure you cannot drive to zero by pressing the arrow. It
+   * falls when the better file lands and the next scan rescores the film, which
+   * is the moment the upgrade genuinely stops being one — rather than the
+   * moment it was asked for, which is all a send has ever told us.
+   *
+   * `alreadyFetching` still reads a fetch that never finished and is no longer
+   * in the client as one that was called off, so cancelling a wishlist download
+   * puts it back on the list it left.
    */
   const fetching = await alreadyFetching();
-  const queue = getUpgradeQueue(movies).filter(
-    (item) => !fetching({ title: item.title, magnet: item.hit.magnet }),
-  );
+  const queue = getUpgradeQueue(movies);
   const finds = getWishlistFinds().filter(
     (find) => !fetching({ title: find.title, magnet: find.hit.magnet }),
   );
