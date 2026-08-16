@@ -158,18 +158,10 @@ export function ReleaseDetails({
       panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
     >
       <>
-        {/* The dialog is named for the work, not for the film — the rule the
-            conversion dialog settled; see app/jobs/dovi-details.tsx.
-
-            A film's name at the top made this look like the film's own page in
-            a window, and the film is not what you opened it to decide. Every
-            one of these is the same question asked about a different release,
-            so the heading says which question, once, and the film it is about
-            sits below with its poster. */}
-        <header className="flex items-baseline justify-between gap-3">
-          <h2 className="min-w-0 truncate text-base font-semibold">
-            Download this release
-          </h2>
+        {/* No heading. The poster, the name and the button below say what this
+            is well enough that a line of text over them only repeated it; the
+            dialog still has a name for screen readers, on the Modal itself. */}
+        <header className="flex justify-end">
           <CloseButton onClick={onClose} />
         </header>
 
