@@ -388,16 +388,15 @@ const ASK: Record<
      * still holding the torrent.
      *
      * With the client done with it, the record is the last trace and clearing
-     * it is the end of the story. With the client still holding it, the row
-     * goes and the torrent carries on exactly as it was — which is the thing
-     * somebody pressing this on a seeding film needs told, since the obvious
-     * reading of "clear" on a row that is still uploading is that the
-     * uploading stops.
+     * it is the end of the story. With the client still holding it, both go —
+     * and the two things somebody pressing this on a seeding film needs told
+     * are that the uploading stops and that the film does not: the torrent
+     * leaves qBittorrent, the files it downloaded stay exactly where they are.
      */
     body: (entry: DownloadEntry) =>
       entry.live
-        ? "Only the record is forgotten. The torrent stays in qBittorrent, seeding or not, and the files stay where they are — it simply stops being listed here."
-        : "Only the record is forgotten. Nothing on the drive or in qBittorrent is touched.",
+        ? "The record is forgotten and the torrent is removed from qBittorrent, so it stops seeding. The downloaded files stay on the drive."
+        : "The record is forgotten. Nothing on the drive is touched.",
   },
   seed: {
     title: "Stop seeding?",
@@ -1037,29 +1036,29 @@ function HistoryTile({
         )
       }
       /*
-       * Which list sent it, and — where it applies — that it is still
-       * uploading. Bottom left, which is where this app puts what a tile *is*
-       * as opposed to what can be done to it.
+       * That it is still uploading, and nothing else.
        *
-       * The source was the first word of the small print under the artwork,
-       * where you look last. An upgrade and a want are the two kinds of thing
-       * on this page and they answer different questions — was the copy worth
-       * replacing, did the film ever turn up — so which one a tile is should be
-       * legible without reading. It is drawn on `TILE_PLATE` so it stands
-       * exactly as tall as the score across the tile from it: two plates on one
-       * line at two heights read as a mistake before they read as two facts.
+       * The list that sent it used to sit here too, as a second plate beside
+       * this one. It was on every tile in the grid — an upgrade or a want,
+       * never anything else — so it drew a plate over the artwork of all of
+       * them to divide the page into two sets you were not reading it as: the
+       * question a history is opened with is what arrived and whether it was
+       * any good, and the score across the corner from it answers that. The
+       * record dialog still names the source, and so do the rows, which have
+       * the width to say things a poster has to earn.
+       *
+       * Seeding stays because it is not a label on the past. It is the one
+       * thing in this grid that is still happening, and the only reason to
+       * press a finished row.
        */
       note={
-        <span className="flex items-center gap-1">
-          <span className={TILE_PLATE}>{SOURCE_LABEL[entry.source]}</span>
-          {seeding && (
-            <span
-              className={`${TILE_PLATE} text-emerald-600 dark:text-emerald-400`}
-            >
-              seeding
-            </span>
-          )}
-        </span>
+        seeding && (
+          <span
+            className={`${TILE_PLATE} text-emerald-600 dark:text-emerald-400`}
+          >
+            seeding
+          </span>
+        )
       }
       /*
        * Clearing the record, in the corner every list in this app keeps the
@@ -1245,35 +1244,59 @@ function DownloadDetails({
           <Fact label="Hash" value={entry.hash} mono />
         </dl>
 
+        {/* `mt-3` on top of the panel's own gap, which is the same 2rem-ish
+            distance `TaskHead` keeps under itself: the head is parted from the
+            facts by one measure and the decision should be parted from them by
+            the same. Anything less and the button reads as the last row of the
+            table above it. */}
         {(onStopSeeding || onRetry || onClear) && (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {onStopSeeding && (
-              <button
-                type="button"
-                onClick={onStopSeeding}
-                className={BUTTON.secondary}
-              >
-                Stop seeding
-              </button>
+          <div className="mt-3 flex flex-col gap-2">
+            {/* What else can be done to this fetch, where there is anything —
+                a row above the decision rather than beside it. Both are
+                outlined now: the filled pill is spoken for below, and two
+                filled buttons on one dialog is two things claiming to be the
+                thing you came for. */}
+            {(onStopSeeding || onRetry) && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {onStopSeeding && (
+                  <button
+                    type="button"
+                    onClick={onStopSeeding}
+                    className={BUTTON.secondary}
+                  >
+                    Stop seeding
+                  </button>
+                )}
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className={BUTTON.secondary}
+                  >
+                    Download again
+                  </button>
+                )}
+              </div>
             )}
-            {/* Filled, where the other two are outlined: on a record of a fetch
-                that never landed this is the thing the dialog is open for, and
-                the app's word for "the decision this screen is asking you to
-                make" is the filled pill. */}
-            {onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className={BUTTON.primary}
-              >
-                Download again
-              </button>
-            )}
-            {/* The cross on the tile, in words. Outlined rather than filled:
-                it deletes a record and nothing else, and the dialog behind it
-                is where the red belongs — see `BUTTON.danger`. */}
+
+            {/* The cross on the tile, in words — and the width of the dialog,
+                because it is the width of the decision. This is what a record
+                dialog is opened to do on all but a handful of rows: the fetch
+                is over, the torrent is qBittorrent's business, and the only
+                thing left in this app's hands is whether to keep the note of
+                it. A pill hugging two words in the bottom-right corner is what
+                a button looks like when it is one option among several. The
+                same shape the conversion dialog gives its one press.
+
+                Filled rather than red: the dialog behind it is where the red
+                belongs, and it deletes a record rather than a file — the
+                question it raises says as much before anything happens. */}
             {onClear && (
-              <button type="button" onClick={onClear} className={BUTTON.danger}>
+              <button
+                type="button"
+                onClick={onClear}
+                className={`${BUTTON.primary} w-full`}
+              >
                 Clear from history
               </button>
             )}
@@ -1487,9 +1510,14 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    /* `gap-8` because this view holds its own column rather than handing its
+       children to the page's — which is how it ended up the one page with no
+       space under its bar at all. The bar used to carry a margin; the columns
+       carry the distance now, and a column that forgot to have one put the
+       list against the controls. 2rem, as under every other head in the app. */
+    <div className="flex flex-1 flex-col gap-8">
       {/* The row every list page in this app keeps: which half on the left, how
-          to read it on the right. It brings its own `mb-5`. */}
+          to read it on the right. */}
       <ListingBar listing={listing} />
 
       <div className="flex flex-1 flex-col gap-14">
@@ -1801,9 +1829,10 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
                               </span>
                             )}
                             {/* Which list sent it, as a chip rather than a word
-                            in the run — the same fact the tiles now wear in
-                            their top corner, and the same reason: it is what
-                            the row *is*, not one more detail about it. */}
+                            in the run: it is what the row *is*, not one more
+                            detail about it. Kept here and dropped from the
+                            tiles — a row has the width for a fact that is true
+                            of every row, and a poster does not. */}
                             <span className={`${CHIP} shrink-0`}>
                               {SOURCE_LABEL[entry.source]}
                             </span>
@@ -1974,9 +2003,17 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
           }}
           onCancel={() => setConfirming(null)}
         >
-          <p className="mb-2 truncate font-mono text-xs opacity-55">
-            {confirmShown.entry.filmTitle ?? confirmShown.entry.title}
-          </p>
+          {/* Which film, above the question — except on the clear, which does
+              not need it. That one is raised from a record you have open or a
+              mark on the tile itself, it takes nothing off the drive, and the
+              name it printed was as often as not the release name in monospace:
+              sixty characters of group tags over one line of plain English. The
+              three that touch qBittorrent still say which fetch they mean. */}
+          {confirmShown.kind !== "forget" && (
+            <p className="mb-2 truncate font-mono text-xs opacity-55">
+              {confirmShown.entry.filmTitle ?? confirmShown.entry.title}
+            </p>
+          )}
           {ASK[confirmShown.kind].body(confirmShown.entry)}
         </ConfirmModal>
       )}

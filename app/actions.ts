@@ -2585,7 +2585,33 @@ export async function retryDownloadEntry(hash: string) {
   return result;
 }
 
+/**
+ * Clearing a record, which now takes the torrent with it.
+ *
+ * It used to drop the row and nothing else, and the row was the only thing this
+ * app had ever added: the torrent stayed in qBittorrent, seeding or idle, and
+ * the log simply stopped listing it. That left the tidying half-done — a client
+ * filling with hundreds of finished torrents this app put there and would never
+ * mention again — so "clear" now means clear from both.
+ *
+ * The files are not touched. `deleteFiles: false` is the whole of that promise:
+ * what was downloaded is a film on your drive and the point of the exercise,
+ * and this is a button on a history list rather than a way to delete films.
+ *
+ * The client's answer is not allowed to decide the record's fate. qBittorrent
+ * may be off, unreachable, or may have let this torrent go long ago — none of
+ * which is a reason to refuse to forget a row somebody has finished with, so
+ * the removal is attempted and its failure swallowed. The headstone
+ * `forgetDownload` leaves is what stops the next poll adopting the torrent back
+ * if it is in fact still there.
+ */
 export async function forgetDownloadEntry(hash: string): Promise<void> {
+  try {
+    await removeTorrent(hash, false);
+  } catch {
+    // See above: the record is cleared either way.
+  }
+
   forgetDownload(hash);
   // The log is what hides a queue row; forgetting the row un-hides the film.
   refresh();

@@ -320,14 +320,14 @@ export function ProcessDetails({
             reads as a command wherever it appears, and left selectable rather
             than given a copy button, which the recipes dialog is for. */}
         {shown.command && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[10px] font-semibold tracking-[0.12em] uppercase opacity-40">
-              Command
-            </p>
-            <pre className="overflow-x-auto rounded-control border border-line bg-surface-strong p-3 font-mono text-[11px] leading-relaxed whitespace-pre">
-              {shown.command}
-            </pre>
-          </div>
+          // No label over it. A shell command set in monospace in a bordered
+          // block is the most self-describing thing on this page — "COMMAND" in
+          // tracked small caps above it named what anybody can see, and put a
+          // heading between the facts table and the output the command
+          // produced, which are the two things it sits between.
+          <pre className="overflow-x-auto rounded-control border border-line bg-surface-strong p-3 font-mono text-[11px] leading-relaxed whitespace-pre">
+            {shown.command}
+          </pre>
         )}
 
         {/* What the tool is actually saying, which is where the answer is

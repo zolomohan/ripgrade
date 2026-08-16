@@ -117,7 +117,10 @@ export function DoviDetails({
             And one button below, because there is one decision. Going to the
             film is a press on the film itself, above. */}
 
-        {/* The width of the dialog, because it is the width of the decision.
+        {/* Parted from the facts by what the head is parted from them by —
+            `mt-3` over the panel's gap, as in the download record next door.
+
+            The width of the dialog, because it is the width of the decision.
             A pill hugging its own word in the bottom-right corner is what a
             button looks like when it is one option among several; this is the
             only thing here to press, and a target you cannot miss is the
@@ -127,7 +130,7 @@ export function DoviDetails({
           onClick={onStart}
           disabled={Boolean(refusal)}
           title={refusal}
-          className={`${BUTTON.primary} w-full`}
+          className={`${BUTTON.primary} mt-3 w-full`}
         >
           {checkFirst ? "Check" : "Convert"}
         </button>
