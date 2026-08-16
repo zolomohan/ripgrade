@@ -37,7 +37,6 @@ import {
   EL_TITLE,
   useDoviConvert,
 } from "@/app/dovi-convert";
-import { languageKey } from "@/lib/audio-plan";
 import { languageName } from "@/lib/derive";
 import type { AudioTask, DoviTask, TaskFilm } from "@/lib/queue-tasks";
 import { movieId, posterName } from "@/lib/routes";
@@ -48,10 +47,8 @@ import {
   pickGroup,
   type GroupOption,
 } from "@/app/grouping";
-import { Stat } from "@/app/charts";
 import { TrackPicker } from "./track-picker";
 import { DoviDetails } from "./dovi-details";
-import { Stats } from "./stats";
 import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 import { size } from "@/app/format";
 
@@ -663,74 +660,16 @@ export const DOVI_GROUPS: GroupOption<DoviTask>[] = [
   { key: "kind", label: "Films and shows", of: kindOf, order: KIND_ORDER },
 ];
 
-/**
- * What this tab adds up to.
+/*
+ * There was a `DoviStats` here — a band of figures over this tab saying how
+ * many files it held and how many of them were MEL or FEL.
  *
- * No total size, which the other two bands lead with and which means nothing
- * here: a conversion rewrites a file into the same picture at very nearly the
- * same size, so the figure was neither a saving nor a cost — just the sum of a
- * column already on every row.
- *
- * What varies between these files is the enhancement layer, which is why it is
- * also what the tab can be cut by: a MEL loses nothing at all in the rewrite,
- * and a simple FEL loses refinement rather than picture. Two counts against the
- * total, most-is-nothing-lost first.
- *
- * There was a third — the files whose layer no pass has read yet — and it was
- * the remainder rather than a reading: whatever the first number is, less the
- * two after it. Grouping the list by layer answers the same question about the
- * films it is actually about, and each row says what its own layer is.
- *
- * Both are drawn at zero rather than dropped, unlike the counts on the cleanup
- * band. A zero here is an answer and often the best one: no FELs at all means
- * every conversion on this tab loses nothing whatsoever. Dropped, that reads as
- * the app having nothing to say about the layer — and a band whose columns come
- * and go is one you have to re-read each visit to see what it is showing.
- *
- * How many have been read end to end is not up here. It is a fact about how
- * long a click takes rather than about the backlog, it is said on every row
- * that has it — and the rows can be ranked and cut by it, which is where a
- * question about which files answers better than a single number ever did.
+ * It has gone with the other two bands. Every figure in it was a count of the
+ * rows underneath, said again above them in a larger face, and it pushed the
+ * list it described below the fold on the tab you opened to work down a list.
+ * What it was genuinely good at — telling a MEL from a FEL — the grouping does
+ * better, because it cuts the films by the answer instead of counting them.
  */
-export function DoviStats({
-  tasks,
-  action,
-}: {
-  tasks: DoviTask[];
-  /** What to do with them, while a selection is being made — see `DoviRun`. */
-  action?: React.ReactNode;
-}) {
-  // Zero chosen is a reading rather than an absence, the way it is on the audio
-  // band: it is what pressing Start right now would come to.
-  if (tasks.length === 0 && !action) return null;
-
-  const mel = tasks.filter((task) => task.el === "mel").length;
-  const fel = tasks.filter((task) => task.el === "simple-fel").length;
-
-  return (
-    <Stats action={action}>
-      <Stat label="Files" value={tasks.length.toLocaleString("en-GB")} />
-      {/* The tools' own names, as on the chips down the rows, with the gloss in
-          the tooltip both places take from the same table. */}
-      <Stat
-        label="MEL"
-        value={mel.toLocaleString("en-GB")}
-        title={EL_TITLE.mel}
-      />
-      <Stat
-        label="FEL"
-        value={fel.toLocaleString("en-GB")}
-        title={EL_TITLE["simple-fel"]}
-      />
-      {/* No "Layer unread" fourth. It was the remainder of the two above it —
-          the files whose enhancement layer nothing has looked at yet — and a
-          total that is only ever "the rest" says less than subtracting two
-          numbers from the first one does. What it stood for is still asked
-          where it can be acted on: the grouping cuts the list along it, and
-          each row says what its own layer is. */}
-    </Stats>
-  );
-}
 
 /**
  * Start the conversion of every film ticked, one after another.
@@ -1496,83 +1435,13 @@ export const audioOrder = (
     pickGroup(AUDIO_GROUPS, group),
   );
 
-/**
- * What the audio tab adds up to, drawn above the pending list rather than
- * inside it.
- *
- * Split out of `AudioTasks` for where it has to sit: the figures describe the
- * whole tab, and reading them under the heading of one of its sections said
- * they belonged to that section. Its own component rather than a slot, because
- * the page that places it does not otherwise know what an audio task is.
- *
- * Nothing to say about an empty tab — the list's own empty state is the answer
- * there, and a row of zeroes above it would be a second one.
+/*
+ * `AudioStats` stood here, and went the same way — see the note where
+ * `DoviStats` was. Its one figure that was not a sum of the column beside it,
+ * what a whole run would reclaim, is said where it is load-bearing instead: in
+ * the dialog `AudioRun` opens, about the films actually ticked, at the moment
+ * of pressing.
  */
-export function AudioStats({
-  tasks,
-  action,
-}: {
-  tasks: AudioTask[];
-  /**
-   * What to do about the figures, where there is something.
-   *
-   * The band is the one place on this tab that describes a set of films rather
-   * than a film, so it is where a button that acts on a set belongs — see
-   * `AudioRun`, which fills this while the list is being ticked. It is also
-   * what holds the band open on an empty selection: a run about to be started
-   * on nothing still has to be able to say so.
-   */
-  action?: React.ReactNode;
-}) {
-  // Nothing to say about an empty tab — the list's own empty state is the
-  // answer there, and a row of zeroes above it would be a second one.
-  //
-  // A selection is the other case entirely. Zero chosen is a reading rather
-  // than an absence: it is what pressing Start right now would come to, and the
-  // figures climbing off it as the ticks land is what makes the band answer the
-  // question being asked of it.
-  if (tasks.length === 0 && !action) return null;
-
-  const total = tasks.reduce((sum, task) => sum + task.freedBytes, 0);
-  const anyEstimated = tasks.some((task) => task.estimated);
-  const trackCount = tasks.reduce(
-    (sum, task) => sum + task.removing + task.removingSubtitles,
-    0,
-  );
-  // Canonical, so the "fre" on one rip and the "fr" on the next are one
-  // language here as they are in the setting that decided both.
-  const languages = new Set(
-    tasks.flatMap((task) => task.languages.map(languageKey)),
-  );
-
-  return (
-    <Stats action={action}>
-      <Stat
-        label="To reclaim"
-        gain
-        value={`${anyEstimated ? "≈" : ""}${size(total)}`}
-        title={
-          anyEstimated
-            ? "Part of this total is worked out from bitrate rather than counted"
-            : undefined
-        }
-      />
-      <Stat label="Files" value={tasks.length.toLocaleString("en-GB")} />
-      <Stat label="Tracks" value={trackCount.toLocaleString("en-GB")} />
-      <Stat
-        label={languages.size === 1 ? "Language" : "Languages"}
-        value={languages.size.toLocaleString("en-GB")}
-        // Nothing chosen yet is nothing to name, and an empty tooltip is a
-        // tooltip that opens on a blank box.
-        title={
-          languages.size
-            ? [...new Set([...languages].map(languageName))].sort().join(", ")
-            : undefined
-        }
-      />
-    </Stats>
-  );
-}
 
 /**
  * What to do with the films that have been ticked, beside the figures for them.

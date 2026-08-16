@@ -10,6 +10,8 @@ import {
   removableSubtitles,
   removableTracks,
   savingsOf,
+  type AudioPreference,
+  type SubtitlePreference,
 } from "./audio-plan";
 import { getAudioPreference } from "./audio-prefs";
 import { audioBackupBytes, audioBackupPathFor } from "./audio-strip";
@@ -367,49 +369,27 @@ export function libraryTasks(items: LibraryItem[] = getLibrary()): {
 
     const original = facts.originalLanguage;
     if (canStripTracks(item.path) && !originalUnknown(preference, original)) {
-      // A film with one audio track has nothing to propose about audio, but it
-      // may still be carrying nine subtitle tracks nobody will ever turn on.
-      const unwanted =
-        item.audio.length > 1
-          ? removableTracks(item.audio, preference, original)
-          : [];
+      const task = strippable(
+        item,
+        facts,
+        !here,
+        preference,
+        subtitlePreference,
+      );
 
-      const tracks = item.subtitles ?? [];
-      const unwantedText = originalUnknown(subtitlePreference, original)
-        ? []
-        : removableSubtitles(tracks, subtitlePreference, original);
-
-      if (unwanted.length > 0 || unwantedText.length > 0) {
-        const audioSaving = savingsOf(item.audio, unwanted);
-        const textSaving = savingsOf(tracks, unwantedText);
-        const bytes = audioSaving.bytes + textSaving.bytes;
-        const estimated = audioSaving.estimated || textSaving.estimated;
-
-        // Sized by neither count nor bitrate: there is nothing to rank it by
-        // and nothing to promise, so it waits for the file's own page.
-        // Already stripped once, and what is left is what was kept on purpose.
-        if (
-          bytes > 0 &&
-          !done(audioBackupPathFor(item.path), () =>
-            audioBackupBytes(item.path),
-          )
-        ) {
-          audio.push({
-            ...filmOf(item, facts, !here),
-            freedBytes: bytes,
-            estimated,
-            removing: unwanted.length,
-            keeping: item.audio.length - unwanted.length,
-            languages: unwanted.map(
-              (ordinal) => item.audio[ordinal].language as string,
-            ),
-            tracks: item.audio,
-            proposed: unwanted,
-            subtitles: tracks,
-            proposedSubtitles: unwantedText,
-            removingSubtitles: unwantedText.length,
-          });
-        }
+      // Nothing proposed is nothing to queue. The film's own page still opens
+      // the picker on it — see `audioTaskFor` — because a track the preference
+      // keeps is still a track you may not want.
+      //
+      // Sized by neither count nor bitrate: there is nothing to rank it by and
+      // nothing to promise, so it waits for the file's own page. Already
+      // stripped once, and what is left is what was kept on purpose.
+      if (
+        task &&
+        task.freedBytes > 0 &&
+        !done(audioBackupPathFor(item.path), () => audioBackupBytes(item.path))
+      ) {
+        audio.push(task);
       }
     }
   }
@@ -418,6 +398,85 @@ export function libraryTasks(items: LibraryItem[] = getLibrary()): {
     dovi: dovi.sort((a, b) => b.sizeBytes - a.sizeBytes),
     audio: audio.sort((a, b) => b.freedBytes - a.freedBytes),
   };
+}
+
+/**
+ * One film as a removal: every track it holds, and which of them your
+ * preferences would take.
+ *
+ * The proposal is the whole of what this computes. Both callers want exactly
+ * the same one — the queue, to decide whether the film is worth a row, and the
+ * film's own page, to open the picker with the right boxes already ticked — and
+ * a page that proposed something different from the row that sent you there
+ * would be two apps disagreeing about your settings.
+ */
+function strippable(
+  item: LibraryItem,
+  facts: Artwork,
+  offline: boolean,
+  preference: AudioPreference,
+  subtitlePreference: SubtitlePreference,
+): AudioTask | undefined {
+  const original = facts.originalLanguage;
+  if (originalUnknown(preference, original)) return undefined;
+
+  // A film with one audio track has nothing to propose about audio, but it may
+  // still be carrying nine subtitle tracks nobody will ever turn on.
+  const unwanted =
+    item.audio.length > 1
+      ? removableTracks(item.audio, preference, original)
+      : [];
+
+  const tracks = item.subtitles ?? [];
+  const unwantedText = originalUnknown(subtitlePreference, original)
+    ? []
+    : removableSubtitles(tracks, subtitlePreference, original);
+
+  const audioSaving = savingsOf(item.audio, unwanted);
+  const textSaving = savingsOf(tracks, unwantedText);
+
+  return {
+    ...filmOf(item, facts, offline),
+    freedBytes: audioSaving.bytes + textSaving.bytes,
+    estimated: audioSaving.estimated || textSaving.estimated,
+    removing: unwanted.length,
+    keeping: item.audio.length - unwanted.length,
+    languages: unwanted.map(
+      (ordinal) => item.audio[ordinal].language as string,
+    ),
+    tracks: item.audio,
+    proposed: unwanted,
+    subtitles: tracks,
+    proposedSubtitles: unwantedText,
+    removingSubtitles: unwantedText.length,
+  };
+}
+
+/**
+ * The same, for one film, whatever its preferences propose.
+ *
+ * The film's own page hands this to the track picker, so the dialog it opens is
+ * the dialog the jobs page opens — same tables, same ticks, same three screens.
+ * Where the two part is the gate: the queue lists a film only when the
+ * preference has something to say about it, and a page about one file has to
+ * open on a file the preference is perfectly happy with. Removing a duplicate
+ * English track is a decision only you can reach, and the dialog is where it is
+ * made.
+ *
+ * Undefined where there is nothing the picker could show: a container whose
+ * tracks cannot be rewritten at all, or a preference that has not been told
+ * what "original" means for this film.
+ */
+export function audioTaskFor(item: LibraryItem): AudioTask | undefined {
+  if (!canStripTracks(item.path)) return undefined;
+
+  return strippable(
+    item,
+    artworkReader()(item),
+    !filePresent(item.path),
+    getAudioPreference(),
+    getSubtitlePreference(),
+  );
 }
 
 // ---------------------------------------------------------------------------

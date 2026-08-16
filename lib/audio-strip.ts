@@ -10,6 +10,7 @@ import {
   canStripTracks,
   resolvePlan,
   type ContainerTrack,
+  type RemovedTrack,
   type ResolvedPlan,
   type StripPlan,
 } from "./audio-plan";
@@ -206,6 +207,15 @@ export type StripJob = {
   /** The same pair for the text tracks, absent when none were touched. */
   removedSubtitles?: number;
   keptSubtitles?: number;
+  /**
+   * Which tracks those were, named — see `ResolvedPlan.removedTracks`.
+   *
+   * Carried on the job so it reaches the log, which is the only place the
+   * answer can outlive the removal: the tracks are gone from the file, the
+   * original beside it is the sort of thing people delete, and the counts on
+   * the row say five went without saying which five.
+   */
+  removedTracks?: RemovedTrack[];
   /** What the removal was expected to free, as the page worked it out. */
   freedBytes?: number;
   /** What it actually freed, measured once both files are on disk. */
@@ -309,6 +319,10 @@ function setJob(next: StripJob) {
           .filter(Boolean)
           .join(" · ") ||
         undefined,
+      // Only where something actually went: a run that failed before mkvmerge
+      // was spawned has a plan and no removal, and a list of tracks under a
+      // row reading "error" would be a list of tracks that are still there.
+      removedTracks: next.status === "done" ? next.removedTracks : undefined,
       output: next.output,
     });
 
@@ -530,6 +544,7 @@ export function startStripAudio(
       ...current(),
       removed: resolved.removedAudio,
       kept: resolved.keptAudio,
+      removedTracks: resolved.removedTracks,
       ...(resolved.keepSubtitleIds !== undefined && {
         removedSubtitles: resolved.removedSubtitles,
         keptSubtitles: resolved.keptSubtitles,

@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import type { RemovedTrack } from "@/lib/audio-plan";
 import { visibleOutput } from "@/lib/job-output";
 import { useNow } from "./clock";
+import { TaskHead, type HeadFilm } from "./jobs/task-head";
 import { ConfirmModal } from "./confirm";
 import { BUTTON } from "./controls";
 import { CloseButton, Modal, useClosing } from "./modal";
@@ -40,6 +42,15 @@ export type ProcessRow = {
 export type ProcessDetail = {
   /** The job's plain name, without the counts the rail packs into its label. */
   title: string;
+  /**
+   * The file it was about, where the page opening this knows it.
+   *
+   * Set, the dialog wears the head every other dialog about a file wears — the
+   * poster, the title, the year. Unset, the title above stands on its own,
+   * which is right for the jobs that are about the library rather than about a
+   * film, and for a running job whose name is the work and not the film.
+   */
+  film?: HeadFilm;
   percent?: number;
   /**
    * What is happening this second, in a few words — read beside the figure,
@@ -61,6 +72,8 @@ export type ProcessDetail = {
   note?: string;
   /** The tail of what the tool behind this job has printed, newest last. */
   output?: string[];
+  /** Which tracks a removal took — see `JobRun.removedTracks`. */
+  removedTracks?: RemovedTrack[];
 };
 
 /** 1:04, or 1:22:09 once it has been going long enough to need the hours. */
@@ -176,20 +189,28 @@ export function ProcessDetails({
       <>
         {/* The name and the way out, and nothing else. The figure used to sit
             up here beside the close circle, which read as a pair of controls
-            and put the number a column away from the bar it belongs to. */}
-        <header className="flex items-center justify-between gap-3">
-          <h2 className="min-w-0 truncate text-base font-semibold">
-            {shown.title}
-          </h2>
-          <CloseButton onClick={onClose} />
-        </header>
+            and put the number a column away from the bar it belongs to.
 
-        {/* The floor the title stands on, as under every other dialog's. The
-            extra room is below it rather than above: the rule belongs to the
-            header, and set evenly between the two it read as a divider between
-            equals rather than as the heading's own underline. */}
-        <div aria-hidden className="rule-head mb-4" />
+            Where the caller knows which file this was about — which is every
+            row of the log — it is the head the rest of this page's dialogs
+            wear instead, poster and all. The job's own name is not lost by it:
+            the first row of the table below is "Job". */}
+        {shown.film ? (
+          <TaskHead film={shown.film} onClose={onClose} closeDisabled={busy} />
+        ) : (
+          <header className="flex items-center justify-between gap-3">
+            <h2 className="min-w-0 truncate text-base font-semibold">
+              {shown.title}
+            </h2>
+            <CloseButton onClick={onClose} />
+          </header>
+        )}
 
+        {/* No rule under the head, here or on the dialogs beside it. It was
+            the floor the title stood on, and with a poster in the head there is
+            already an edge there — the picture ends, the facts begin. What the
+            rule was really keeping was the room under it, and that is the
+            panel's own gap now. */}
         {(shown.percent !== undefined || shown.stage) && (
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-3">
@@ -243,6 +264,54 @@ export function ProcessDetails({
               </div>
             ))}
           </dl>
+        )}
+
+        {/* What is no longer in the file.
+
+            The counts are in the table above and they are not the answer: "3
+            audio removed" a month later does not say whether the film lost its
+            commentary or its original language, and the file itself can no
+            longer be asked — the tracks are gone from it, and the original
+            beside it is the first thing anybody deletes.
+
+            Named by kind, in two lists, the way the dialog that asked the
+            question grouped them. Struck through, because that is how those
+            same rows were drawn once they had been ticked: this is the last
+            screen of that decision, read back later. */}
+        {shown.removedTracks && shown.removedTracks.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-semibold tracking-[0.12em] uppercase opacity-40">
+              Tracks removed
+            </p>
+
+            <div className="overflow-hidden rounded-control border border-line">
+              {(["audio", "subtitles"] as const).map((kind) => {
+                const of = shown.removedTracks!.filter((t) => t.kind === kind);
+                if (of.length === 0) return null;
+
+                return (
+                  <div
+                    key={kind}
+                    className="card-band flex items-baseline justify-between gap-4 px-3 py-2"
+                  >
+                    <dt className="shrink-0 text-xs capitalize opacity-50">
+                      {kind}
+                    </dt>
+                    <dd className="flex min-w-0 flex-col items-end gap-0.5">
+                      {of.map((track, index) => (
+                        <span
+                          key={`${track.label}-${index}`}
+                          className="text-right text-xs line-through opacity-70"
+                        >
+                          {track.label}
+                        </span>
+                      ))}
+                    </dd>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {/* What was run, above what it is saying — the two belong together,

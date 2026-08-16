@@ -47,14 +47,16 @@ export function SettingsTabs({
 
   return (
     <>
-      {/* Its own space below it, like the listing bar over every other tabbed
-          page here: a panel that began one gap under the switch would read as
-          a fourth segment of it.
+      {/* 2rem below it, which is what every head on every page in this app
+          stands above what it heads — a panel beginning any closer would read
+          as a fourth segment of the switch. This was 5, the listing bar was 8
+          on top of a column gap, and the shelves were 6: three answers to the
+          same question, one per page somebody happened to be looking at.
 
           The scroll container takes the `-ml-2` rather than the switch, which
           is the one place it cannot go — a child hanging off the left edge of
           something that scrolls is clipped with no way to scroll back to it. */}
-      <div className="no-scrollbar mb-5 -mr-1 -ml-2 flex min-w-0 max-w-full overflow-x-auto px-1">
+      <div className="no-scrollbar mb-8 -mr-1 -ml-2 flex min-w-0 max-w-full overflow-x-auto px-1">
         <Switch
           value={tab}
           onChange={select}

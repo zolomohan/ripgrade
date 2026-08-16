@@ -1,4 +1,4 @@
-import type { AudioTrack } from "./derive";
+import { languageName, type AudioTrack } from "./derive";
 
 /**
  * Deciding which audio tracks go, and what removing them is worth.
@@ -74,6 +74,23 @@ export type ResolvedPlan = {
   keepSubtitleIds?: number[];
   keptSubtitles: number;
   removedSubtitles: number;
+  /**
+   * The tracks actually being dropped, named the way a person would name them.
+   *
+   * Resolved here because here is the only place they can be: the page sent
+   * ordinals, mkvmerge answered with what is in the file, and the two are only
+   * ever brought together in this function. A minute later the tracks are gone
+   * and nothing on disk remembers what they were — which is exactly the
+   * question the log gets asked a month afterwards.
+   */
+  removedTracks: RemovedTrack[];
+};
+
+/** One dropped track, for the record kept of the removal. */
+export type RemovedTrack = {
+  kind: "audio" | "subtitles";
+  /** "Hungarian · DTS-HD Master Audio", or the codec alone where untagged. */
+  label: string;
 };
 
 /** Only Matroska. mkvmerge reads an MP4 but can only write an MKV, and
@@ -116,7 +133,12 @@ function resolveKind(
   count: number,
   removeOrdinals: number[],
   numbers?: (number | undefined)[],
-): { keepIds: number[]; kept: number; removed: number } {
+): {
+  keepIds: number[];
+  kept: number;
+  removed: number;
+  removedTracks: RemovedTrack[];
+} {
   const tracks = container.filter((t) => t.type === kind.type);
 
   if (tracks.length !== count) {
@@ -164,6 +186,22 @@ function resolveKind(
       .map((t) => t.id),
     kept,
     removed: remove.size,
+    // In the file's own order rather than the order they were ticked: the
+    // record is read against the film, not against the dialog that is long
+    // shut. Named from mkvmerge's reading of the container, which is the last
+    // description of these tracks anything will ever have.
+    removedTracks: tracks
+      .filter((_, ordinal) => remove.has(ordinal))
+      .map((track) => ({
+        kind: kind.type,
+        label:
+          [
+            track.language ? languageName(track.language) : undefined,
+            track.codec,
+          ]
+            .filter(Boolean)
+            .join(" · ") || `${kind.noun} track`,
+      })),
   };
 }
 
@@ -214,6 +252,9 @@ export function resolvePlan(
     keepSubtitleIds: text && text.removed > 0 ? text.keepIds : undefined,
     keptSubtitles: text?.kept ?? 0,
     removedSubtitles: text?.removed ?? 0,
+    // Audio first, as both the dialog's tables and its review screen order
+    // them, so the record reads in the order the choice was made.
+    removedTracks: [...audio.removedTracks, ...(text?.removedTracks ?? [])],
   };
 }
 
@@ -372,7 +413,9 @@ export function keptFirst<T>(
 export function languageKey(code: string): string {
   const tag = code.trim().replace(/_/g, "-");
   try {
-    return (Intl.getCanonicalLocales(tag)[0] ?? tag).split("-")[0].toLowerCase();
+    return (Intl.getCanonicalLocales(tag)[0] ?? tag)
+      .split("-")[0]
+      .toLowerCase();
   } catch {
     // Not a tag at all — a private code, or something the muxer invented. It
     // still names itself consistently, so it can still be matched on.
@@ -430,8 +473,8 @@ export function isPreferred(
   }
   return Boolean(
     preference.original &&
-      originalLanguage &&
-      languageKey(originalLanguage) === key,
+    originalLanguage &&
+    languageKey(originalLanguage) === key,
   );
 }
 
@@ -450,7 +493,9 @@ export function removableTracks(
 ): number[] {
   const removable = tracks
     .map((track, ordinal) => ({ track, ordinal }))
-    .filter(({ track }) => !isPreferred(track.language, preference, originalLanguage))
+    .filter(
+      ({ track }) => !isPreferred(track.language, preference, originalLanguage),
+    )
     .map(({ ordinal }) => ordinal);
 
   return removable.length >= tracks.length ? [] : removable;

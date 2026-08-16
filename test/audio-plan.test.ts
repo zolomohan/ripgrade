@@ -77,6 +77,73 @@ test("a repeated position counts once", () => {
 });
 
 // ---------------------------------------------------------------------------
+// What went, for the record kept of it
+// ---------------------------------------------------------------------------
+
+test("the tracks removed are named from the container, audio first", () => {
+  // The whole point of recording these: a month later the file no longer holds
+  // them and the counts say two audio went without saying which two.
+  const plan = resolvePlan(
+    [
+      ...container(),
+      { id: 5, type: "subtitles", number: 6, language: "ger", codec: "PGS" },
+    ],
+    {
+      removeOrdinals: [1, 2],
+      audioCount: 3,
+      removeSubtitleOrdinals: [1],
+      subtitleCount: 2,
+    },
+  );
+
+  assert.deepEqual(plan.removedTracks, [
+    { kind: "audio", label: "French" },
+    { kind: "audio", label: "German" },
+    { kind: "subtitles", label: "German · PGS" },
+  ]);
+});
+
+test("a removed track is named by its codec where nothing tagged it", () => {
+  const plan = resolvePlan(
+    [
+      { id: 0, type: "video", number: 1 },
+      { id: 1, type: "audio", number: 2, language: "eng" },
+      { id: 2, type: "audio", number: 3, codec: "DTS-HD Master Audio" },
+    ],
+    { removeOrdinals: [1], audioCount: 2 },
+  );
+
+  assert.deepEqual(plan.removedTracks, [
+    { kind: "audio", label: "DTS-HD Master Audio" },
+  ]);
+});
+
+test("a track with neither a language nor a codec still says what it was", () => {
+  // Nothing about this row can be blank: it is the only surviving description
+  // of a track that no longer exists.
+  const plan = resolvePlan(
+    [
+      { id: 0, type: "audio", number: 1, language: "eng" },
+      { id: 1, type: "audio", number: 2 },
+    ],
+    { removeOrdinals: [1], audioCount: 2 },
+  );
+
+  assert.deepEqual(plan.removedTracks, [
+    { kind: "audio", label: "audio track" },
+  ]);
+});
+
+test("what is kept is not in the list", () => {
+  const plan = resolvePlan(container(), {
+    removeOrdinals: [2],
+    audioCount: 3,
+  });
+
+  assert.deepEqual(plan.removedTracks, [{ kind: "audio", label: "German" }]);
+});
+
+// ---------------------------------------------------------------------------
 // The refusals
 // ---------------------------------------------------------------------------
 
@@ -237,7 +304,6 @@ test("only Matroska files can have tracks removed", () => {
   assert.equal(canStripTracks("/m/Film/Film.m2ts"), false);
 });
 
-
 // ---------------------------------------------------------------------------
 // Ticking a run of boxes
 // ---------------------------------------------------------------------------
@@ -278,9 +344,10 @@ test("the run is the same whichever direction it is dragged", () => {
 
 test("shift-clicking a ticked box unticks the whole run", () => {
   // The half that makes it a checkbox: what the clicked box does, the run does.
-  assert.deepEqual(listed(tickRange(ticked(2, 3, 4, 5, 6), 4, 6, true, NINE)), [
-    2, 3,
-  ]);
+  assert.deepEqual(
+    listed(tickRange(ticked(2, 3, 4, 5, 6), 4, 6, true, NINE)),
+    [2, 3],
+  );
 });
 
 test("a shift-click with nothing to measure from is simply a click", () => {
@@ -321,9 +388,10 @@ test("the ceiling holds however the run reaches it", () => {
   // Dragged the other way, off an existing selection, and on a two-track file
   // where "every track" is only two of them.
   assert.deepEqual(listed(tickRange(ticked(4), 0, 8, true, NINE)).length, 8);
-  assert.deepEqual(listed(tickRange(ticked(1, 2, 3), 8, 0, true, NINE)), [
-    1, 2, 3, 4, 5, 6, 7, 8,
-  ]);
+  assert.deepEqual(
+    listed(tickRange(ticked(1, 2, 3), 8, 0, true, NINE)),
+    [1, 2, 3, 4, 5, 6, 7, 8],
+  );
   assert.deepEqual(listed(tickRange(ticked(1), 0, 1, true, inOrder(2))), [1]);
 });
 
@@ -559,7 +627,10 @@ const text = (
 test("a forced track is kept whatever language it names", () => {
   // The case this exists for: the signs on an English film, tagged with the
   // language of the signs rather than of the audience.
-  assert.equal(isSubtitleKept(text("hun", { forced: true }), KEEP_ENGLISH), true);
+  assert.equal(
+    isSubtitleKept(text("hun", { forced: true }), KEEP_ENGLISH),
+    true,
+  );
 });
 
 test("a forced track goes like any other once the rescue is off", () => {
@@ -628,11 +699,17 @@ test("a run across the subtitle table covers the whole of it", () => {
   // `keepOne: false` — the audio table's ceiling would leave one behind, which
   // on subtitles would be a rule Matroska does not have.
   const all = tickRange(new Set<number>(), 3, 0, true, inOrder(4), false);
-  assert.deepEqual([...all].sort((a, b) => a - b), [0, 1, 2, 3]);
+  assert.deepEqual(
+    [...all].sort((a, b) => a - b),
+    [0, 1, 2, 3],
+  );
 
   // And the audio default still stops short, from the same starting point.
   const audio = tickRange(new Set<number>(), 3, 0, true, inOrder(4));
-  assert.deepEqual([...audio].sort((a, b) => a - b), [1, 2, 3]);
+  assert.deepEqual(
+    [...audio].sort((a, b) => a - b),
+    [1, 2, 3],
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -649,9 +726,18 @@ test("what you keep comes first, and file order survives inside each half", () =
 });
 
 test("a table with nothing kept, and one with nothing else, are file order", () => {
-  assert.deepEqual(keptFirst([0, 1, 2], () => false), [0, 1, 2]);
-  assert.deepEqual(keptFirst([0, 1, 2], () => true), [0, 1, 2]);
-  assert.deepEqual(keptFirst([], () => true), []);
+  assert.deepEqual(
+    keptFirst([0, 1, 2], () => false),
+    [0, 1, 2],
+  );
+  assert.deepEqual(
+    keptFirst([0, 1, 2], () => true),
+    [0, 1, 2],
+  );
+  assert.deepEqual(
+    keptFirst([], () => true),
+    [],
+  );
 });
 
 test("the predicate is asked about the track, not only its position", () => {
@@ -674,9 +760,10 @@ test("the run stops where the drawn table does, at both ends", () => {
   const drawn = [3, 6, 0, 1, 2, 4, 5];
   // Last row back to the first is the whole table — and on audio that still
   // stops one short, dropping the film's first track from the selection.
-  assert.deepEqual(listed(tickRange(ticked(5), 3, 5, true, drawn)), [
-    1, 2, 3, 4, 5, 6,
-  ]);
+  assert.deepEqual(
+    listed(tickRange(ticked(5), 3, 5, true, drawn)),
+    [1, 2, 3, 4, 5, 6],
+  );
 });
 
 test("a click on a row the table is not drawing changes nothing", () => {

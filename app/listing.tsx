@@ -356,10 +356,16 @@ export function ListingBar<T extends string>({
   const { tab, tabs, update } = listing;
 
   return (
-    /* Its own space below it rather than the column's gap: this row is the
-       page's own furniture, and a list that begins one gap under it reads as a
-       fourth control rather than as what the controls act on. */
-    <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
+    /* No margin of its own. It used to keep `mb-8` under itself — this row is
+       the page's furniture and a list beginning one gap below it reads as a
+       fourth control — but the column it sits in has a gap too, and the two
+       added: 56px here against 24px under the switch on the shelves and 40px
+       under the one on the stats page. Four pages, four distances, all meaning
+       "this is the head of the page".
+
+       The distance is the column's now, and it is 2rem everywhere. See the
+       note on the jobs page's `main`. */
+    <div className="flex flex-wrap items-center justify-between gap-3">
       {/* Scrolls rather than clips at the fifth tab. The switch sets its own
           width from its labels and refuses to shrink, which is right — a
           segmented control with squeezed words is unreadable — but on a phone

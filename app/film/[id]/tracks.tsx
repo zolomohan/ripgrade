@@ -1,31 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import {
-  beginStripAudio,
-  discardAudioBackup,
-  restoreAudioOriginal,
-} from "@/app/actions";
+import { discardAudioBackup, restoreAudioOriginal } from "@/app/actions";
 import { useJobs } from "@/app/jobs-provider";
 import { Panel } from "@/app/panel";
-import { useClosing } from "@/app/modal";
+import { useClosing, useLingering } from "@/app/modal";
+import { TrackPicker } from "@/app/jobs/track-picker";
 import {
   canStripTracks,
   isPreferred,
   isSubtitleKept,
   keptFirst,
   languageKey,
-  savingsOf,
-  tickRange,
   type AudioPreference,
   type SubtitlePreference,
 } from "@/lib/audio-plan";
 import { AUDIO_BACKUP_SUFFIX, languageName } from "@/lib/derive";
 import type { AudioTrack, SubtitleTrack } from "@/lib/derive";
+import type { AudioTask } from "@/lib/queue-tasks";
 import { BUTTON } from "@/app/controls";
-import { Tick } from "@/app/tick";
 import { ConfirmModal } from "@/app/confirm";
 import { size } from "@/app/format";
 
@@ -39,13 +34,21 @@ import { size } from "@/app/format";
  * other way of making a film smaller it costs nothing at all in quality: the
  * kept streams are copied byte for byte and the video is never touched.
  *
- * So the tables are not only a listing. Each row can be ticked, the total says
- * what ticking it would free before anything runs, and the original is kept
- * beside the film afterwards — the same bargain the Dolby Vision console
- * offers, because it is the same kind of decision: irreversible in principle,
- * made reversible by keeping a copy until you say otherwise.
+ * The tables here read and nothing more. They used to be the console as well:
+ * every row carried a checkbox, the banner totalled what was ticked, and a
+ * button at the top ran the removal — which is the same job the jobs page asks
+ * in a three-screen dialog, asked a second way, in a second layout, with its
+ * own confirmation to keep in step. Two answers to one question is how the two
+ * drifted: this one had no review screen and no per-kind grouping, and the
+ * dialog had no KEPT chips.
  *
- * Audio and subtitles are one console rather than two, and that is forced
+ * So the question is asked in one place now. This is what the file holds, and
+ * "Strip tracks" opens the same picker the jobs page opens, on the same task,
+ * with the same boxes already ticked — see `audioTaskFor`. What stays here is
+ * everything the picker has nothing to say about: which languages you keep,
+ * what each track costs, and the original a past removal left beside the film.
+ *
+ * Audio and subtitles are one listing rather than two, and that is forced
  * rather than chosen. Both are removed by the same remux, and the job refuses
  * to start a second one while the original from the first is still beside the
  * film — so two consoles would mean rewriting a 90 GB file twice with a
@@ -73,7 +76,7 @@ export function TrackTables({
   summary,
   tracks,
   subtitles,
-  sizeBytes,
+  task,
   backupBytes,
   present = true,
   preference,
@@ -82,12 +85,21 @@ export function TrackTables({
 }: {
   moviePath: string;
   fileName: string;
-  /** Written by the page, so the shut row and the spec grid cannot disagree. */
+  /**
+   * The audio row's shut line, written by the page so it and the spec grid
+   * cannot disagree. The subtitle row writes its own — see `textSummary` — as
+   * nothing above this component knows what is in those tracks.
+   */
   summary: string;
   tracks: AudioTrack[];
   subtitles: SubtitleTrack[];
-  /** The whole file, so what is freed can be stated against what is left. */
-  sizeBytes: number;
+  /**
+   * This film as the picker takes it — the same object the jobs page hands the
+   * same dialog, so both open on the same proposal. Undefined where there is
+   * nothing to open it on: a container whose tracks cannot be rewritten, or a
+   * preference with nothing to say about this film's own language.
+   */
+  task?: AudioTask;
   /** Size of the original still holding every track, when one is beside it. */
   backupBytes?: number;
   /** False when the film's drive is away — which is also why `backupBytes`
@@ -101,19 +113,18 @@ export function TrackTables({
   /** What TMDb says this film was made in, where it has been matched. */
   originalLanguage?: string;
 }) {
-  const { jobs, apply, subscribe } = useJobs();
+  const { jobs, subscribe } = useJobs();
   const { strip: job } = jobs;
   const router = useRouter();
 
-  const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
-  const [selectedText, setSelectedText] = useState<ReadonlySet<number>>(
-    new Set(),
-  );
-  const [confirming, setConfirming] = useState(false);
+  /** Whether the picker is up. The dialog owns the whole of the decision. */
+  const [picking, setPicking] = useState(false);
+  // It outlives the flag by its exit animation, and keeps the task it was
+  // opened on for as long as it is leaving.
+  const held = useLingering(picking ? task : undefined);
   const [confirmingRestore, setConfirmingRestore] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // Each confirm outlives its flag by the length of its exit animation.
-  const stripMounted = useClosing(confirming);
   const restoreMounted = useClosing(confirmingRestore);
   const deleteMounted = useClosing(confirmingDelete);
   const [working, setWorking] = useState(false);
@@ -133,10 +144,8 @@ export function TrackTables({
 
         if (next.strip.status === "done") {
           // The job re-probes and re-derives the rewritten file itself, so the
-          // page only needs repainting — and the ticks go with the tracks they
-          // referred to, which are no longer in the file.
-          setSelected(new Set());
-          setSelectedText(new Set());
+          // page only needs repainting: the tables below are about to be a
+          // shorter list.
           router.refresh();
         } else if (next.strip.status === "error") {
           setError(next.strip.error ?? "Removing the tracks failed");
@@ -146,23 +155,8 @@ export function TrackTables({
   );
 
   // -------------------------------------------------------------------------
-  // What ticking a box would cost, worked out before anything runs
+  // What the file holds, and what has already been done to it
   // -------------------------------------------------------------------------
-
-  const chosen = tracks.filter((_, ordinal) => selected.has(ordinal));
-  const chosenText = subtitles.filter((_, ordinal) =>
-    selectedText.has(ordinal),
-  );
-  const total = selected.size + selectedText.size;
-
-  // Worked out before anything runs, and worded by which of its three answers
-  // came back: an exact total, an approximation, or a floor. Both tables are
-  // asked and the answers added, because one remux takes both.
-  const audioSaving = savingsOf(tracks, selected);
-  const textSaving = savingsOf(subtitles, selectedText);
-  const freed = audioSaving.bytes + textSaving.bytes;
-  const anyEstimated = audioSaving.estimated || textSaving.estimated;
-  const anyUnsized = audioSaving.incomplete || textSaving.incomplete;
 
   const matroska = canStripTracks(fileName);
   const stripped = backupBytes !== undefined;
@@ -178,25 +172,43 @@ export function TrackTables({
   const offline = present ? undefined : "Drive not connected";
 
   /**
-   * A film with no audio at all is not something anyone means to make, and it
-   * is not something this page will let you ask for.
+   * Whether this file is one the question can be put to at all.
    *
-   * Three layers say so, because the operation is irreversible once the backup
-   * is gone: the selection itself cannot cover every track, the last unticked
-   * box will not tick, and the button refuses anyway. The server refuses too,
-   * in `resolvePlan`, which is the one that actually guarantees it — the three
-   * here are so that nobody has to find out that way.
+   * Two different things, deliberately kept apart. This one is about the file:
+   * a container whose tracks cannot be rewritten, or a film with one audio
+   * track and no subtitles, will never have anything to remove, and the banner
+   * above says so in words — there is no button for it because there is no
+   * such decision, today or ever.
    *
-   * None of it applies to the subtitle table. A film with no subtitles is an
-   * ordinary film, and a rule that stopped you removing the last one would be
-   * inventing a requirement Matroska does not have.
+   * Whether it can be pressed *now* is `stripRefusal` below. That distinction
+   * is the whole of it: a drive that is unplugged is a temporary state, and a
+   * card that drops its buttons for one reads as a card that never had any.
+   *
+   * The guards that used to live here — no ticking every audio track, the last
+   * box refusing — went with the checkboxes. They are the picker's now, and the
+   * server's in `resolvePlan`, which is the one that actually guarantees it.
    */
-  const wouldSilence = selected.size > 0 && selected.size >= tracks.length;
-  const selectable = matroska && present && !hasBackup && !running;
+  const offerStrip =
+    matroska &&
+    !hasBackup &&
+    !running &&
+    (tracks.length > 1 || subtitles.length > 0);
 
-  /** True of the one box that would empty the film if it were ticked. */
-  const lastStanding = (ordinal: number) =>
-    !selected.has(ordinal) && selected.size >= tracks.length - 1;
+  /**
+   * Why it cannot be pressed at this moment, where it cannot.
+   *
+   * The drive first, as everywhere else on this page. After it, the one case
+   * where the picker has nothing to open on: `audioTaskFor` builds no task for
+   * a film whose own language is unknown while your preferences keep it, since
+   * every proposal it would make rests on knowing what "original" means here.
+   * The button stays, greyed, saying which — a film that quietly has no button
+   * is a film you go looking through Settings for.
+   */
+  const stripRefusal =
+    offline ??
+    (task
+      ? undefined
+      : "This film has no TMDb match, so the original language your settings keep cannot be worked out for it");
 
   /**
    * Whether a track is in a language you said you keep.
@@ -266,82 +278,6 @@ export function TrackTables({
     [subtitles, subtitlePreference, originalLanguage],
   );
 
-  /** The preferred tracks about to be removed — the reason for the warning. */
-  const preferredChosen = chosen.filter(preferred);
-  const keptTextChosen = chosenText.filter(keptText);
-  const warned = preferredChosen.length + keptTextChosen.length;
-
-  /**
-   * The last row ticked by hand in each table, which is what a shift-click
-   * measures from. One per table: a run started in the audio list has no
-   * meaning in the subtitle one, and sharing an anchor between them would make
-   * a shift-click select a range nobody drew.
-   *
-   * Refs rather than state: nothing on the page is drawn from them, and moving
-   * one should never be a reason to re-render a table.
-   */
-  const anchor = useRef<number | null>(null);
-  const anchorText = useRef<number | null>(null);
-
-  /** Ticking a row, or — with shift held — the run up to the last one ticked. */
-  function tick(ordinal: number, range: boolean) {
-    const from = anchor.current;
-    anchor.current = ordinal;
-    setSelected((current) => tickRange(current, ordinal, from, range, order));
-  }
-
-  function tickText(ordinal: number, range: boolean) {
-    const from = anchorText.current;
-    anchorText.current = ordinal;
-    setSelectedText((current) =>
-      // `false`: every subtitle track may go, so a run across the whole table
-      // means the whole table rather than all-but-one.
-      tickRange(current, ordinal, from, range, orderText, false),
-    );
-  }
-
-  async function runStrip() {
-    setError(null);
-    setConfirming(false);
-
-    const ordinals = [...selected].sort((a, b) => a - b);
-    const textOrdinals = [...selectedText].sort((a, b) => a - b);
-
-    const result = await beginStripAudio({
-      path: moviePath,
-      removeOrdinals: ordinals,
-      audioCount: tracks.length,
-      // The Matroska numbers as this page has them, for the server to check
-      // against what mkvmerge reports before it rewrites anything. Sent by
-      // ordinal so the two lists line up on the far side.
-      numbers: tracks.map((track) => track.number),
-      // Sent whenever the file has any, ticked or not: the count is what tells
-      // the server the page and the file still agree about this half too.
-      ...(subtitles.length > 0 && {
-        removeSubtitleOrdinals: textOrdinals,
-        subtitleCount: subtitles.length,
-        subtitleNumbers: subtitles.map((track) => track.number),
-      }),
-      freedBytes: freed || undefined,
-    });
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    apply({
-      strip: {
-        status: "running",
-        path: moviePath,
-        percent: 0,
-        removed: ordinals.length,
-        kept: tracks.length - ordinals.length,
-        removedSubtitles: textOrdinals.length,
-        keptSubtitles: subtitles.length - textOrdinals.length,
-        freedBytes: freed || undefined,
-      },
-    });
-  }
-
   async function runRestore() {
     setError(null);
     setWorking(true);
@@ -372,18 +308,10 @@ export function TrackTables({
   // What the console says, and what it offers to do about it
   // -------------------------------------------------------------------------
 
-  /** What is going, in the words the banner and the button both need. */
-  const going = [
-    selected.size > 0 && count(selected.size, "audio track"),
-    selectedText.size > 0 && count(selectedText.size, "subtitle track"),
-  ]
-    .filter(Boolean)
-    .join(" and ");
-
   /**
    * The one line at the top. Whatever is happening to the file outranks
-   * anything about the selection — mid-removal, and afterwards while the
-   * original is still recoverable, the state of the file *is* the answer.
+   * everything else — mid-removal, and afterwards while the original is still
+   * recoverable, the state of the file *is* the answer.
    */
   const banner: { headline: string; body?: React.ReactNode } = running
     ? {
@@ -428,37 +356,41 @@ export function TrackTables({
                   ? "Nothing to remove without leaving the film silent."
                   : undefined,
             }
-          : total === 0
-            ? {
-                headline: [
-                  count(tracks.length, "audio track"),
-                  subtitles.length > 0 &&
-                    count(subtitles.length, "subtitle track"),
-                ]
-                  .filter(Boolean)
-                  .join(", "),
-                body: "Tick the ones you will never play to see what removing them frees.",
-              }
-            : {
-                headline: `${
-                  anyUnsized
-                    ? "Frees at least"
-                    : anyEstimated
-                      ? "Frees about"
-                      : "Frees"
-                } ${size(freed)}`,
-                body: wouldSilence ? (
-                  "That is every audio track — keep at least one."
-                ) : (
-                  <>
-                    {going} removed, leaving{" "}
-                    {size(Math.max(0, sizeBytes - freed))} of {size(sizeBytes)}.
-                  </>
-                ),
-              };
-
-  /** Whether there is anything on this file worth offering a button for. */
-  const anythingToRemove = tracks.length > 1 || subtitles.length > 0;
+          : {
+              /*
+               * What the file holds, and nothing about a selection.
+               *
+               * This line used to change as boxes were ticked — "Frees 8.4 GB
+               * · 3 tracks removed, leaving 34.1 GB of 42.5 GB" — which was
+               * the best thing about the old console and is now the first
+               * screen of the picker, worked out against the same tracks. A
+               * page that answered it too would be a second running total to
+               * keep in step with the dialog's.
+               */
+              headline: [
+                count(tracks.length, "audio track"),
+                subtitles.length > 0 &&
+                  count(subtitles.length, "subtitle track"),
+              ]
+                .filter(Boolean)
+                .join(", "),
+              /*
+               * The two facts that decide whether anybody presses the button,
+               * rather than a description of what the button opens.
+               *
+               * It read "Strip tracks opens the same three screens the jobs
+               * page does — what goes, what stays, and what it frees", which
+               * is true, is about this app's own furniture, and answers a
+               * question nobody standing here has: they can see the button,
+               * and the dialog introduces itself. What they cannot see is
+               * whether this is safe — and it is, twice over: the kept streams
+               * are copied byte for byte so nothing is re-encoded, and the
+               * whole file is kept beside the new one until you delete it.
+               */
+              body: offerStrip
+                ? "Remove the ones you will never play. Nothing is re-encoded, and the original is kept beside the film until you delete it."
+                : undefined,
+            };
 
   /**
    * One decision per state, so the console has one thing to press: remove while
@@ -495,21 +427,22 @@ export function TrackTables({
       </button>
     </>
   ) : (
-    matroska &&
-    anythingToRemove && (
+    // One button, and it opens a dialog rather than starting anything. Enabled
+    // on any file the question can be asked of — what is worth removing from it
+    // is the dialog's to answer, and a button that greys out until you have
+    // ticked something is a control you cannot find your way into.
+    offerStrip && (
       <button
         type="button"
-        onClick={() => setConfirming(true)}
-        disabled={!selectable || total === 0 || wouldSilence}
+        onClick={() => setPicking(true)}
+        disabled={Boolean(stripRefusal)}
         title={
-          offline ??
-          (wouldSilence
-            ? "That would leave the film with no audio at all."
-            : "Remuxes the file without them. The original is kept beside it.")
+          stripRefusal ??
+          "Choose which tracks go. Nothing is written until you say."
         }
         className={BUTTON.primary}
       >
-        {total > 0 ? `Remove ${count(total, "track")}` : "Remove tracks"}
+        Strip tracks
       </button>
     )
   );
@@ -522,14 +455,13 @@ export function TrackTables({
    * has cues and three flags worth reading — and a helper that took the
    * difference as arguments ended up dictating an order that suited neither.
    *
-   * The first is unlabelled in both: a header over a column of checkboxes has
-   * to be a word like "Remove", and that word then sits over every row as an
-   * instruction rather than a description.
+   * Neither leads with a checkbox any more: what to remove is asked in the
+   * picker, and a column of boxes on a table nobody can act on is a control
+   * that does nothing.
    */
   const head = (columns: [string, boolean][]) => (
     <thead className="text-xs uppercase tracking-wide opacity-50">
       <tr>
-        <th className="w-8 px-4 py-2" />
         {columns.map(([label, right]) => (
           <th
             key={label}
@@ -572,185 +504,201 @@ export function TrackTables({
     </span>
   );
 
-  return (
-    <Panel title="Audio and subtitle tracks" summary={summary}>
-      <div className="flex flex-col gap-6">
-        {/* One console, in bands parted by the same hairline the Dolby Vision
-            card parts its own by: what the selection would cost, and — under
-            the rule — the button that acts on it.
+  /**
+   * What the subtitle row says with the panel shut: how many, and in what.
+   *
+   * Languages rather than formats, and only as many as fit: a shut row is
+   * deciding whether to open, and "PGS · PGS · SRT" is not a reason to. Named
+   * in full up to three, counted after that.
+   */
+  const named = [
+    ...new Set(
+      subtitles.map((track) =>
+        track.language ? languageName(track.language) : "Untagged",
+      ),
+    ),
+  ];
+  const textSummary = [
+    count(subtitles.length, "track"),
+    named.length > 3
+      ? `${named.slice(0, 3).join(", ")} +${named.length - 3}`
+      : named.join(", "),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
-            The buttons sat on the same line as the reading until they were
-            asked to stand apart, and the hairline is the whole of what that
-            takes: `.card-band + .card-band` draws it, so a band that is only
-            ever added or dropped brings its own rule with it. Skipped entirely
-            when there is nothing to press, which is a real state here — a file
-            that is not Matroska, or has a single track and no subtitles, is a
-            card that reads and offers nothing — and an empty band under a rule
-            would announce a decision that was never on the table. */}
-        <div className="overflow-hidden rounded-3xl border border-line">
-          <div className="card-band px-4 py-5">
-            <div className="flex flex-col gap-0.5">
-              <p className="text-sm font-medium">{banner.headline}</p>
-              {banner.body && (
-                <p className="text-sm opacity-60">{banner.body}</p>
-              )}
-            </div>
-          </div>
+  /**
+   * The state of the file and what can be done about it, drawn at the head of
+   * both panels.
+   *
+   * Both, rather than once above them, because the two are separate sections
+   * now and a section whose only button is in the other one is a section you
+   * have to leave to act on. It is the same card either way — the same state,
+   * the same dialog behind the same press — which is the point: the removal is
+   * one remux over both kinds of track, and where you started it from is not a
+   * fact about it.
+   *
+   * The bands are parted by the same hairline the Dolby Vision card parts its
+   * own by. `.card-band + .card-band` draws it, so a band that is only ever
+   * added or dropped brings its own rule with it. The button band is skipped
+   * entirely when there is nothing to press, which is a real state here — a
+   * file that is not Matroska reads and offers nothing — and an empty band
+   * under a rule would announce a decision that was never on the table.
+   */
+  const stateCard = (
+    <div className="overflow-hidden rounded-3xl border border-line">
+      {/* The state and the button that acts on it, on one line — the shape the
+          Dolby Vision card next to this one has always had. They were two bands
+          with a hairline between them, which drew a rule across the card to
+          part a sentence from the button answering it and left the button
+          hanging under a line of its own.
 
-          {!running && actions && (
-            <div className="card-band flex flex-wrap items-center justify-end gap-2 px-4 py-4">
-              {total > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelected(new Set());
-                    setSelectedText(new Set());
-                  }}
-                  className={BUTTON.text}
-                >
-                  Clear
-                </button>
-              )}
-              {actions}
-            </div>
-          )}
-
-          {running && (
-            <div className="card-band px-4 py-5">
-              {/* The rail carries this too, but a film's own page is where the
-                  removal was started and where its progress is being watched. */}
-              <div className="bar-track w-full">
-                <div
-                  className="bar-fill transition-[width] duration-500"
-                  style={{ width: `${Math.max(2, job.percent ?? 0)}%` }}
-                />
-              </div>
-              <p className="mt-2 text-xs opacity-50">
-                {job.label ?? "Remuxing"}
-                {job.percent !== undefined && ` · ${Math.round(job.percent)}%`}
-              </p>
-            </div>
-          )}
-
-          {error && (
-            <div className="card-band px-4 py-4">
-              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-            </div>
-          )}
+          `flex-1` on the text so the buttons keep the right edge however short
+          the sentence is, and wrapping rather than squeezing at a narrow
+          window: the backup state carries a filename, and two buttons pushed
+          against ninety characters of it is a row that reads as neither. */}
+      <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 py-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="text-sm font-medium">{banner.headline}</p>
+          {banner.body && <p className="text-sm opacity-60">{banner.body}</p>}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            {head([
-              ["Format", false],
-              ["Channels", false],
-              ["Language", false],
-              ["Track", false],
-              ["Bitrate", true],
-              ["Size", true],
-            ])}
-            <tbody>
-              {order.map((ordinal) => {
-                const track = tracks[ordinal];
-                const ticked = selected.has(ordinal);
-                return (
-                  <tr
-                    key={ordinal}
-                    // Struck through rather than merely ticked: the row is
-                    // about to stop existing, and the table should look like
-                    // what the file will be.
-                    className={ticked ? "opacity-45" : undefined}
-                  >
-                    {/* No padding of its own: the label inside carries it, so
-                        the whole cell is clickable rather than the 18 pixels
-                        in the middle of it. */}
-                    <td className="p-0">
-                      <Tick
-                        checked={ticked}
-                        disabled={!selectable || lastStanding(ordinal)}
-                        // Not simply dead: the one box it refuses says why, and
-                        // unticking anything else lights it up again — which
-                        // reads as a rule about films rather than as a row that
-                        // would not respond.
-                        refusal={
-                          selectable && lastStanding(ordinal)
-                            ? "A film has to keep one audio track — untick another to remove this one instead"
-                            : undefined
-                        }
-                        onTick={(range) => tick(ordinal, range)}
-                        label={`Remove ${track.label}${
-                          track.language
-                            ? ` (${languageName(track.language)})`
-                            : ""
-                        }`}
-                      />
-                    </td>
-                    <td className={`px-4 py-2 ${ticked ? "line-through" : ""}`}>
-                      {track.label}
-                    </td>
-                    <td className="px-4 py-2 opacity-70">
-                      {track.channels || "—"}
-                    </td>
-                    <td className="px-4 py-2 opacity-70">
-                      <span className="flex items-center gap-1.5">
-                        {track.language ? languageName(track.language) : "—"}
-                        {/* Marked here rather than only in the dialog: the
+        {!running && actions && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {actions}
+          </div>
+        )}
+      </div>
+
+      {running && (
+        <div className="card-band px-4 py-5">
+          {/* The rail carries this too, but a film's own page is where the
+                  removal was started and where its progress is being watched. */}
+          <div className="bar-track w-full">
+            <div
+              className="bar-fill transition-[width] duration-500"
+              style={{ width: `${Math.max(2, job.percent ?? 0)}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs opacity-50">
+            {job.label ?? "Remuxing"}
+            {job.percent !== undefined && ` · ${Math.round(job.percent)}%`}
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <div className="card-band px-4 py-4">
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      {/* Two sections rather than one.
+       *
+       * They were a single panel called "Audio and subtitle tracks" holding two
+       * tables under one heading, and the second was something you met on the
+       * way past the first — nine subtitle rows are the same amount of page as
+       * six audio ones, and only one of the two was ever named in the summary
+       * you read with the panel shut. Two rows on the page, each saying how many
+       * of its own kind there are, is the answer to which of them is worth
+       * opening.
+       *
+       * What they share is the console at the head of each, because the removal
+       * does not split the way the reading does: one remux takes both kinds, and
+       * the file refuses a second while the original from the first is still
+       * beside it. */}
+      <Panel title="Audio tracks" summary={summary}>
+        <div className="flex flex-col gap-6">
+          {stateCard}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              {/* Language first, as the picker's tables and its review screen
+                both read: the decision these describe is made in languages,
+                and the codec is what you check once you know which row you are
+                looking at. */}
+              {head([
+                ["Language", false],
+                ["Format", false],
+                ["Channels", false],
+                ["Track", false],
+                ["Bitrate", true],
+                ["Size", true],
+              ])}
+              <tbody>
+                {order.map((ordinal) => {
+                  const track = tracks[ordinal];
+                  return (
+                    <tr key={ordinal}>
+                      <td className="px-4 py-2">
+                        <span className="flex items-center gap-1.5">
+                          {track.language ? languageName(track.language) : "—"}
+                          {/* Marked here rather than only in the dialog: the
                             point of a mark is to be seen before the decision,
                             not while it is being confirmed. */}
-                        {preferred(track) &&
-                          chip(
-                            isOriginal(track) ? "ORIGINAL" : "KEPT",
-                            isOriginal(track)
-                              ? "The language this film was made in, which you keep"
-                              : "One of the languages you keep — set in Settings",
-                          )}
-                      </span>
-                    </td>
-                    {/* The muxer's name for the track and the flags a player
+                          {preferred(track) &&
+                            chip(
+                              isOriginal(track) ? "ORIGINAL" : "KEPT",
+                              isOriginal(track)
+                                ? "The language this film was made in, which you keep"
+                                : "One of the languages you keep — set in Settings",
+                            )}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 opacity-70">{track.label}</td>
+                      <td className="px-4 py-2 opacity-70">
+                        {track.channels || "—"}
+                      </td>
+                      {/* The muxer's name for the track and the flags a player
                         reads are one answer to "which one is this", so they are
                         one column rather than three sparse ones — the same way
                         the subtitle table below puts them. */}
-                    <td className="px-4 py-2 opacity-70">
-                      {[
-                        track.title,
-                        track.forced ? "forced" : null,
-                        track.default ? "default" : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums opacity-70">
-                      {track.bitrateKbps
-                        ? `${track.bitrateKbps.toLocaleString()} kbps`
-                        : "—"}
-                    </td>
-                    {sizeCell(track)}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <td className="px-4 py-2 opacity-70">
+                        {[
+                          track.title,
+                          track.forced ? "forced" : null,
+                          track.default ? "default" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums opacity-70">
+                        {track.bitrateKbps
+                          ? `${track.bitrateKbps.toLocaleString()} kbps`
+                          : "—"}
+                      </td>
+                      {sizeCell(track)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
+      </Panel>
 
-        {/* The text tracks, under the same rule the console's bands use. The
-            spec grid at the top of the page says which languages are in there;
-            this says what they actually are, which is the difference between a
-            full English track and a forced one that only translates the signs.
+      {/* The text tracks. The spec grid at the top of the page says which
+          languages are in there; this says what they actually are, which is the
+          difference between a full English track and a forced one that only
+          translates the signs.
 
-            A file with none of them draws no heading and no empty table: there
-            is nothing to say about a film that carries no subtitles beyond the
-            line the spec grid already carries. */}
-        {subtitles.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <div aria-hidden className="rule-head" />
-            <h3 className="text-xs font-semibold uppercase tracking-wide opacity-50">
-              Subtitles
-            </h3>
+          No panel at all for a film that carries none: there is nothing to say
+          about it beyond the line the spec grid already carries, and a row you
+          can open onto an empty table is worse than no row. */}
+      {subtitles.length > 0 && (
+        <Panel title="Subtitle tracks" summary={textSummary}>
+          <div className="flex flex-col gap-6">
+            {stateCard}
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 {head([
-                  ["Format", false],
                   ["Language", false],
+                  ["Format", false],
                   ["Track", false],
                   ["Flags", false],
                   ["Cues", true],
@@ -759,30 +707,9 @@ export function TrackTables({
                 <tbody>
                   {orderText.map((ordinal) => {
                     const track = subtitles[ordinal];
-                    const ticked = selectedText.has(ordinal);
                     return (
-                      <tr
-                        key={ordinal}
-                        className={ticked ? "opacity-45" : undefined}
-                      >
-                        <td className="p-0">
-                          <Tick
-                            checked={ticked}
-                            disabled={!selectable}
-                            onTick={(range) => tickText(ordinal, range)}
-                            label={`Remove ${track.format}${
-                              track.language
-                                ? ` (${languageName(track.language)})`
-                                : ""
-                            }`}
-                          />
-                        </td>
-                        <td
-                          className={`px-4 py-2 ${ticked ? "line-through" : ""}`}
-                        >
-                          {track.format}
-                        </td>
-                        <td className="px-4 py-2 opacity-70">
+                      <tr key={ordinal}>
+                        <td className="px-4 py-2">
                           <span className="flex items-center gap-1.5">
                             {track.language
                               ? languageName(track.language)
@@ -791,6 +718,7 @@ export function TrackTables({
                               chip("KEPT", keptTextWhy(track))}
                           </span>
                         </td>
+                        <td className="px-4 py-2 opacity-70">{track.format}</td>
                         <td className="px-4 py-2 opacity-70">
                           {track.title || "—"}
                         </td>
@@ -817,138 +745,69 @@ export function TrackTables({
               </table>
             </div>
           </div>
-        )}
+        </Panel>
+      )}
 
-        {stripMounted && (
-          <ConfirmModal
-            open={confirming}
-            title={
-              warned > 0
-                ? `Remove ${count(warned, "track")} you said you keep?`
-                : `Remove ${going}?`
-            }
-            // The dialog turns red on the one case worth stopping at. Every
-            // removal here is reversible while the original is beside the film,
-            // so the tone is about the selection being a mistake rather than
-            // about the operation being dangerous.
-            tone={warned > 0 ? "danger" : "neutral"}
-            confirmLabel={warned > 0 ? "Remove them anyway" : "Remove"}
-            onConfirm={runStrip}
-            onCancel={() => setConfirming(false)}
-          >
-            {/* Named before the list rather than inside it: this is the one
-                thing in the dialog that might change your mind, and a bullet
-                among four bullets is not a warning. */}
-            {warned > 0 && (
-              <p className="mb-3 rounded-control border border-red-500/40 bg-red-500/[0.08] px-3 py-2 text-red-700 dark:text-red-300">
-                {[...preferredChosen, ...keptTextChosen]
-                  .map((track) =>
-                    track.language
-                      ? languageName(track.language)
-                      : "an untagged track",
-                  )
-                  .join(", ")}{" "}
-                {warned === 1 ? "is" : "are"} among what you keep
-                {preferredChosen.some(isOriginal) &&
-                  ` — and ${
-                    warned === 1 ? "it is" : "one of them is"
-                  } the language this film was made in`}
-                . Settings is where those lists are set; this removes{" "}
-                {warned === 1 ? "it" : "them"} from this film only.
-              </p>
-            )}
+      {/* The dialogs, outside both panels. A `<details>` that is shut does not
+          draw its children, and a modal that only exists while the section it
+          was raised from is open is a modal that vanishes the moment anything
+          collapses it.
 
-            <ul className="list-disc space-y-1.5 pl-5">
-              {chosen.length > 0 && (
-                <li>
-                  Audio going:{" "}
-                  {chosen
-                    .map(
-                      (track) =>
-                        `${track.label}${
-                          track.language
-                            ? ` (${languageName(track.language)})`
-                            : ""
-                        }`,
-                    )
-                    .join(", ")}
-                  .
-                </li>
-              )}
-              {chosenText.length > 0 && (
-                <li>
-                  Subtitles going:{" "}
-                  {chosenText
-                    .map(
-                      (track) =>
-                        `${
-                          track.language
-                            ? languageName(track.language)
-                            : "untagged"
-                        }${track.forced ? " forced" : ""}${
-                          track.sdh ? " SDH" : ""
-                        } ${track.format}`,
-                    )
-                    .join(", ")}
-                  .
-                </li>
-              )}
-              <li>
-                The original is renamed to{" "}
-                <code className="font-mono text-xs">
-                  {fileName}
-                  {AUDIO_BACKUP_SUFFIX}
-                </code>{" "}
-                and kept beside it, so this needs room for both until you delete
-                it.
-              </li>
-              <li>
-                Nothing is re-encoded. Video, chapters and the tracks you keep
-                are copied exactly as they are.
-              </li>
-              <li>
-                It rewrites the whole file. Cancelling at any point leaves the
-                original untouched.
-              </li>
-            </ul>
-          </ConfirmModal>
-        )}
+          The picker opens on the same task the jobs page opens it on, keyed to
+          the file, so it is the same dialog wherever it is raised — its own
+          three screens, its own review, its own confirmation. Nothing here
+          wraps it: what it asks and what it promises are its to say.
 
-        {restoreMounted && (
-          <ConfirmModal
-            open={confirmingRestore}
-            title="Put every track back?"
-            confirmLabel={working ? "Restoring…" : "Restore original"}
-            busy={working}
-            onConfirm={runRestore}
-            onCancel={() => setConfirmingRestore(false)}
-          >
-            The stripped file is deleted and{" "}
-            <code className="font-mono text-xs">
-              {fileName}
-              {AUDIO_BACKUP_SUFFIX}
-            </code>{" "}
-            takes its place under the original name. You can always remove them
-            again.
-          </ConfirmModal>
-        )}
+          `blocked` is the server's one rule, said before the button rather
+          than after: a second remux cannot start while another is running. */}
+      {held && (
+        <TrackPicker
+          key={held.path}
+          task={held}
+          open={picking}
+          onClose={() => setPicking(false)}
+          blocked={
+            job.status === "running" && job.path !== moviePath
+              ? "Another file is having its tracks removed"
+              : undefined
+          }
+        />
+      )}
 
-        {deleteMounted && backupBytes !== undefined && (
-          <ConfirmModal
-            open={confirmingDelete}
-            title="Delete the original, with every track?"
-            confirmLabel={working ? "Deleting…" : `Delete ${size(backupBytes)}`}
-            tone="danger"
-            busy={working}
-            onConfirm={runDeleteBackup}
-            onCancel={() => setConfirmingDelete(false)}
-          >
-            Frees {size(backupBytes)} and leaves the stripped file as the only
-            copy. Getting the removed tracks back after this means ripping the
-            disc again.
-          </ConfirmModal>
-        )}
-      </div>
-    </Panel>
+      {restoreMounted && (
+        <ConfirmModal
+          open={confirmingRestore}
+          title="Put every track back?"
+          confirmLabel={working ? "Restoring…" : "Restore original"}
+          busy={working}
+          onConfirm={runRestore}
+          onCancel={() => setConfirmingRestore(false)}
+        >
+          The stripped file is deleted and{" "}
+          <code className="font-mono text-xs">
+            {fileName}
+            {AUDIO_BACKUP_SUFFIX}
+          </code>{" "}
+          takes its place under the original name. You can always remove them
+          again.
+        </ConfirmModal>
+      )}
+
+      {deleteMounted && backupBytes !== undefined && (
+        <ConfirmModal
+          open={confirmingDelete}
+          title="Delete the original, with every track?"
+          confirmLabel={working ? "Deleting…" : `Delete ${size(backupBytes)}`}
+          tone="danger"
+          busy={working}
+          onConfirm={runDeleteBackup}
+          onCancel={() => setConfirmingDelete(false)}
+        >
+          Frees {size(backupBytes)} and leaves the stripped file as the only
+          copy. Getting the removed tracks back after this means ripping the
+          disc again.
+        </ConfirmModal>
+      )}
+    </>
   );
 }

@@ -1,11 +1,9 @@
 "use client";
 
-import Link from "next/link";
-
-import { Art } from "@/app/art";
 import { BUTTON, Fact } from "@/app/controls";
-import { CloseButton, Modal } from "@/app/modal";
+import { Modal } from "@/app/modal";
 import type { DoviTask } from "@/lib/queue-tasks";
+import { TaskHead } from "./task-head";
 
 /**
  * Everything this tab knows about one file, and the press that acts on it.
@@ -57,90 +55,24 @@ export function DoviDetails({
       panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
     >
       <>
-        {/* The dialog is named for the work, not for the film.
+        {/* The same head the track picker wears, and for the same reason: both
+            are one job asked about one file, opened off the same page, and the
+            first thing either has to settle is which file.
 
-            A film's name at the top made this look like the film's own page in
-            a window — and the film is not what you opened it to decide. Every
-            one of these dialogs is the same job asked about a different file,
-            so the heading says which job, once, and the file it is about sits
-            below with its poster. */}
-        <header className="flex items-baseline justify-between gap-3">
-          <h2 className="min-w-0 truncate text-base font-semibold">
-            Dolby Vision P7 to P8 conversion
-          </h2>
-          <CloseButton onClick={onClose} />
-        </header>
+            It replaced a heading that named the job — "Dolby Vision P7 to P8
+            conversion" — over a separate block holding a poster three times
+            this size. The job's name is not missed: the facts below say Profile
+            7 and the button says Convert, which is the same sentence said by
+            the things you are actually looking at.
 
-        <div aria-hidden className="rule-head mb-1" />
-
-        {/* Which film, and what pressing the button would do to it — one block,
-            because they are one thought. The artwork is small: you opened this
-            off a poster you are already looking at, so it says which film this
-            is rather than asking to be looked at again.
-
-            The poster and the name are the way to the film. There was a button
-            for it, and a button is what you give something with no handle of
-            its own — a picture of the film and its name are the handle, and
-            they were sitting inert an inch above one that said "Open the film".
-
-            Anchors rather than a handler, so the browser can middle-click and
-            preview them, and so the crumb that brings the poster home is left
-            by the delegated listener in app/return-to.tsx, which only sees
-            anchors. */}
-        <div className="flex items-center gap-4">
-          <Link
-            href={href}
-            aria-hidden
-            tabIndex={-1}
-            className="glow h-24 w-16 shrink-0 overflow-hidden rounded-control bg-surface-strong ring-1 ring-line"
-          >
-            <Art
-              src={task.poster}
-              remote={task.posterRemote}
-              version={task.artAt}
-              size="w92"
-              className="h-full w-full object-cover"
-            />
-          </Link>
-
-          <div className="flex min-w-0 flex-col gap-1">
-            <Link
-              href={href}
-              className="min-w-0 text-sm font-semibold break-words hover:underline"
-            >
-              {task.episodeCode
-                ? `${task.episodeCode} · ${task.title}`
-                : task.title}
-            </Link>
-
-            {/* Under the name rather than beside it. A year set against a title
-                that wraps to two lines ends up floating in the middle of the
-                block, and it is the smallest fact here — it belongs on the
-                muted line, which is where every shelf in the app puts it. */}
-            {task.year && <p className="text-xs opacity-45">{task.year}</p>}
-
-            {/* Said only where the press is not what the button appears to
-                promise.
-
-                A file whose frames have been read said "Ready to convert" over
-                a paragraph about keeping the original — under a button reading
-                Convert, beside a row reading "Frames read · Every frame". Three
-                ways of saying the same thing, two of them prose. What is left
-                is the case that genuinely surprises: the button says Check,
-                because what a read finds can rule the conversion out. */}
-            {checkFirst && (
-              <>
-                <p className="mt-1 text-sm font-medium">
-                  Every frame is read first
-                </p>
-                <p className="text-xs opacity-55">
-                  The layer has not been read, and what a read finds can rule
-                  the conversion out. Nothing is written by it.
-                </p>
-              </>
-            )}
-          </div>
-        </div>
+            Carries the href, which the track picker does not: this dialog has
+            always offered the film's page through its poster and its name, and
+            there is nothing here to lose by leaving. */}
+        {/* No rule under the head. The poster is the edge — a picture and a
+            title against the top of a panel are already a header, and a line
+            drawn under them was the dialog stating twice that this part is not
+            the rest. */}
+        <TaskHead film={task} href={href} onClose={onClose} />
 
         <dl className="overflow-hidden rounded-control border border-line">
           <Fact label="File" value={task.fileName} mono />
@@ -150,10 +82,32 @@ export function DoviDetails({
           {/* No "Frames read" row. Whether the frames have been read is not a
               fact about the file worth filing between its layer and its
               episode — it is a fact about what the button is about to do, and
-              the one case where it changes that is already said above in
-              words. */}
+              the one case where it changes that is said in words below. */}
           <Fact label="Episode" value={task.episode} />
         </dl>
+
+        {/* Said only where the press is not what the button appears to promise.
+
+            A file whose frames have been read said "Ready to convert" over a
+            paragraph about keeping the original — under a button reading
+            Convert, beside a row reading "Frames read · Every frame". Three
+            ways of saying the same thing, two of them prose. What is left is
+            the case that genuinely surprises: the button says Check, because
+            what a read finds can rule the conversion out.
+
+            Directly over that button now rather than beside the poster. It was
+            in the block that said which film this is, which is the one thing it
+            is not about — and with the head down to a line it would have been
+            hanging off the end of it. */}
+        {checkFirst && (
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Every frame is read first</p>
+            <p className="text-xs opacity-55">
+              The layer has not been read, and what a read finds can rule the
+              conversion out. Nothing is written by it.
+            </p>
+          </div>
+        )}
 
         {/* No line here saying why the button is off. It is the button's own
             business — the mark is greyed and carries the reason, which is where

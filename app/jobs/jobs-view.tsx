@@ -26,7 +26,7 @@ import {
   CleanupList,
   cleanupOrder,
   CleanupRun,
-  CleanupStats,
+  SweepLeftovers,
 } from "./cleanup-list";
 import { Poster } from "./poster";
 import {
@@ -35,7 +35,6 @@ import {
   audioOrder,
   AudioQueued,
   AudioRun,
-  AudioStats,
   AudioTasks,
   SelectFilms,
   DOVI_GROUPS,
@@ -43,7 +42,6 @@ import {
   doviOrder,
   DoviQueued,
   DoviRun,
-  DoviStats,
   DoviTasks,
 } from "./task-list";
 
@@ -537,8 +535,18 @@ function Run({
           what the run did sits at its foot, and the space between them is the
           poster rather than a gap. */}
       <div className="flex min-h-24 min-w-0 flex-1 flex-col gap-2">
-        <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
-          <div className="flex min-w-0 flex-col gap-0.5">
+        {/* Not wrapping, which is the bug you saw: a flex line breaks on its
+            items' natural widths, and `truncate` does not make a long release
+            name narrow — it is still max-content wide as far as the algorithm
+            is concerned, it just paints an ellipsis afterwards. So a row whose
+            filename ran long pushed the time onto a second line, where it came
+            to rest beside the filename rather than up on the title.
+
+            Held on one line, the left column shrinks instead — which is what
+            the truncation was there for — and the time sits at the top right of
+            every row in the log, however long the name beside it. */}
+        <div className="flex justify-between gap-x-4">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             {/* The film's name where the library still knows it, and the file's
                 own where it does not — a log outlives what it describes. */}
             <p className="min-w-0 truncate text-sm font-medium">
@@ -553,19 +561,65 @@ function Run({
             >
               {run.title}
             </p>
-            <p className="text-xs opacity-45">
-              {KIND_LABEL[run.kind] ?? run.kind}
-              {duration && ` · ${duration}`}
-            </p>
+            {/* The job's name led a third line here — "Audio removal", "Dolby
+                Vision read" — and it was the one fact on the row nobody was
+                reading it for: the section is cut by kind, and each row already
+                says what it did underneath. "3 audio removed · 4.2 GB freed" is
+                not something a conversion says. The duration that shared that
+                line has gone up beside the time it finished, where the other
+                fact about when this happened already was. */}
           </div>
 
-          <div className="flex h-fit shrink-0 items-baseline gap-3">
-            <span className={`text-xs font-medium ${outcome.tone}`}>
-              {outcome.label}
-            </span>
-            <span className="text-xs tabular-nums opacity-40">
+          {/* When it happened, and how long it took — one fact in two parts,
+              so they sit in one line rather than at opposite corners of the
+              row.
+
+              The outcome only speaks when it is not "Done".
+
+              It used to say all three, and "Done" is what almost every row in
+              a log is: a word on forty rows out of forty-two says nothing
+              about any of them, and putting it in green spent the one channel
+              this row has on the case that needs no attention. The same
+              argument that took the KEPT chip off the track picker's tables.
+              What is left is the two that are worth spotting from across the
+              page, in the colours this app already reads as "wrong" and
+              "unfinished" — and a row saying nothing is a row that worked,
+              which is the reading it had anyway once you had seen four greens
+              in a row.
+
+              Still said for anything not looking at the colour: the word is
+              there for a screen reader on every row, and the dialog behind the
+              row states the outcome outright in its table.
+
+              Set like the two facts beside it and joined to them by the same
+              bullet, rather than as a bolder word standing apart: what happened
+              to this run, when, and how long it took are one reading. Only its
+              colour separates it, which is the one thing about it worth
+              separating. */}
+          <div className="flex h-fit shrink-0 items-baseline gap-1.5 text-xs">
+            {run.outcome === "done" ? (
+              <span className="sr-only">{outcome.label}</span>
+            ) : (
+              <>
+                <span className={outcome.tone}>{outcome.label}</span>
+                <span aria-hidden className="opacity-20">
+                  ·
+                </span>
+              </>
+            )}
+
+            <span className="tabular-nums opacity-40">
               {when(run.finishedAt, now)}
             </span>
+
+            {duration && (
+              <>
+                <span aria-hidden className="opacity-20">
+                  ·
+                </span>
+                <span className="tabular-nums opacity-40">{duration}</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -594,6 +648,11 @@ function finished(run: LoggedRun, now: number): ProcessDetail {
 
   return {
     title: run.film?.title ?? run.title,
+    // The head every dialog about a file wears, where the library still knows
+    // which file this was. A cleanup whose film has since been renamed away has
+    // no film to show, and falls back to the plain title — which for that row
+    // is the name of the file that went.
+    film: run.film,
     rows: [
       { label: "Job", value: KIND_LABEL[run.kind] ?? run.kind },
       { label: "Outcome", value: (OUTCOME[run.outcome] ?? OUTCOME.done).label },
@@ -601,6 +660,9 @@ function finished(run: LoggedRun, now: number): ProcessDetail {
       ...(duration ? [{ label: "Took", value: duration }] : []),
       { label: "File", value: run.title, mono: true },
     ],
+    // Only the log has these — see `JobRun.removedTracks`. A run from before
+    // they were kept simply draws no such block.
+    removedTracks: run.removedTracks,
     // What was run, above what it printed — the same order and the same block
     // the running dialog puts them in, because they are the same two facts.
     // Null on the older rows, which were written before the log kept it.
@@ -846,14 +908,15 @@ export function JobsView({
     <>
       {/* Every tab can be told which of its rows to act on, so every tab gets
           the Select button. What differs is what Start then means: a run of
-          conversions, a run of removals, or a delete — each list's own, said in
-          the band of figures where the count is.
+          conversions, a run of removals, or a delete — each list's own.
 
-          The cleanup tab had a Clean all beside it, and it has gone: on a tab
-          whose rows are half dead wreckage and half the originals that make a
-          conversion undoable, "all of it" is not a set anybody can picture
-          before pressing. Select and tick is one gesture more and shows you the
-          count and the size first. See `cleanup-list.tsx`.
+          Its button stands beside Select while the boxes are out, which is
+          where the band of figures used to hold it. Two controls, in the order
+          they are used: what you are choosing with, and what to do with what
+          you chose. It is also the slot Clean all stood in, and it has gone for
+          the reason given in `cleanup-list.tsx` — on a tab that is half
+          wreckage and half undos, "all of it" is not a set anybody can picture
+          before pressing.
 
           Nothing to select on an empty list, and nothing to select while every
           row on it is already running or queued. */}
@@ -861,39 +924,9 @@ export function JobsView({
         listing={listing}
         action={
           pending > 0 ? (
-            <SelectFilms
-              selecting={selecting}
-              onToggle={() => (selecting ? stopSelecting() : setChosen(EMPTY))}
-              what={PICKING[tab]}
-            />
-          ) : undefined
-        }
-      />
-
-      {/* Above the sections rather than inside one: these figures are the
-          tab's, and under the "Pending" heading they read as that section's
-          own — which is wrong on the cleanup tab in particular, where the total
-          counts rows the drive is currently hiding. Each returns nothing on an
-          empty tab, where the list's empty state is the whole answer.
-
-          `-mt-8` cancels the space the listing bar keeps under itself, which is
-          there so a *list* does not read as a fourth control. It tracks that
-          bar's own margin and has to move with it. This band is not
-          a list, and left in place that space put the figures further from the
-          bar than from the section under them — a band floating between two
-          things it belongs to neither of. Cancelled, its own `py-3` and the
-          page's gap fall the same either side of it.
-
-          Emptiness is asked here as well as inside each band, which would
-          return nothing either way: the wrapper is a flex child of the page,
-          and an empty one still takes a gap. */}
-      {pending > 0 && (
-        <div className="-mt-8">
-          {tab === "dovi" ? (
-            <DoviStats
-              tasks={selecting ? doviChosen : doviPending}
-              action={
-                selecting ? (
+            <div className="flex shrink-0 items-center gap-2">
+              {selecting &&
+                (tab === "dovi" ? (
                   <DoviRun
                     tasks={doviChosen}
                     all={doviPickable}
@@ -901,47 +934,59 @@ export function JobsView({
                     onChoose={setChosen}
                     onDone={stopSelecting}
                   />
-                ) : undefined
-              }
-            />
-          ) : tab === "audio" ? (
-            /* While the boxes are out these figures are the selection's, not
-               the tab's: the question the band answers becomes "what have I
-               chosen, and what is it worth", which is the question anybody
-               ticking rows is asking. The button that acts on them stands in
-               the band's own action slot — Start reading as the answer to the
-               figures beside it, rather than as a bar of its own repeating
-               them in a smaller voice. */
-            <AudioStats
-              tasks={selecting ? audioChosen : audioPending}
-              action={
-                selecting ? (
+                ) : tab === "audio" ? (
                   <AudioRun
                     tasks={audioChosen}
                     all={audioPickable}
                     onChoose={setChosen}
                     onDone={stopSelecting}
                   />
-                ) : undefined
-              }
-            />
-          ) : (
-            <CleanupStats
-              files={selecting ? cleanupChosen : cleanup}
-              action={
-                selecting ? (
+                ) : (
                   <CleanupRun
                     files={cleanupChosen}
                     all={cleanupPickable}
                     onChoose={setChosen}
                     onDone={stopSelecting}
                   />
-                ) : undefined
-              }
-            />
-          )}
-        </div>
-      )}
+                ))}
+
+              {/* The one bulk press that is not about a selection, and the
+                  only tab that has one: a leftover is wreckage nothing points
+                  at, so "every one of them" is a set you can picture. Put down
+                  while the boxes are out, where the ticks are the answer. */}
+              {!selecting && tab === "cleanup" && (
+                <SweepLeftovers files={cleanup} />
+              )}
+
+              <SelectFilms
+                selecting={selecting}
+                onToggle={() =>
+                  selecting ? stopSelecting() : setChosen(EMPTY)
+                }
+                what={PICKING[tab]}
+              />
+            </div>
+          ) : undefined
+        }
+      />
+
+      {/*
+       * There was a band of figures here, one per tab: how many files, what
+       * they came to, how much a run of them would free.
+       *
+       * It has gone. Every number in it was the sum of a column already on the
+       * page — the rows carry their own sizes and the section headings carry
+       * their own counts — and it sat between the controls and the list saying
+       * them again in a larger face. What it cost was the top of the page: on
+       * the tab you opened to work down a list, the list started below a band
+       * about the list.
+       *
+       * The run buttons it was holding have gone up into the bar, which is
+       * where the page's controls live and where Clean all stood before them.
+       * A selection's own figures are not lost either — each Run dialog opens
+       * with the count and the total it is about to act on, which is the moment
+       * those numbers are actually load-bearing.
+       */}
 
       {/* No page title and no count above the sections, the way the downloads
           log has neither: the tabs already say which list this is, and the

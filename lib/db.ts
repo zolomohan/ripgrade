@@ -364,7 +364,10 @@ CREATE TABLE IF NOT EXISTS job_runs (
   command     TEXT,
   -- The tail of what the tool printed, as JSON. Kept for the runs where it is
   -- the only account of what went wrong.
-  output      TEXT
+  output      TEXT,
+  -- Which tracks a removal took, as JSON — the one thing a finished job leaves
+  -- no other trace of. Null on every other kind of run.
+  removed_tracks TEXT
 );
 CREATE INDEX IF NOT EXISTS job_runs_finished ON job_runs (finished_at DESC);
 `;
@@ -424,15 +427,20 @@ if (jobRunColumns.length > 0 && !jobRunColumns.includes("title")) {
  * let a hundred boots' worth of "12 upgrades · 418 checked" go on evicting the
  * conversions the page exists to show.
  *
- * The command a run was is added in place rather than waiting for a fresh
- * table, the same way the artwork columns below are: the rows already there are
- * worth more than the column is, and they simply read null.
+ * The command a run was, and the tracks a removal took, are added in place
+ * rather than waiting for a fresh table, the same way the artwork columns below
+ * are: the rows already there are worth more than the columns are, and they
+ * simply read null.
  */
 if (jobRunColumns.includes("title")) {
   db.exec("DELETE FROM job_runs WHERE kind = 'sweep'");
 
   if (!jobRunColumns.includes("command")) {
     db.exec("ALTER TABLE job_runs ADD COLUMN command TEXT");
+  }
+
+  if (!jobRunColumns.includes("removed_tracks")) {
+    db.exec("ALTER TABLE job_runs ADD COLUMN removed_tracks TEXT");
   }
 }
 

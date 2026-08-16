@@ -25,7 +25,7 @@ export default async function CollectionsPage() {
     // does it: `EmptyState` centres itself in whatever height is spare, and a
     // main sized to its contents has none — so "no collections yet" sat tucked
     // under the tabs rather than in the middle of the page it is speaking for.
-    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-6 py-8 sm:px-8">
+    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-8 sm:px-8">
       <CollectionsView sets={sets} custom={getCustomSets(movies)} />
     </main>
   );

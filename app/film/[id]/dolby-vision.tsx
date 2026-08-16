@@ -82,16 +82,24 @@ function verdictFor(
   scan: DoviScan | undefined,
   el: ElVerdict | undefined,
   dvProfile?: number,
-): Verdict {
-  // Profile 8 is what a conversion produces, so on one of those the question
-  // this section exists to answer is already answered.
-  if (dvProfile !== 7) {
-    return {
-      tone: "neutral",
-      headline: "Nothing to convert",
-      body: "Only Profile 7 carries an enhancement layer to discard.",
-    };
-  }
+): Verdict | undefined {
+  /*
+   * Nothing at all on anything that is not Profile 7.
+   *
+   * It used to say "Nothing to convert — only Profile 7 carries an enhancement
+   * layer to discard", which is true and is a fact about Dolby Vision rather
+   * than about this film. Profile 8 is what a conversion produces and what most
+   * discs come as: on those the sentence sat at the top of the card on every
+   * visit, in the place the answer goes, answering a question the file cannot
+   * raise. The summary on the shut row already says "Profile 8", the metadata
+   * below says it again, and neither needs a verdict to agree with them.
+   *
+   * The card itself stays. A Profile 8 file can still be read end to end, and
+   * one converted from a Profile 7 has an original beside it and a way back —
+   * both of which are states this card reports, and neither of which comes
+   * through here.
+   */
+  if (dvProfile !== 7) return undefined;
 
   if (!scan || !el) {
     return {
@@ -975,7 +983,7 @@ export function DolbyVision({
    * the original is still recoverable, the state of the file *is* the answer
    * to "is this safe".
    */
-  const banner: Verdict = rebuilding
+  const banner: Verdict | undefined = rebuilding
     ? {
         tone: "neutral",
         headline: "Rebuilding Profile 7…",
@@ -1108,6 +1116,30 @@ export function DolbyVision({
    * would cost, and a stream with no measured peak has nothing to draw.
    */
   const hasMeter = Boolean(el && el.kind !== "mel" && el.elPeak !== undefined);
+
+  /**
+   * Whether this film has a console at all.
+   *
+   * The card is the conversion question and everything that follows from it, so
+   * a file that cannot be asked it does not get one. Profile 7 always can. Off
+   * it, the only things worth a card are the states a past conversion left
+   * behind: an original beside the film, or the enhancement layer kept when the
+   * original went. Both are offers — restore, delete, rebuild — and an offer is
+   * what a card is for.
+   *
+   * What went with it on a plain Profile 8 is a verdict reading "Nothing to
+   * convert" and a button offering to read every frame of a file whose reading
+   * changes nothing: the pass exists to settle whether discarding an
+   * enhancement layer would clip, and this file has no enhancement layer to
+   * discard. The stream's own metadata is below either way, which is what
+   * somebody opening a panel called Dolby Vision on a Profile 8 file came for.
+   *
+   * A job running on this file and a failure it left behind both bring the card
+   * back regardless. Neither should be invisible, and a running one has to stay
+   * reachable to be stopped.
+   */
+  const hasConsole =
+    dvProfile === 7 || hasBackup || canRebuild || busy || !!error;
 
   /**
    * Whether it is showing, which is not the same question — the band stays in
@@ -1338,7 +1370,7 @@ export function DolbyVision({
               .join(" · ")
           : "Not read yet"
       }
-      open={verdict.tone === "danger"}
+      open={verdict?.tone === "danger"}
     >
       <div className="flex flex-col gap-10">
         {/* One console, in bands parted by the hairline the rest of the app
@@ -1349,15 +1381,16 @@ export function DolbyVision({
 
             Rounder than a card: at this size the corner is what tells you the
             bands inside are one object rather than a stack of them. */}
-        <div className="overflow-hidden rounded-3xl border border-line">
-          {/* The verdict and the button that acts on it, on one line.
+        {hasConsole && (
+          <div className="overflow-hidden rounded-3xl border border-line">
+            {/* The verdict and the button that acts on it, on one line.
 
               More room above the sentence than under it: it is the first thing
               in the card and the only band with an edge rather than a hairline
               over it, and a rounded corner needs answering with space or the
               text reads as having been pushed up against it. */}
-          <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 pt-6 pb-5">
-            {/* The reasoning hangs off the sentence as a tooltip: it is worth
+            <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 pt-6 pb-5">
+              {/* The reasoning hangs off the sentence as a tooltip: it is worth
                 keeping and not worth reading every time the page opens.
 
                 `flex-1` so the column reaches the far edge of the band: the
@@ -1366,31 +1399,39 @@ export function DolbyVision({
                 its content width the block stopped wherever the longest line
                 of prose stopped, which put the figures in a different place on
                 every film. */}
-            <div
-              className="flex min-w-0 flex-1 flex-col gap-0.5"
-              title={banner.detail}
-            >
-              <p className="text-sm font-medium">{banner.headline}</p>
-              {banner.body && (
-                <p className="text-sm opacity-60">{banner.body}</p>
-              )}
-            </div>
+              {/* Absent on a file with no verdict to give — see `verdictFor`.
+                The column still holds the row open from the left, so the
+                buttons stay where they are on every other film rather than
+                sliding to the leading edge on this one. */}
+              <div
+                className="flex min-w-0 flex-1 flex-col gap-0.5"
+                title={banner?.detail}
+              >
+                {banner && (
+                  <>
+                    <p className="text-sm font-medium">{banner.headline}</p>
+                    {banner.body && (
+                      <p className="text-sm opacity-60">{banner.body}</p>
+                    )}
+                  </>
+                )}
+              </div>
 
-            {/* Beside the verdict while there is one button and a short
+              {/* Beside the verdict while there is one button and a short
                 sentence to sit next to. A film that can be put back has
                 neither — two buttons, and a line carrying the full filename of
                 whatever it would be put back from — so there it takes a band
                 of its own below. */}
-            {!busy && !hasBackup && !canRebuild && (
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {/* Leftmost, so the row reads as the alternative and then the
+              {!busy && !hasBackup && !canRebuild && (
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  {/* Leftmost, so the row reads as the alternative and then the
                     thing itself, and the primary button still ends the line. */}
-                {manual}
-                {actions}
-              </div>
-            )}
+                  {manual}
+                  {actions}
+                </div>
+              )}
 
-            {/* Where the card's buttons are when it has any: stopping is the
+              {/* Where the card's buttons are when it has any: stopping is the
                 one thing on offer while a pass is running, so it stands in the
                 same place the offer it interrupted stood in — and the readings
                 lead into it from the left, exactly as the manual alternative
@@ -1402,33 +1443,33 @@ export function DolbyVision({
                 the step that is in. The step name used to head the block as a
                 line of its own, which set the one changing word of it a column
                 away from the numbers it changes with. */}
-            {busy && (
-              <div className="flex shrink-0 items-center gap-3">
-                <p className="text-xs tabular-nums opacity-45">
-                  {converting
-                    ? [
-                        convert?.percent !== undefined &&
-                          `${Math.round(convert.percent)}%`,
-                        convert?.readout,
-                        convert?.label ??
-                          (rebuilding ? "Rebuilding Profile 7" : undefined),
-                        `step ${convert?.step ?? 1} of ${convert?.steps ?? 3}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")
-                    : `${Math.round(job?.percent ?? 0)}% · ${count(job?.frames ?? 0)} frames`}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingStop(true)}
-                  className={BUTTON.secondary}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
+              {busy && (
+                <div className="flex shrink-0 items-center gap-3">
+                  <p className="text-xs tabular-nums opacity-45">
+                    {converting
+                      ? [
+                          convert?.percent !== undefined &&
+                            `${Math.round(convert.percent)}%`,
+                          convert?.readout,
+                          convert?.label ??
+                            (rebuilding ? "Rebuilding Profile 7" : undefined),
+                          `step ${convert?.step ?? 1} of ${convert?.steps ?? 3}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")
+                      : `${Math.round(job?.percent ?? 0)}% · ${count(job?.frames ?? 0)} frames`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingStop(true)}
+                    className={BUTTON.secondary}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
 
-            {/* One bar for both jobs, in the band the sentence it is measuring
+              {/* One bar for both jobs, in the band the sentence it is measuring
                 is in. Which of the two is running is a detail of how the work
                 is done; what is being waited for is the same thing throughout,
                 and it was never a separate section — parted off behind a
@@ -1437,115 +1478,131 @@ export function DolbyVision({
 
                 `w-full` is what puts it on its own line of the wrapping row,
                 under both the headline and the readings. */}
-            {busy && (
-              <div className="bar-track bar-track-thin w-full">
-                <div
-                  className="bar-fill transition-[width] duration-500"
-                  style={{
-                    // Bytes written when they can be counted; otherwise the
-                    // step is the only thing there is to show.
-                    width: `${
-                      converting
-                        ? (convert?.percent ??
-                          ((convert?.step ?? 1) / (convert?.steps ?? 3)) * 100)
-                        : (job?.percent ?? 0)
-                    }%`,
-                  }}
-                />
-              </div>
-            )}
-          </div>
+              {busy && (
+                <div className="bar-track bar-track-thin w-full">
+                  <div
+                    className="bar-fill transition-[width] duration-500"
+                    style={{
+                      // Bytes written when they can be counted; otherwise the
+                      // step is the only thing there is to show.
+                      width: `${
+                        converting
+                          ? (convert?.percent ??
+                            ((convert?.step ?? 1) / (convert?.steps ?? 3)) *
+                              100)
+                          : (job?.percent ?? 0)
+                      }%`,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
 
-          {!busy && (hasBackup || canRebuild) && (
-            /* The two ends of the band, not a huddle at the right: what the
+            {!busy && (hasBackup || canRebuild) && (
+              /* The two ends of the band, not a huddle at the right: what the
                card will do sits where the buttons sit everywhere else, and the
                way out of its offer is ranged against the other edge — it is
                not one more button in the row, and packed in beside them it
                read as the first of four. `ml-auto` rather than
                `justify-between`, so the buttons stay right when there is no
                link beside them to be spaced against. */
-            <div className="card-band flex flex-wrap items-center gap-3 px-4 py-5">
-              {manual}
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                {actions}
+              <div className="card-band flex flex-wrap items-center gap-3 px-4 py-5">
+                {manual}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  {actions}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* The evidence, directly beneath the claim: only a FEL needs it — a
+            {/* The evidence, directly beneath the claim: only a FEL needs it — a
               MEL is safe whatever the brightness figures say.
 
               The band is the thing that opens and shuts, so it is the band
               that carries `card-band`: hung on the inner element instead, the
               wrapper would sit between two bands and take the hairline that
               parts them with it. */}
-          {hasMeter && el && (
-            <div
-              className={`card-band band-reveal ${showMeter ? "" : "is-shut"}`}
-              // Shut, it is not absent — it is a section of the card that is
-              // not being claimed at the moment, and reading a stale peak out
-              // of a closed band is worse than not reaching it at all.
-              aria-hidden={!showMeter}
-            >
-              {/* Three deep, and it has to be: the middle element is the one
+            {hasMeter && el && (
+              <div
+                className={`card-band band-reveal ${showMeter ? "" : "is-shut"}`}
+                // Shut, it is not absent — it is a section of the card that is
+                // not being claimed at the moment, and reading a stale peak out
+                // of a closed band is worse than not reaching it at all.
+                aria-hidden={!showMeter}
+              >
+                {/* Three deep, and it has to be: the middle element is the one
                   clipped to the closing row, and padding on a clipped element
                   survives the close — `border-box` takes the height to zero
                   and leaves the two ends of the padding standing, which is a
                   band that shuts to forty pixels of nothing. So the padding
                   goes inside it, where there is nothing left to hold open. */}
-              <div>
-                <div className="px-4 py-5">
-                  <BrightnessMeter el={el} />
+                <div>
+                  <div className="px-4 py-5">
+                    <BrightnessMeter el={el} />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Its own band rather than a line under the verdict: a film whose
+            {/* Its own band rather than a line under the verdict: a film whose
               RPU stops partway is a different problem from the one the verdict
               is answering. */}
-          {cover && !cover.ok && (
-            <div className="card-band px-4 py-5">
-              <p className="text-sm text-amber-600 dark:text-amber-400">
-                {cover.text}
-              </p>
-            </div>
-          )}
+            {cover && !cover.ok && (
+              <div className="card-band px-4 py-5">
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  {cover.text}
+                </p>
+              </div>
+            )}
 
-          {/* A Profile 7 file with an archive beside it: the film was
+            {/* A Profile 7 file with an archive beside it: the film was
               converted, restored from its original, and the layer that was
               kept for the conversion outlived it. Worth a sentence rather than
               silence — it is several gigabytes of something this file already
               holds — and worth keeping, because converting again reuses it
               instead of spending another pass extracting it. */}
-          {!busy && archive && !canRebuild && !hasBackup && (
-            <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 pb-5 pt-3">
-              <p className="max-w-prose text-sm opacity-60">
-                An earlier conversion&rsquo;s enhancement layer is still kept as{" "}
-                <code className="font-mono">{elArchiveNameOf(fileName)}</code>,{" "}
-                {elArchiveBytes !== undefined && size(elArchiveBytes)}. This
-                file carries that layer itself — the archive only saves the
-                extraction if you convert again.
-              </p>
-              <button
-                type="button"
-                onClick={() => setConfirmingDiscardEl(true)}
-                disabled={!present}
-                className={BUTTON.text}
-              >
-                Discard layer
-              </button>
-            </div>
-          )}
+            {!busy && archive && !canRebuild && !hasBackup && (
+              <div className="card-band flex flex-wrap items-center justify-between gap-3 px-4 pb-5 pt-3">
+                <p className="max-w-prose text-sm opacity-60">
+                  An earlier conversion&rsquo;s enhancement layer is still kept
+                  as{" "}
+                  <code className="font-mono">{elArchiveNameOf(fileName)}</code>
+                  , {elArchiveBytes !== undefined && size(elArchiveBytes)}. This
+                  file carries that layer itself — the archive only saves the
+                  extraction if you convert again.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDiscardEl(true)}
+                  disabled={!present}
+                  className={BUTTON.text}
+                >
+                  Discard layer
+                </button>
+              </div>
+            )}
 
-          {error && (
-            <div className="card-band px-4 py-5">
-              <p className="font-mono text-sm text-red-600 dark:text-red-400">
-                {error}
-              </p>
-            </div>
-          )}
-        </div>
+            {error && (
+              <div className="card-band px-4 py-5">
+                <p className="font-mono text-sm text-red-600 dark:text-red-400">
+                  {error}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* The panel cannot open on nothing. A Profile 8 file with no console
+            has its metadata below and that is the whole of it — but a file
+            nothing has read yet has no metadata either, and a row that opens to
+            an empty box is worse than one that says why it is empty. One line,
+            no card and no button: reading this stream would tell you what it
+            holds and would not change what can be done with it. */}
+        {!hasConsole && !scan && (
+          <p className="text-sm opacity-55">
+            This stream has not been read. Nothing here depends on it — only
+            Profile 7 carries an enhancement layer worth deciding about.
+          </p>
+        )}
 
         {scan && <Metadata scan={scan} hdr10={hdr10} />}
 

@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { RemovedTrack } from "./audio-plan";
 import { db } from "./db";
 
 /**
@@ -81,6 +82,17 @@ export type JobRun = {
   command?: string;
   /** The tail of what the tool printed, for the runs that had one. */
   output?: string[];
+  /**
+   * Which tracks a removal actually took, named.
+   *
+   * The one fact in this table that cannot be recovered from anywhere else. A
+   * conversion can be read off the file it produced and a cleanup off the
+   * space that came back, but a removed track leaves nothing behind — the
+   * counts in `detail` say five went, and this is the only record of which
+   * five. Null on every other kind of run, and on the removals logged before
+   * it was kept.
+   */
+  removedTracks?: RemovedTrack[];
 };
 
 /**
@@ -101,6 +113,7 @@ type RunRow = {
   detail: string | null;
   command: string | null;
   output: string | null;
+  removed_tracks: string | null;
 };
 
 const runOf = (row: RunRow): JobRun => ({
@@ -114,7 +127,19 @@ const runOf = (row: RunRow): JobRun => ({
   detail: row.detail ?? undefined,
   command: row.command ?? undefined,
   output: parseOutput(row.output),
+  removedTracks: parseTracks(row.removed_tracks),
 });
+
+/** As tolerant as `parseOutput`, and for the same reason. */
+function parseTracks(raw: string | null): RemovedTrack[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as RemovedTrack[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function parseOutput(raw: string | null): string[] | undefined {
   if (!raw) return undefined;
@@ -140,8 +165,8 @@ export function recordRun(run: Omit<JobRun, "id">): void {
   try {
     db.prepare(
       `INSERT INTO job_runs
-         (kind, title, path, outcome, started_at, finished_at, detail, command, output)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (kind, title, path, outcome, started_at, finished_at, detail, command, output, removed_tracks)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       run.kind,
       run.title,
@@ -152,6 +177,7 @@ export function recordRun(run: Omit<JobRun, "id">): void {
       run.detail ?? null,
       run.command ?? null,
       run.output?.length ? JSON.stringify(run.output) : null,
+      run.removedTracks?.length ? JSON.stringify(run.removedTracks) : null,
     );
 
     db.prepare(
@@ -218,7 +244,8 @@ export function recordDiscardedBackup(discard: {
 export function getJobRuns(limit = KEEP): JobRun[] {
   const rows = db
     .prepare(
-      `SELECT id, kind, title, path, outcome, started_at, finished_at, detail, command, output
+      `SELECT id, kind, title, path, outcome, started_at, finished_at, detail,
+              command, output, removed_tracks
          FROM job_runs
         WHERE kind <> 'sweep'
         ORDER BY finished_at DESC, id DESC

@@ -637,7 +637,11 @@ export function LibraryView({
           right. The bar is only as wide as the controls it holds — with the
           field gone there is nothing to stretch, and a bar drawn the width of
           the page with three buttons huddled at one end is mostly frame. */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* `mb-2` on top of the column's own gap-6: the shelf's head stands 2rem
+          above the shelf, which is what every page's head stands above its
+          content. The column stays at 24 because it is also what parts one
+          bucket of the shelf from the next, and those are not heads. */}
+      <div className="mb-2 flex flex-wrap items-center gap-3">
         {tabs}
 
         <div className="ml-auto flex flex-wrap items-center gap-3">

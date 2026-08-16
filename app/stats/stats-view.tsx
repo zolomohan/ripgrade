@@ -549,7 +549,9 @@ export function StatsView({
   );
 
   return (
-    <div className="flex flex-col gap-10">
+    // The switch stands 2rem above what it switches, as every page's head
+    // does. Its sections keep their own, much larger, rhythm below.
+    <div className="flex flex-col gap-8">
       {hasShows && (
         <Switch
           value={tab}

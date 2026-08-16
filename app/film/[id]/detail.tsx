@@ -13,6 +13,7 @@ import {
 import { getAudioPreference } from "@/lib/audio-prefs";
 import { getSubtitlePreference } from "@/lib/subtitle-prefs";
 import { audioBackupBytes } from "@/lib/audio-strip";
+import { audioTaskFor } from "@/lib/queue-tasks";
 import {
   backupBytes,
   elArchiveBytes,
@@ -999,16 +1000,17 @@ export async function DetailPage({
           <Spec movie={movie} />
         </Panel>
 
-        {/* Every removable track, and what removing the unwanted ones would
-            free. Audio and subtitles are one console because they are one
+        {/* Every track the file holds, and one button that opens the picker
+            over them. Audio and subtitles are one listing because they are one
             remux — see `TrackTables`, which explains why that is forced rather
             than a layout preference. */}
         <TrackTables
           moviePath={movie.path}
           fileName={movie.fileName}
+          // The audio row's own summary. It counted the subtitles too until
+          // they became a row of their own, which counts them itself.
           summary={[
-            `${movie.audio.length} audio`,
-            subtitles.length > 0 ? `${subtitles.length} subtitle` : null,
+            `${movie.audio.length} track${movie.audio.length === 1 ? "" : "s"}`,
             bestTrack?.label,
             bestTrack?.channels ? `${bestTrack.channels}ch` : null,
           ]
@@ -1016,7 +1018,9 @@ export async function DetailPage({
             .join(" · ")}
           tracks={movie.audio}
           subtitles={subtitles}
-          sizeBytes={movie.sizeBytes}
+          // The film as the picker takes it — the same object, and so the same
+          // proposal, the jobs page hands the same dialog.
+          task={audioTaskFor(movie)}
           backupBytes={audioBackupBytes(movie.path)}
           present={filePresent(movie.path)}
           // What you said you keep, and what this particular film was made in

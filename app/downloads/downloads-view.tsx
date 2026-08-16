@@ -16,8 +16,9 @@ import { ConfirmModal } from "@/app/confirm";
 import { BUTTON, Fact } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
 import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
+import { TaskHead } from "@/app/jobs/task-head";
 import { ListingBar, useListing, type Choice } from "@/app/listing";
-import { CloseButton, Modal, useLingering } from "@/app/modal";
+import { Modal, useLingering } from "@/app/modal";
 import {
   PosterTile,
   TILE_GRID_RULED,
@@ -1164,20 +1165,6 @@ function DownloadDetails({
   // of its own to open, and `filmPath` is the read that says which this is.
   const href = entry.filmPath ? `/film/${movieId(entry.filmPath)}` : undefined;
 
-  const poster = (
-    <span className="block h-24 w-16 shrink-0 overflow-hidden rounded-control bg-surface-strong ring-1 ring-line">
-      {(entry.poster || entry.posterPath) && (
-        <Art
-          src={entry.poster}
-          remote={entry.posterPath}
-          version={entry.artAt}
-          size="w92"
-          className="h-full w-full object-cover"
-        />
-      )}
-    </span>
-  );
-
   return (
     <Modal
       open={open}
@@ -1187,47 +1174,27 @@ function DownloadDetails({
       panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
     >
       <>
-        {/* Named for what it is rather than for the film, which is the rule the
-            conversion and release dialogs settled: every one of these is the
-            same record read about a different fetch, so the heading says which
-            record and the film sits below with its poster. */}
-        <header className="flex items-baseline justify-between gap-3">
-          <h2 className="min-w-0 truncate text-base font-semibold">
-            This download
-          </h2>
-          <CloseButton onClick={onClose} />
-        </header>
+        {/* The head the jobs page's dialogs wear, because this is the same kind
+            of thing: one record, about one film, opened off a tile of it. It
+            was a heading reading "This download" over a separate block holding
+            a poster three times this size — the shape every one of these
+            dialogs used to have, and the one they have all now left.
 
-        <div aria-hidden className="rule-head mb-1" />
-
-        {/* Which film, and the way to it. A poster and a name are the handle
-            the film already has, so there is no button for it — the same
-            argument the release dialog makes about the row it dropped. */}
-        <div className="flex items-center gap-4">
-          {href ? (
-            <Link href={href} className="glow shrink-0 rounded-control">
-              {poster}
-            </Link>
-          ) : (
-            poster
-          )}
-
-          <div className="min-w-0">
-            {href ? (
-              <Link href={href} className="glow rounded-control">
-                <p className="truncate text-base font-medium">{film}</p>
-              </Link>
-            ) : (
-              <p className="truncate text-base font-medium">{film}</p>
-            )}
-            {/* What the library can say about it, which for a want is that it
-                cannot say anything: the film is not on the drive, and the row
-                is the only place this fetch exists. */}
-            <p className="mt-0.5 text-xs opacity-45">
-              {entry.filmPath ? "In the library" : "Not in the library"}
-            </p>
-          </div>
-        </div>
+            The muted line is not a year here. What the log can say about a
+            fetch is whether the film behind it is on the drive, and that is
+            what decides the rest of the dialog: a want has no page to open. */}
+        <TaskHead
+          film={{
+            title: film,
+            path: entry.filmPath ?? entry.hash,
+            poster: entry.poster,
+            posterRemote: entry.posterPath,
+            artAt: entry.artAt,
+          }}
+          line={entry.filmPath ? "In the library" : "Not in the library"}
+          href={href}
+          onClose={onClose}
+        />
 
         {/* Everything the log holds, in the one ruled block this app sets a
             table of facts in. `Fact` draws nothing for a value it does not

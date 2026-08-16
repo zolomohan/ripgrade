@@ -1,8 +1,22 @@
 "use client";
 
 import { Art } from "@/app/art";
-import type { TaskFilm } from "@/lib/queue-tasks";
 import { posterName } from "@/lib/routes";
+
+/**
+ * The least a thing has to be to have its poster drawn.
+ *
+ * A `TaskFilm` satisfies it; so does a row of the download log, which is not a
+ * film in the library and may never become one. The fields actually read,
+ * rather than a union of every caller's type.
+ */
+export type PosterFilm = {
+  /** What a transition name is built from, and so what one poster is to another. */
+  path: string;
+  poster?: string;
+  posterRemote?: string;
+  artAt?: number;
+};
 
 /**
  * The film's poster, drawn the way every other list in the app draws one — the
@@ -26,7 +40,7 @@ export function Poster({
   transition = true,
   box = "h-24 w-16",
 }: {
-  film?: TaskFilm;
+  film?: PosterFilm;
   /**
    * Whether this poster is the one a click is aimed at.
    *

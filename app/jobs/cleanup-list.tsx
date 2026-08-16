@@ -14,7 +14,7 @@ import { SCORE_PLATE_ROOMY } from "@/app/score-circle";
 import { stagger } from "@/app/stagger";
 import { Tick, TickColumn } from "@/app/tick";
 import { TILE_MARK } from "@/app/tile-button";
-import { BUTTON } from "@/app/controls";
+import { BUTTON, CONTROL_H } from "@/app/controls";
 import { ConfirmModal } from "@/app/confirm";
 import type { CleanupFile, CleanupKind } from "@/lib/queue-tasks";
 import { movieId } from "@/lib/routes";
@@ -25,9 +25,7 @@ import {
   pickGroup,
   type GroupOption,
 } from "@/app/grouping";
-import { Stat } from "@/app/charts";
 import { Poster } from "./poster";
-import { Stats } from "./stats";
 import { byTitle, pickSort, type SortOption } from "@/app/sorts";
 import { size } from "@/app/format";
 
@@ -314,79 +312,43 @@ export function CleanupRun({
 }
 
 /**
- * What the cleanup tab adds up to, drawn above the pending list rather than
- * inside it.
+ * Sweep up the wreckage — every leftover on the tab, in one press.
  *
- * Split out of the list for where it has to sit: the figures describe the whole
- * tab, and reading them under the heading of one of its sections said they
- * belonged to that section. The leftover sweep travels with them, because that
- * button is a caption on the Leftovers figure more than it is a control of the
- * list — and because the originals are now the header's to offer.
+ * It lived in a band of figures above the list, as a caption on the Leftovers
+ * count more than as a control; the band has gone and this has not, because it
+ * is the one thing on this tab that can honestly be done to a whole set at
+ * once. A leftover is half-built output of a job that was cancelled or killed:
+ * nothing points at it, nothing can be recovered from it, and it is the exact
+ * opposite of the originals it shares the list with — which is why Clean all,
+ * which took both, is not here.
+ *
+ * Only where there is more than one. A single leftover is a row with its own
+ * Delete on it, and a bulk control for it would be the same press wearing a
+ * longer label.
  */
-export function CleanupStats({
-  files,
-  action,
-}: {
-  files: CleanupFile[];
-  /**
-   * What to do with them, while a selection is being made — see `CleanupRun`.
-   *
-   * It replaces the leftover sweep rather than standing beside it: the sweep is
-   * one fixed set of rows chosen for you, and a button offering that next to a
-   * button acting on what you have just ticked is two answers to one question.
-   */
-  action?: React.ReactNode;
-}) {
+export function SweepLeftovers({ files }: { files: CleanupFile[] }) {
   const [asking, setAsking] = useState(false);
   const shown = useClosing(asking);
   const { busy, error, run } = useDiscard();
 
   const leftovers = files.filter((file) => file.kind === "leftover");
   // A remembered file is on a drive that is not plugged in: it is real, it is
-  // counted in the total, and it cannot be deleted from here.
+  // counted on the row, and it cannot be deleted from here.
   const sweepable = leftovers.filter((file) => !file.offline);
-  const total = files.reduce((sum, file) => sum + file.bytes, 0);
   const sweptBytes = sweepable.reduce((sum, file) => sum + file.bytes, 0);
 
-  // Zero chosen is a reading rather than an absence, the way it is on the other
-  // two bands: it is what pressing Delete right now would come to.
-  if (files.length === 0 && !action) return null;
+  if (sweepable.length < 2) return null;
 
   return (
     <>
-      <Stats
-        action={
-          action ??
-          // Only the wreckage goes in one click from here. An original is an
-          // undo somebody is still holding, and the header's button is the one
-          // that asks about those.
-          (sweepable.length > 1 ? (
-            <button
-              type="button"
-              onClick={() => setAsking(true)}
-              disabled={busy}
-              className={BUTTON.danger}
-            >
-              Delete {sweepable.length} leftovers
-            </button>
-          ) : undefined)
-        }
+      <button
+        type="button"
+        onClick={() => setAsking(true)}
+        disabled={busy}
+        className={`${BUTTON.danger} ${CONTROL_H}`}
       >
-        <Stat label="To reclaim" gain value={size(total)} />
-        <Stat label="Files" value={files.length.toLocaleString("en-GB")} />
-        <Stat
-          label="Originals"
-          value={(files.length - leftovers.length).toLocaleString("en-GB")}
-          title="Kept beside a film so its rewrite can be undone"
-        />
-        {leftovers.length > 0 && (
-          <Stat
-            label="Leftovers"
-            value={leftovers.length.toLocaleString("en-GB")}
-            title="Half-built output of jobs that were cancelled or killed"
-          />
-        )}
-      </Stats>
+        Delete {sweepable.length} leftovers
+      </button>
 
       {shown && (
         <ConfirmModal

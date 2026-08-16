@@ -5,11 +5,11 @@ import { useMemo, useRef, useState } from "react";
 import { beginStripAudio } from "@/app/actions";
 import { BUTTON } from "@/app/controls";
 import { useJobs } from "@/app/jobs-provider";
-import { CloseButton, Modal } from "@/app/modal";
-import { Poster } from "@/app/jobs/poster";
+import { Modal } from "@/app/modal";
 import { Spinner } from "@/app/spinner";
 import { stagger } from "@/app/stagger";
 import { Tick } from "@/app/tick";
+import { TaskHead } from "./task-head";
 import { keptFirst, savingsOf, tickRange } from "@/lib/audio-plan";
 import { languageName } from "@/lib/derive";
 import type { AudioTrack, SubtitleTrack } from "@/lib/derive";
@@ -408,51 +408,34 @@ export function TrackPicker({
       // confirmation every one of those wraps, and a table that wraps in four
       // places at once stops reading as rows.
       //
-      // Capped in height and scrolled inside rather than out: a rip with
-      // eighteen audio tracks is exactly the file worth opening this on, and a
-      // dialog taller than the window puts its own buttons off the bottom of it.
-      panelClassName="flex max-h-[85dvh] w-full max-w-4xl flex-col gap-3 glass-panel rounded-card border border-line p-6 shadow-2xl"
+      // Scrolled inside rather than out: a rip with eighteen audio tracks is
+      // exactly the file worth opening this on, and a dialog taller than the
+      // window puts its own buttons off the bottom of it.
+      //
+      // One height, not a ceiling. This is three screens behind one frame, and
+      // each holds a different amount — four audio tracks, eleven subtitles,
+      // then a review that is always the longest of them. Sized to its content
+      // the panel grew and shrank at every press, which moves the buttons you
+      // are pressing out from under the cursor and re-centres the whole dialog
+      // on the screen while you read it. Held still, the steps change inside a
+      // frame that does not, which is what a stepper is supposed to look like:
+      // the empty space on a short screen costs nothing, and the scroll box
+      // takes up the slack.
+      //
+      // Capped as well as fixed, so the frame is the dialog's own size rather
+      // than the monitor's: 90dvh on a laptop is about this, and on a large
+      // display it is a column of empty panel with a four-row table at the top.
+      // The cap is set by the screen that needs the most — the review, whose
+      // two columns of cards are what this has to hold without scrolling on an
+      // ordinary file.
+      panelClassName="flex h-[min(90dvh,54rem)] w-full max-w-4xl flex-col gap-3 glass-panel rounded-card border border-line p-6 shadow-2xl"
     >
-      <div className="mb-3 flex items-start justify-between gap-4">
-        {/* The film, as the picture the rest of the app knows it by.
-
-            This dialog is opened from a row that has one, and without it the
-            header was a title and a filename — which is what every other
-            dialog in the app looks like, and this is the one that rewrites a
-            specific file. The poster is how you check you opened the row you
-            meant to before ticking anything.
-
-            Small, and the row's own component at a smaller box rather than a
-            second way of drawing a poster: the fallback block matters here too,
-            since an original whose film has been renamed still opens this.
-
-            No transition name — the row that opened this is still mounted
-            behind the dialog, and two posters of one film claiming one name
-            abort the transition for both. */}
-        <div className="flex min-w-0 items-center gap-3">
-          <Poster film={task} transition={false} box="h-12 w-8" />
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold">{task.title}</h2>
-            {/* The year, where the filename used to be.
-
-                The filename was the longest thing in the header and the least
-                worth reading: a hundred monospace characters of release tags,
-                truncated in the middle of them, under a poster and a title that
-                had already said which film this is. The year is what a title
-                needs to be unambiguous and nothing more.
-
-                An episode has no year of its own — it takes the show's title
-                above, so the fact that tells one file from another here is
-                which episode it is, and that is what stands in its place. */}
-            {(task.year || task.episode) && (
-              <p className="mt-0.5 truncate text-xs opacity-55">
-                {task.year ?? task.episode}
-              </p>
-            )}
-          </div>
-        </div>
-        <CloseButton onClick={onClose} disabled={starting} />
-      </div>
+      {/* Which file this is about, in the shape every dialog on this page uses
+          — see app/jobs/task-head.tsx, which is where the poster, the title and
+          the year that used to be written out here now live. No link on it:
+          this dialog is a five-column table and three screens of choices, and a
+          header that navigates away from it mid-tick is a trapdoor. */}
+      <TaskHead film={task} onClose={onClose} closeDisabled={starting} />
 
       {/* Where you are, and how much of this there is left.
 
@@ -590,8 +573,13 @@ export function TrackPicker({
                     column of checkboxes has to be a word like "Remove", and
                     that word then sits over every row as an instruction. */}
                 <th className="w-8 px-4 py-2" />
-                <th className="px-4 py-2 font-medium">Format</th>
+                {/* Language first, as the review screen has always listed
+                    these: the question this table asks is which tracks you
+                    will never play, and that is answered in languages. The
+                    codec is what you check second, once you know which row you
+                    are looking at. */}
                 <th className="px-4 py-2 font-medium">Language</th>
+                <th className="px-4 py-2 font-medium">Format</th>
                 <th className="px-4 py-2 font-medium">Track</th>
                 <th className="px-4 py-2 text-right font-medium">Size</th>
               </tr>
@@ -625,12 +613,14 @@ export function TrackPicker({
                         label={`Remove ${audioName(track)}`}
                       />
                     </td>
+                    {/* The strike and the full ink stay with the leading cell
+                        rather than travelling with the codec: it is the row's
+                        name, and a table whose second column is the bright one
+                        reads as a column that has been highlighted. */}
                     <td className={`px-4 py-2 ${ticked ? "line-through" : ""}`}>
-                      {track.label}
-                    </td>
-                    <td className="px-4 py-2 opacity-70">
                       {track.language ? languageName(track.language) : "—"}
                     </td>
+                    <td className="px-4 py-2 opacity-70">{track.label}</td>
                     <td className="px-4 py-2 opacity-70">
                       {[
                         track.title,
@@ -668,8 +658,8 @@ export function TrackPicker({
             <thead className="text-xs uppercase tracking-wide opacity-50">
               <tr>
                 <th className="w-8 px-4 py-2" />
-                <th className="px-4 py-2 font-medium">Format</th>
                 <th className="px-4 py-2 font-medium">Language</th>
+                <th className="px-4 py-2 font-medium">Format</th>
                 <th className="px-4 py-2 font-medium">Track</th>
                 <th className="px-4 py-2 font-medium">Flags</th>
                 <th className="px-4 py-2 text-right font-medium">Size</th>
@@ -695,11 +685,9 @@ export function TrackPicker({
                       />
                     </td>
                     <td className={`px-4 py-2 ${ticked ? "line-through" : ""}`}>
-                      {track.format}
-                    </td>
-                    <td className="px-4 py-2 opacity-70">
                       {track.language ? languageName(track.language) : "—"}
                     </td>
+                    <td className="px-4 py-2 opacity-70">{track.format}</td>
                     <td className="px-4 py-2 opacity-70">
                       {track.title || "—"}
                     </td>

@@ -352,7 +352,7 @@ export function WishlistView({
   const releases = tab === "movies" && (wants > 0 || finds.length > 0);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       {/* Which half on the left, what to do with it on the right — the line the
           library's shelves already run. The switch stays on an empty tab: it is
           the way back to the other one, and an empty tab is when you want it. */}
