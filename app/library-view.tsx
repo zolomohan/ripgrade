@@ -11,7 +11,7 @@ import { useLingering } from "./modal";
 import { ReleaseSearchModal } from "./release-search";
 import { rememberListing } from "./return-to";
 import { ReleaseDetails, ReleaseMark } from "./release-details";
-import { Bar, HelpTip, ICONS, MenuItem, Popover } from "./controls";
+import { Bar, BUTTON, HelpTip, ICONS, MenuItem, Popover } from "./controls";
 import { EmptyState } from "./empty-state";
 import { PosterTile, TILE_GRID } from "./poster-tile";
 import { ShelfTotal } from "./shelf-total";
@@ -632,7 +632,10 @@ export function LibraryView({
   })();
 
   return (
-    <div className="flex flex-col gap-6">
+    // `flex-1` so the page's height reaches the shelf's own empty state — a
+    // filtered-to-nothing shelf stands in the middle of the space under the
+    // bar rather than tucked against it.
+    <div className="flex flex-1 flex-col gap-6">
       {/* One line: which shelf on the left, what to do with this one on the
           right. The bar is only as wide as the controls it holds — with the
           field gone there is nothing to stretch, and a bar drawn the width of
@@ -815,11 +818,12 @@ export function LibraryView({
             </>
           }
           title="Nothing matches those filters"
+          className="-mt-16"
           action={
             <button
               type="button"
               onClick={() => update({ f: [] })}
-              className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+              className={BUTTON.primary}
             >
               Clear filters
             </button>

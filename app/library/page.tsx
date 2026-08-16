@@ -6,7 +6,7 @@ import { getMovies } from "@/lib/library";
 import { getShows } from "@/lib/shows";
 import { getUpgradeQueue } from "@/lib/upgrade-sweep";
 import { LibraryTabs } from "@/app/library-tabs";
-import { BUTTON } from "@/app/controls";
+import { BUTTON } from "@/app/button";
 import { EmptyState } from "@/app/empty-state";
 
 // Every render reads the local database, so there is nothing worth prerendering.
@@ -41,7 +41,10 @@ export default async function Page() {
   const upgrades = getUpgradeQueue(movies);
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-8 sm:px-8">
+    // `flex-1` the way every other listing page says it: the empty state below
+    // takes the height that is going and stands in the middle of it, and a main
+    // sized to its contents has none to give.
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
       {movies.length > 0 || shows.length > 0 ? (
         <LibraryTabs
           movies={movies}
@@ -59,6 +62,7 @@ export default async function Page() {
         // that reads before the words do, and the way out as an action rather
         // than a link trailing a paragraph.
         <EmptyState
+          className="mt-4"
           icon={
             <>
               <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h9a1.5 1.5 0 0 1 1.5 1.5v7.5A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" />
@@ -68,7 +72,7 @@ export default async function Page() {
             roots.length > 0 ? "Nothing scanned yet" : "No library folder yet"
           }
           action={
-            <Link href="/settings" className={BUTTON.secondary}>
+            <Link href="/settings" className={BUTTON.primary}>
               {roots.length > 0 ? "Manage folders" : "Choose a folder"}
             </Link>
           }

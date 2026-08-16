@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { BUTTON } from "./button";
 import { DashboardView } from "./dashboard-view";
 import { EmptyState } from "./empty-state";
 import { getDashboard } from "@/lib/dashboard";
@@ -25,9 +26,12 @@ export default async function Page() {
     data.headline.shows === 0;
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-6 px-6 py-8 sm:px-8">
+    // `flex-1` so this column is as tall as the window — the layout holds the
+    // height, and the empty state below fills whatever this passes down.
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8 sm:px-8">
       {empty ? (
         <EmptyState
+          className="mt-4"
           icon={
             <>
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
@@ -36,10 +40,7 @@ export default async function Page() {
           }
           title={roots.length > 0 ? "Nothing scanned yet" : "No library folder"}
           action={
-            <Link
-              href="/settings"
-              className="rounded-full bg-foreground px-4 py-2 text-sm text-background transition-opacity hover:opacity-90"
-            >
+            <Link href="/settings" className={BUTTON.primary}>
               {roots.length > 0 ? "Manage folders" : "Choose a folder"}
             </Link>
           }

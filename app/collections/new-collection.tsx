@@ -16,8 +16,17 @@ import { NameDialog } from "./name-dialog";
  * thing anybody wants is the page where films go into it — leaving you on a
  * list with one more empty line on it would be answering the question you asked
  * and none of the one you meant.
+ *
+ * Two weights, because it is pressed from two places. In the page's bar it is
+ * one control among the others and wears the outline they all wear; standing in
+ * an empty state it is the only thing on the page to do, and every empty state
+ * in this app offers its way out as the filled pill — see app/empty-state.tsx.
  */
-export function NewCollection() {
+export function NewCollection({
+  emphasis = "secondary",
+}: {
+  emphasis?: "primary" | "secondary";
+}) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, startTransition] = useTransition();
@@ -53,7 +62,7 @@ export function NewCollection() {
           setError(null);
           setOpen(true);
         }}
-        className={BUTTON.secondary}
+        className={BUTTON[emphasis]}
       >
         {busy && !open ? (
           <Spinner />

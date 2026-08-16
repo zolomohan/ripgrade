@@ -352,7 +352,10 @@ export function WishlistView({
   const releases = tab === "movies" && (wants > 0 || finds.length > 0);
 
   return (
-    <div className="flex flex-col gap-8">
+    // `flex-1` down both columns so the page's height reaches the empty state
+    // at the bottom of them — it centres in whatever it is given, and a column
+    // that grows to its contents gives it nothing.
+    <div className="flex flex-1 flex-col gap-8">
       {/* Which half on the left, what to do with it on the right — the line the
           library's shelves already run. The switch stays on an empty tab: it is
           the way back to the other one, and an empty tab is when you want it. */}
@@ -390,7 +393,7 @@ export function WishlistView({
           sections — because that is what these two are. Found and Not found are
           the first cut this page offers, and they should not sit closer
           together than two indexers do. */}
-      <div className="flex flex-col gap-14">
+      <div className="flex flex-1 flex-col gap-14">
         {releases && (
           <section className="flex flex-col gap-5">
             {/* Headed "Found" only while the list is uncut. Ask for any
@@ -423,6 +426,7 @@ export function WishlistView({
               </>
             }
             title={tab === "tv" ? "No shows wanted yet" : "Nothing wanted yet"}
+            className="-mt-16"
           >
             Search from anywhere — the button in the corner, or ⌘F — and heart
             the {tab === "tv" ? "series" : "films"} you are hunting for.

@@ -228,10 +228,10 @@ export function CustomCollectionView({
     // The same shape a film and a show open with: artwork first, then the name
     // sitting over the foot of it.
     //
-    // `min-h-dvh` so that a set with nothing in it yet has somewhere to put the
-    // empty state: `EmptyState` centres itself in the height left over, and a
-    // page sized to its contents leaves none.
-    <main className="flex min-h-dvh flex-col pb-16">
+    // `flex-1` so that a set with nothing in it yet has somewhere to put the
+    // empty state: `EmptyState` fills the height left over and centres in it,
+    // and a page sized to its contents leaves none.
+    <main className="flex flex-1 flex-col pb-16">
       {/* Dropping an image on the hero is the same act as picking one with the
           button in its corner, and the hero is the thing the picture is going
           to become — so it is the target. */}
@@ -421,6 +421,7 @@ export function CustomCollectionView({
               </>
             }
             title="Nothing in here yet"
+            className="-mt-16"
             action={
               <button
                 type="button"

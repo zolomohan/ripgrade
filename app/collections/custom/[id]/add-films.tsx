@@ -305,8 +305,8 @@ export function AddFilms({
 
         {/* `flex` so the two empty states can take the height and centre
             themselves in it, the way every other empty page in the app does —
-            `EmptyState` centres on `my-auto`, and a box sized to its contents
-            gives it nothing to centre in. */}
+            `EmptyState` fills the column it is in, and a box sized to its
+            contents gives it nothing to fill. */}
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
           {shown === null ? (
             /* The one thing worth saying before anything has been typed, and

@@ -17,10 +17,9 @@ export default async function DownloadsPage() {
   const transfers = await getDownloadLog();
 
   return (
-    // min-h-dvh rather than flex-1: the layout's own column has no definite
-    // height for a flex child to fill, so the viewport is claimed directly —
-    // which is what lets an empty state centre itself in it.
-    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-8 sm:px-8">
+    // `flex-1`: the layout's column is the window's height, and this fills it —
+    // which is what lets an empty state centre itself in the page.
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
       <DownloadsView initial={transfers} />
     </main>
   );

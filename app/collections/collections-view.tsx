@@ -530,6 +530,7 @@ function Found({ sets }: { sets: CollectionSet[] }) {
           </>
         }
         title="No collections yet"
+        className="-mt-16"
       >
         These come from TMDb once films are matched, and only films that belong
         to one appear here.
@@ -575,7 +576,8 @@ function Yours({ sets }: { sets: CustomSet[] }) {
           </>
         }
         title="No collections of your own"
-        action={<NewCollection />}
+        className="-mt-16"
+        action={<NewCollection emphasis="primary" />}
       >
         A set of your own can hold anything — what you have, and what you have
         not got round to — and films join it from the library or straight from

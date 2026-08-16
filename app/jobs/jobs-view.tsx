@@ -1064,8 +1064,8 @@ export function JobsView({
           situation in bigger type than the heading above them.
 
           Which leaves the section free to take the page's spare height, so an
-          empty state's `my-auto` has something to centre in rather than
-          hanging under the running rows.
+          empty state has something to fill and centre in rather than hanging
+          under the running rows.
 
           And the whole section goes when the only reason it is empty is that
           its last row is the one running above — see `allBusy`. */}

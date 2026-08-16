@@ -15,7 +15,10 @@ export default async function StatsPage() {
   const shows = computeShowStats(getShows());
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 sm:px-8">
+    // `flex-1` for the empty state's sake, as on the dashboard: it fills
+    // whatever height this column has and centres in it, so the column has to
+    // have one.
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8 sm:px-8">
       {stats.totals.films === 0 && shows.totals.shows === 0 ? (
         // The app's own empty state rather than a bordered box holding one grey
         // sentence — see app/empty-state.tsx. Bars, because that is what this

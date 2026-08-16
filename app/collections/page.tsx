@@ -21,11 +21,11 @@ export default async function CollectionsPage() {
   const sets = await getCollectionSets(movies, false);
 
   return (
-    // `min-h-dvh` for the empty states' sake, the way the dashboard's main
-    // does it: `EmptyState` centres itself in whatever height is spare, and a
-    // main sized to its contents has none — so "no collections yet" sat tucked
-    // under the tabs rather than in the middle of the page it is speaking for.
-    <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-8 sm:px-8">
+    // `flex-1` for the empty states' sake, the way the dashboard's main does
+    // it: `EmptyState` fills the height it is handed and centres in it, and a
+    // main sized to its contents hands it none — so "no collections yet" sat
+    // tucked under the tabs rather than in the middle of the page it speaks for.
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
       <CollectionsView sets={sets} custom={getCustomSets(movies)} />
     </main>
   );

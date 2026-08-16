@@ -13,7 +13,7 @@ import {
   showVerdict,
 } from "@/lib/show-verdict";
 import type { Show } from "@/lib/shows";
-import { Bar, HelpTip, ICONS, MenuItem, Popover } from "./controls";
+import { Bar, BUTTON, HelpTip, ICONS, MenuItem, Popover } from "./controls";
 import { EmptyState } from "./empty-state";
 import { PosterTile, TILE_GRID } from "./poster-tile";
 import { ScoreBadge } from "./score-circle";
@@ -355,7 +355,7 @@ export function ShowsView({
     // The switch still has to be there — it is the way back to the films, and
     // an empty shelf is exactly when you want it.
     return (
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-1 flex-col gap-6">
         <div className="mb-2 flex flex-wrap items-center gap-3">{tabs}</div>
 
         <EmptyState
@@ -366,6 +366,7 @@ export function ShowsView({
             </>
           }
           title="No shows found"
+          className="-mt-16"
         >
           Episodes are recognised by their filenames — S01E02, 1x02, or a Season
           folder.
@@ -377,7 +378,9 @@ export function ShowsView({
   const episodes = shown.reduce((n, s) => n + s.episodeCount, 0);
 
   return (
-    <div className="flex flex-col gap-6">
+    // `flex-1`, as on the films' shelf: the height passes through the column
+    // so a shelf filtered down to nothing centres what it says in it.
+    <div className="flex flex-1 flex-col gap-6">
       {/* One line: which shelf on the left, what to do with this one on the
           right — and the same three controls in the same bar the films tab
           draws them in. The bar is only as wide as its controls now: with the
@@ -548,11 +551,12 @@ export function ShowsView({
             </>
           }
           title="Nothing matches those filters"
+          className="-mt-16"
           action={
             <button
               type="button"
               onClick={() => update({ tf: [] })}
-              className="text-sm underline underline-offset-4 opacity-60 hover:opacity-100"
+              className={BUTTON.primary}
             >
               Clear filters
             </button>

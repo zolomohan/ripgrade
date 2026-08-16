@@ -129,24 +129,40 @@ export default function RootLayout({
               {/* Around both the rail and the page, because the rail's own
                   search button opens the window that hangs over the page. */}
               <SearchProvider>
-                <Sidebar />
-                {/* Clears the rail at the width the rail is standing there.
-                    Below it the rail is a drawer, fixed and off the side of the
-                    screen, taking up no room to be cleared — what the content
-                    follows down there is the bar the drawer hides behind, which
-                    is the one part of it in the flow of the page.
+                {/* One column, exactly the height of the window, holding the
+                    rail and the page both.
 
-                    `overflow-x-clip` so a full-bleed strip can run to the edges
-                    of this column without the page gaining a sideways
-                    scrollbar. A shelf that escapes the reading column has to
-                    measure itself against the viewport, and `100vw` counts the
-                    scrollbar gutter this app holds open — a few pixels of
-                    overshoot at each end, which clipping simply absorbs. `clip`
-                    rather than `hidden`: hidden makes this a scroll container,
-                    which would break any sticky heading inside it, and clip
-                    does not. */}
-                <div className="flex min-h-full flex-col overflow-x-clip md:pl-56">
-                  {children}
+                    It is here so a page can simply say `flex-1` and be as tall
+                    as the window — which every page with an empty state on it
+                    needs to say, `EmptyState` being a block that fills what it
+                    is given. They each claimed `min-h-dvh` instead, because
+                    `min-h-full` on an auto-height body resolves to nothing for
+                    a child to fill; and a page claiming the whole window from
+                    *under* the narrow screen's header is a window and a bit —
+                    every list page scrolled a header's worth on a phone with
+                    nothing below the fold. Claimed once, above the header, and
+                    the arithmetic comes out. */}
+                <div className="flex min-h-dvh flex-col">
+                  <Sidebar />
+                  {/* Clears the rail at the width the rail is standing there.
+                      Below it the rail is a drawer, fixed and off the side of
+                      the screen, taking up no room to be cleared — what the
+                      content follows down there is the bar the drawer hides
+                      behind, which is the one part of it in the flow of the
+                      page.
+
+                      `overflow-x-clip` so a full-bleed strip can run to the
+                      edges of this column without the page gaining a sideways
+                      scrollbar. A shelf that escapes the reading column has to
+                      measure itself against the viewport, and `100vw` counts
+                      the scrollbar gutter this app holds open — a few pixels of
+                      overshoot at each end, which clipping simply absorbs.
+                      `clip` rather than `hidden`: hidden makes this a scroll
+                      container, which would break any sticky heading inside it,
+                      and clip does not. */}
+                  <div className="flex flex-1 flex-col overflow-x-clip md:pl-56">
+                    {children}
+                  </div>
                 </div>
               </SearchProvider>
             </ScanProvider>
