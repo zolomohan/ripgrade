@@ -33,6 +33,7 @@ import { FormatBadges } from "@/app/format-badges";
 import { UpgradeButton } from "@/app/release-search";
 import { NoDisc } from "@/app/no-disc";
 import { Panel } from "@/app/panel";
+import { ScoreBreakdown } from "@/app/score-breakdown";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { AddToCollection } from "./add-to-collection";
 import { ArtworkEditor } from "./artwork-editor";
@@ -43,7 +44,6 @@ import { DolbyVision } from "./dolby-vision";
 import { ExtendedCut } from "./extended-cut";
 import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
-import { ScoreBreakdown } from "./score-breakdown";
 import { size } from "@/app/format";
 
 const SEVERITY_TONE: Record<string, string> = {

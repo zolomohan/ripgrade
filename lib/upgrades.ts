@@ -95,6 +95,17 @@ export type ScoredRelease = IndexerResult & {
   delta?: number;
   /** Whether this beats, matches or falls short of the reference. */
   standing: Standing;
+  /**
+   * The disc's own rubric total, where the score above is a share of it.
+   *
+   * Rides on every result rather than on the search around them because it is
+   * the denominator of one particular number, and both things that go on to
+   * read that number — the dial's own "why this score", and `trim` on its way
+   * into the queue — are handed a release and nothing else. Four bytes of
+   * repetition across twenty-five rows against threading a second argument
+   * through two call sites that would each have to remember it.
+   */
+  discScore?: number;
   /** How many indexers carried the same release name. */
   sources: number;
 };
@@ -337,6 +348,7 @@ export async function findUpgrades(
       relative,
       delta,
       standing: standingOf(delta, reference),
+      discScore: relative ? discParts?.overall : undefined,
       sources: 1,
     });
   }

@@ -19,7 +19,7 @@ import type { DownloadSource, FilmContext } from "@/lib/qbittorrent";
 import { ReleaseDetails } from "@/app/release-details";
 import { rememberListing } from "@/app/return-to";
 import { compareId, movieId } from "@/lib/routes";
-import { ScoreDial } from "@/app/score-circle";
+import { PredictedScoreDial } from "@/app/score-why";
 import type { DiscSummary, ScoredRelease, Standing } from "@/lib/upgrades";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import { CloseButton, Modal, useClosing } from "@/app/modal";
@@ -285,8 +285,24 @@ export function Result({
       }`}
     >
       <div className="flex w-11 shrink-0 flex-col items-center gap-0.5">
-        <ScoreDial
-          score={release.score}
+        {/* The number, and the working behind it. Pressing it opens the
+            rubric line by line — which is the question a column of scores
+            provokes and had no answer for: an 84 beside a 79 tells you which
+            to take and nothing about why either is what it is. See
+            app/score-why.tsx. */}
+        <PredictedScoreDial
+          subject={{
+            title: release.title,
+            facts: release.guess.facts,
+            sizeBytes: release.sizeBytes,
+            score: release.score,
+            relative: release.relative,
+            discScore: release.discScore,
+            reference:
+              referenceKind && release.delta !== undefined
+                ? { kind: referenceKind, delta: release.delta }
+                : undefined,
+          }}
           theme={
             release.standing === "unknown"
               ? bare(release.score)

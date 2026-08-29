@@ -6,7 +6,8 @@ import { Art } from "@/app/art";
 import { BUTTON, Fact } from "@/app/controls";
 import { DownArrow, MagnetAction } from "@/app/magnet-action";
 import { CloseButton, Modal } from "@/app/modal";
-import { queueTheme, ScoreDial } from "@/app/score-circle";
+import { queueTheme } from "@/app/score-circle";
+import { PredictedScoreDial } from "@/app/score-why";
 import { TILE_MARK } from "@/app/tile-button";
 import type { DownloadSource } from "@/lib/qbittorrent";
 import type { StoredHit } from "@/lib/upgrade-sweep";
@@ -158,14 +159,19 @@ export function ReleaseDetails({
       panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
     >
       <>
-        {/* No heading. The poster, the name and the button below say what this
-            is well enough that a line of text over them only repeated it; the
-            dialog still has a name for screen readers, on the Modal itself. */}
-        <header className="flex justify-end">
-          <CloseButton onClick={onClose} />
-        </header>
+        {/* No head of its own, which is the rule the conversion dialog settled
+            and the track picker kept; see app/jobs/task-head.tsx.
 
-        <div aria-hidden className="rule-head mb-1" />
+            Losing the title left a bar holding nothing but the close button,
+            and a rule under it dividing that nothing from the rest — two
+            elements' worth of structure around a 28px circle, and a line
+            announcing a boundary that no longer had anything on both sides of
+            it. A picture and a name against the top of a panel are already a
+            header; drawing one above them was the dialog saying twice where it
+            begins.
+
+            So the way out moves into the block that is now the top of the
+            panel, in the corner every dialog in this app keeps it in. */}
 
         {/* Which film, and what pressing the button would get you — one block,
             because they are one thought. The artwork is small: you opened this
@@ -246,9 +252,25 @@ export function ReleaseDetails({
           {/* The reading, in its own corner. No caption under it: "Predicted
               score" was a label on the one thing in the dialog that cannot be
               anything else, and the gain beside it already says what it is
-              measured against. */}
-          <ScoreDial
-            score={hit.score}
+              measured against.
+
+              Pressing it opens the rubric line by line. The three sub-scores
+              are already in the table below — this is where they came from,
+              which is the next question and the one the table cannot answer. */}
+          <PredictedScoreDial
+            subject={{
+              title: hit.title,
+              facts: hit.facts,
+              sizeBytes: hit.sizeBytes,
+              scores: hit.scores,
+              score: hit.score,
+              relative: hit.relative,
+              discScore: hit.discScore,
+              reference:
+                currentScore === undefined
+                  ? undefined
+                  : { kind: "copy", delta: hit.score - currentScore },
+            }}
             theme={queueTheme(hit.score)}
             size={56}
             title={
@@ -262,6 +284,16 @@ export function ReleaseDetails({
                 : `Predicted score ${hit.score}, up from ${currentScore}`
             }
           />
+
+          {/* Held to the top rather than centred with the row: the poster is
+              six lines tall, and a way out halfway down its side is one you
+              have to look for. `self-start` puts it back in the panel's corner,
+              where the bar used to hold it and where every other dialog in the
+              app keeps it. The dial stays centred — it is a reading about the
+              release, not a control, and it belongs beside what it measures. */}
+          <div className="self-start">
+            <CloseButton onClick={onClose} />
+          </div>
         </div>
 
         {/* The name, and then everything the sweep stored about it, as the one

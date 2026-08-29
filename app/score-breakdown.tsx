@@ -11,17 +11,26 @@ import {
  * How the number on the ring was arrived at, line by line.
  *
  * It was a dialog behind a "?" in the corner of the score card — a footnote you
- * had to find, which then took the whole screen to answer. As a panel at the
- * foot of the page it is the same reading in the same order as everything else
- * here: shut it is one line, open it is the arithmetic.
+ * had to find, which then took the whole screen to answer. On the film's page
+ * it is a panel at the foot instead: the same reading in the same order as
+ * everything else there — shut it is one line, open it is the arithmetic.
  *
- * No state and no dialog, so no "use client": it is the page's own markup now.
+ * It lives here rather than under `app/film/[id]/` because the film is no
+ * longer the only thing that carries a score worth explaining. A release on an
+ * indexer is scored through the same rubric — that is the whole point of a
+ * predicted number being on the same hundred-point scale — so the dial on a
+ * torrent opens this same breakdown; see app/score-why.tsx, which supplies a
+ * `Breakdown` built from a release name rather than from a probed file.
+ *
+ * No state and no dialog of its own, so no "use client": it is markup, and the
+ * two callers decide whether it sits on a page or inside a modal.
  *
  * Each criterion is a meter rather than a bare fraction: 20/25 has to be
  * computed to be read, a bar four-fifths full is read at a glance — and a
  * short bar is amber because a short bar is precisely what "upgrade
- * recommended" means everywhere else in the app. The bars are static: this
- * lives in a <details>, where a mount animation would have played while shut.
+ * recommended" means everywhere else in the app. The bars are static: on the
+ * film's page this lives in a <details>, where a mount animation would have
+ * played while shut.
  */
 
 const RULE =

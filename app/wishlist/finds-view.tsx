@@ -13,7 +13,8 @@ import { useLingering } from "@/app/modal";
 import { PosterTile, TILE_GRID_RULED } from "@/app/poster-tile";
 import { ReleaseSearchModal } from "@/app/release-search";
 import { rememberListing } from "@/app/return-to";
-import { queueTheme, ScoreBadge, ScoreDial } from "@/app/score-circle";
+import { queueTheme, ScoreBadge } from "@/app/score-circle";
+import { PredictedScoreDial } from "@/app/score-why";
 import { stagger } from "@/app/stagger";
 import { TILE_MARK } from "@/app/tile-button";
 import { ReleaseDetails, ReleaseMark } from "@/app/release-details";
@@ -474,10 +475,19 @@ function WishRow({
 
       {/* No gain beneath this one. Nothing is being improved on — the number
           is simply how good the release is, which is the whole question when
-          the alternative is not having the film at all. */}
+          the alternative is not having the film at all. Pressing it says how
+          that number was arrived at; see app/score-why.tsx. */}
       <div className="flex w-14 shrink-0 flex-col items-center gap-1">
-        <ScoreDial
-          score={hit.score}
+        <PredictedScoreDial
+          subject={{
+            title: hit.title,
+            facts: hit.facts,
+            sizeBytes: hit.sizeBytes,
+            scores: hit.scores,
+            score: hit.score,
+            relative: hit.relative,
+            discScore: hit.discScore,
+          }}
           theme={queueTheme(hit.score)}
           size={48}
           title={`Predicted ${hit.score} — you do not have this film`}

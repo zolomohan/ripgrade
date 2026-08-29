@@ -3,7 +3,7 @@ import "server-only";
 import path from "node:path";
 
 import { db, getSetting, setSetting } from "./db";
-import { duplicateKey } from "./derive";
+import { duplicateKey, type ScorableFacts } from "./derive";
 import { discIds, fetchDisc, getDisc, hasDisc } from "./disc";
 import { notifyJobs } from "./job-events";
 import { getMovies, type LibraryItem } from "./library";
@@ -144,6 +144,23 @@ export type StoredHit = {
   /** Optional because older rows predate them; the compare page shows "—". */
   scores?: { video: number; audio: number; release: number };
   audio?: string;
+  /**
+   * Everything the rubric read off the name, kept whole so the score can be
+   * explained rather than merely reported. See app/score-why.tsx.
+   *
+   * The three sub-scores above are what the row *is*; these are what they were
+   * made of, and one cannot be re-derived from the other. Nor can they honestly
+   * be re-derived from the name at reading time: bitrate density needs the
+   * film's runtime, which the row does not carry and the browser has no way to
+   * ask for, so a re-guess would quietly disagree with the number beside it on
+   * exactly the encodes where the disagreement matters most.
+   *
+   * Optional for the same reason `scores` is — a row stored before this existed
+   * has none, and the dial falls back to reading the name again.
+   */
+  facts?: ScorableFacts;
+  /** The disc's rubric total, where `score` is a share of it rather than a total. */
+  discScore?: number;
 };
 
 /**
@@ -177,6 +194,8 @@ export function trim(release: ScoredRelease): StoredHit {
           .filter(Boolean)
           .join(" · ")
       : undefined,
+    facts,
+    discScore: release.discScore,
   };
 }
 
