@@ -27,6 +27,17 @@ export type IndexerResult = {
   categories: number[];
 };
 
+/**
+ * The same, plus the one thing that must not leave this machine.
+ *
+ * Jackett's `link` embeds the API key, and results are rendered in a browser,
+ * so it is deliberately absent from `IndexerResult` and present only here — on
+ * the shape the parser hands back, before anything has had a chance to send it
+ * anywhere. `resolveMagnets` in `jackett.ts` is the only thing that reads it,
+ * and returns plain `IndexerResult`s with it dropped.
+ */
+export type ParsedResult = IndexerResult & { downloadUrl?: string };
+
 export const decode = (s: string) =>
   s
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
@@ -94,6 +105,45 @@ const hashFromUrls = (urls: (string | undefined)[]): string | undefined => {
   return undefined;
 };
 
+/**
+ * The info hash a magnet is about.
+ *
+ * Forty hex characters only, for the same reason `HASH_IN_URL` is bounded that
+ * way: this value is used as an identity — what `shareTrackers` pools on and
+ * what the download log is checked against — and the base32 form of `btih`,
+ * left undecoded, would be a second name for a torrent already known under its
+ * hex one rather than a match for it.
+ */
+export function infoHashOf(magnet: string): string | undefined {
+  const hash = magnet.match(/\bxt=urn:btih:([0-9a-f]{40})\b/i)?.[1];
+  return hash?.toLowerCase();
+}
+
+/**
+ * A magnet made from wherever Jackett's download URL landed.
+ *
+ * Two kinds of indexer answer here. Where the tracker publishes magnets,
+ * Jackett redirects straight to one and there is nothing to do but take it —
+ * trackers and all, which is more than a magnet built from a bare hash would
+ * have carried. Where it publishes torrent files instead, the redirect goes to
+ * a cache that addresses them by hash — itorrents.org/torrent/<HASH>.torrent —
+ * and those are the same forty characters a magnet would have named, so one
+ * can be built rather than the file fetched and decoded.
+ *
+ * Anything else — a relative path, an error page, a URL with no hash in it —
+ * is not an answer, and the release keeps the nothing it already had.
+ */
+export function magnetFromLocation(
+  location: string,
+  title: string,
+): string | undefined {
+  if (/^magnet:/i.test(location)) return location;
+  if (!/^https?:\/\//i.test(location)) return undefined;
+
+  const hash = hashFromUrls([location]);
+  return hash ? magnetFor(hash, title) : undefined;
+}
+
 /** The `<error>` element Jackett returns, often alongside a 200. */
 export function feedError(xml: string): string | undefined {
   const match = xml.match(/<error\b[^>]*\bdescription="([^"]*)"/i);
@@ -157,8 +207,8 @@ export function parseCaps(xml: string): Caps {
   };
 }
 
-export function parseTorznab(xml: string): IndexerResult[] {
-  const out: IndexerResult[] = [];
+export function parseTorznab(xml: string): ParsedResult[] {
+  const out: ParsedResult[] = [];
 
   for (const match of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
     const item = match[1];
@@ -170,6 +220,7 @@ export function parseTorznab(xml: string): IndexerResult[] {
     // Size is a plain element on most indexers and a torznab attribute on the
     // rest; the enclosure's length is the last resort.
     const enclosure = item.match(/<enclosure[^>]*\blength="(\d+)"/i);
+    const enclosureUrl = item.match(/<enclosure[^>]*\burl="([^"]*)"/i)?.[1];
     const sizeBytes =
       digits(tagValue(item, "size")) ??
       digits(a.get("size")) ??
@@ -182,6 +233,21 @@ export function parseTorznab(xml: string): IndexerResult[] {
     const infoHash = a.get("infohash")?.toLowerCase() ?? hashFromUrls(pageUrls);
     const magnet =
       a.get("magneturl") ?? (infoHash ? magnetFor(infoHash, title) : undefined);
+
+    /*
+     * Jackett's own download URL, kept only where the feed offered no magnet
+     * and no hash — following it costs a request, and there is nothing to gain
+     * where the answer is already here. `link` and the enclosure are the same
+     * URL on every indexer that sends both, and either one alone on the rest.
+     *
+     * This is the field that carries the API key. See `ParsedResult`.
+     */
+    const downloadUrl = magnet
+      ? undefined
+      : [
+          tagValue(item, "link"),
+          enclosureUrl === undefined ? undefined : decode(enclosureUrl),
+        ].find((url) => url && /^https?:\/\//i.test(url));
 
     const seeders = digits(a.get("seeders"));
     const peers = digits(a.get("peers"));
@@ -203,6 +269,7 @@ export function parseTorznab(xml: string): IndexerResult[] {
       publishedAt: Number.isFinite(publishedAt) ? publishedAt : undefined,
       magnet,
       infoHash,
+      downloadUrl,
       // `guid` is a URL on most indexers and an opaque id on some, so it is
       // only worth offering as a link when it actually looks like one.
       detailsUrl: pageUrls.find(

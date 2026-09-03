@@ -3,10 +3,13 @@ import "server-only";
 import { getSetting, setSetting, db } from "./db";
 import {
   feedError,
+  infoHashOf,
+  magnetFromLocation,
   parseCaps,
   parseTorznab,
   type Caps,
   type IndexerResult,
+  type ParsedResult,
 } from "./torznab";
 
 /**
@@ -22,7 +25,8 @@ import {
  * Jackett's own `link` on each item embeds it, so that URL is never carried on
  * a result — results are rendered in the browser and the key would go with
  * them. Magnets and info hashes carry no credential, so those are what the UI
- * gets.
+ * gets. Where an indexer publishes neither, that link is followed here and the
+ * magnet it redirects to is what leaves — see `resolveMagnets`.
  */
 
 const URL_KEY = "jackettUrl";
@@ -211,6 +215,131 @@ async function fetchCaps(): Promise<Caps> {
   return caps;
 }
 
+// ---------------------------------------------------------------------------
+// Magnets
+// ---------------------------------------------------------------------------
+
+/** Enough at once to hide the latency, few enough not to hammer one tracker. */
+const RESOLVE_CONCURRENCY = 8;
+
+/** Shorter than a search: this is one redirect, and it holds up the results. */
+const RESOLVE_TIMEOUT_MS = 15_000;
+
+/**
+ * The magnet Jackett will only hand over in private.
+ *
+ * Asking `/dl/` for a release answers 302 with the magnet in the `Location`
+ * header — the whole thing, trackers included. The request cannot be made from
+ * the page, because the URL carries the API key; made from here it is one
+ * redirect that never gets followed, so the key stays on this side and the
+ * magnet is all that comes back.
+ */
+async function resolveMagnet(
+  config: JackettConfig,
+  downloadUrl: string,
+  title: string,
+): Promise<string | undefined> {
+  /*
+   * Jackett writes these URLs from the `Host` of whichever request asked, so
+   * the address they name is not always one this machine can reach — behind a
+   * proxy, or from a container that knows Jackett by another name, it is the
+   * outside world's address rather than ours. The path and query are the parts
+   * that matter, and they are moved onto the address the app was actually
+   * configured with. That this also makes the configured host the only place
+   * the key can ever be sent is the other half of the reason.
+   */
+  let url: URL;
+  try {
+    const link = new URL(downloadUrl);
+    url = new URL(`${link.pathname}${link.search}`, config.url);
+  } catch {
+    return undefined;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      // The point of the whole call: the answer is the header, and following
+      // it would fetch a torrent this app has no reason to hold.
+      redirect: "manual",
+      cache: "no-store",
+      signal: AbortSignal.timeout(RESOLVE_TIMEOUT_MS),
+    });
+  } catch {
+    // A tracker that is slow or gone is not a reason for the search to fail;
+    // the release keeps the nothing it already had. See `resolveMagnets`.
+    return undefined;
+  }
+
+  const location = response.headers.get("location");
+
+  // An indexer that answers with the torrent file itself sends a body instead
+  // of a redirect, and one left unread holds the connection open.
+  if (!location) {
+    await response.body?.cancel();
+    return undefined;
+  }
+
+  return magnetFromLocation(location, title);
+}
+
+/**
+ * Every result that arrived without a magnet, given one where Jackett can.
+ *
+ * A few at a time. Forty results resolve in about three seconds this way, and
+ * Jackett caches its own answers, so asking the same search again costs almost
+ * nothing; one at a time would be half a minute, and all at once would be
+ * forty simultaneous requests to a single tracker.
+ *
+ * Best-effort by design — whatever cannot be resolved is returned exactly as
+ * it was parsed, which is what the whole app did with these releases before
+ * this existed. A row rendering bare is the old failure, not a new one.
+ *
+ * This is also where `downloadUrl` stops: what comes back is plain
+ * `IndexerResult`s, so the URL carrying the API key has no way to reach a
+ * caller, and callers cannot forget to drop it. See `ParsedResult`.
+ */
+async function resolveMagnets(
+  results: ParsedResult[],
+): Promise<IndexerResult[]> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const out: IndexerResult[] = results.map(({ downloadUrl, ...rest }) => rest);
+
+  const pending = results
+    .map((result, index) => ({ result, index }))
+    .filter(({ result }) => result.downloadUrl && !result.magnet);
+
+  // Read once rather than per link, and the only reason it could be missing is
+  // that the configuration was cleared between the search and this — the
+  // search itself does not run without it.
+  const config = getJackettConfig();
+  if (!config || pending.length === 0) return out;
+
+  let next = 0;
+  const worker = async () => {
+    while (next < pending.length) {
+      const { result, index } = pending[next++];
+      const magnet = await resolveMagnet(
+        config,
+        result.downloadUrl!,
+        result.title,
+      );
+      if (!magnet) continue;
+
+      // The hash comes back with it, which is what `shareTrackers` pools on
+      // and what the download log is checked against — so a release resolved
+      // here is worth as much to the rest of the app as one that arrived whole.
+      out[index] = { ...out[index], magnet, infoHash: infoHashOf(magnet) };
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(RESOLVE_CONCURRENCY, pending.length) }, worker),
+  );
+
+  return out;
+}
+
 export type SearchQuery = {
   /** Free text. Always sent — it is the one thing every indexer understands. */
   term?: string;
@@ -261,7 +390,9 @@ export async function searchIndexers(
         "None of the indexers configured in Jackett offer a keyword search.",
       );
     }
-    return parseTorznab(await torznab({ t: "search", q: query.term }));
+    return resolveMagnets(
+      parseTorznab(await torznab({ t: "search", q: query.term })),
+    );
   }
 
   const wanted = query.kind === "tv" ? caps.tv : caps.movie;
@@ -300,5 +431,5 @@ export async function searchIndexers(
     );
   }
 
-  return parseTorznab(await torznab(params));
+  return resolveMagnets(parseTorznab(await torznab(params)));
 }

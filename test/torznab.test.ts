@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import {
   feedError,
+  infoHashOf,
+  magnetFromLocation,
   parseCaps,
   parseTorznab,
   shareTrackers,
@@ -149,6 +151,82 @@ test("an empty feed parses to nothing rather than throwing", () => {
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
+
+/*
+ * LimeTorrents' shape: a title, a site id in the URL that is not a hash, and
+ * Jackett's own download link as the only way to the torrent. Everything the
+ * parser would otherwise build a magnet from is absent, which is the case
+ * `downloadUrl` exists for.
+ */
+const NO_MAGNET = `<rss><channel><item>
+  <title>Inception 2010 1080p BluRay x265 GRP</title>
+  <guid>https://limetorrents.example/Inception-2010-torrent-19903746.html</guid>
+  <comments>https://limetorrents.example/Inception-2010-torrent-19903746.html</comments>
+  <link>http://jackett.example:9117/dl/limetorrents/?jackett_apikey=KEY&amp;path=BLOB</link>
+  <enclosure url="http://jackett.example:9117/dl/limetorrents/?jackett_apikey=KEY&amp;path=BLOB" length="1" type="application/x-bittorrent" />
+</item></channel></rss>`;
+
+test("a release with no magnet keeps Jackett's link to resolve it by", () => {
+  const [result] = parseTorznab(NO_MAGNET);
+  assert.equal(result.magnet, undefined);
+  assert.equal(result.infoHash, undefined);
+  assert.equal(
+    result.downloadUrl,
+    "http://jackett.example:9117/dl/limetorrents/?jackett_apikey=KEY&path=BLOB",
+  );
+});
+
+test("a release that already has a magnet carries no download URL", () => {
+  // The URL embeds the API key, so it is kept only where it is the last thing
+  // left to try — and here the feed already answered.
+  for (const result of parseTorznab(FEED)) {
+    assert.ok(result.magnet);
+    assert.equal(result.downloadUrl, undefined);
+  }
+});
+
+test("a magnet Jackett redirects to is taken as it stands", () => {
+  const magnet =
+    "magnet:?xt=urn:btih:79bae78612fb7cd19bf9b667bb7c190ac49d3183&dn=X&tr=udp%3A%2F%2Ftracker.example%3A1337%2Fannounce";
+  assert.equal(magnetFromLocation(magnet, "Inception"), magnet);
+});
+
+test("a torrent cache URL is enough to build a magnet from", () => {
+  const magnet = magnetFromLocation(
+    "http://itorrents.org/torrent/79BAE78612FB7CD19BF9B667BB7C190AC49D3183.torrent",
+    "Inception 2010",
+  );
+  assert.equal(
+    magnet,
+    "magnet:?xt=urn:btih:79bae78612fb7cd19bf9b667bb7c190ac49d3183&dn=Inception%202010",
+  );
+});
+
+test("a redirect with no hash in it yields no magnet", () => {
+  assert.equal(
+    magnetFromLocation("https://limetorrents.example/login.html", "Inception"),
+    undefined,
+  );
+  assert.equal(magnetFromLocation("/relative/path", "Inception"), undefined);
+});
+
+test("the info hash is read back out of a magnet", () => {
+  assert.equal(
+    infoHashOf(
+      "magnet:?xt=urn:btih:79BAE78612FB7CD19BF9B667BB7C190AC49D3183&dn=X",
+    ),
+    "79bae78612fb7cd19bf9b667bb7c190ac49d3183",
+  );
+});
+
+test("a base32 info hash is not read as if it were hex", () => {
+  // Left undecoded it would be a second name for a torrent already known under
+  // its hex one, and identity is what this value is used for.
+  assert.equal(
+    infoHashOf("magnet:?xt=urn:btih:QWERTYUIOPASDFGHJKLZXCVBNM234567&dn=X"),
+    undefined,
+  );
+});
 
 test("Jackett's error element is surfaced", () => {
   // Returned with a 200 status as often as not, which is why it is looked for
