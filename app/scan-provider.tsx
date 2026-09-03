@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 
-import { beginScan, rescanLibrary } from "./actions";
+import { beginScan, scanDrive } from "./actions";
 import { useJobs } from "./jobs-provider";
 import type { ScanState } from "@/lib/scanner";
 
@@ -28,14 +28,15 @@ export type ScanResult = { kind: "ok" | "error"; text: string };
 type ScanContext = {
   state: ScanState;
   /**
-   * @param force Ask the indexers about every film and want once the drive has
-   *   been read, however recently they were asked — the library shelf's button,
-   *   which is one press for "bring this page up to date". The rail's and
-   *   Settings' Scan leave that alone; they are maintenance, and the sweep that
-   *   follows them is the cheap one. Awaitable so a button can stay pressed
-   *   until the job it started exists to speak for itself.
+   * @param driveOnly Read the folders and stop — the library shelf's Scan,
+   *   which is that press and nothing else now: the searches that used to
+   *   follow it are separate items in the menu it opens. The rail's and
+   *   Settings' Scan leave this alone; they are maintenance, and the cheap
+   *   sweep that trails them is part of what maintenance means. Awaitable so a
+   *   button can stay pressed until the job it started exists to speak for
+   *   itself.
    */
-  start: (options?: { force?: boolean }) => Promise<void>;
+  start: (options?: { driveOnly?: boolean }) => Promise<void>;
   busy: boolean;
   /** What the last scan did, until it is dismissed or times out. */
   result: ScanResult | null;
@@ -152,9 +153,9 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(id);
   }, [result]);
 
-  async function start({ force = false } = {}) {
+  async function start({ driveOnly = false } = {}) {
     setResult(null);
-    const next = force ? await rescanLibrary() : await beginScan();
+    const next = driveOnly ? await scanDrive() : await beginScan();
     apply({ scan: next });
     if (next.status === "error") {
       setResult({ kind: "error", text: next.error ?? "Scan failed" });

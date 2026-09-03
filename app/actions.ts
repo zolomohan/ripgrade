@@ -60,6 +60,7 @@ import {
   deleteBackup,
   deleteElArchive,
   elArchiveBytes,
+  filePresent,
   getConvertJob,
   keepsEnhancementLayer,
   restoreOriginal as restore,
@@ -112,7 +113,7 @@ import {
   type LibraryItem,
 } from "@/lib/library";
 import { movieId, showId } from "@/lib/routes";
-import { startScan, type ScanState } from "@/lib/scanner";
+import { reprobeFile, startScan, type ScanState } from "@/lib/scanner";
 import {
   addLibraryRoot,
   getLibraryRoots,
@@ -135,6 +136,7 @@ import {
   startSweep,
   type QueueRules,
   type SweepJob,
+  type SweepScope,
 } from "@/lib/upgrade-sweep";
 import {
   addMagnet,
@@ -333,26 +335,26 @@ export async function beginScan(): Promise<ScanState> {
 }
 
 /**
- * The library shelf's own button: read the folders, then ask about everything.
+ * The library shelf's own button: read the folders, and stop there.
  *
- * The shelf shows two things that go stale in two different ways — the films
- * themselves, which change when you move a file, and the "Upgrades found"
- * section, which changes when someone seeds something better. Pressing one
- * button on that page should settle both, in that order: a release is judged
- * against the film's score, so the score has to be right before the question
- * is worth asking.
+ * It used to be this scan plus a forced sweep — one press for "bring this page
+ * up to date", on the argument that the shelf shows two things that go stale in
+ * two different ways. The trouble is what that cost: four hundred indexer
+ * searches, started by a button whose word is "Scan", every time somebody moved
+ * a file and wanted the shelf to notice. The searches are worth having and are
+ * nobody's surprise to be handed — so they are their own presses now, in the
+ * menu this button opens, each forced and each asked for by name.
  *
- * The forcing is the same argument `rescanUpgradeQueue` makes below, and this
- * is where that button went — the sweep it started is now the second half of
- * this one. Nothing here refuses without Jackett: the drive is still read, and
- * the pass simply ends after the half that needs nobody else's machine.
+ * What is left here is the half that reads this machine: the folders, the files
+ * that changed, and the wants the drive turns out to have answered. It needs
+ * nothing configured and it asks nobody anything.
  */
-export async function rescanLibrary(): Promise<ScanState> {
-  return scanLibrary(true);
+export async function scanDrive(): Promise<ScanState> {
+  return scanLibrary(false, false);
 }
 
-/** Both of the above, which differ only in what happens once the drive is read. */
-function scanLibrary(force: boolean): ScanState {
+/** All three of the above, which differ only in what follows the drive pass. */
+function scanLibrary(force: boolean, sweep = true): ScanState {
   const roots = getLibraryRoots();
   if (roots.length === 0) {
     return {
@@ -379,7 +381,7 @@ function scanLibrary(force: boolean): ScanState {
       error: "No library folder selected.",
     };
   }
-  return startScan(roots, { force });
+  return startScan(roots, { force, sweep });
 }
 
 /** Re-derives from cached probes and TMDb records — no disk, no network. */
@@ -387,6 +389,48 @@ export async function rederive(): Promise<number> {
   const count = deriveAll();
   refresh();
   return count;
+}
+
+/**
+ * Reads one file's streams again, for the page that is showing them.
+ *
+ * A scan skips anything whose size and mtime match what was probed before,
+ * which is what keeps a four-hundred-file library cheap to open — and it is
+ * also what leaves this page stuck when the stored answer is wrong rather than
+ * stale. A file remuxed by something other than this app, a probe taken back
+ * when mediainfo could not see the Dolby Vision layer, a track list that never
+ * looked right: the drive holds the truth, the scan will not go and get it, and
+ * until now there was nothing on the page to ask with.
+ *
+ * One file, so it is done inline rather than as a job on the rail: a probe is a
+ * second or two, and the button that started it is still on screen to say so.
+ * The re-derive is the whole library because that is the only derive there is —
+ * it reads from cached probes, costs no disk and no network, and is what every
+ * other single-film correction here already calls.
+ */
+export async function reprobeMovie(
+  moviePath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!knownMoviePath(moviePath)) {
+    return { ok: false, error: `Unknown file: ${moviePath}` };
+  }
+  // Asked here rather than left to `stat` inside the probe, which would answer
+  // an unplugged drive with a path and an errno.
+  if (!filePresent(moviePath)) {
+    return { ok: false, error: "The file is not on the drive right now." };
+  }
+
+  try {
+    await reprobeFile(moviePath);
+    deriveAll();
+    refresh();
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2346,16 +2390,34 @@ export async function stopUpgradeSweep(): Promise<SweepJob> {
  * through to the films you own as well as to the wants, and what it finds for
  * those lands on the library shelf under "Upgrades found".
  *
- * The library shelf's copy of that button no longer comes through here: it
- * reads the drive first and gets this same forced sweep at the end of the
- * scan. See `rescanLibrary` above.
+ * The library shelf asks for the halves separately — see `rescanUpgrades` and
+ * `rescanWishlist` below. Here they stay one press, because this page is the
+ * wants, and the wants are the half that a films-only pass leaves out.
  */
 export async function rescanUpgradeQueue(): Promise<SweepJob> {
   return sweep(true);
 }
 
-/** Both of the above, which differ only in whether a recent check counts. */
-function sweep(force: boolean): SweepJob {
+/**
+ * The films you own, asked about again — the library shelf's Scan menu.
+ *
+ * Split from the wants because on that page they are two different errands.
+ * This one is about the four hundred files on the drive, and every one of them
+ * is a search: somebody refreshing "Upgrades found" should not also be spending
+ * the wishlist's time at the indexers, nor the other way about.
+ */
+export async function rescanUpgrades(): Promise<SweepJob> {
+  return sweep(true, "films");
+}
+
+/** The wants, likewise — with the disc ceilings they have to be scored against. */
+export async function rescanWishlist(): Promise<SweepJob> {
+  return sweep(true, "wishlist");
+}
+
+/** All of the above, which differ in whether a recent check counts, and in which
+    half is asked about. */
+function sweep(force: boolean, scope: SweepScope = "all"): SweepJob {
   if (!hasJackett()) {
     return {
       ...getSweepJob(),
@@ -2364,7 +2426,7 @@ function sweep(force: boolean): SweepJob {
         "Jackett is not set up. Add its URL and API key on the Settings page.",
     };
   }
-  return startSweep({ force });
+  return startSweep({ force, scope });
 }
 
 // ---------------------------------------------------------------------------

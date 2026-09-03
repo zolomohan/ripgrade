@@ -44,6 +44,7 @@ import { DolbyVision } from "./dolby-vision";
 import { ExtendedCut } from "./extended-cut";
 import { RevealInFinder } from "./reveal-in-finder";
 import { MatchReview } from "./match-review";
+import { RescanSpecs } from "./rescan-specs";
 import { size } from "@/app/format";
 
 const SEVERITY_TONE: Record<string, string> = {
@@ -337,7 +338,7 @@ export async function DetailPage({
       {/* relative + z-10: the hero above is positioned, so without its own
           stacking position this content would paint underneath it and the
           poster overlapping the backdrop would be clipped. */}
-      <div className="relative z-10 mx-auto -mt-28 w-full max-w-6xl px-6 sm:px-8">
+      <div className="relative z-10 mx-auto -mt-28 page-column px-6 sm:px-8">
         {/* Title block */}
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end">
           <Art
@@ -998,6 +999,12 @@ export async function DetailPage({
             .join(" · ")}
         >
           <Spec movie={movie} />
+          {/* Under the grid it corrects — every row above it is one probe of
+              this file, and this is how that probe is taken again. */}
+          <RescanSpecs
+            moviePath={movie.path}
+            present={filePresent(movie.path)}
+          />
         </Panel>
 
         {/* Every track the file holds, and one button that opens the picker

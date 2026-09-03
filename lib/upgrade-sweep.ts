@@ -161,6 +161,15 @@ export type StoredHit = {
   facts?: ScorableFacts;
   /** The disc's rubric total, where `score` is a share of it rather than a total. */
   discScore?: number;
+  /**
+   * The disc read on the same rubric, so the share can be explained as well as
+   * reported — the meters in "why this score" are drawn against these.
+   *
+   * Stored beside the total for the reason the total is stored: it was learnt
+   * from a disc page nothing in the browser can reach, and a row that knows
+   * only its own denominator can say how much was lost but not to what.
+   */
+  discShape?: ScorableFacts;
 };
 
 /**
@@ -196,6 +205,7 @@ export function trim(release: ScoredRelease): StoredHit {
       : undefined,
     facts,
     discScore: release.discScore,
+    discShape: release.discShape,
   };
 }
 
@@ -223,6 +233,21 @@ export function sweepCandidates(
 }
 
 /**
+ * Which halves of a sweep to run.
+ *
+ * "all" is the sweep as it has always been, and stays the default: the pass
+ * that follows a scan, and the wishlist page's own button, are both about the
+ * whole queue. The other two exist for the library shelf's Scan menu, where
+ * the films you have and the films you want are offered as separate presses —
+ * each is four hundred searches or none, and pressing one should not spend the
+ * other's time.
+ *
+ * The disc ceilings ride with "wishlist" rather than standing alone: they are
+ * fetched for wants that have none, and a want cannot be scored without one.
+ */
+export type SweepScope = "all" | "films" | "wishlist";
+
+/**
  * @param force Ask the indexers about every candidate, however recently it was
  *   checked. FRESH_MS is right for the sweep that runs itself after a scan —
  *   nobody asked for it, so it should not spend four hundred searches on
@@ -231,123 +256,34 @@ export function sweepCandidates(
  *   trying to get past, and a pass that skipped it would report itself done in
  *   a second having changed nothing.
  */
-export function startSweep({ force = false } = {}): SweepJob {
+export function startSweep({
+  force = false,
+  scope = "all",
+}: { force?: boolean; scope?: SweepScope } = {}): SweepJob {
   if (current().status === "running") return current();
 
   globalForSweep.medlibSweepCancel = false;
   setJob({
     ...IDLE,
     status: "running",
-    phase: "discs",
+    // Where this sweep actually begins. A films-only pass never fetches a
+    // ceiling, and a rail announcing "Discs" over a job that will not look one
+    // up is the job describing somebody else's work.
+    phase: scope === "films" ? "films" : "discs",
     startedAt: Date.now(),
   });
 
   // Not awaited: the caller returns at once and the job stream reports.
   void (async () => {
     try {
-      await sweepDiscs();
+      // The ceilings are fetched for the wants, so a films-only sweep has no
+      // use for them — see `sweepDiscs`.
+      if (scope !== "films") await sweepDiscs();
 
-      const candidates = sweepCandidates();
+      // Each half is a press of its own on the shelf; see `SweepScope`.
+      if (scope !== "wishlist" && !(await sweepFilms(force))) return;
 
-      const checked = new Map(
-        (
-          db.prepare("SELECT path, checked_at FROM upgrade_checks").all() as {
-            path: string;
-            checked_at: number;
-          }[]
-        ).map((r) => [r.path, r.checked_at]),
-      );
-
-      const now = Date.now();
-      const stale = candidates
-        .filter((m) => force || now - (checked.get(m.path) ?? 0) > FRESH_MS)
-        // Never-checked first, then oldest check first: the films the queue
-        // knows least about are the ones a cancelled sweep should have
-        // reached before it stopped.
-        .sort(
-          (a, b) => (checked.get(a.path) ?? 0) - (checked.get(b.path) ?? 0),
-        );
-
-      setJob({
-        ...current(),
-        phase: "films",
-        current: undefined,
-        total: stale.length,
-        skipped: candidates.length - stale.length,
-      });
-
-      const stmt = upsertCheck();
-      let failures = 0;
-
-      for (const movie of stale) {
-        if (globalForSweep.medlibSweepCancel) {
-          setJob({
-            ...current(),
-            status: "cancelled",
-            current: undefined,
-            finishedAt: Date.now(),
-          });
-          return;
-        }
-
-        setJob({ ...current(), current: movie.tmdb?.title ?? movie.title });
-
-        try {
-          // The same target the film's own Upgrade button builds, so the
-          // queue and the modal can never disagree about what "better" means.
-          const best = await bestUpgrade({
-            kind: "movie",
-            title: movie.tmdb?.title ?? movie.title,
-            year: movie.tmdb?.year ?? movie.year,
-            imdbId: movie.imdbId,
-            runtimeMinutes:
-              movie.tmdb?.runtimeMinutes ??
-              (movie.durationSec
-                ? Math.round(movie.durationSec / 60)
-                : undefined),
-            currentScore: movie.scores.overall,
-            disc: getDisc(movie.tmdb!.id),
-          });
-
-          const hit =
-            best && best.delta !== undefined && best.delta > 0
-              ? trim(best)
-              : null;
-
-          stmt.run({
-            path: movie.path,
-            checked_at: Date.now(),
-            current_score: movie.scores.overall,
-            best: hit ? JSON.stringify(hit) : null,
-          });
-
-          failures = 0;
-          setJob({
-            ...current(),
-            done: current().done + 1,
-            found: current().found + (hit ? 1 : 0),
-          });
-        } catch (err) {
-          failures += 1;
-          if (failures >= ABORT_AFTER_FAILURES) {
-            setJob({
-              ...current(),
-              status: "error",
-              current: undefined,
-              error: `Search keeps failing — is Jackett reachable? (${
-                err instanceof Error ? err.message : String(err)
-              })`,
-              finishedAt: Date.now(),
-            });
-            return;
-          }
-          // One bad title should not end the sweep; it counts as done and
-          // stays unchecked, so the next run tries it again.
-          setJob({ ...current(), done: current().done + 1 });
-        }
-      }
-
-      await sweepWishlist(force);
+      if (scope !== "films") await sweepWishlist(force);
 
       setJob({
         ...current(),
@@ -432,6 +368,121 @@ async function sweepDiscs(): Promise<void> {
     }
     setJob({ ...current(), discDone: current().discDone + 1 });
   }
+}
+
+/**
+ * The films pass: what the indexers have that beats the copy on the shelf.
+ *
+ * Its own function so a sweep can be asked for one half of itself — the shelf's
+ * Scan menu offers the films and the wants as separate presses, because they
+ * are separate questions and each costs real time at the indexers. `sweepDiscs`
+ * and `sweepWishlist` were already shaped this way; this was the odd one left
+ * inline, which is the only reason `startSweep` could not be given a scope.
+ *
+ * Returns false when it has already written the job's ending — cancelled, or
+ * given up on an unreachable Jackett — so the caller stops rather than running
+ * the wishlist half against a machine that has stopped answering.
+ */
+async function sweepFilms(force: boolean): Promise<boolean> {
+  const candidates = sweepCandidates();
+
+  const checked = new Map(
+    (
+      db.prepare("SELECT path, checked_at FROM upgrade_checks").all() as {
+        path: string;
+        checked_at: number;
+      }[]
+    ).map((r) => [r.path, r.checked_at]),
+  );
+
+  const now = Date.now();
+  const stale = candidates
+    .filter((m) => force || now - (checked.get(m.path) ?? 0) > FRESH_MS)
+    // Never-checked first, then oldest check first: the films the queue
+    // knows least about are the ones a cancelled sweep should have
+    // reached before it stopped.
+    .sort((a, b) => (checked.get(a.path) ?? 0) - (checked.get(b.path) ?? 0));
+
+  setJob({
+    ...current(),
+    phase: "films",
+    current: undefined,
+    total: stale.length,
+    skipped: candidates.length - stale.length,
+  });
+
+  const stmt = upsertCheck();
+  let failures = 0;
+
+  for (const movie of stale) {
+    if (globalForSweep.medlibSweepCancel) {
+      setJob({
+        ...current(),
+        status: "cancelled",
+        current: undefined,
+        finishedAt: Date.now(),
+      });
+      return false;
+    }
+
+    setJob({ ...current(), current: movie.tmdb?.title ?? movie.title });
+
+    try {
+      // The same target the film's own Upgrade button builds, so the
+      // queue and the modal can never disagree about what "better" means.
+      const best = await bestUpgrade({
+        kind: "movie",
+        title: movie.tmdb?.title ?? movie.title,
+        year: movie.tmdb?.year ?? movie.year,
+        imdbId: movie.imdbId,
+        runtimeMinutes:
+          movie.tmdb?.runtimeMinutes ??
+          (movie.durationSec
+            ? Math.round(movie.durationSec / 60)
+            : undefined),
+        currentScore: movie.scores.overall,
+        disc: getDisc(movie.tmdb!.id),
+      });
+
+      const hit =
+        best && best.delta !== undefined && best.delta > 0
+          ? trim(best)
+          : null;
+
+      stmt.run({
+        path: movie.path,
+        checked_at: Date.now(),
+        current_score: movie.scores.overall,
+        best: hit ? JSON.stringify(hit) : null,
+      });
+
+      failures = 0;
+      setJob({
+        ...current(),
+        done: current().done + 1,
+        found: current().found + (hit ? 1 : 0),
+      });
+    } catch (err) {
+      failures += 1;
+      if (failures >= ABORT_AFTER_FAILURES) {
+        setJob({
+          ...current(),
+          status: "error",
+          current: undefined,
+          error: `Search keeps failing — is Jackett reachable? (${
+            err instanceof Error ? err.message : String(err)
+          })`,
+          finishedAt: Date.now(),
+        });
+        return false;
+      }
+      // One bad title should not end the sweep; it counts as done and
+      // stays unchecked, so the next run tries it again.
+      setJob({ ...current(), done: current().done + 1 });
+    }
+  }
+
+  return true;
 }
 
 async function sweepWishlist(force: boolean): Promise<void> {

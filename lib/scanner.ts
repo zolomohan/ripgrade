@@ -286,15 +286,28 @@ const upsertProbe = () =>
       probed_at = excluded.probed_at,
       mediainfo = excluded.mediainfo,
       error = excluded.error,
-      -- Only reached when size or mtime changed, so the RPU reading stored
-      -- against this path describes a file that no longer exists.
-      dovi = NULL
+      -- The RPU reading describes a stream, not a path. A file whose size or
+      -- mtime has moved is a different stream under the same name, so what was
+      -- read out of the old one goes with it.
+      --
+      -- The scan only reaches this statement for a file that changed, so the
+      -- test always fails there and the reading always goes, exactly as it did
+      -- when this was a plain NULL. The test is here for reprobeFile, which is
+      -- also asked to re-read files that have not changed at all: dropping the
+      -- reading unconditionally would make "read this file again" cost an hour
+      -- of full-stream RPU scanning to get back to where it started.
+      dovi = CASE
+        WHEN probes.size = excluded.size AND probes.mtime_ms = excluded.mtime_ms
+          THEN probes.dovi
+        ELSE NULL
+      END
   `);
 
 /**
- * Re-reads one file that changed under us — after a conversion rewrites it in
- * place, for instance. The stored RPU reading is dropped with it, since it
- * described the stream that has just been replaced.
+ * Re-reads one file, whether or not it changed under us — after a conversion
+ * rewrites it in place, or because the page showing its streams was asked to
+ * read them again. The stored RPU reading is dropped along with the stream it
+ * described; see the upsert above for when that is.
  */
 export async function reprobeFile(filePath: string): Promise<void> {
   const stats = await stat(filePath);
@@ -474,13 +487,15 @@ async function probeAll(files: FoundFile[]) {
  * missing TMDb token is, and it needs nothing further from TMDb either — a
  * want is already a TMDb film by the time it reaches the list.
  *
- * @param toSweep The sweep this scan ends with is a forced one, and a forced
- *   sweep asks about every want itself. Searching them here as well would be
- *   the same questions put to the same indexers twice, a minute apart. The
- *   pruning still runs: it reads the drive's own rows, costs nothing, and the
- *   sweep does not do it.
+ * @param deferred The search belongs to somebody else, so only the pruning
+ *   runs here. Two callers mean it: a scan ending in a forced sweep, which
+ *   asks about every want itself — the same questions put to the same indexers
+ *   twice, a minute apart — and a scan asked to read the drive and stop, where
+ *   the search belongs to nobody and the shelf's Scan menu is how it is asked
+ *   for. The pruning stays in both: it reads the drive's own rows, costs
+ *   nothing, and no sweep does it.
  */
-async function runWishlistPass(toSweep = false): Promise<void> {
+async function runWishlistPass(deferred = false): Promise<void> {
   /*
    * Wants the drive has answered come off the list first, and unconditionally:
    * this is the app reading its own library, so it is right with no indexer,
@@ -489,7 +504,7 @@ async function runWishlistPass(toSweep = false): Promise<void> {
    */
   pruneOwnedWishes();
 
-  if (toSweep || !hasJackett()) return;
+  if (deferred || !hasJackett()) return;
 
   setState({ ...current(), status: "wishlist", current: undefined });
 
@@ -546,20 +561,42 @@ export function startScan(
    * recently it asked.
    *
    * False for the scan that runs itself at start-up, which nobody requested and
-   * which should stay cheap. True for the library shelf's own button: someone
-   * pressed it, and what they pressed it for is both halves of the answer —
-   * what is on the drive now, and what is out there that beats it. A pass that
-   * read the drive and then declined to ask because it had asked this morning
-   * would report itself done having done half the job.
+   * which should stay cheap. It has no bearing on the shelf's Scan any more:
+   * that press ends when the drive has been read — see `sweep` below — and the
+   * forced searches it used to drag behind it are their own items in the menu
+   * it opens, so "ask about everything again" is now a thing you ask for
+   * rather than a thing that happens to you.
    */
-  { force = false } = {},
+  {
+    force = false,
+    sweep = true,
+  }: {
+    force?: boolean;
+    /**
+     * Whether the searches that normally follow the drive pass run at all.
+     *
+     * True for every scan that has ever run here: reading the drive and then
+     * asking what beats what it found is one thought, and a scan that stopped
+     * halfway through it left the queue to be filled by a button nobody
+     * remembered to press.
+     *
+     * False for the library shelf's Scan, which is now the drive and only the
+     * drive — the searches are the other items in the menu behind it, each a
+     * forced pass somebody asked for by name. The wants are still pruned
+     * against what the drive turned out to hold; that is the library reading
+     * itself, not a question for an indexer.
+     */
+    sweep?: boolean;
+  } = {},
 ): ScanState {
   if (current().status === "scanning") return current();
 
-  // Both places the wishlist pass is reached from need to know whether the
-  // forced sweep is really coming — without Jackett there is no sweep at all,
-  // and deferring to it would drop the wants on the floor.
-  const forcedSweep = force && hasJackett();
+  // Whether the wants are somebody else's to search. Either a forced sweep is
+  // really coming — without Jackett there is no sweep at all, and deferring to
+  // one that will not run would drop the wants on the floor — or no sweep
+  // follows this scan whatsoever, which is the shelf's drive-only press and
+  // the same answer for the opposite reason.
+  const searchedLater = !sweep || (force && hasJackett());
 
   setState({
     ...IDLE,
@@ -625,7 +662,7 @@ export function startScan(
           .map((u) => `${u.root} (${u.why})`)
           .join(", ")}`;
 
-        await runWishlistPass(forcedSweep);
+        await runWishlistPass(searchedLater);
 
         setState({
           ...current(),
@@ -634,7 +671,7 @@ export function startScan(
           error: message,
           finishedAt: Date.now(),
         });
-        sweepAfterScan(force);
+        if (sweep) sweepAfterScan(force);
 
         // Said once, and then watched for rather than left standing: this is
         // the answer at one instant, and the drive it is about is the kind of
@@ -845,7 +882,7 @@ export function startScan(
         if (pending.length > 0) deriveAll();
       }
 
-      await runWishlistPass(forcedSweep);
+      await runWishlistPass(searchedLater);
 
       setState({
         ...current(),
@@ -853,7 +890,7 @@ export function startScan(
         current: undefined,
         finishedAt: Date.now(),
       });
-      sweepAfterScan(force);
+      if (sweep) sweepAfterScan(force);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setState({

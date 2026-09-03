@@ -6,7 +6,7 @@ import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import { Switch } from "./controls";
 import { useTabParam } from "./tab-param";
 import { LibraryView } from "./library-view";
-import { RescanButton } from "./rescan-button";
+import { LibraryScanButton } from "./library-scan-button";
 import { ShowsView } from "./shows-view";
 
 /**
@@ -62,34 +62,28 @@ export function LibraryTabs({
 
   /**
    * The shelf's own refresh, at the end of both shelves' rows: read the
-   * folders, then ask the indexers about what is in them.
+   * folders — and, in the menu behind it, the passes that ask other people's
+   * machines about what the folders turned out to hold.
    *
-   * This page inherited the queue's job when the queue page went — the films
-   * something better has been found for are a section of this shelf now — and
-   * it inherited the queue's dead end with it. A card here opens a release
-   * stamped "Checked 20 h ago", and the sweep that wrote that line skips
-   * anything checked within the day: a reading on screen with nothing to do
-   * about it, which is precisely the state `RescanButton` was written to end.
-   * It was left on the wishlist alone, while the page that actually shows the
-   * releases had no trigger at all.
+   * This page inherited the queue's job when the queue page went: the films
+   * something better has been found for are a section of this shelf now, and a
+   * card here opens a release stamped "Checked 20 h ago", which the sweep will
+   * not look past on its own. That is what the menu's items are for, each one
+   * forced. What it is no longer is one press — a button saying "Scan" that
+   * also spent four hundred searches was doing two things under one word, and
+   * the expensive one was the half nobody had asked for. See
+   * `LibraryScanButton`.
    *
    * On both tabs, and deliberately so even though the sweep only searches films
-   * — what it starts is not this tab's pass but a pass over everything, wants
-   * included. The same argument that keeps it at the head of the wishlist
-   * rather than on one of its sections.
-   *
-   * The drive pass in front of it is `readDrive`, and it is here for the same
-   * reason the sweep is: this page is the drive, and a shelf that could ask
-   * other people's machines about your films but not look at the films
-   * themselves had the two halves the wrong way round. The scan runs first —
-   * a release is only better than what you have if what you have is what the
-   * library thinks it is — and the sweep follows it on the server.
+   * — what the menu starts is not this tab's pass but a pass over everything,
+   * wants included. The same argument that keeps the wishlist's own Scan at the
+   * head of that page rather than on one of its sections.
    *
    * Here rather than inside either shelf, for the reason `tabs` is here: it
    * belongs to the page, and a row split across two components is a row that
    * cannot be one line.
    */
-  const action = <RescanButton jackettReady={jackettReady} readDrive />;
+  const action = <LibraryScanButton jackettReady={jackettReady} />;
 
   return tab === "movies" ? (
     <LibraryView
