@@ -16,6 +16,8 @@
  * a couple of these directly.
  */
 
+import { stagger } from "../stagger";
+
 /**
  * The one action a section exists for. The film page's Upgrade button.
  *
@@ -65,18 +67,30 @@ export function Status({
   );
 }
 
-/** A labelled input. The label is the app's own micro-heading, not a sentence. */
+/**
+ * A labelled input. The label is the app's own micro-heading, not a sentence.
+ *
+ * Arrives the way every other list in this app arrives — see `.row-enter` and
+ * `stagger`. A dialog's fields are a list; they were the one list here that
+ * simply appeared, fully formed, while the rows under a download's destination
+ * picker two dialogs away cascaded in. The pace and the cap are the shared
+ * ones, so a form reads at the speed the rest of the app does, and
+ * `prefers-reduced-motion` turns it off in the same place as everything else.
+ */
 export function Field({
   label,
   hint,
+  index = 0,
   children,
 }: {
   label: string;
   hint?: string;
+  /** Its place in the form's cascade, as a list row carries its own. */
+  index?: number;
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
+    <label style={stagger(index)} className="row-enter flex flex-col gap-1.5">
       <span className="text-[10px] font-semibold tracking-[0.12em] uppercase opacity-40">
         {label}
       </span>

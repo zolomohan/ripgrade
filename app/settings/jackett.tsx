@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { disconnectJackett, saveJackett } from "../actions";
 import { FIELD } from "../controls";
 import { Spinner } from "../spinner";
+import { stagger } from "../stagger";
 import { SettingDialog } from "./dialog";
 import { Failure, Field, Note, PRIMARY, QUIET, Status } from "./parts";
 
@@ -141,7 +142,7 @@ export function Jackett({
           }}
           className="flex flex-col gap-4"
         >
-          <Field label="Address">
+          <Field label="Address" index={0}>
             <input
               type="url"
               value={draftUrl}
@@ -157,6 +158,7 @@ export function Jackett({
           <Field
             label="API key"
             hint="From the top right of Jackett’s own dashboard."
+            index={1}
           >
             <input
               type="password"
@@ -174,7 +176,12 @@ export function Jackett({
           <button
             type="submit"
             disabled={pending || !draftUrl || !apiKey}
-            className={`${PRIMARY} self-start`}
+            style={stagger(2)}
+            /* The width of the thing it is the point of. `self-start` left the
+               one action of a dialog hugging its own label in the corner, which
+               is what a secondary choice looks like — and the download dialog's
+               own primary press has spanned its panel since it was written. */
+            className={`${PRIMARY} row-enter w-full`}
           >
             {pending && <Spinner />}
             {pending ? "Checking…" : configured ? "Test and save" : "Connect"}

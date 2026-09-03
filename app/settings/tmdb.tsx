@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { disconnectTmdb, saveTmdbToken } from "../actions";
 import { FIELD } from "../controls";
 import { Spinner } from "../spinner";
+import { stagger } from "../stagger";
 import { SettingDialog } from "./dialog";
 import { Failure, Field, PRIMARY, QUIET, Status } from "./parts";
 
@@ -93,6 +94,7 @@ export function Tmdb({ configured }: { configured: boolean }) {
           <Field
             label="Read access token"
             hint="TMDb account settings, under API — the long one, not the v3 key."
+            index={0}
           >
             <input
               type="password"
@@ -110,7 +112,12 @@ export function Tmdb({ configured }: { configured: boolean }) {
           <button
             type="submit"
             disabled={pending || !token.trim()}
-            className={`${PRIMARY} self-start`}
+            style={stagger(1)}
+            /* The width of the thing it is the point of. `self-start` left the
+               one action of a dialog hugging its own label in the corner, which
+               is what a secondary choice looks like — and the download dialog's
+               own primary press has spanned its panel since it was written. */
+            className={`${PRIMARY} row-enter w-full`}
           >
             {pending && <Spinner />}
             {pending ? "Checking…" : configured ? "Replace token" : "Connect"}

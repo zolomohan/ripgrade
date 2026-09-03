@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { disconnectQb, saveQb, setQbStopSeeding } from "../actions";
 import { FIELD } from "../controls";
 import { Spinner } from "../spinner";
+import { stagger } from "../stagger";
 import { SettingDialog } from "./dialog";
 import {
   Failure,
@@ -155,7 +156,7 @@ export function Qbittorrent({
           {/* The focus starts here because it is the only field that has to be
               filled in: on a localhost install that waives its login, the
               address is the whole of the connection. */}
-          <Field label="Address of the WebUI">
+          <Field label="Address of the WebUI" index={0}>
             <input
               type="url"
               value={draftUrl}
@@ -170,6 +171,7 @@ export function Qbittorrent({
             <Field
               label="Username"
               hint="Leave empty if localhost needs no login."
+              index={1}
             >
               <input
                 value={username}
@@ -180,7 +182,7 @@ export function Qbittorrent({
               />
             </Field>
 
-            <Field label="Password">
+            <Field label="Password" index={2}>
               <input
                 type="password"
                 value={password}
@@ -197,7 +199,12 @@ export function Qbittorrent({
           <button
             type="submit"
             disabled={pending || !draftUrl}
-            className={`${PRIMARY} self-start`}
+            style={stagger(3)}
+            /* The width of the thing it is the point of. `self-start` left the
+               one action of a dialog hugging its own label in the corner, which
+               is what a secondary choice looks like — and the download dialog's
+               own primary press has spanned its panel since it was written. */
+            className={`${PRIMARY} row-enter w-full`}
           >
             {pending && <Spinner />}
             {pending ? "Checking…" : configured ? "Test and save" : "Connect"}
