@@ -353,6 +353,7 @@ export function Popover({
   label,
   value,
   badge,
+  caret = false,
   width = "w-64",
   align = "right",
   buttonClassName = "",
@@ -362,6 +363,14 @@ export function Popover({
   label: string;
   value?: string;
   badge?: number;
+  /**
+   * A chevron at the trigger's end, for a control whose value is a word rather
+   * than a mark: a scope named "Library" beside a shelf icon reads as a label
+   * on the field until something says it can be changed. The rest of the bar's
+   * popovers are named actions — Sort, Group — and a chevron on those would be
+   * saying twice what the word already says, so they go without.
+   */
+  caret?: boolean;
   width?: string;
   /**
    * Which edge the panel hangs from. Right for everything that sits at the end
@@ -421,6 +430,29 @@ export function Popover({
           <path d={icon} />
         </svg>
         {value && <span className="hidden sm:inline">{value}</span>}
+        {caret && (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            // Hidden wherever the value is: at the narrow width the trigger is
+            // the mark alone, with no room for a second one beside it.
+            //
+            // `ml-auto` because these triggers are of a stated width and the
+            // labels are of three lengths — pinned to the end, the chevron sits
+            // still while the word beside it changes. It turns over when the
+            // panel is up, so the mark is also the state.
+            className={`ml-auto hidden h-3.5 w-3.5 shrink-0 opacity-40 transition-transform sm:block ${
+              open ? "rotate-180" : ""
+            }`}
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        )}
         {badge !== undefined && badge > 0 && (
           <span className="rounded-full bg-foreground px-1.5 text-[10px] leading-[16px] font-medium text-background tabular-nums">
             {badge}

@@ -703,6 +703,10 @@ export function SearchView() {
           icon={scope.icon}
           label="Where to search"
           value={scope.label}
+          // The one popover in the app whose trigger reads as a statement
+          // rather than an offer — "Library", in front of the field, is a
+          // caption on what you are typing until a chevron says it is a choice.
+          caret
           width="w-56"
           // At the head of the bar, so it hangs from the same edge as the
           // button that opens it rather than reaching back off the left of it.
@@ -712,8 +716,10 @@ export function SearchView() {
           // cycling the scope does not drag the words you are typing sideways.
           // Narrow where the label is hidden anyway — the mark alone, at the
           // width of the mark. The bar's first slot, so the fill follows its
-          // rounded end.
-          buttonClassName="w-12 rounded-l-full sm:w-32"
+          // rounded end. Wide enough for the chevron as well as the longest
+          // label, since the chevron is pinned to the end and the word must not
+          // run under it.
+          buttonClassName="w-12 rounded-l-full sm:w-36"
         >
           {(close) => (
             <div className="py-1">
