@@ -44,7 +44,7 @@ export default async function Page() {
     // `flex-1` the way every other listing page says it: the empty state below
     // takes the height that is going and stands in the middle of it, and a main
     // sized to its contents has none to give.
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
+    <main className="mx-auto flex page-column flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
       {movies.length > 0 || shows.length > 0 ? (
         <LibraryTabs
           movies={movies}

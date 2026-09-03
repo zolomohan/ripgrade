@@ -127,7 +127,7 @@ function Table({
 
 export default function HowItWorks() {
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col px-6 py-8 sm:px-8">
+    <main className="reading-column mx-auto flex flex-col px-6 py-8 sm:px-8">
       <Section
         title="The pipeline"
         lede="Six stages. Only the first four touch your drive."

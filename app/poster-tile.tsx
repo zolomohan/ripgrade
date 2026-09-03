@@ -50,7 +50,8 @@ import { stagger } from "@/app/stagger";
  * The library keeps its own spacing above it — `pt-13` on an ungrouped shelf,
  * the section gap on a grouped one — so this is the grid and nothing else.
  */
-export const TILE_GRID = "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5";
+export const TILE_GRID =
+  "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5 wide:grid-cols-6 ultra:grid-cols-7 cinema:grid-cols-9";
 
 /**
  * The same shelf for the pages that stand one directly under a section heading.

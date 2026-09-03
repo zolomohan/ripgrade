@@ -20,11 +20,27 @@
  * deeper one, because the picture is most of what those pages are before you
  * have read a word of them. A show and a collection open on the shallower,
  * where the thing you came for is the list underneath.
+ *
+ * Both grow with the screen, at the sizes the rest of the app grows at — see
+ * `--breakpoint-wide` and its neighbours in globals.css. A backdrop is the one
+ * thing on these pages that is measured across rather than down: it runs the
+ * full width beside the rail, so a window twice as wide crops the same 16:9
+ * frame into a band twice as long, and a fixed 32rem of height turns a picture
+ * into a letterbox slot. Held to a constant, a 32-inch display got the widest
+ * and flattest version of every hero in the app.
+ *
+ * They do not grow in proportion, though, and should not: height here is spent
+ * out of the fold, and a hero that keeps its ratio on a 2560px screen is a
+ * picture you have to scroll past to reach the film. Each step adds about half
+ * of what proportion would ask for — enough that the crop keeps opening up,
+ * little enough that the page under it is still on the screen.
  */
-export const HERO_BOX = "relative h-96 w-full overflow-hidden sm:h-[32rem]";
+export const HERO_BOX =
+  "relative h-96 w-full overflow-hidden sm:h-[32rem] wide:h-[36rem] ultra:h-[40rem] cinema:h-[46rem]";
 
 /** The same, for the pages whose subject is the list under it. */
-export const HERO_BOX_SHORT = "relative h-72 w-full overflow-hidden sm:h-96";
+export const HERO_BOX_SHORT =
+  "relative h-72 w-full overflow-hidden sm:h-96 wide:h-[28rem] ultra:h-[32rem] cinema:h-[36rem]";
 
 /**
  * Anchored to the top rather than the middle.

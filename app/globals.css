@@ -167,6 +167,20 @@
    * can hold in their head, and no eye has ever found it on a 2.25rem curve.
    */
   --radius-panel: 2.25rem;
+
+  /*
+   * Three screens wider than any Tailwind knows about, named after the steps
+   * the page column takes below: `wide` is where it first grows past 72rem,
+   * `ultra` the next, and `cinema` the desk monitor — 160rem is 2560px, which
+   * is what a 32-inch display is.
+   *
+   * A shelf that widens has to be told to put more on the row at exactly those
+   * sizes. Written as `2xl:` it would fire at 1536px, a step the column does
+   * not take, and the posters would shrink where nothing else changed.
+   */
+  --breakpoint-wide: 100rem;
+  --breakpoint-ultra: 120rem;
+  --breakpoint-cinema: 160rem;
 }
 
 body {
@@ -176,6 +190,82 @@ body {
   /* Inter's optical sizing and contextual alternates, on by default. */
   font-feature-settings: "cv11", "ss01";
   font-optical-sizing: auto;
+}
+
+/*
+ * The column every page is drawn in.
+ *
+ * It was `max-w-6xl` written out on fifteen pages — one number, repeated, and
+ * repeated numbers are numbers nobody can change. 72rem is right for a laptop:
+ * wide enough for five poster tiles, narrow enough that a row of figures is
+ * read in one sweep rather than swept across. On a 32-inch display it is the
+ * same 72rem with a hand's width of nothing either side of it, and the app
+ * looks like a phone app that was stretched slightly.
+ *
+ * So the column grows in steps, and only once the screen is genuinely large —
+ * the first step is past 1600px, which no laptop is. The steps are measured
+ * against the viewport rather than the space left beside the rail, because a
+ * media query cannot see the rail; the 14rem it takes at `md` is simply
+ * subtracted by hand below. Each leaves a real margin either side of a centred
+ * column, so widening never runs the shelf into the window's edge:
+ *
+ *   1600px — 86rem beside the rail, column 84rem
+ *   1920px — 106rem beside the rail, column 100rem
+ *   2560px — 146rem beside the rail, column 124rem
+ *
+ * Above 2560px it stops. Not because a wider window could not hold more, but
+ * because these figures are paired with the poster grid's column counts — see
+ * `--breakpoint-cinema` above — and a width nothing lays out against is a width
+ * that only makes the tiles bigger, which is not the same as showing you more.
+ *
+ * What grows is what the extra room is actually for: a grid given another
+ * 20rem puts another two posters on the row, a list another column of figures.
+ * Prose does not grow, and neither do the pages that are only prose and forms —
+ * see `.reading-column` below.
+ *
+ * Unlayered, like everything else in this file, so it beats any `max-w-*` a
+ * page might still be carrying. See the note on `.focus-quiet` below for why
+ * that is: Tailwind's utilities are layered and these rules are not.
+ */
+.page-column {
+  width: 100%;
+  max-width: 72rem;
+}
+
+@media (min-width: 100rem) {
+  .page-column {
+    max-width: 84rem;
+  }
+}
+
+@media (min-width: 120rem) {
+  .page-column {
+    max-width: 100rem;
+  }
+}
+
+@media (min-width: 160rem) {
+  .page-column {
+    max-width: 124rem;
+  }
+}
+
+/*
+ * The column for a page that is sentences and settings rather than shelves.
+ *
+ * The same 72rem, and it stays there at every size. How It Works is six
+ * paragraphs and a list; Settings is rows with a name at one end and a switch
+ * at the other. Neither has anything that lays out wider — a paragraph set
+ * 2000px across is a line you lose your place in on the way back, and a switch
+ * that far from the word it belongs to has stopped being next to it.
+ *
+ * A separate name rather than an opt-out on `.page-column`, because these two
+ * pages are not exceptions to how wide the app is: they are a different kind of
+ * page, and the next one of that kind should be able to say so.
+ */
+.reading-column {
+  width: 100%;
+  max-width: 72rem;
 }
 
 /*

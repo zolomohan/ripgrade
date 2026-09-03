@@ -319,7 +319,7 @@ export function CustomCollectionView({
           `flex-1` so it takes the height the hero did not, which is the space
           the empty state below centres itself in. With content in it nothing
           moves: a column of flex children still starts at the top. */}
-      <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-6xl flex-1 flex-col gap-12 px-6 sm:px-8">
+      <div className="relative z-10 mx-auto -mt-24 flex page-column flex-1 flex-col gap-12 px-6 sm:px-8">
         {/* One line: the name, what can be done to it, and how it scores, all
             centred on the ring's own middle.
 

@@ -62,7 +62,7 @@ export default async function JobsPage() {
   return (
     // `flex-1` so an empty tab has the window's height to stand in the middle
     // of; the layout's column is what holds it. See app/empty-state.tsx.
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
+    <main className="mx-auto flex page-column flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
       <JobsView
         runs={runs.map((run) => ({
           ...run,

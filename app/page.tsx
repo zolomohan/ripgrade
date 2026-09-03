@@ -28,7 +28,17 @@ export default async function Page() {
   return (
     // `flex-1` so this column is as tall as the window — the layout holds the
     // height, and the empty state below fills whatever this passes down.
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8 sm:px-8">
+    //
+    // Left-aligned, alone among the pages: this is the one you land on, and a
+    // report that starts where the rail ends is a report you begin reading at
+    // once rather than after your eye has crossed a gutter to find it. On a
+    // wide screen the slack collects on the right instead of being split.
+    //
+    // Not flush against the rail, though — `md:pl-12` sets it off by an inch
+    // where the rail is standing there, which is the same distance from it that
+    // the rail's own contents keep from its edge. Level with the rail and the
+    // page reads as a second column of it rather than as the thing beside it.
+    <main className="page-column flex flex-1 flex-col gap-6 px-6 py-8 sm:px-8 md:pl-12">
       {empty ? (
         <EmptyState
           className="mt-4"

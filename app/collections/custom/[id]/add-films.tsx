@@ -166,7 +166,7 @@ function Shelf({
         <div aria-hidden className="rule-head" />
       </div>
 
-      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">
+      <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6 wide:grid-cols-7 ultra:grid-cols-8 cinema:grid-cols-10">
         {films.map((film, i) => (
           <Tile
             key={film.key}

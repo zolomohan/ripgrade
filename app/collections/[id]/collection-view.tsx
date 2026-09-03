@@ -35,7 +35,8 @@ import type { CollectionFilm, CollectionSet } from "@/lib/collections";
  * you can be wrong about. TMDb's sets pass nothing and get no cross — there is
  * no such thing as removing a film from a franchise.
  */
-const GRID = "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5";
+const GRID =
+  "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5 wide:grid-cols-6 ultra:grid-cols-7 cinema:grid-cols-9";
 
 const POSTER = "h-full w-full object-cover";
 

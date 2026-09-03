@@ -70,7 +70,7 @@ export default async function CollectionPage({
 
       {/* relative + z-10: the hero above is positioned, so without its own
           stacking position this content would paint underneath it. */}
-      <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-6xl flex-col gap-12 px-6 sm:px-8">
+      <div className="relative z-10 mx-auto -mt-24 flex page-column flex-col gap-12 px-6 sm:px-8">
         {/* Centred on the ring's middle rather than sitting on its base, so
             that this heading and the one a set of your own carries are the same
             heading — that page has controls between the two, and they have to
