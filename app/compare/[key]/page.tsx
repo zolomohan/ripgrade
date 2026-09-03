@@ -293,12 +293,27 @@ export default async function ComparePage({
   const copies = findDuplicateGroup(decoded!);
   if (!copies || copies.length === 0) notFound();
 
-  const [keep, ...drop] = copies;
-  const reclaim = drop.reduce((sum, m) => sum + m.sizeBytes, 0);
+  // The best copy, which the hero is drawn from — the rest are columns in the
+  // table and are read off `copies` there. Nothing outside it needs to know how
+  // many there are or what they come to any more.
+  const [keep] = copies;
 
-  // The upgrade sweep's best find for this film, standing in the last column
-  // as everything its name claims — beside copies that were measured.
-  const hit = storedHitFor(copies.map((c) => c.path));
+  /*
+   * The upgrade sweep's best find for this film, standing in the last column as
+   * everything its name claims — beside copies that were measured.
+   *
+   * Only where there is one copy. With two, this page has a question of its own
+   * and it is which of the files on the drive to keep; a third column of
+   * numbers nobody has downloaded yet is a second question asked over the top
+   * of the first, and the one column here that is a claim rather than a
+   * measurement is the one that can be dropped without losing an answer. Keep
+   * and Drop is the whole of it.
+   *
+   * The find is not lost by this — the film's own page still carries it, and
+   * that is where a release is fetched from anyway.
+   */
+  const hit =
+    copies.length > 1 ? null : storedHitFor(copies.map((c) => c.path));
   const rows = buildRows(copies, hit);
 
   return (
@@ -338,7 +353,7 @@ export default async function ComparePage({
         <BackButton />
       </div>
 
-      <div className="relative z-10 mx-auto -mt-24 flex w-full max-w-6xl flex-col gap-8 px-6 sm:px-8">
+      <div className="relative z-10 mx-auto -mt-24 flex page-column flex-col gap-8 px-6 sm:px-8">
         <header className="flex items-end gap-5">
           {keep.poster || keep.art.poster ? (
             <Art
@@ -409,20 +424,18 @@ export default async function ComparePage({
           </div>
         </header>
 
-        {/* The verdict only means something with something to delete. */}
-        {drop.length > 0 && (
-          <div className="rounded-card border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3">
-            <p className="text-sm">
-              <span className="font-medium text-emerald-700 dark:text-emerald-300">
-                Keep {keep.releaseType} · score {keep.scores.overall}
-              </span>{" "}
-              — deleting the {drop.length === 1 ? "other copy" : "other copies"}{" "}
-              reclaims <span className="font-medium">{size(reclaim)}</span>.
-            </p>
-            <p className="mt-1 font-mono text-xs opacity-60">{keep.fileName}</p>
-          </div>
-        )}
-
+        {/*
+         * No verdict banner here any more.
+         *
+         * It said "Keep REMUX · score 100 — deleting the other copy reclaims
+         * 18.5 GB", over the file name, in a green box between the hero and the
+         * table. Every word of it is in the table directly below: the Keep
+         * column is headed Keep, its score is the first row of numbers, and the
+         * file name is the row above that. A summary that restates the thing it
+         * sits on top of is a second answer to a question already answered, and
+         * it pushed the comparison — the reason the page exists — down by the
+         * height of an alert.
+         */}
         {/* mt on top of the column's gap: the table is the page's second act,
           and a touch more air under the hero says so. */}
         <div className="mt-12 overflow-x-auto">

@@ -1,8 +1,9 @@
 import "server-only";
 
 import { db } from "./db";
+import { duplicateKey } from "./derive";
 import { hasJackett } from "./jackett";
-import { getLibrary, type LibraryItem } from "./library";
+import { duplicateGroups, getLibrary, type LibraryItem } from "./library";
 import { alreadyFetching, hasQb } from "./qbittorrent";
 import { folderReachable } from "./reach";
 import { getLibraryRoots } from "./roots";
@@ -76,6 +77,20 @@ export type Dashboard = {
     upgrades: {
       count: number;
       films: WorkFilm<UpgradeQueueItem>[];
+    };
+    /**
+     * The same film twice, which is the one backlog here the app cannot act on
+     * for you: every other queue below has a button, and this one has a
+     * decision. So it carries what the decision is made on rather than a count
+     * and a poster — see `DuplicateFilm`.
+     *
+     * `count` and `bytes` are the whole of it; `films` is as much as the page
+     * shows, worst waste first.
+     */
+    duplicates: {
+      count: number;
+      bytes: number;
+      films: DuplicateFilm[];
     };
     dovi: {
       count: number;
@@ -177,6 +192,30 @@ export type WorkFilm<T> = {
 /** How many posters a shelf on this page holds before it runs off the side. */
 const SHELF = 15;
 
+/**
+ * Except the "recently added" shelf, which holds more.
+ *
+ * The other two are work: a queue you are going to act on, and tasks that are
+ * running. Fifteen is already more of either than anyone reads in a glance, and
+ * a longer one would just be a longer list of things to do. This one is the
+ * opposite — it is the shelf you scroll for its own sake, to see what has
+ * landed since you last looked, and a fortnight of scanning runs past fifteen
+ * easily. It scrolls sideways and costs one poster each, so the only thing a
+ * larger number spends is the pixels it is already given.
+ */
+const RECENT = 25;
+
+/**
+ * How many duplicates the shelf holds.
+ *
+ * The same fifteen as every other shelf on the page, because it is one: a row
+ * of posters that scrolls, with the comparison kept under each until it is
+ * pointed at. It was six for a while, when this section was a grid of cards
+ * that wrapped instead — a different number for a different shape. The rest are
+ * one press away either way, on the shelf the card's own link goes to.
+ */
+const PAIRS = SHELF;
+
 const maxOf = (sql: string): number | undefined => {
   const row = db.prepare(sql).get() as { n: number | null };
   return row.n ?? undefined;
@@ -247,6 +286,7 @@ export async function getDashboard(): Promise<Dashboard> {
           item,
         })),
       },
+      duplicates: duplicates(movies),
       dovi: {
         count: tasks.dovi.length,
         bytes: tasks.dovi.reduce((n, task) => n + task.sizeBytes, 0),
@@ -342,6 +382,50 @@ function scoreOf(scored: LibraryItem[]): number {
   );
 }
 
+/**
+ * One copy of a film, as much of it as a decision needs.
+ *
+ * Six fields out of the ninety `Derived` carries, because this is not the
+ * comparison — `/compare` is, and it prints forty rows of them. This is the
+ * glance that tells you whether the comparison is worth opening: what each copy
+ * scores, what it is, and what it costs to keep.
+ */
+export type DuplicateCopy = {
+  score: number;
+  sizeBytes: number;
+  resolution: string;
+  releaseType: string;
+};
+
+/**
+ * A film that is on the drive more than once.
+ *
+ * Two copies is the shape of nearly every one of these — a rip and a
+ * replacement, or the same release fetched twice — so the page draws it as a
+ * pair and this type leads with one. `copies` is what the group actually holds,
+ * and where it is more than two, `drop` is the best of the ones that would go,
+ * which is the honest one to show: if even the best of them is worth losing,
+ * the rest are.
+ *
+ * `key` is `duplicateKey`, which is what `/compare/[key]` looks the group up
+ * by. The page does not carry the paths, because it never has to name a file —
+ * pressing one of these opens the comparison, and that reads the group again.
+ */
+export type DuplicateFilm = {
+  key: string;
+  title: string;
+  year?: number;
+  poster?: string;
+  posterRemote?: string;
+  artAt?: number;
+  /** How many copies are held. Two, nearly always. */
+  copies: number;
+  /** What deleting all but the best would give back. */
+  reclaimBytes: number;
+  keep: DuplicateCopy;
+  drop: DuplicateCopy;
+};
+
 /** One tile on the "recently added" shelf: a film, or a show that gained some. */
 export type RecentItem = {
   /** A file's path or a show's key — its identity, and its transition name. */
@@ -356,6 +440,54 @@ export type RecentItem = {
   episodes?: number;
   addedAt: number;
 };
+
+/**
+ * Films held twice, worst waste first.
+ *
+ * Films only, deliberately. The same key would find repeated episodes, but the
+ * count on this card links to `/library?f=dupes`, and that shelf holds films —
+ * a figure that sent you to a list of a different size is worse than no figure.
+ * A show's own repeats are a question about a season, and its page can see
+ * them.
+ *
+ * Ordered by what deleting the extras gives back rather than by how many there
+ * are: three copies of a 4GB encode is a tidier library, one spare 60GB remux
+ * is a disk you can use. `duplicateGroups` has already sorted each group
+ * best-first, so the head of one is the copy to keep and the next is the best
+ * of the ones that would go.
+ */
+function duplicates(movies: LibraryItem[]): Dashboard["work"]["duplicates"] {
+  const copyOf = (item: LibraryItem): DuplicateCopy => ({
+    score: item.scores.overall,
+    sizeBytes: item.sizeBytes,
+    resolution: item.resolution,
+    releaseType: item.releaseType,
+  });
+
+  const films: DuplicateFilm[] = duplicateGroups(movies)
+    .map((group) => {
+      const [keep, ...rest] = group;
+      return {
+        key: duplicateKey(keep),
+        title: keep.tmdb?.title ?? keep.title,
+        year: keep.year,
+        poster: keep.poster,
+        posterRemote: keep.art.poster,
+        artAt: keep.artAt,
+        copies: group.length,
+        reclaimBytes: rest.reduce((n, item) => n + item.sizeBytes, 0),
+        keep: copyOf(keep),
+        drop: copyOf(rest[0]),
+      };
+    })
+    .sort((a, b) => b.reclaimBytes - a.reclaimBytes);
+
+  return {
+    count: films.length,
+    bytes: films.reduce((n, film) => n + film.reclaimBytes, 0),
+    films: films.slice(0, PAIRS),
+  };
+}
 
 /**
  * The newest things in the library, newest first.
@@ -417,7 +549,7 @@ function recentlyAdded(
 
   return [...films, ...grouped]
     .sort((a, b) => b.addedAt - a.addedAt || a.title.localeCompare(b.title))
-    .slice(0, SHELF);
+    .slice(0, RECENT);
 }
 
 function audioOf(audio: AudioTask[]): Dashboard["work"]["audio"] {

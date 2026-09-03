@@ -23,9 +23,10 @@ import { ReleaseDetails } from "./release-details";
 import { ReleaseSearchModal } from "./release-search";
 import { rememberListing, useEntrance } from "./return-to";
 import { stagger } from "./stagger";
-import type { Dashboard, WorkFilm } from "@/lib/dashboard";
+import type { Dashboard, DuplicateFilm, WorkFilm } from "@/lib/dashboard";
 import type { AudioTask, DoviTask } from "@/lib/queue-tasks";
 import { compareId, movieId, posterName } from "@/lib/routes";
+import { scoreTheme } from "./score-circle";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 
 /**
@@ -340,6 +341,48 @@ export function DashboardView({ data }: { data: Dashboard }) {
          * Only where there is something in them. A heading over an empty strip
          * is the page reporting on its own layout.
          */}
+        {/*
+         * The same film twice, before the queues that are about films you only
+         * have once.
+         *
+         * First of the four because it is the only backlog here that is pure
+         * waste: an upgrade is a film that could be better, a conversion is a
+         * file that could be smaller, and both are improvements to a library
+         * that is already right. Two copies of one film is a library that is
+         * wrong, and the drive is paying for it tonight.
+         *
+         * It is also the only one with no button. The other three end in a
+         * press this app can make on your behalf — send the magnet, run the
+         * conversion, strip the tracks — and nothing here will ever delete a
+         * film for you. What a press does here is show you the two files
+         * properly, which is why the tile keeps the comparison under the poster
+         * rather than in the corner: the corner holds a figure, and this queue
+         * is answered with a choice.
+         */}
+        {work.duplicates.films.length > 0 && (
+          <Card
+            title="Duplicates"
+            hint={`${count(work.duplicates.count)} ${work.duplicates.count === 1 ? "film" : "films"} · ${size(work.duplicates.bytes)} to reclaim`}
+            index={1}
+            // Where the rest of them are, on the shelf that already has a
+            // filter for exactly this — the card holds six, and a library that
+            // has been re-ripped a few times has more.
+            action={
+              work.duplicates.count > work.duplicates.films.length ? (
+                <Link
+                  href="/library?f=dupes"
+                  className="text-[11px] opacity-45 transition-opacity hover:opacity-80"
+                >
+                  All {work.duplicates.count} →
+                </Link>
+              ) : undefined
+            }
+          >
+            {/* The size in the corner, the pair under the pointer. */}
+            <DuplicateShelf films={work.duplicates.films} />
+          </Card>
+        )}
+
         {work.upgrades.films.length > 0 && (
           <Card
             title="Upgrade queue"
@@ -350,7 +393,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
             // The posters below carry the gain that means something, one film
             // at a time, which is the granularity the decision is made at.
             hint={`${count(work.upgrades.count)} ${work.upgrades.count === 1 ? "film" : "films"}`}
-            index={1}
+            index={2}
           >
             {/* Points of score, signed: the figure is what taking the release
                 would add to a film that already has a number. */}
@@ -366,7 +409,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
           <Card
             title="Dolby Vision conversion queue"
             hint={`${count(work.dovi.count)} ${work.dovi.count === 1 ? "file" : "files"} · ${size(work.dovi.bytes)}`}
-            index={2}
+            index={3}
           >
             {/* The file's own size, which is what a P7 to P8.1 rewrite has to
                 read and write — the cost of the job rather than its yield. */}
@@ -387,7 +430,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
           <Card
             title="Strip Tracks queue"
             hint={`${count(work.audio.count)} ${work.audio.count === 1 ? "file" : "files"} · ${work.audio.estimated ? "≈" : "−"}${size(work.audio.bytes)} freed`}
-            index={3}
+            index={4}
           >
             {/* ≈ where the saving is bitrate × runtime, and nothing at all
                 where it was counted.
@@ -418,7 +461,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
           <Card
             title="Open issues"
             hint={`${count(work.issues.filmsAffected)} ${work.issues.filmsAffected === 1 ? "film" : "films"}`}
-            index={4}
+            index={5}
           >
             {/* Red, amber, and the page's own ink — the three tones the film
                 page and `/how-it-works` already spend on a severity, so a
@@ -739,6 +782,104 @@ function WorkTile({
 }
 
 /**
+ * One copy, on the panel a duplicate's poster keeps under it.
+ *
+ * The two lines are the same line with two things changed — the word in front
+ * and how loudly it is drawn — because that is what makes them read as one
+ * decision rather than two facts. `Keep` takes the app's own green, the colour
+ * a settled verdict wears everywhere here; `Drop` is turned down to the opacity
+ * `/compare` gives its losing columns, which is the same page saying the same
+ * thing at a smaller size.
+ *
+ * The score keeps the film's own tone from `scoreTheme` rather than a colour of
+ * this panel's choosing: a 91 has one colour in this app, and painting the
+ * better copy green and the worse one red would invent a verdict the numbers
+ * already carry.
+ *
+ * One line each, because the panel is as wide as a poster — 12rem — and this is
+ * the glance that says whether the comparison is worth opening, not the
+ * comparison. `/compare` prints forty rows; this prints the two that decide.
+ */
+function DuplicateLine({
+  label,
+  copy,
+  keeping,
+}: {
+  label: string;
+  copy: DuplicateFilm["keep"];
+  keeping?: boolean;
+}) {
+  return (
+    <span className={`flex flex-col ${keeping ? "" : "opacity-50"}`}>
+      <span
+        className={`text-[10px] font-medium tracking-[0.1em] uppercase ${
+          keeping ? "text-emerald-600 dark:text-emerald-400" : "opacity-70"
+        }`}
+      >
+        {label}
+      </span>
+      <span className="flex items-baseline gap-1.5">
+        <span
+          className={`font-score text-base leading-none ${scoreTheme(copy.score).text}`}
+        >
+          {copy.score}
+        </span>
+        <span className="min-w-0 truncate text-[11px] opacity-60">
+          {copy.resolution} {copy.releaseType}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Films held twice, as the shelf every other queue on this page is.
+ *
+ * It was a grid of cards — poster, title, and the two copies laid out side by
+ * side — and one section built like that among four shelves of artwork reads as
+ * a different page that arrived in the middle of this one. The row is the
+ * page's own form, and the form carries a claim worth keeping: everything here
+ * is a film, and a film is a poster.
+ *
+ * What a duplicate needs that a queue item does not is somewhere to put the
+ * comparison, and that is what `Tile.hover` is. At rest this is artwork with a
+ * figure in the corner, exactly like the three shelves under it. Pointed at, the
+ * copies rise out of the bottom edge — which is also the only part of this the
+ * poster cannot say for itself, both copies being the same film and wearing the
+ * same picture.
+ *
+ * The corner figure is the space, not the count. "2 copies" is a fact about the
+ * shelf you are already looking at; gigabytes are what having them costs, and
+ * they are what puts one of these ahead of another.
+ */
+function DuplicateShelf({ films }: { films: DuplicateFilm[] }) {
+  return (
+    <Shelf
+      tiles={films.map((film) => ({
+        key: film.key,
+        href: `/compare/${compareId(film.key)}`,
+        name: `${film.title}${film.year ? ` (${film.year})` : ""} — ${film.copies} copies, ${size(film.reclaimBytes)} to reclaim`,
+        poster: film.poster,
+        posterRemote: film.posterRemote,
+        artAt: film.artAt,
+        badge: size(film.reclaimBytes),
+        hover: (
+          <span className="flex flex-col gap-1.5">
+            <DuplicateLine label="Keep" copy={film.keep} keeping />
+            <DuplicateLine label="Drop" copy={film.drop} />
+            {/* How many there are, said only where it is not two — a pair is
+                what this shelf is for and does not need announcing. */}
+            <span className="text-[10px] tracking-wide uppercase opacity-40">
+              {film.copies === 2 ? "2 copies" : `${film.copies} copies`}
+            </span>
+          </span>
+        ),
+      }))}
+    />
+  );
+}
+
+/**
  * The newest arrivals, in a shelf that runs off the side of the page.
  *
  * Scrolling rather than wrapping, which is the difference between a row and a
@@ -755,18 +896,27 @@ function WorkTile({
  * ending on a hard vertical line with empty page either side of it — which
  * reads as the row having run out rather than as there being more of it.
  *
- * The margins are `50% - 50vw ∓ 7rem`: half the strip's own box, less half the
- * viewport, and then the rail. The two sides differ by it and that is the whole
- * reason they are written separately — the rail is what makes this column's
- * centre sit 7rem right of the viewport's, so a single `mx` cannot land on both
- * edges at once. It used to be one value, `+ 7rem`, which put the right edge on
- * the viewport and the left edge exactly on the column's. That left edge is the
- * one place it should not be: the shelf ended precisely where the rail began,
- * so a poster leaving to the left dissolved *at* the rail rather than passing
- * behind it. Nothing was ever under the rail to be seen through it, which is a
- * frosted panel with nothing to frost. `- 7rem` on the left carries the strip
- * the last 14rem to the viewport's own edge, under the rail, where the posters
- * now go.
+ * Each side is written as the distance from this strip's own box to that edge
+ * of the window, and the two are not the same distance, which is the whole
+ * reason they are written separately.
+ *
+ * The left one is a constant: the page starts at the rail and stays there — see
+ * the `md:pl-12` on `app/page.tsx` — so the strip's left edge is 14rem of rail
+ * plus 3rem of gutter from the window, whatever the window is doing. 17rem,
+ * both ways, and the negative margin carries the row the last of it *under* the
+ * rail rather than stopping at it: a poster leaving to the left should pass
+ * behind a frosted panel, and a panel with nothing behind it is nothing to
+ * frost.
+ *
+ * The right one cannot be a constant, because it is everything the column did
+ * not take: `100vw - 100% - 17rem`, the window less this box less what is to
+ * the left of it. That figure grows as the screen does — the column stops at
+ * 124rem and a 32-inch display has a foot of page beyond it — and it is the
+ * figure that was wrong when the page stopped being centred. The margins were
+ * `50% - 50vw ∓ 7rem` then, which is the arithmetic for a column with equal
+ * gutters either side; left-aligned, that put the right end of the shelf
+ * somewhere in the middle of the empty half, and the row ran out with the
+ * screen plainly continuing past it.
  *
  * Each padding cancels its own margin, so both ends still rest on the page's
  * gutter. What changed is where the row can travel to, not where it sits.
@@ -832,6 +982,23 @@ type Tile = {
    * rather than unreachable. Only the shelf's click changes.
    */
   onOpen?: () => void;
+  /**
+   * What the poster has to say when you point at it, drawn over its own lower
+   * half.
+   *
+   * For the one shelf whose tile is not self-explanatory. A poster in a queue
+   * stands for a film and a figure, and the figure fits in the corner; a poster
+   * in the duplicates shelf stands for a *choice between two files*, which is
+   * three lines of numbers that no corner will hold. Rather than give that
+   * shelf a card of its own — five posters the size of paragraphs, next to four
+   * shelves of artwork — the answer stays inside the tile and waits to be
+   * asked.
+   *
+   * Inside the tile deliberately. This strip scrolls, and a scroll container
+   * clips both axes: a panel hung below or beside the poster would be cut off
+   * at the row's edge on the very tiles nearest it.
+   */
+  hover?: React.ReactNode;
 };
 
 function Shelf({ tiles }: { tiles: Tile[] }) {
@@ -843,7 +1010,7 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
 
   return (
     <ul
-      className={`no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 sm:-mx-8 sm:px-8 md:mr-[calc(50%-50vw+7rem)] md:ml-[calc(50%-50vw-7rem)] md:pr-[calc(50vw-50%-7rem)] md:pl-[calc(50vw-50%+7rem)] ${SHELF_MASK}`}
+      className={`no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 sm:-mx-8 sm:px-8 md:mr-[calc(100%+17rem-100vw)] md:ml-[-17rem] md:pr-[calc(100vw-100%-17rem)] md:pl-[17rem] ${SHELF_MASK}`}
     >
       {tiles.map((tile, i) => {
         /* The name the tile no longer prints. A wall of artwork with nothing
@@ -853,7 +1020,7 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
         const named = {
           "aria-label": tile.name,
           title: tile.name,
-          className: "glow block w-full rounded-control text-left",
+          className: "group glow block w-full rounded-control text-left",
         };
 
         const picture = (
@@ -864,18 +1031,18 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
                 remote={tile.posterRemote}
                 version={tile.artAt}
                 transitionName={tile.transitionName}
-                // 128pt of poster is 256 device pixels on the screens these
-                // are looked at on, which is the next bucket up — w185 was
-                // the right ask at 96 and is a soft picture at this size.
-                // It also puts the local file on the cached 640 thumbnail
-                // rather than a full-resolution scan off the drive: `Art`
-                // maps the two together, and w185 was in neither map.
+                // The library's own ask, which is `Art`'s default: these are
+                // now the size the shelves on `/library` draw, so they want the
+                // same file. 192pt is 384 device pixels on the screens this is
+                // looked at on, and w342 puts the local copy on the cached 640
+                // thumbnail rather than a full-resolution scan off the drive —
+                // `Art` maps the two together.
                 size="w342"
                 loading="lazy"
-                className="h-48 w-32 rounded-control object-cover ring-1 ring-line"
+                className="h-72 w-48 rounded-control object-cover ring-1 ring-line"
               />
             ) : (
-              <span className="block h-48 w-32 rounded-control bg-surface-strong" />
+              <span className="block h-72 w-48 rounded-control bg-surface-strong" />
             )}
 
             {/* What this poster is standing for — twelve episodes, four
@@ -887,6 +1054,23 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
                 {tile.badge}
               </span>
             )}
+
+            {/* Rising out of the bottom edge rather than fading in over the
+                middle: the poster stays the picture, and what arrives reads as
+                something that was already there being pulled up. Answers focus
+                as well as the pointer, because a shelf of links is walked with
+                Tab by anyone not using a mouse and the panel is the only place
+                these numbers exist.
+
+                `pointer-events-none` so the panel is never the thing under the
+                cursor — the whole tile is one link, and a press that landed on
+                a caption instead of the poster would be the same press with a
+                different target. */}
+            {tile.hover && (
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-2 rounded-b-control bg-gradient-to-t from-background via-background/95 to-transparent px-2 pt-6 pb-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:transition-none">
+                {tile.hover}
+              </span>
+            )}
           </span>
         );
 
@@ -894,7 +1078,7 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
           <li
             key={tile.key}
             style={stagger(i)}
-            className={`${entrance} w-32 shrink-0`}
+            className={`${entrance} w-48 shrink-0`}
           >
             {/* A button where the click is a dialog, an anchor where it is an
                 address — never an anchor made to behave like a button. The
