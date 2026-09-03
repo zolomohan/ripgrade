@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import {
   Inter,
   Instrument_Sans,
@@ -93,11 +94,33 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  /*
+   * Nothing below this line may be answered at build time.
+   *
+   * Every read here — the jobs, and `hasQb` under them — goes to SQLite
+   * through a synchronous driver, and a synchronous read completes perfectly
+   * happily while the page is being prerendered. So without this the answers
+   * are whatever was true on the machine that ran `next build`, frozen into
+   * the static shell: in the container that is a database that does not exist
+   * yet, because /app/data is a volume mounted after the image is built.
+   *
+   * `qb` is the one that bites. Frozen false, it says qBittorrent is not
+   * connected, and every download control in the app is a plain magnet link
+   * rather than the handover to the queue — see `MagnetAction`. A request-time
+   * render gets it right, so the app looks correct until something makes the
+   * router re-read the shell, and then every button quietly changes meaning.
+   *
+   * `connection()` is where prerendering stops and the request begins, which
+   * is the whole of the fix: these are facts about this install right now, and
+   * there is no moment before the request at which they can honestly be read.
+   */
+  await connection();
+
   // Seeded here so a reload mid-job shows progress immediately, before the
   // job stream has connected.
   const jobs = {

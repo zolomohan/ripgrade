@@ -288,10 +288,17 @@ export function MagnetAction({
     // to whatever the system has registered, so there is nothing for the app
     // to do beyond offering the href — and no location to choose either.
     return pill ? (
+      /* `full` is honoured here exactly as the connected button honours it.
+         The two branches stand in the same slot — the dialog's primary press —
+         and one of them ignoring the width made the control visibly shrink at
+         the moment it stopped being a handover to the queue, which read as the
+         button breaking rather than as the app losing the client. */
       <a
         href={magnet}
         title={magnet}
-        className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90"
+        className={`inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-4 py-1.5 text-sm text-background transition-opacity hover:opacity-90 ${
+          full ? "w-full" : ""
+        }`}
       >
         <DownArrow className="h-3.5 w-3.5" />
         Download
