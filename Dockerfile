@@ -97,7 +97,26 @@ COPY --from=builder /app/package.json ./package.json
 # user outside the container, and the alternative is a UID that has to be
 # guessed right or nothing on the drive can be read, let alone converted.
 
-ENV NODE_ENV=production \
+# The films are named by a Mac, and a Mac writes "Furiosa꞉ A Mad Max Saga" —
+# U+A789, standing in for the colon the filesystem will not take. Debian's base
+# images set no locale at all, so every tool spawned here starts in the C
+# locale, where the character set is ASCII and a path with three bytes of UTF-8
+# in it cannot be converted to a filename to open.
+#
+# MediaInfo answers that by failing silently: `--Output=JSON` prints
+# `"media": null`, exits 0, and the app stores a probe that read nothing. The
+# film then derives as having no audio, no resolution and no HDR — a file the
+# app describes confidently and wrongly, rather than one it admits it could not
+# read. Every other tool here takes the same paths (mkvmerge, ffmpeg,
+# dovi_tool, and dovi_convert through python3), so this is set for all of them
+# rather than in front of the one that was caught.
+#
+# C.UTF-8 rather than a real locale: it is built into glibc, so nothing has to
+# be generated, and only the character set was ever wrong here — the sorting
+# and formatting of C are fine.
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0
