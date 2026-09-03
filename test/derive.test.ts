@@ -7,17 +7,23 @@ import {
   ISSUE_CATALOGUE,
   RUNTIME_DRIFT,
   STATUS_BANDS,
+  WEIGHTS,
+  asShareOfDisc,
   classifyEnhancementLayer,
   derive,
+  discShape,
   languageName,
   openIssues,
   parseEpisode,
   parseName,
+  relativeToDisc,
   runtimeDrift,
   scoreDisc,
+  scoreFacts,
   titleKey,
   type DoviScan,
 } from "../lib/derive";
+import { guessFromTitle } from "../lib/release-title";
 
 // ---------------------------------------------------------------------------
 // Duplicate grouping
@@ -910,4 +916,128 @@ test("a copy no denser than the master it came from does not exceed it", () => {
   assert.equal(d.scores.video, scoreDisc(master.best).video);
   assert.equal(d.scores.overall, 100);
   assert.deepEqual(d.disc?.gaps, []);
+});
+
+// ---------------------------------------------------------------------------
+// The breakdown, measured against the disc the score was measured against
+// ---------------------------------------------------------------------------
+
+/** The Amazing Spider-Man on 4K: native 4K, HDR10, TrueHD 7.1 Atmos. */
+const spiderMan = ceiling({
+  title: "The Amazing Spider-Man 4K",
+  hdr: ["HDR10"],
+  hasAtmos: true,
+  audioTracks: ["Dolby TrueHD 7.1", "Dolby Digital 5.1"],
+});
+
+test("a disc without Dolby Vision never charges a release for missing it", () => {
+  // The reported case. The name states no HDR at all, so the rubric scores it
+  // SDR and 8-bit — but the disc it is a copy of is HDR10, and Dolby Vision is
+  // not a thing anyone could own. Listing it as lost points explained the
+  // score with an upgrade that does not exist.
+  const { facts } = guessFromTitle(
+    "The Amazing Spider Man 2012 PROPER 2160p BluRay REMUX HEVC DTS HD MA TrueHD 7 1 Atmos FGT",
+  );
+
+  const mine = scoreFacts(facts);
+  const disc = scoreFacts(discShape(spiderMan.best));
+
+  const video = asShareOfDisc(mine.lines.video, disc.lines.video);
+  assert.ok(video);
+
+  const notes = video.lines.map((line) => line.note).filter(Boolean);
+  assert.deepEqual(notes, [
+    "HDR10 would score (+16)",
+    "10-bit would score (+4)",
+  ]);
+  assert.ok(!notes.some((note) => /Dolby Vision/.test(note!)));
+});
+
+test("the shares the panel draws are the shares the score was blended from", () => {
+  const { facts } = guessFromTitle(
+    "The Amazing Spider Man 2012 PROPER 2160p BluRay REMUX HEVC DTS HD MA TrueHD 7 1 Atmos FGT",
+  );
+
+  const mine = scoreFacts(facts);
+  const disc = scoreFacts(discShape(spiderMan.best));
+
+  const shares = {
+    video: asShareOfDisc(mine.lines.video, disc.lines.video)!,
+    audio: asShareOfDisc(mine.lines.audio, disc.lines.audio)!,
+    release: asShareOfDisc(mine.lines.release, disc.lines.release)!,
+  };
+
+  // Every dimension is marked out of a hundred, and the lines add up to the
+  // figure at the head of the section — the working has to be the arithmetic.
+  for (const share of Object.values(shares)) {
+    const sum = (pick: (line: { points: number; max: number }) => number) =>
+      share.lines.reduce((running, line) => running + pick(line), 0);
+
+    assert.equal(sum((line) => line.max), 100);
+    assert.equal(sum((line) => line.points), share.score);
+  }
+
+  // And blending the three reaches the number on the dial, which the panel
+  // used to close on a division that did not.
+  const blended = Math.round(
+    shares.video.score * WEIGHTS.video +
+      shares.audio.score * WEIGHTS.audio +
+      shares.release.score * WEIGHTS.release,
+  );
+
+  assert.equal(blended, relativeToDisc(mine.scores, disc.scores));
+});
+
+test("a release that beats the disc says so rather than being trimmed to fit", () => {
+  // A TrueHD 7.1 Atmos remux of a disc pressed with lossy 5.1. Capping the
+  // surplus line by line would hide it and disagree with `relativeToDisc`,
+  // which caps the dimension as a whole.
+  const { facts } = guessFromTitle(
+    "Some Film 2019 2160p BluRay REMUX HEVC TrueHD 7 1 Atmos-GRP",
+  );
+
+  const mine = scoreFacts(facts);
+  const disc = scoreFacts(discShape(ceiling().best));
+
+  const audio = asShareOfDisc(mine.lines.audio, disc.lines.audio);
+  assert.ok(audio);
+
+  assert.equal(audio.score, 100);
+  assert.ok(audio.lines[0].points > audio.lines[0].max);
+  assert.deepEqual(
+    audio.lines.map((line) => line.note),
+    [undefined, undefined, undefined],
+  );
+});
+
+test("a dimension the disc says nothing about has no share to take", () => {
+  const disc = scoreFacts(discShape(ceiling({ audioTracks: [] }).best));
+  const { facts } = guessFromTitle("Some Film 2019 2160p BluRay REMUX HEVC");
+
+  assert.equal(
+    asShareOfDisc(scoreFacts(facts).lines.audio, disc.lines.audio),
+    undefined,
+  );
+});
+
+test("a derived film carries the disc's own lines for the panel to mark against", () => {
+  const d = derive(
+    "/m/Spider/The.Amazing.Spider-Man.2012.2160p.BluRay.REMUX.HEVC.TrueHD.7.1.Atmos-FGT.mkv",
+    50e9,
+    mediainfo(
+      {},
+      { Format: "HEVC", BitDepth: "10", HDR_Format: "SMPTE ST 2086" },
+      [{ Format: "MLP FBA", Channels: "8" }],
+    ),
+    undefined,
+    spiderMan,
+  );
+
+  assert.equal(d.breakdown.relative, true);
+  assert.equal(d.breakdown.disc?.video.length, d.breakdown.video.length);
+  assert.equal(
+    d.breakdown.disc?.video.find((line) => line.label === "Dynamic range")
+      ?.spec,
+    "HDR10",
+  );
 });

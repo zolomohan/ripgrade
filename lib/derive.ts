@@ -317,6 +317,17 @@ export type ScoreLine = {
   max: number;
   /** How to close the gap, when there is one. */
   note?: string;
+  /**
+   * What this line has, as a noun phrase — "HDR10", "10-bit", "8 channels".
+   *
+   * `detail` is written for the row it sits on and says whatever reads best
+   * there; this says the same thing in a form another sentence can borrow.
+   * It exists for `asShareOfDisc`, which writes a shortfall against the disc's
+   * own line: the disc's spec is what "would score" the missing points, and
+   * reading it off `detail` would produce "Disc bitrate, untouched would
+   * score".
+   */
+  spec: string;
 };
 
 export type Breakdown = {
@@ -324,6 +335,20 @@ export type Breakdown = {
   relative: boolean;
   /** The disc's own score — the denominator when `relative`. */
   discScore?: number;
+  /**
+   * The best disc's own lines, criterion for criterion — the yardstick.
+   *
+   * Present wherever the score is a share of a disc, and what turns the
+   * breakdown from a rubric reading into an account of the number on the dial:
+   * every meter is drawn against the disc's line rather than against the best
+   * any release could theoretically be. Without it a film whose disc is HDR10
+   * reads "Dolby Vision would score (+22)" under a score that never charged it
+   * for missing Dolby Vision.
+   *
+   * Absent on rows derived before it existed, which fall back to the rubric's
+   * own maxima — the reading this replaced.
+   */
+  disc?: { video: ScoreLine[]; audio: ScoreLine[]; release: ScoreLine[] };
   /** The absolute rubric score, kept for reference either way. */
   absolute: number;
   video: ScoreLine[];
@@ -1097,12 +1122,17 @@ function bppOf(
     : undefined;
 }
 
-export function scoreDisc(best: NonNullable<DiscInput["best"]>): {
-  video: number;
-  audio: number;
-  release: number;
-  overall: number;
-} {
+/**
+ * The disc, written out as though it were a file — which is what lets one
+ * rubric read both.
+ *
+ * Kept apart from `scoreDisc` because the disc's *lines* are wanted too, not
+ * only its totals: a score that is a share of the disc has to be explained
+ * against the disc, criterion by criterion. See `asShareOfDisc`.
+ */
+export function discShape(
+  best: NonNullable<DiscInput["best"]>,
+): ScorableFacts {
   const resolution: Derived["resolution"] =
     best.format === "4K"
       ? "2160p"
@@ -1138,7 +1168,7 @@ export function scoreDisc(best: NonNullable<DiscInput["best"]>): {
   const releaseType: ReleaseType =
     best.source === "web" ? "WEB-DL" : ("REMUX" as ReleaseType);
 
-  const shape = {
+  return {
     resolution,
     hdr,
     // UHD discs are 10-bit by specification; standard Blu-ray is 8-bit, and a
@@ -1151,23 +1181,111 @@ export function scoreDisc(best: NonNullable<DiscInput["best"]>): {
     bpp: releaseType === "WEB-DL" ? bppOf(best, resolution) : undefined,
     releaseType,
     dvProfile: undefined,
+    audio,
   };
+}
 
-  const video = total(videoLines(shape));
-  const audioScore = total(audioLines(audio));
-  const release = total(releaseLines(releaseType));
-
-  const weighted =
-    video * WEIGHTS.video +
-    audioScore * WEIGHTS.audio +
-    release * WEIGHTS.release;
-
+export function scoreDisc(best: NonNullable<DiscInput["best"]>): {
+  video: number;
+  audio: number;
+  release: number;
+  overall: number;
+} {
+  const { scores } = scoreFacts(discShape(best));
   return {
-    video,
-    audio: audioScore,
-    release,
-    overall: Math.round(Math.min(weighted, video + VIDEO_CEILING_BONUS)),
+    video: scores.video,
+    audio: scores.audio,
+    release: scores.release,
+    overall: scores.overall,
   };
+}
+
+/**
+ * One dimension's lines rewritten as shares of the disc's own.
+ *
+ * The rubric marks every line against the best a release could theoretically
+ * be, and that is the right yardstick right up until a disc is known — at
+ * which point the score stops being a rubric total and becomes a fraction of
+ * what you could actually buy. The meters have to follow it there. A 4K remux
+ * of an HDR10 disc was reading "Dolby Vision would score (+22)" beneath a
+ * number that had never charged it for missing Dolby Vision, because no such
+ * disc exists to be missing.
+ *
+ * So both sides of every line are multiplied by the same factor: the disc's
+ * own points for the dimension become 100, and the file's points become the
+ * share of them it holds. The maxima then sum to 100 and the points sum to the
+ * dimension's share of the disc — which is exactly the figure `relativeToDisc`
+ * weighs into the number on the dial, so the working reaches the same place
+ * the score did.
+ *
+ * Nothing is capped line by line. A file can beat the disc on one criterion
+ * and fall short on another, and per-line capping would quietly lose the
+ * surplus and disagree with `relativeToDisc`, which caps the dimension as a
+ * whole. A line that beats the disc scores above its maximum here and says so.
+ *
+ * Undefined where the disc scores nothing at all for the dimension — a page
+ * that listed no audio, say. There is no denominator, so there is no share:
+ * `relativeToDisc` reads that as parity, and the caller shows the rubric.
+ */
+export function asShareOfDisc(
+  mine: ScoreLine[],
+  disc: ScoreLine[],
+): { lines: ScoreLine[]; score: number } | undefined {
+  if (mine.length !== disc.length) return undefined;
+
+  const sum = (lines: ScoreLine[]) =>
+    lines.reduce((running, line) => running + line.points, 0);
+
+  const theirs = sum(disc);
+  if (theirs <= 0) return undefined;
+
+  const scale = 100 / theirs;
+  const raw = Math.round(sum(mine) * scale);
+  const maxima = spread(
+    disc.map((line) => line.points * scale),
+    100,
+  );
+  const points = spread(
+    mine.map((line) => line.points * scale),
+    raw,
+  );
+
+  const lines = mine.map((line, i) => ({
+    ...line,
+    points: points[i],
+    max: maxima[i],
+    // Written against the disc's line rather than the rubric's ideal: the
+    // points are there to be had from the disc, and the disc is what has them.
+    note:
+      points[i] < maxima[i]
+        ? `${disc[i].spec} would score (+${maxima[i] - points[i]})`
+        : undefined,
+  }));
+
+  return { lines, score: Math.min(100, raw) };
+}
+
+/**
+ * Rounds a set of shares to whole numbers that still add up to their total.
+ *
+ * Rounding each line on its own leaves the column adding to 99 or 101 under a
+ * header saying 100, which in a panel whose whole claim is that the lines are
+ * the working is the one thing it cannot do. The drift lands on the largest
+ * line, where a point either way is least visible and least misleading.
+ */
+function spread(values: number[], target: number): number[] {
+  const out = values.map((value) => Math.round(value));
+  let drift = target - out.reduce((running, n) => running + n, 0);
+
+  while (drift !== 0 && out.length > 0) {
+    const step = Math.sign(drift);
+    let biggest = 0;
+    for (let i = 1; i < out.length; i++) if (out[i] > out[biggest]) biggest = i;
+    out[biggest] += step;
+    drift -= step;
+  }
+
+  return out;
 }
 
 /** How far below the disc's bitrate a file has to sit before it is worth saying. */
@@ -1583,6 +1701,7 @@ function videoLines(
     {
       label: "Resolution",
       detail: d.resolution,
+      spec: d.resolution,
       points: resolution,
       max: BEST_RESOLUTION,
       note: gap(resolution, BEST_RESOLUTION, "A 2160p transfer would score"),
@@ -1593,6 +1712,7 @@ function videoLines(
         d.hdr === "Dolby Vision"
           ? `Dolby Vision P${d.dvProfile ?? "?"}`
           : d.hdr,
+      spec: d.hdr,
       points: hdr,
       max: BEST_HDR,
       note: gap(hdr, BEST_HDR, "Dolby Vision would score"),
@@ -1600,6 +1720,7 @@ function videoLines(
     {
       label: "Bit depth",
       detail: d.bitDepth ? `${d.bitDepth}-bit` : "unknown",
+      spec: d.bitDepth ? `${d.bitDepth}-bit` : "10-bit",
       points: tenBit,
       max: VIDEO_POINTS.tenBit,
       note: gap(tenBit, VIDEO_POINTS.tenBit, "10-bit would score"),
@@ -1607,6 +1728,10 @@ function videoLines(
     {
       label: "Bitrate density",
       detail: densityDetail,
+      spec:
+        d.releaseType === "REMUX"
+          ? "The disc's own bitrate"
+          : "The source's own bitrate",
       points: density,
       max: BEST_DENSITY,
       note: gap(
@@ -1635,18 +1760,21 @@ function audioLines(audio: AudioTrack[]): ScoreLine[] {
       {
         label: "Codec",
         detail: "No audio track",
+        spec: "A lossless track",
         points: 0,
         max: AUDIO_POINTS.lossless,
       },
       {
         label: "Object audio",
         detail: "None",
+        spec: "Atmos or DTS:X",
         points: 0,
         max: AUDIO_POINTS.objectAudio,
       },
       {
         label: "Channels",
         detail: "None",
+        spec: "8 channels",
         points: 0,
         max: AUDIO_POINTS.channels8,
       },
@@ -1666,6 +1794,7 @@ function audioLines(audio: AudioTrack[]): ScoreLine[] {
     {
       label: "Codec",
       detail: `${best.label}${best.lossless ? " — lossless" : " — lossy"}`,
+      spec: best.label,
       points: codec,
       max: AUDIO_POINTS.lossless,
       note: gap(codec, AUDIO_POINTS.lossless, "A lossless track would score"),
@@ -1673,6 +1802,7 @@ function audioLines(audio: AudioTrack[]): ScoreLine[] {
     {
       label: "Object audio",
       detail: best.atmos ? "Dolby Atmos" : best.dtsx ? "DTS:X" : "None",
+      spec: best.atmos ? "Dolby Atmos" : best.dtsx ? "DTS:X" : "Object audio",
       points: object,
       max: AUDIO_POINTS.objectAudio,
       note: gap(object, AUDIO_POINTS.objectAudio, "Atmos or DTS:X would score"),
@@ -1680,6 +1810,7 @@ function audioLines(audio: AudioTrack[]): ScoreLine[] {
     {
       label: "Channels",
       detail: best.channels ? `${best.channels} channels` : "unknown",
+      spec: best.channels ? `${best.channels} channels` : "8 channels",
       points: channels,
       max: AUDIO_POINTS.channels8,
       note: gap(
@@ -1731,6 +1862,7 @@ function releaseLines(type: ReleaseType, bpp?: number): ScoreLine[] {
     {
       label: "Source",
       detail,
+      spec: type === "UNKNOWN" ? "A disc remux" : type,
       points,
       max: RELEASE_POINTS.REMUX,
       note: gap(points, RELEASE_POINTS.REMUX, "A disc remux would score"),
@@ -2082,18 +2214,25 @@ export function derive(
   // deficit in another. A file with better audio than its disc but only HDR10
   // against the disc's Dolby Vision was scoring 100 while still listing that
   // gap — beating the disc on sound does not make you Dolby Vision.
-  const discParts = disc?.best ? scoreDisc(disc.best) : undefined;
+  //
+  // Scored through `scoreFacts` rather than `scoreDisc` so the disc's own
+  // lines come back with its totals: the breakdown measures every meter
+  // against them, and re-deriving them in the browser would need the disc
+  // page the browser never sees.
+  const discRubric = disc?.best ? scoreFacts(discShape(disc.best)) : undefined;
+  const discParts = discRubric?.scores;
   const discScore = discFacts?.discScore;
 
+  const relative = Boolean(discScore && discScore > 0);
+
   scores.overall =
-    discParts && discScore && discScore > 0
-      ? relativeToDisc(scores, discParts)
-      : absolute;
+    discParts && relative ? relativeToDisc(scores, discParts) : absolute;
 
   const breakdown: Breakdown = {
     ...lines,
-    relative: Boolean(discScore && discScore > 0),
+    relative,
     discScore,
+    disc: relative ? discRubric?.lines : undefined,
     absolute,
     weighted: Math.round(weighted * 10) / 10,
     ceiling,

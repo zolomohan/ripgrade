@@ -487,6 +487,7 @@ function WishRow({
             score: hit.score,
             relative: hit.relative,
             discScore: hit.discScore,
+            discShape: hit.discShape,
           }}
           theme={queueTheme(hit.score)}
           size={48}

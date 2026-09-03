@@ -58,6 +58,15 @@ export type PredictedScore = {
   relative: boolean;
   /** The disc's own rubric total, which is what `score` is a share of. */
   discScore?: number;
+  /**
+   * The disc itself on the same rubric, where the row kept it.
+   *
+   * Without it the breakdown can only mark the release against the best any
+   * release could be, which under a disc-relative score is a different
+   * question from the one the number answered — the meters would list Dolby
+   * Vision as lost points on a film whose best disc is HDR10.
+   */
+  discShape?: ScorableFacts;
   /** What "better" is better than, where the list was measuring against one. */
   reference?: { kind: "copy" | "disc"; delta: number };
 };
@@ -154,6 +163,7 @@ function WhyModal({
     score,
     relative,
     discScore,
+    discShape,
     reference,
   } = subject;
 
@@ -175,6 +185,10 @@ function WhyModal({
       ...lines,
       relative: scaled,
       discScore: scaled ? discScore : undefined,
+      // The same rubric read over the disc, which is what every meter is
+      // measured against once the score is a share of one. A row stored before
+      // the disc was kept has none, and falls back to the rubric's own maxima.
+      disc: scaled && discShape ? scoreFacts(discShape).lines : undefined,
       absolute: scores.overall,
       weighted: Math.round(weighted * 10) / 10,
       ceiling,
@@ -204,7 +218,7 @@ function WhyModal({
           stored.audio !== scores.audio ||
           stored.release !== scores.release),
     };
-  }, [title, facts, sizeBytes, stored, score, relative, discScore]);
+  }, [title, facts, sizeBytes, stored, score, relative, discScore, discShape]);
 
   return (
     <Modal

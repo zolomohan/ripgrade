@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import {
+  asShareOfDisc,
   VIDEO_CEILING_BONUS,
   WEIGHTS,
   type Breakdown,
@@ -37,7 +38,10 @@ const RULE =
   "h-px shrink-0 bg-gradient-to-r from-transparent via-line-strong to-transparent";
 
 function LineRow({ line }: { line: ScoreLine }) {
-  const full = line.points === line.max;
+  // Measured against a disc, a line can beat what it is measured against —
+  // better sound than the disc was pressed with. That is a full bar and then
+  // some, and the bar stops at full while the figures say the rest.
+  const full = line.points >= line.max;
 
   return (
     <div className="py-2.5">
@@ -64,7 +68,9 @@ function LineRow({ line }: { line: ScoreLine }) {
           className={`h-full rounded-full ${
             full ? "bg-foreground/45" : "bg-amber-500/70"
           }`}
-          style={{ width: `${(line.points / line.max) * 100}%` }}
+          style={{
+            width: `${Math.min(100, line.max > 0 ? (line.points / line.max) * 100 : 100)}%`,
+          }}
         />
       </div>
     </div>
@@ -76,11 +82,14 @@ function Component({
   weight,
   score,
   lines,
+  unmeasured,
 }: {
   title: string;
   weight: number;
   score: number;
   lines: ScoreLine[];
+  /** Set where the disc scores nothing here, so there is no share to take. */
+  unmeasured?: boolean;
 }) {
   const lost = lines.reduce((sum, l) => sum + (l.max - l.points), 0);
 
@@ -106,6 +115,13 @@ function Component({
         </span>
       </div>
 
+      {unmeasured && (
+        <p className="mt-1 text-xs opacity-50">
+          The disc lists nothing here, so this reads on the rubric alone and
+          counts as parity — you cannot fall short of a blank.
+        </p>
+      )}
+
       <div className="mt-2">
         {lines.map((line) => (
           <LineRow key={line.label} line={line} />
@@ -115,24 +131,26 @@ function Component({
       {/* On its own quiet surface, so the section ends with a verdict rather
           than trailing off — how many points are missing, and the way to each
           of them. */}
-      {lost > 0 && (
+      {notes.length > 0 && (
         <div className="mt-3 rounded-card bg-surface px-4 py-3 text-xs">
-          <p className="flex items-baseline justify-between gap-4">
-            <span className="tracking-wide uppercase opacity-45">
-              Left on the table
-            </span>
-            <span className="font-mono tabular-nums opacity-60">−{lost}</span>
-          </p>
-          {notes.length > 0 && (
-            <ul className="mt-2 flex flex-col gap-1 opacity-70">
-              {notes.map((note) => (
-                <li key={note} className="flex gap-2">
-                  <span className="opacity-40">—</span>
-                  <span>{note}</span>
-                </li>
-              ))}
-            </ul>
+          {lost > 0 && (
+            <p className="flex items-baseline justify-between gap-4">
+              <span className="tracking-wide uppercase opacity-45">
+                Left on the table
+              </span>
+              <span className="font-mono tabular-nums opacity-60">−{lost}</span>
+            </p>
           )}
+          <ul
+            className={`flex flex-col gap-1 opacity-70 ${lost > 0 ? "mt-2" : ""}`}
+          >
+            {notes.map((note) => (
+              <li key={note} className="flex gap-2">
+                <span className="opacity-40">—</span>
+                <span>{note}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>
@@ -165,6 +183,30 @@ function Step({
   );
 }
 
+/**
+ * One dimension as the panel draws it: against the disc where there is one,
+ * against the rubric where there is not.
+ *
+ * `unmeasured` is the third case — a disc that scores nothing at all for this
+ * dimension, a page that listed no audio. `relativeToDisc` reads a missing
+ * denominator as parity, so the blend takes 100 for it while the meters go on
+ * showing the rubric, which is the only reading left.
+ */
+type Section = { lines: ScoreLine[]; score: number; unmeasured: boolean };
+
+function sectionOf(
+  mine: ScoreLine[],
+  score: number,
+  disc?: ScoreLine[],
+): Section {
+  if (!disc) return { lines: mine, score, unmeasured: false };
+
+  const share = asShareOfDisc(mine, disc);
+  return share
+    ? { ...share, unmeasured: false }
+    : { lines: mine, score: 100, unmeasured: true };
+}
+
 export function ScoreBreakdown({
   scores,
   breakdown,
@@ -172,41 +214,58 @@ export function ScoreBreakdown({
   scores: { video: number; audio: number; release: number; overall: number };
   breakdown: Breakdown;
 }) {
+  // Every meter measured against whatever the score itself was measured
+  // against. A disc-relative number explained against the rubric's ideal is
+  // working for some other number: it lists points the score never charged
+  // for, and the two disagree in front of you.
+  const video = sectionOf(breakdown.video, scores.video, breakdown.disc?.video);
+  const audio = sectionOf(breakdown.audio, scores.audio, breakdown.disc?.audio);
+  const release = sectionOf(
+    breakdown.release,
+    scores.release,
+    breakdown.disc?.release,
+  );
+
+  const shared = Boolean(breakdown.disc);
+
   return (
     <div className="flex flex-col gap-8">
       <p className="text-sm opacity-60">
-        Each category is scored out of 100 from the criteria below, then
-        blended. A full bar is a criterion at its maximum; an amber one is
-        where the points went.
+        {shared
+          ? "Each category is scored as a share of the best disc's own — its points for a criterion are what full marks are worth here — and the three are then blended. A full bar is a criterion the disc has nothing more of; an amber one is where the points went."
+          : "Each category is scored out of 100 from the criteria below, then blended. A full bar is a criterion at its maximum; an amber one is where the points went."}
       </p>
 
       <Component
         title="Video"
         weight={WEIGHTS.video}
-        score={scores.video}
-        lines={breakdown.video}
+        score={video.score}
+        lines={video.lines}
+        unmeasured={video.unmeasured}
       />
       <div aria-hidden className={RULE} />
 
       <Component
         title="Audio"
         weight={WEIGHTS.audio}
-        score={scores.audio}
-        lines={breakdown.audio}
+        score={audio.score}
+        lines={audio.lines}
+        unmeasured={audio.unmeasured}
       />
       <div aria-hidden className={RULE} />
 
       <Component
         title="Release"
         weight={WEIGHTS.release}
-        score={scores.release}
-        lines={breakdown.release}
+        score={release.score}
+        lines={release.lines}
+        unmeasured={release.unmeasured}
       />
       <div aria-hidden className={RULE} />
 
       <section className="flex flex-col gap-1">
         <h3 className="font-medium">Final calculation</h3>
-        {breakdown.relative && (
+        {shared && (
           <p className="text-sm opacity-60">
             Scored against the best disc that exists for this film, not against
             an abstract ideal — so a flawless copy of a modest release is still
@@ -216,65 +275,66 @@ export function ScoreBreakdown({
 
         {/* The same arithmetic that was one line of formula soup, told a step
             at a time: what each number is in words, how it was made in mono
-            underneath, and the figure it produced on the right. */}
-        <div className="mt-2 flex flex-col divide-y divide-line">
-          <Step
-            label="The three, blended"
-            working={`${scores.video} × ${WEIGHTS.video} + ${scores.audio} × ${WEIGHTS.audio} + ${scores.release} × ${WEIGHTS.release}`}
-            value={breakdown.weighted}
-          />
-          <Step
-            label="Video ceiling"
-            working={`picture quality ${scores.video} + ${VIDEO_CEILING_BONUS}`}
-            value={breakdown.ceiling}
-          />
-          <Step
-            label={
-              breakdown.cappedByVideo
-                ? "Capped at the ceiling — sound cannot outscore the picture"
-                : "Lower of the two — the ceiling did not bind"
-            }
-            value={breakdown.absolute}
-          />
+            underneath, and the figure it produced on the right.
 
-          {breakdown.relative && breakdown.discScore ? (
+            Against a disc it is one step, because the three shares above are
+            already the whole of it: no rubric total, and no video ceiling —
+            nothing can outscore the picture when the picture's own share is
+            what is being weighed. The old reading showed both scales at once
+            and closed on "78 ÷ 93", a division that did not produce the number
+            printed beside it. */}
+        <div className="mt-2 flex flex-col divide-y divide-line">
+          {shared ? null : (
             <>
               <Step
-                label="The best disc, on the same rubric"
-                value={breakdown.discScore}
+                label="The three, blended"
+                working={`${scores.video} × ${WEIGHTS.video} + ${scores.audio} × ${WEIGHTS.audio} + ${scores.release} × ${WEIGHTS.release}`}
+                value={breakdown.weighted}
               />
-              <div className="flex items-center justify-between gap-4 pt-3">
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">
-                    This copy, as a share of that disc
-                  </span>
-                  <span className="mt-0.5 block font-mono text-xs opacity-45">
-                    {breakdown.absolute} ÷ {breakdown.discScore}
-                  </span>
-                </span>
-                <span className="shrink-0 font-score text-xl font-semibold tabular-nums">
-                  {scores.overall}
-                </span>
-              </div>
+              <Step
+                label="Video ceiling"
+                working={`picture quality ${scores.video} + ${VIDEO_CEILING_BONUS}`}
+                value={breakdown.ceiling}
+              />
+              <Step
+                label={
+                  breakdown.cappedByVideo
+                    ? "Capped at the ceiling — sound cannot outscore the picture"
+                    : "Lower of the two — the ceiling did not bind"
+                }
+                value={breakdown.absolute}
+              />
             </>
-          ) : (
-            <div className="flex items-center justify-between gap-4 pt-3">
-              <span className="block text-sm font-medium">
-                No disc data — scored on the rubric alone
-              </span>
-              <span className="shrink-0 font-score text-xl font-semibold tabular-nums">
-                {scores.overall}
-              </span>
-            </div>
           )}
+
+          <div className="flex items-center justify-between gap-4 pt-3">
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">
+                {shared
+                  ? "The three shares, blended"
+                  : "No disc data — scored on the rubric alone"}
+              </span>
+              {shared && (
+                <span className="mt-0.5 block font-mono text-xs opacity-45">
+                  {video.score} × {WEIGHTS.video} + {audio.score} ×{" "}
+                  {WEIGHTS.audio} + {release.score} × {WEIGHTS.release}
+                </span>
+              )}
+            </span>
+            <span className="shrink-0 font-score text-xl font-semibold tabular-nums">
+              {scores.overall}
+            </span>
+          </div>
         </div>
 
         <p className="mt-3 text-xs opacity-50">
-          {scores.overall === 100 && breakdown.relative
+          {scores.overall === 100 && shared
             ? "This copy is as good as the best release available, so there is nothing to upgrade to."
-            : breakdown.cappedByVideo
-              ? `The weighted total reached ${breakdown.weighted}, but strong audio and a clean container cannot lift a file more than ${VIDEO_CEILING_BONUS} points above its picture quality.`
-              : "The ceiling did not bind here — the weighted total was already below it."}
+            : shared
+              ? `Each share is capped at parity, so beating the disc in one place cannot pay for falling short in another. Marked against the rubric's own ideal instead — a disc nobody pressed — this scores ${breakdown.absolute}.`
+              : breakdown.cappedByVideo
+                ? `The weighted total reached ${breakdown.weighted}, but strong audio and a clean container cannot lift a file more than ${VIDEO_CEILING_BONUS} points above its picture quality.`
+                : "The ceiling did not bind here — the weighted total was already below it."}
         </p>
       </section>
 

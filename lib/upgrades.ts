@@ -1,6 +1,12 @@
 import "server-only";
 
-import { relativeToDisc, scoreDisc, titleKey } from "./derive";
+import {
+  discShape,
+  relativeToDisc,
+  scoreFacts,
+  titleKey,
+  type ScorableFacts,
+} from "./derive";
 import type { DiscLookup } from "./disc";
 import { searchIndexers, type IndexerResult } from "./jackett";
 import { guessFromTitle, type ReleaseGuess } from "./release-title";
@@ -106,6 +112,16 @@ export type ScoredRelease = IndexerResult & {
    * through two call sites that would each have to remember it.
    */
   discScore?: number;
+  /**
+   * The disc itself, read as the rubric reads a file — the yardstick, not just
+   * the denominator.
+   *
+   * `discScore` says what the disc totals; this says what it is made of, which
+   * is what the dial's "why this score" needs to draw a meter against. A share
+   * of a disc explained against the rubric's ideal reads as a shortfall the
+   * score never charged: see `asShareOfDisc`.
+   */
+  discShape?: ScorableFacts;
   /** How many indexers carried the same release name. */
   sources: number;
 };
@@ -303,9 +319,10 @@ export async function findUpgrades(
   // the rubric total stands as it did before.
   // `audio` is renamed at this boundary exactly as `library.ts` renames it:
   // the scraper calls the list `audio`, the rubric calls it `audioTracks`.
-  const discParts = target.disc?.best
-    ? scoreDisc({ ...target.disc.best, audioTracks: target.disc.best.audio })
+  const shape = target.disc?.best
+    ? discShape({ ...target.disc.best, audioTracks: target.disc.best.audio })
     : undefined;
+  const discParts = shape ? scoreFacts(shape).scores : undefined;
   const relative = Boolean(discParts && discParts.overall > 0);
 
   // What "better" is better than. Your copy where you have one; otherwise the
@@ -349,6 +366,7 @@ export async function findUpgrades(
       delta,
       standing: standingOf(delta, reference),
       discScore: relative ? discParts?.overall : undefined,
+      discShape: relative ? shape : undefined,
       sources: 1,
     });
   }
