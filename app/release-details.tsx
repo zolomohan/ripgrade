@@ -13,6 +13,15 @@ import type { DownloadSource } from "@/lib/qbittorrent";
 import type { StoredHit } from "@/lib/upgrade-sweep";
 
 /**
+ * The circle an icon-only action wears, at the size the rows this dialog opens
+ * from wear theirs — see `ROW_ACTION` in wishlist/finds-view.tsx, which is the
+ * control this one stands next to in the list and should not change size on
+ * the way into the dialog.
+ */
+const MARK =
+  "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line transition-colors hover:border-line-strong hover:bg-surface-strong";
+
+/**
  * Everything the sweep knows about one release, for when the poster is not
  * enough.
  *
@@ -266,6 +275,7 @@ export function ReleaseDetails({
               score: hit.score,
               relative: hit.relative,
               discScore: hit.discScore,
+              discShape: hit.discShape,
               reference:
                 currentScore === undefined
                   ? undefined
@@ -362,6 +372,44 @@ export function ReleaseDetails({
           >
             Other releases
           </button>
+
+          {/* The indexer's own page, whenever there is one to open.
+
+              This was written only as the *substitute* for a Download — the
+              branch below promotes it to the primary press when a release has
+              no magnet — so the two were alternatives and never companions. A
+              release that had both simply lost it, which made the one surface
+              where you have stopped to look at a release in detail the one
+              place you could not open its page, while the row behind the dialog
+              was offering exactly that. Beside the fetch, at the size the row
+              wears, in the row's own order: doubt, then the page, then the
+              fetch. Held back where there is no magnet, because there it is
+              already the button below rather than a mark beside it. */}
+          {hit.detailsUrl && hit.magnet && (
+            <a
+              href={hit.detailsUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label="Open the indexer's page for this release"
+              title={`Details on ${hit.indexer ?? "the indexer"}`}
+              className={MARK}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+                className="h-4 w-4"
+              >
+                <path d="M14 5h5v5" />
+                <path d="M19 5l-7.5 7.5" />
+                <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+              </svg>
+            </a>
+          )}
 
           {hit.magnet ? (
             /* The compare page's filled button rather than the circle a tile
