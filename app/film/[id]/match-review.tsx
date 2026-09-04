@@ -249,7 +249,7 @@ export function MatchReview({
                             />
                           )}
                           {current && (
-                            <span className="absolute inset-x-2 bottom-2 rounded-chip bg-background/85 px-1.5 text-center text-[10px] leading-[18px] font-medium backdrop-blur">
+                            <span className="absolute inset-x-2 bottom-2 rounded-chip bg-background/85 px-1.5 text-center font-display text-[10px] leading-[18px] font-medium backdrop-blur">
                               Current match
                             </span>
                           )}

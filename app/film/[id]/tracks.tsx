@@ -498,7 +498,7 @@ export function TrackTables({
   const chip = (label: string, title: string) => (
     <span
       title={title}
-      className="rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-60 ring-1 ring-line-strong ring-inset"
+      className="rounded-chip px-1.5 py-0.5 font-display text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-60 ring-1 ring-line-strong ring-inset"
     >
       {label}
     </span>

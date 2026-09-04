@@ -90,13 +90,25 @@ export const TILE_FRAME =
  * `background/85` is what the library's score badge and the wishlist's "In the
  * library" line already stand on, so a figure reads the same wherever it is laid
  * over a poster.
+ *
+ * `font-display`, as every tag in this app now is. These were the body face by
+ * omission — nothing asked for one, so they fell through to Inter — which made
+ * the smallest figures on a page the only ones set in a different family from
+ * the largest. A count in the corner of a poster and the same count in the row
+ * of figures above it are one measurement, and they are the same voice now. The
+ * two faces still in the corners are the ones that mean something by being
+ * there: `font-score` where a number is a verdict, and the segmented switches,
+ * which are controls rather than readings.
+ *
+ * The leading stays stated rather than left to the face, which is what keeps
+ * this a change of family and not of layout — see `TILE_PLATE` below.
  */
 export const TILE_READING =
-  "rounded-chip bg-background/85 px-1.5 text-[11px] leading-[20px] font-medium tabular-nums backdrop-blur";
+  "rounded-full bg-background/85 px-2 font-display text-[12.5px] leading-[20px] font-medium tabular-nums backdrop-blur";
 
 /** The same plate for a word rather than a figure — no tabular numbers. */
 export const TILE_NOTE =
-  "truncate rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium backdrop-blur";
+  "truncate rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium backdrop-blur";
 
 /**
  * A word on the plate a *score* wears, for the one case where the two share a
@@ -125,7 +137,7 @@ export const TILE_NOTE =
  * is the score's own 18, arrived at deliberately instead of by luck.
  */
 export const TILE_PLATE =
-  "truncate rounded-full bg-background/85 px-1.5 py-0.5 text-[11px] leading-[14px] font-semibold backdrop-blur";
+  "truncate rounded-full bg-background/85 px-1.5 py-0.5 font-display text-[11px] leading-[14px] font-semibold backdrop-blur";
 
 export function PosterTile({
   poster,

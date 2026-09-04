@@ -145,7 +145,7 @@ function Chip({
 }) {
   return (
     <span
-      className={`rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap ${
+      className={`rounded-chip px-1.5 py-0.5 font-display text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap ${
         tone === "strong"
           ? "bg-surface-strong ring-1 ring-line-strong ring-inset"
           : "opacity-70 ring-1 ring-line-strong ring-inset"

@@ -853,7 +853,7 @@ export async function DetailPage({
                   <p className="font-medium">{movie.disc.releaseTitle}</p>
                 )}
                 {movie.disc.format && (
-                  <span className="rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
+                  <span className="rounded-chip px-1.5 font-display text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset">
                     {qualityLabel({
                       format: movie.disc.format,
                       source: movie.disc.source,

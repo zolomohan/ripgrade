@@ -165,7 +165,7 @@ export function FormatBadges({ movie }: { movie: LibraryItem }) {
         ) : (
           <span
             key={badge.key}
-            className={`rounded-chip px-2 py-1 text-[10px] font-semibold tracking-[0.12em] ${badge.className}`}
+            className={`rounded-chip px-2 py-1 font-display text-[10px] font-semibold tracking-[0.12em] ${badge.className}`}
           >
             {badge.label}
           </span>

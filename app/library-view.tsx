@@ -408,7 +408,7 @@ function Card({
       }
       note={
         open.length > 0 ? (
-          <span className="rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
+          <span className="rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
             {open.length} {open.length === 1 ? "issue" : "issues"}
           </span>
         ) : undefined

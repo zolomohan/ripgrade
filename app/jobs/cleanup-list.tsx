@@ -432,7 +432,7 @@ function KindChip({ file, art = false }: { file: CleanupFile; art?: boolean }) {
     </span>
   ) : (
     <span
-      className={`rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap ring-1 ring-inset ${
+      className={`rounded-chip px-1.5 py-0.5 font-display text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap ring-1 ring-inset ${
         leftover
           ? "text-red-700 ring-red-500/30 dark:text-red-300"
           : "opacity-70 ring-line-strong"
@@ -835,7 +835,7 @@ export function CleanupList({
                           deleting it. */}
                       {file.offline && (
                         <span
-                          className="rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-70 ring-1 ring-line-strong ring-inset"
+                          className="rounded-chip px-1.5 py-0.5 font-display text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-70 ring-1 ring-line-strong ring-inset"
                           title="Found the last time this folder could be read. The drive is not connected now."
                         >
                           Drive away

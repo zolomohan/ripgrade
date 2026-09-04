@@ -181,7 +181,7 @@ function Absent({
           >
             {poster}
 
-            <span className="pointer-events-none absolute inset-x-2 bottom-2 rounded-chip bg-background/85 py-1 text-center text-[10px] font-medium opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+            <span className="pointer-events-none absolute inset-x-2 bottom-2 rounded-chip bg-background/85 py-1 text-center font-display text-[10px] font-medium opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
               Find releases
             </span>
           </Link>

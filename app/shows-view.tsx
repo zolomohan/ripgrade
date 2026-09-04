@@ -665,12 +665,12 @@ function ShowTile({ show, index }: { show: Show; index: number }) {
              the numbering, which reads as a stronger claim than it is. */
           <span className="flex flex-wrap items-center gap-1">
             {gaps > 0 && (
-              <span className="rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
+              <span className="rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
                 {gaps} missing
               </span>
             )}
             {issues > 0 && (
-              <span className="rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
+              <span className="rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
                 {issues} {issues === 1 ? "issue" : "issues"}
               </span>
             )}

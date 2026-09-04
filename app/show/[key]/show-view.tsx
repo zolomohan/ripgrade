@@ -161,7 +161,7 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
             twice the height of a clean one. */}
           {issues.length > 0 && (
             <span
-              className="absolute bottom-2 left-2 rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300"
+              className="absolute bottom-2 left-2 rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300"
               title={issues.map((issue) => issue.message).join("\n")}
             >
               {issues.length} {issues.length === 1 ? "issue" : "issues"}

@@ -19,7 +19,7 @@ export function DiscHeading({
   entered?: boolean;
 }) {
   const chip =
-    "rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset";
+    "rounded-chip px-1.5 font-display text-[11px] leading-[18px] font-medium ring-1 ring-line-strong ring-inset";
 
   return (
     <div className="flex flex-wrap items-baseline gap-2">

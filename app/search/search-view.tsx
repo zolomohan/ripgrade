@@ -241,7 +241,7 @@ function Caption({
  */
 function SeriesChip() {
   return (
-    <span className="absolute bottom-2 left-2 rounded-chip bg-background/85 px-1.5 text-[10px] leading-[18px] font-medium opacity-70 backdrop-blur">
+    <span className="absolute bottom-2 left-2 rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium opacity-70 backdrop-blur">
       Series
     </span>
   );

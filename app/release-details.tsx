@@ -92,7 +92,7 @@ export function ReleaseMark({
 /** The release-search modal's own chip, so a fact reads the same here. */
 function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-chip px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-70 ring-1 ring-line-strong ring-inset">
+    <span className="rounded-chip px-1.5 py-0.5 font-display text-[10px] font-semibold tracking-[0.08em] whitespace-nowrap opacity-70 ring-1 ring-line-strong ring-inset">
       {children}
     </span>
   );

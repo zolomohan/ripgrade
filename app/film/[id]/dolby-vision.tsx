@@ -498,7 +498,7 @@ function Metadata({ scan, hdr10 }: { scan: DoviScan; hdr10?: Hdr10Static }) {
                 <dd className="text-sm tabular-nums">
                   {row.value}
                   {row.note && (
-                    <span className="ml-2 rounded-chip px-1.5 text-[10px] leading-[16px] opacity-45 ring-1 ring-inset ring-line">
+                    <span className="ml-2 rounded-chip px-1.5 font-display text-[10px] leading-[16px] opacity-45 ring-1 ring-inset ring-line">
                       {row.note}
                     </span>
                   )}

@@ -391,7 +391,7 @@ export function DiscReview({
                           <span className="min-w-0 flex-1">
                             <span className="flex items-baseline gap-2">
                               <span
-                                className={`shrink-0 rounded-chip px-1.5 text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
+                                className={`shrink-0 rounded-chip px-1.5 font-display text-[11px] leading-[18px] font-medium ring-1 ring-inset ${
                                   candidate.format === "4K"
                                     ? "text-emerald-700 ring-emerald-500/40 dark:text-emerald-300"
                                     : "ring-line-strong opacity-70"

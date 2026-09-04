@@ -165,7 +165,7 @@ function Destination({
         </span>
       </span>
       {remembered && (
-        <span className="shrink-0 rounded-chip px-1.5 text-[10px] leading-[18px] font-semibold tracking-widest uppercase opacity-45 ring-1 ring-line-strong ring-inset">
+        <span className="shrink-0 rounded-chip px-1.5 font-display text-[10px] leading-[18px] font-semibold tracking-widest uppercase opacity-45 ring-1 ring-line-strong ring-inset">
           Last used
         </span>
       )}
