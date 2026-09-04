@@ -120,10 +120,39 @@
    * This keeps the pace near even and only eases at the finish.
    */
   --score-ease: cubic-bezier(0.25, 0.55, 0.35, 1);
+
+  /* See the note on the dark block below. Stated rather than left to default,
+     because the default is "whatever the machine thinks" and this app now has
+     an opinion of its own. */
+  color-scheme: light;
 }
 
+/*
+ * Which of the two the app is in, in three states and two places.
+ *
+ * The light block above is the app's own, and always has been — the dark one
+ * has only ever been an override on top of it. What is new is that the machine
+ * is no longer the only thing allowed to ask for it. A `theme` setting writes
+ * `data-theme` onto <html>, and the three states fall out of these two rules:
+ *
+ *   nothing         the machine decides, which is what it always did
+ *   data-theme=dark dark whatever the machine says
+ *   data-theme=light  the block above, likewise
+ *
+ * The dark values are written twice and there is no way around it in CSS: one
+ * arm has to live inside a media query and the other must not, and a rule
+ * cannot be in a media query and out of it at once. `:not([data-theme="light"])`
+ * is what stops the media arm from overruling somebody who has asked for light
+ * on a machine set to dark.
+ *
+ * `color-scheme` is here rather than in `@theme` because it is not a colour: it
+ * is what tells the engine which way to draw the things this stylesheet never
+ * sees — the scrollbars, the caret, the panel a <select> drops, the checkbox on
+ * a form. Set wrong, an explicitly light app grows dark scrollbars the moment
+ * the machine disagrees with it.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0b0b0d;
     --foreground: #ededf0;
 
@@ -140,6 +169,51 @@
 
     /* Here it is light, so it can be one. */
     --bar-glow: color-mix(in srgb, var(--foreground) 70%, transparent);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --background: #0b0b0d;
+  --foreground: #ededf0;
+
+  --surface: rgba(255, 255, 255, 0.03);
+  --surface-strong: rgba(255, 255, 255, 0.07);
+
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.22);
+
+  --glow: rgba(255, 255, 255, 0.07);
+  --glow-over: rgba(255, 255, 255, 0.06);
+
+  --glass-specular: rgba(255, 255, 255, 0.14);
+
+  /* Here it is light, so it can be one. */
+  --bar-glow: color-mix(in srgb, var(--foreground) 70%, transparent);
+
+  color-scheme: dark;
+}
+
+/*
+ * And the same question for Tailwind's own `dark:`, which ninety-odd class
+ * lists in this app use for the one or two colours a token cannot carry — a red
+ * that has to be lighter on a dark ground, mostly.
+ *
+ * Left alone it compiles to `@media (prefers-color-scheme: dark)` and nothing
+ * else, so every one of those would have gone on asking the machine after the
+ * app had stopped. The two arms are the two above, in the order they are above,
+ * for the same reason.
+ */
+@custom-variant dark {
+  &:where(:root[data-theme="dark"] *) {
+    @slot;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]) *) {
+      @slot;
+    }
   }
 }
 
@@ -1834,11 +1908,18 @@ body {
     );
 }
 
+/* The settings preview's shelf, in the same three states as everything else —
+   see the note by the tokens at the head of this file. */
 @media (prefers-color-scheme: dark) {
-  .glass-stage {
+  :root:not([data-theme="light"]) .glass-stage {
     --stage-rule: rgba(255, 255, 255, 0.18);
     background-color: #0e0e12;
   }
+}
+
+:root[data-theme="dark"] .glass-stage {
+  --stage-rule: rgba(255, 255, 255, 0.18);
+  background-color: #0e0e12;
 }
 
 /*

@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { listDirectory, type DirListing } from "@/lib/browse";
 import { getSetting, setSetting } from "@/lib/db";
+import { readTheme, THEME_KEY, type Theme } from "@/lib/theme";
 import {
   GLASS_DEFAULTS,
   GLASS_KEY,
@@ -1385,6 +1386,23 @@ export async function getListLayout(): Promise<Layout> {
 
 export async function setListLayout(next: Layout): Promise<void> {
   setSetting(LAYOUT_KEY, next);
+  refresh();
+}
+
+/**
+ * Light, dark, or whatever the machine says — see lib/theme.ts.
+ *
+ * Read in the root layout, like the glass tuning beside it, because what it
+ * sets is an attribute on <html> and there is only one of those. `refresh()`
+ * on the way out redraws from that root, so the page repaints in the scheme
+ * you just chose rather than on the next navigation.
+ */
+export async function getTheme(): Promise<Theme> {
+  return readTheme();
+}
+
+export async function setTheme(next: Theme): Promise<void> {
+  setSetting(THEME_KEY, next);
   refresh();
 }
 

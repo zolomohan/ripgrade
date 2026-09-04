@@ -19,6 +19,7 @@ import {
 import "glaceui/styles.css";
 import "./globals.css";
 import { getStripJob } from "@/lib/audio-strip";
+import { themeAttribute } from "@/lib/theme";
 import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
 import { getDoviRun } from "@/lib/dovi-run";
@@ -26,7 +27,7 @@ import { hasQb } from "@/lib/qbittorrent";
 import { getScanState } from "@/lib/scanner";
 import { getThumbJob } from "@/lib/thumbs";
 import { getSweepJob } from "@/lib/upgrade-sweep";
-import { getGlassTuning } from "./actions";
+import { getGlassTuning, getTheme } from "./actions";
 import { CapabilitiesProvider } from "./capabilities";
 import { GlassProvider } from "./glass";
 import { JobsProvider } from "./jobs-provider";
@@ -96,16 +97,35 @@ export const metadata: Metadata = {
   },
 };
 
-// The colour the window's own chrome is painted — the title bar of the dock
-// app, the tab strip in a browser. Given per scheme so it is the page's
-// background either way and the seam between chrome and content disappears;
-// the two values are `--background` from globals.css.
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b0b0d" },
-  ],
-};
+/**
+ * The colour the window's own chrome is painted — the title bar of the dock
+ * app, the tab strip in a browser. The page's background either way, so the
+ * seam between chrome and content disappears; the two values are `--background`
+ * from globals.css.
+ *
+ * Generated rather than declared, because it is the one part of the theme that
+ * cannot be answered in CSS. A media-keyed pair asks the machine, and the
+ * machine is no longer who decides — an app pinned to light on a laptop set to
+ * dark would have had a black title bar over a white page. Where the setting
+ * has an opinion this states one colour; where it defers, the pair goes back
+ * and the machine answers as before.
+ */
+export async function generateViewport(): Promise<Viewport> {
+  const theme = await getTheme();
+
+  if (theme === "light") return { themeColor: LIGHT };
+  if (theme === "dark") return { themeColor: DARK };
+
+  return {
+    themeColor: [
+      { media: "(prefers-color-scheme: light)", color: LIGHT },
+      { media: "(prefers-color-scheme: dark)", color: DARK },
+    ],
+  };
+}
+
+const LIGHT = "#ffffff";
+const DARK = "#0b0b0d";
 
 export default async function RootLayout({
   children,
@@ -143,6 +163,18 @@ export default async function RootLayout({
    */
   const glass = await getGlassTuning();
 
+  /*
+   * Which scheme the app is drawn in. It reaches the page as an attribute and
+   * nothing else — every colour in globals.css is already written three ways
+   * against it — so there is no palette to thread down and nothing to hydrate.
+   *
+   * Absent for `system`, which is the point of `themeAttribute` returning
+   * undefined: the media query in globals.css is what answers then, and an
+   * attribute saying "system" would be a third state for the CSS to have an
+   * opinion about when there are only two ways to draw anything.
+   */
+  const theme = await getTheme();
+
   // Seeded here so a reload mid-job shows progress immediately, before the
   // job stream has connected.
   const jobs = {
@@ -161,6 +193,7 @@ export default async function RootLayout({
       // the load itself: every list rendered under the splash reads it, and
       // `SplashDone` clears it once the splash is gone. See globals.css.
       data-splash=""
+      data-theme={themeAttribute(theme)}
       /*
        * The one part of the glass preference that is a colour and not a filter,
        * so it travels as CSS rather than as a prop: `--glass` in globals.css is
@@ -195,7 +228,7 @@ export default async function RootLayout({
                 {/* Inside the glass provider, because a toast is a pane like
                   the rest and is tuned by the same setting; outside the search
                   and the page, because what it reports is not about either. */}
-                <Toasts />
+                <Toasts theme={theme} />
 
                 <SearchProvider>
                   {/* One column, exactly the height of the window, holding the

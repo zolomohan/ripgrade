@@ -3,6 +3,7 @@
 import { Toaster } from "glaceui";
 
 import { useGlass } from "./glass";
+import type { Theme } from "@/lib/theme";
 
 /**
  * Where the app says a thing happened and then stops saying it.
@@ -46,12 +47,21 @@ import { useGlass } from "./glass";
  * with the brand on it. What is left is the corner a receipt can appear in
  * without covering anything.
  */
-export function Toasts() {
+export function Toasts({ theme }: { theme: Theme }) {
   const glass = useGlass();
 
   return (
     <Toaster
       position="top-right"
+      /*
+       * Told rather than left to work it out. Every other surface in the app
+       * takes its scheme from CSS, which now answers to a setting; a toast is
+       * Glacé's own component and asks `matchMedia` for itself, so on a machine
+       * set dark and an app set light it would have been the one pane still
+       * agreeing with the machine. The three values happen to be the three this
+       * app has, which is why this is a pass-through and not a translation.
+       */
+      theme={theme}
       refract={glass.refract === 0 ? false : glass.refract}
       aberration={glass.aberration}
       blur={glass.blur}

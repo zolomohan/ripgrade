@@ -4,6 +4,7 @@ import {
   getConvertTempDir,
   getKeepEnhancementLayer,
   getGlassPosters,
+  getTheme,
   getGlassTuning,
   getListLayout,
   getJackettStatus,
@@ -17,6 +18,7 @@ import { AudioLanguages } from "./audio-languages";
 import { SubtitleLanguages } from "./subtitle-languages";
 import { EnhancementLayer } from "./el-backup";
 import { GlassTuning } from "./glass-tuning";
+import { ThemeChoice } from "./theme-choice";
 import { ListLayout } from "./list-layout";
 import { FolderSection } from "../folder-section";
 import { ScanButton } from "../scan-button";
@@ -91,6 +93,7 @@ export default async function SettingsPage() {
   const audio = await getAudioLanguages();
   const subtitles = await getSubtitleLanguages();
   const layout = await getListLayout();
+  const theme = await getTheme();
   const glass = await getGlassTuning();
   const glassPosters = await getGlassPosters();
 
@@ -284,6 +287,23 @@ export default async function SettingsPage() {
   function Themes() {
     return (
       <>
+        {/* First, because it is the one setting here that changes every page at
+            once — the rest arrange what is drawn, and this decides what colour
+            any of it is. */}
+        <Setting
+          title="Theme"
+          summary={
+            theme === "system"
+              ? "Following the machine"
+              : theme === "light"
+                ? "Light"
+                : "Dark"
+          }
+          hint="Light or dark, or whatever the machine is set to. The app has had both palettes since the beginning and the machine was the only thing allowed to choose between them — which is the right default and a poor rule, since a laptop following the sun does not know this app is looked at in a dark room, or that a shelf of artwork reads better on white."
+        >
+          <ThemeChoice theme={theme} />
+        </Setting>
+
         <Setting
           title="Layout"
           summary={layout === "grid" ? "Posters" : "Rows"}
