@@ -1,6 +1,7 @@
 import "server-only";
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -27,4 +28,27 @@ export async function revealInFinder(filePath: string): Promise<void> {
     );
   }
   await execFileAsync("open", ["-R", filePath]);
+}
+
+/**
+ * The volume an external drive is mounted under, for a path that lives on one.
+ * Null for the internal disk, which is never the thing that went missing.
+ */
+function volumeOf(filePath: string): { path: string; name: string } | null {
+  const match = /^\/Volumes\/([^/]+)/.exec(filePath);
+  return match ? { path: match[0], name: match[1] } : null;
+}
+
+/**
+ * Why a file the library knows about is not where the library left it. An
+ * unplugged drive and a deleted file are the same ENOENT underneath, and
+ * completely different sentences to read: one is "plug it back in", the other
+ * is "that copy is gone". Naming the drive is the whole point of the first.
+ */
+export function missingFileReason(filePath: string): string {
+  const volume = volumeOf(filePath);
+  if (volume && !existsSync(volume.path)) {
+    return `The drive “${volume.name}” is not connected.`;
+  }
+  return "That file is no longer where the library left it.";
 }
