@@ -1,24 +1,32 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
+
+import { toast } from "glaceui";
 
 import { beginScan, scanDrive } from "./actions";
 import { useJobs } from "./jobs-provider";
 import type { ScanState } from "@/lib/scanner";
 
 /**
- * Owns the scan for the whole app — starting one, and turning its end into
- * the result banner and a repaint.
+ * Owns the scan for the whole app — starting one, and turning its end into a
+ * sentence and a repaint.
  *
  * This lives in the root layout rather than in the header button, because a
  * layout survives navigation and a page does not: previously, opening a film
  * mid-scan unmounted the button and took the progress with it.
  *
  * The state itself arrives over the job stream (`JobsProvider`); what is left
- * here is reacting to its edges. It reports nothing itself. `SidebarProcesses`
- * reads this state and draws it at the foot of the rail, beside whatever else
- * is running.
+ * here is reacting to its edges. `SidebarProcesses` reads the state and draws
+ * the pass in progress at the foot of the rail, beside whatever else is
+ * running. How it *ended* is not the rail's, and used to be: the rail is for
+ * work under way, and a finished scan's summary sat there as a row that was
+ * not a job, with its own dismiss button and its own exit animation, waiting
+ * to be read by someone whose eyes were on the page rather than the corner it
+ * lives in. That sentence goes to the toaster now — see app/toast.tsx, which
+ * is exactly the case it describes: something already over, said somewhere
+ * other than where you are looking.
  */
 
 const BUSY = ["scanning", "dovi", "matching", "artwork", "discs", "wishlist"];
@@ -38,9 +46,6 @@ type ScanContext = {
    */
   start: (options?: { driveOnly?: boolean }) => Promise<void>;
   busy: boolean;
-  /** What the last scan did, until it is dismissed or times out. */
-  result: ScanResult | null;
-  dismiss: () => void;
 };
 
 const Ctx = createContext<ScanContext | null>(null);
@@ -52,16 +57,29 @@ export function useScan(): ScanContext {
 }
 
 /**
- * How long a finished scan has its say for.
+ * How long a finished scan has its say for, in place of the toaster's own five
+ * seconds.
  *
- * Both clear themselves: the rail reports what is happening, and a line about
- * something that finished is in the way the moment it has been read. A failure
- * gets the longer window because it is the longer sentence — a list of folders
- * that could not be read takes more reading than "412 probed".
+ * A scan says more than anything else that reaches the toaster — a dozen
+ * counts, or a list of folders that could not be read — and a failure gets the
+ * longer window because it is the longer sentence.
  */
 const RESULT_VISIBLE_MS = { ok: 8000, error: 10000 };
 
 type Result = ScanResult;
+
+/**
+ * The two lines the rail used to draw, as the two a toast is made of: what
+ * happened as the title, what it came to underneath.
+ */
+function report(said: Result) {
+  const options = {
+    description: said.text,
+    duration: RESULT_VISIBLE_MS[said.kind],
+  };
+  if (said.kind === "error") toast.error("Scan failed", options);
+  else toast.success("Scan complete", options);
+}
 
 /**
  * What a finished scan has to say, or null while it is still saying it.
@@ -73,7 +91,7 @@ type Result = ScanResult;
  */
 function outcome(scan: ScanState): Result | null {
   if (scan.status === "error") {
-    return { kind: "error", text: scan.error ?? "Scan failed" };
+    return { kind: "error", text: scan.error ?? "No reason given." };
   }
 
   if (scan.status !== "done") return null;
@@ -112,6 +130,8 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
   const state = jobs.scan;
   const router = useRouter();
 
+  const busy = BUSY.includes(state.status);
+
   /**
    * A scan that had already ended before this tab existed still has something
    * to report — but only if it went wrong.
@@ -123,13 +143,19 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
    * said so. A scan that *worked* needs no announcement — the library it
    * produced is the announcement — so a summary nobody was waiting for is
    * dropped rather than shown to whoever opens the app next.
+   *
+   * Once per tab, which is what the ref is for: this is about the state the
+   * app was opened in, and an effect that ran again would raise the same old
+   * failure a second time.
    */
-  const [result, setResult] = useState<Result | null>(() => {
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current) return;
+    opened.current = true;
     const said = outcome(state);
-    return said?.kind === "error" ? said : null;
-  });
-
-  const busy = BUSY.includes(state.status);
+    if (said?.kind === "error") report(said);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Only the edge out of a scan we watched run counts — `subscribe` explains
   // why the status alone cannot say "just completed".
@@ -142,34 +168,23 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
         if (scan.status === "done") router.refresh();
 
         const said = outcome(scan);
-        if (said) setResult(said);
+        if (said) report(said);
       }),
     [subscribe, router],
   );
 
-  useEffect(() => {
-    if (!result) return;
-    const id = setTimeout(
-      () => setResult(null),
-      RESULT_VISIBLE_MS[result.kind],
-    );
-    return () => clearTimeout(id);
-  }, [result]);
-
   async function start({ driveOnly = false } = {}) {
-    setResult(null);
     const next = driveOnly ? await scanDrive() : await beginScan();
     apply({ scan: next });
+    // Refused before it began — no job to watch, so this is the only place it
+    // will ever be said.
     if (next.status === "error") {
-      setResult({ kind: "error", text: next.error ?? "Scan failed" });
+      report({
+        kind: "error",
+        text: next.error ?? "The scan could not be started.",
+      });
     }
   }
 
-  return (
-    <Ctx.Provider
-      value={{ state, start, busy, result, dismiss: () => setResult(null) }}
-    >
-      {children}
-    </Ctx.Provider>
-  );
+  return <Ctx.Provider value={{ state, start, busy }}>{children}</Ctx.Provider>;
 }

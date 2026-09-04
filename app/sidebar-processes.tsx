@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
 import { ProcessDetails, type ProcessRow } from "@/app/process-details";
-import { useScan, type ScanResult } from "@/app/scan-provider";
+import { useScan } from "@/app/scan-provider";
 
 /**
  * What is happening right now, at the foot of the rail.
@@ -20,6 +20,12 @@ import { useScan, type ScanResult } from "@/app/scan-provider";
  *
  * Progress arrives over the job stream, including a job started from
  * somewhere else — the old idle poll existed only to notice those.
+ *
+ * Progress, and only progress. How a scan ended used to be drawn here too, as
+ * a row that was not a job: no bar, nothing running, a dismiss button of its
+ * own. It reads as a receipt rather than as work, and it went to the toaster —
+ * see app/scan-provider.tsx, which now says it, and app/toast.tsx for why that
+ * is the right corner for something already over.
  *
  * There is no history here on purpose. A list of what finished told you what
  * you already watched finish.
@@ -147,35 +153,8 @@ function useLeaving(rows: JobRow[]): (JobRow & { leaving?: boolean })[] {
   );
 }
 
-/**
- * The last result, held for `--job-out` after it is cleared.
- *
- * `useLeaving`'s problem for a value rather than a list, and the same answer:
- * the line clears itself after ten seconds, and without this React drops it in
- * the same frame — so the one thing it had to do on its way out, it could not.
- *
- * Adjusted during render rather than in an effect, for the reason `useClosing`
- * gives: an effect would paint the frame the line is already gone from, and
- * that frame is the exact moment the exit is meant to start.
- */
-function useParting(result: ScanResult | null) {
-  const [held, setHeld] = useState(result);
-
-  if (result && result !== held) setHeld(result);
-
-  const leaving = held !== null && result === null;
-
-  useEffect(() => {
-    if (!leaving) return;
-    const timer = setTimeout(() => setHeld(null), EXIT_MS);
-    return () => clearTimeout(timer);
-  }, [leaving]);
-
-  return [held, leaving] as const;
-}
-
 export function SidebarProcesses() {
-  const { state: scan, busy: scanning, result, dismiss } = useScan();
+  const { state: scan, busy: scanning } = useScan();
   const { jobs, apply } = useJobs();
   const { dovi, convert, strip, sweep, thumbs } = jobs;
   const [stopping, setStopping] = useState(false);
@@ -333,7 +312,6 @@ export function SidebarProcesses() {
 
   // What the rail draws, which outlives what is running by one animation.
   const drawn = useLeaving(rows);
-  const [said, saidLeaving] = useParting(result);
 
   // A job that ends takes its dialog with it. Forgotten here rather than left
   // set, or the next run of the same job would find the rail still holding a
@@ -343,9 +321,9 @@ export function SidebarProcesses() {
   // while the row it came from is still on its way out of the rail.
   if (open !== null && !rows.some((row) => row.key === open)) setOpen(null);
 
-  // Held open while a finished job — or the line about one — plays out, or
-  // there would be nothing left rendered to play it.
-  if (!drawn.length && !said) return null;
+  // Held open while a finished job plays out, or there would be nothing left
+  // rendered to play it.
+  if (!drawn.length) return null;
 
   // Null once the job ends, which is what plays the dialog out.
   const shown = rows.find((row) => row.key === open) ?? null;
@@ -379,37 +357,6 @@ export function SidebarProcesses() {
           })
         }
       />
-
-      {/* The one piece of the old toast worth keeping: what the scan actually
-          did. It clears itself, and clicking it clears it now.
-
-          Drawn as a row of the rail rather than as text under one, so it
-          arrives and leaves the way the jobs above it do — the line is the
-          last thing the scan has to say, and it should not be the one thing
-          that blinks out. */}
-      {!anyRunning && said && (
-        <div className={`job-row ${saidLeaving ? "is-leaving" : ""}`}>
-          <div>
-            <button
-              type="button"
-              onClick={dismiss}
-              className="min-w-0 text-left"
-              title={said.text}
-            >
-              <p
-                className={`text-[11px] font-medium ${
-                  said.kind === "error" ? "text-red-600 dark:text-red-400" : ""
-                }`}
-              >
-                {said.kind === "ok" ? "Scan complete" : "Scan failed"}
-              </p>
-              <p className="mt-0.5 line-clamp-2 text-[10px] opacity-45">
-                {said.text}
-              </p>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
