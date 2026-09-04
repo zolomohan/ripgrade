@@ -16,7 +16,7 @@ import {
 import { Art } from "@/app/art";
 import { Bar, BarSearch, ICONS, MenuItem, Popover } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
-import { TILE_FRAME, TILE_GRID } from "@/app/poster-tile";
+import { TILE_FRAME, TILE_GRID_PANEL } from "@/app/poster-tile";
 import { Heart } from "@/app/heart";
 import { Result, SORTS, type Sort } from "@/app/release-search";
 import { scoreTheme, STATUS_THEME } from "@/app/score-circle";
@@ -410,7 +410,7 @@ function Section({
 
 /** The shelf itself: the library's own grid, from the library's own constant. */
 function Grid({ children }: { children: React.ReactNode }) {
-  return <div className={TILE_GRID}>{children}</div>;
+  return <div className={TILE_GRID_PANEL}>{children}</div>;
 }
 
 /**
@@ -477,7 +477,7 @@ const NO_RELEASES_ICON = (
 function ResultsSkeleton() {
   return (
     <div aria-hidden className="flex flex-col gap-4">
-      <div className={TILE_GRID}>
+      <div className={TILE_GRID_PANEL}>
         {Array.from({ length: 12 }, (_, i) => (
           <div key={i} className="flex flex-col gap-2">
             <div className="skeleton aspect-[2/3] rounded-card" />

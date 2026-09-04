@@ -64,6 +64,26 @@ export const TILE_GRID =
 export const TILE_GRID_RULED = `${TILE_GRID} pt-3`;
 
 /**
+ * The same shelf inside a dialog, where the window is not what decides the
+ * width.
+ *
+ * `TILE_GRID` counts columns off the viewport, which is right for a page —
+ * the page *is* the viewport, less the rail. It is wrong the moment a shelf is
+ * laid inside a panel that has a maximum width of its own: the search window
+ * stops growing at `max-w-4xl`, and on a desk monitor the viewport breakpoints
+ * went on going, so an 864px panel was being asked for seven columns and then
+ * nine. Posters the size of a thumbnail, in the one place in the app where
+ * recognising a film by its artwork is the entire point of what you are doing.
+ *
+ * Capped at four, which is what that width holds at a legible size — near
+ * 200px a side, the same as a poster on the library's own shelf. Below `lg`
+ * the panel is narrower than its maximum and shrinks with the window, so the
+ * two steps under the cap are the viewport's after all.
+ */
+export const TILE_GRID_PANEL =
+  "grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4";
+
+/**
  * The frame itself: the box a poster is drawn in, wherever it is drawn.
  *
  * `PosterTile` is the whole tile — frame, caption, corners, entrance — and it is

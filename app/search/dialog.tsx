@@ -95,11 +95,20 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
         onClose={close}
         label="Search"
         /*
-         * Held near the top rather than centred, and one height whatever is in
-         * it: a box sized to its contents is a box that jumps on every
+         * Centred, and one height whatever is in it.
+         *
+         * The fixed height is the part that matters and the part that was
+         * always here: a box sized to its contents is a box that jumps on every
          * keystroke — twelve tiles taller than the empty state, three results
          * shorter than twelve, and the field riding up and down with it. The
          * window is a window. What arrives inside it scrolls.
+         *
+         * It was also held 6vh from the top, which was a hedge against exactly
+         * that jumping and is redundant once the height is fixed: a pane that
+         * never changes size cannot drift about the screen, so there is nothing
+         * for pinning it high to steady. What the offset did instead was leave
+         * more room under the window than over it, on every screen, which reads
+         * as a dialog that has slipped rather than one that has been placed.
          *
          * Stated in the viewport's own units so a short screen gets a short
          * one, capped so a tall screen does not get a column of poster you
@@ -111,7 +120,8 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
          * the corner, and the two curves have to agree. See `--radius-panel` in
          * globals.css for the arithmetic.
          */
-        panelClassName="mt-[6vh] flex h-[min(78vh,46rem)] w-full max-w-4xl flex-col self-start overflow-hidden glass-panel rounded-panel border border-line p-4 shadow-2xl"
+        radius="panel"
+        panelClassName="flex h-[min(78vh,46rem)] w-full max-w-4xl flex-col overflow-hidden p-4"
       >
         <div ref={panel} className="flex min-h-0 flex-1 flex-col">
           <SearchView />
