@@ -7,6 +7,7 @@ import { useNow } from "@/app/clock";
 import { jobRows, type JobRow } from "@/app/job-rows";
 import { useJobs } from "@/app/jobs-provider";
 import { ListingBar, useListing, type Choice } from "@/app/listing";
+import type { Layout } from "@/lib/layout";
 import { PosterTile, TILE_GRID_RULED, TILE_READING } from "@/app/poster-tile";
 import { ProcessDetails, type ProcessDetail } from "@/app/process-details";
 import { CollapsibleSection, SectionHeading } from "@/app/section-heading";
@@ -679,6 +680,7 @@ export function JobsView({
   keepingEl,
   audio,
   cleanup,
+  layout,
 }: {
   runs: LoggedRun[];
   /** What the library knows about the films the running jobs are working on. */
@@ -687,6 +689,8 @@ export function JobsView({
   dovi: DoviTask[];
   /** Whether a conversion started from here keeps the layer it discards. */
   keepingEl: boolean;
+  /** Posters or rows, as answered once under Settings → Themes. */
+  layout: Layout;
   audio: AudioTask[];
   cleanup: CleanupFile[];
 }) {
@@ -1001,7 +1005,7 @@ export function JobsView({
               row is a page that has changed its mind halfway down — and the
               running film is very often the one that was at the top of that
               grid a moment ago. */}
-          {listing.layout === "grid" ? (
+          {layout === "grid" ? (
             <div className={TILE_GRID_RULED}>
               {running.map((row, index) => (
                 <RunningTile
@@ -1042,9 +1046,9 @@ export function JobsView({
               and the job above says how far through the run the server is. */}
           <SectionHeading label="Queued" />
           {tab === "audio" ? (
-            <AudioQueued tasks={audioQueued} layout={listing.layout} />
+            <AudioQueued tasks={audioQueued} layout={layout} />
           ) : (
-            <DoviQueued tasks={doviQueued} layout={listing.layout} />
+            <DoviQueued tasks={doviQueued} layout={layout} />
           )}
         </section>
       )}
@@ -1077,7 +1081,7 @@ export function JobsView({
               keepingEl={keepingEl}
               sort={listing.sort}
               group={listing.group}
-              layout={listing.layout}
+              layout={layout}
               selecting={selecting}
               chosen={chosen}
               onChoose={setChosen}
@@ -1087,7 +1091,7 @@ export function JobsView({
               tasks={audioPending}
               sort={listing.sort}
               group={listing.group}
-              layout={listing.layout}
+              layout={layout}
               selecting={selecting}
               chosen={chosen}
               onChoose={setChosen}
@@ -1097,7 +1101,7 @@ export function JobsView({
               files={cleanup}
               sort={listing.sort}
               group={listing.group}
-              layout={listing.layout}
+              layout={layout}
               selecting={selecting}
               chosen={chosen}
               onChoose={setChosen}

@@ -34,21 +34,17 @@ export type Choice = { key: string; label: string };
 /**
  * The two shapes a list of films can be read in.
  *
- * A grid is for recognising and a list is for reading — the same division the
- * library shelf and the film page have always had between a poster and a row of
- * figures. Which one a page wants depends on what you came to it for, so both
- * pages that ask the three questions above ask this fourth one as well.
- *
- * Grid leads, because on both of these pages every row is a film and a film is
- * recognised by its artwork long before it is recognised by its filename. The
- * rows are what you drop to when the figures are the point — which of forty
- * conversions is largest, what a release actually claims to be — and they say
- * more per row than a tile ever can.
+ * Re-exported rather than declared: the answer is a setting now — see
+ * `readLayout` in lib/layout.ts — and the pages that draw a list both ways are
+ * handed it by their server page rather than asking a control here for it. It
+ * was the fourth question in this bar for as long as it was a fact about the
+ * page; it is a fact about the reader, and it stopped being asked once per
+ * page.
  */
-export type Layout = "grid" | "rows";
+export type { Layout } from "@/lib/layout";
 
-/** What the three menus can be asked to change. */
-export type ListingChange = { sort?: string; g?: string; v?: Layout };
+/** What the two menus can be asked to change. */
+export type ListingChange = { sort?: string; g?: string };
 
 /** The questions about one list, and how they were answered. */
 export type ListingOptions = {
@@ -64,8 +60,6 @@ export type ListingOptions = {
   groups: Choice[];
   current: Choice;
   grouping: Choice;
-  /** And how they are drawn, which is not a question about the list — see below. */
-  layout: Layout;
   update: (next: ListingChange) => void;
 };
 
@@ -118,13 +112,11 @@ export function useListingOptions(
 
   const sort = searchParams.get("sort") ?? undefined;
   const group = searchParams.get("g") ?? undefined;
-  const layout: Layout = searchParams.get("v") === "rows" ? "rows" : "grid";
 
   function update(next: ListingChange) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.sort !== undefined) set(params, "sort", next.sort, sorts[0].key);
     if (next.g !== undefined) set(params, "g", next.g, groups[0].key);
-    if (next.v !== undefined) set(params, "v", next.v, "grid");
     commit(params);
   }
 
@@ -135,7 +127,6 @@ export function useListingOptions(
     groups,
     current: pickSort(sorts, sort),
     grouping: pickGroup(groups, group),
-    layout,
     update,
   };
 }
@@ -167,15 +158,8 @@ export function useListing<T extends string>(
     // The lists are ranked and cut by different things, so a key from the tab
     // you are leaving means nothing on the one you are opening. Dropped rather
     // than carried across, which puts each tab back in its own default shape.
-    //
-    // The layout is not dropped with them, and that is the whole difference
-    // between it and the other two: a sort key is a fact about one list, while
-    // reading a page as posters or as rows is a fact about the person reading
-    // it. Reset at every tab it would be a preference you have to state three
-    // times to hold.
     params.delete("sort");
     params.delete("g");
-    if (next.v !== undefined) set(params, "v", next.v, "grid");
     commit(params);
   }
 
@@ -183,73 +167,15 @@ export function useListing<T extends string>(
 }
 
 /*
- * There was a `useLayout` here — posters or rows on its own, for a page with
- * nothing else to ask. The downloads page was the only one that ever asked it,
- * on the grounds that what is moving and what has been sent are two sections
- * rather than a list you would rank. That page asks all three questions now,
- * through `useListing` like every other list here, and a hook kept for nobody
- * is a second way of doing something with no one left doing it.
+ * Two hooks stood here once and neither is left. `useLayout` asked posters or
+ * rows on its own, for a page with nothing else to ask; `LayoutToggle` drew the
+ * answer as the third control in this bar. The question is a setting now — one
+ * answer, under Settings → Themes, obeyed by every list that draws both ways —
+ * so what was a control repeated on three pages is a preference stated once.
  */
 
 /**
- * The third question about the list, drawn the way the two menus are.
- *
- * It was very nearly a menu of two like its neighbours, and a menu is the wrong
- * shape for a pair — you would open a panel to choose between the thing you are
- * looking at and the only other thing there is.
- *
- * So it says what it is set to, as the menus do, and switching is the click
- * rather than a step after it. `aria-pressed` is not what this is: it is not a
- * mode being held down, it is one of two named states, so the label says which
- * state pressing it produces.
- */
-export function LayoutToggle({
-  layout,
-  onChange,
-  className = "rounded-full",
-}: {
-  layout: Layout;
-  onChange: (next: Layout) => void;
-  /** Which caps it keeps: the end of a bar of three, or the whole of one. */
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(layout === "grid" ? "rows" : "grid")}
-      aria-label={layout === "grid" ? "Show as rows" : "Show as a grid"}
-      title={
-        layout === "grid"
-          ? "Read these as rows, with the figures on them"
-          : "Read these as a grid of posters"
-      }
-      // The Popover trigger's own shape, spelled out rather than shared: that
-      // one is a button that opens a panel, and everything about it beyond
-      // these classes — the open state, the outside click, the panel — is
-      // exactly what this does not do.
-      className={`flex items-center gap-2 self-stretch px-3.5 text-sm transition-colors hover:bg-surface-strong ${className}`}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-        className="h-4 w-4 opacity-50"
-      >
-        <path d={layout === "grid" ? ICONS.grid : ICONS.rows} />
-      </svg>
-      <span className="hidden sm:inline">
-        {layout === "grid" ? "Grid" : "Rows"}
-      </span>
-    </button>
-  );
-}
-
-/**
- * The three questions about a list, in one bar.
+ * The two questions about a list, in one bar.
  *
  * Its own component because a list does not have to be a tab to be asked them:
  * the queue and the wishlist are each a single page-long list, and what they
@@ -257,36 +183,59 @@ export function LayoutToggle({
  * the switch.
  */
 export function ListingControls({ listing }: { listing: ListingOptions }) {
-  const { sorts, groups, current, grouping, layout, update } = listing;
+  const { sorts, groups, current, grouping, update } = listing;
+
+  /*
+   * A menu is drawn where there is a choice in it, and the bar caps whichever
+   * ends up at each end.
+   *
+   * The Group button has always come and gone on this rule — a menu of one item
+   * saying "No grouping" is a control that exists to say it does nothing — and
+   * Sort follows it now that a page can declare a single order. The downloads
+   * log is that page: it is a record, and a record reads newest first or it is
+   * not being read as one.
+   *
+   * The caps cannot be written onto the buttons, because which button is at
+   * which end is now a question about what was drawn. One control takes the
+   * whole pill; two take one cap each.
+   */
+  const ranked = sorts.length > 1;
+  const cut = groups.length > 1;
+  if (!ranked && !cut) return null;
+
+  const capLeft = ranked ? "rounded-l-full" : "";
+  const capRight = cut ? "rounded-r-full" : "";
 
   return (
     /* The library shelf's own two controls, in the library shelf's own bar: the
        same pair of questions asked of a list — in what order, and cut how — so
        they are the same pair of buttons. */
     <Bar className="w-auto">
-      <Popover
-        icon={ICONS.sort}
-        label="Sort"
-        value={current.label}
-        buttonClassName="rounded-l-full"
-      >
-        {(close) => (
-          <div className="py-1">
-            {sorts.map((option) => (
-              <MenuItem
-                key={option.key}
-                active={option.key === current.key}
-                onClick={() => {
-                  update({ sort: option.key });
-                  close();
-                }}
-              >
-                {option.label}
-              </MenuItem>
-            ))}
-          </div>
-        )}
-      </Popover>
+      {ranked && (
+        <Popover
+          icon={ICONS.sort}
+          label="Sort"
+          value={current.label}
+          buttonClassName={`${capLeft} ${cut ? "" : "rounded-r-full"}`}
+        >
+          {(close) => (
+            <div className="py-1">
+              {sorts.map((option) => (
+                <MenuItem
+                  key={option.key}
+                  active={option.key === current.key}
+                  onClick={() => {
+                    update({ sort: option.key });
+                    close();
+                  }}
+                >
+                  {option.label}
+                </MenuItem>
+              ))}
+            </div>
+          )}
+        </Popover>
+      )}
 
       {/* Only where there is a choice to make. A list that can be cut one way
           — which is to say not at all — would otherwise carry a button that
@@ -306,6 +255,7 @@ export function ListingControls({ listing }: { listing: ListingOptions }) {
           // every list now opens as one ranked list, so "Group" is what an
           // untouched button says.
           value={grouping.key === "none" ? "Group" : grouping.label}
+          buttonClassName={`${capRight} ${ranked ? "" : "rounded-l-full"}`}
         >
           {(close) => (
             <div className="py-1">
@@ -325,15 +275,6 @@ export function ListingControls({ listing }: { listing: ListingOptions }) {
           )}
         </Popover>
       )}
-
-      {/* The third question about the list, in the bar the other two are in:
-          the same frame, the same rule between the parts, the same cap on the
-          end. */}
-      <LayoutToggle
-        layout={layout}
-        onChange={(v) => update({ v })}
-        className="rounded-r-full"
-      />
     </Bar>
   );
 }

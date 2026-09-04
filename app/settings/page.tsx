@@ -3,6 +3,7 @@ import {
   getSubtitleLanguages,
   getConvertTempDir,
   getKeepEnhancementLayer,
+  getListLayout,
   getJackettStatus,
   getLibraryFolders,
   getQbStatus,
@@ -13,6 +14,7 @@ import {
 import { AudioLanguages } from "./audio-languages";
 import { SubtitleLanguages } from "./subtitle-languages";
 import { EnhancementLayer } from "./el-backup";
+import { ListLayout } from "./list-layout";
 import { FolderSection } from "../folder-section";
 import { ScanButton } from "../scan-button";
 import { Jackett } from "./jackett";
@@ -79,6 +81,7 @@ export default async function SettingsPage() {
   const queue = await getQueueRules();
   const audio = await getAudioLanguages();
   const subtitles = await getSubtitleLanguages();
+  const layout = await getListLayout();
 
   /** What the shut row says: the languages kept, in the order they were shown. */
   const audioSummary = [
@@ -141,6 +144,16 @@ export default async function SettingsPage() {
             // the same two services, judged by the same bar.
             label: "Downloads",
             settings: <Downloads />,
+          },
+          {
+            key: "themes",
+            // Last, and the only tab here about the app rather than about the
+            // library: the three before it answer what you have, what is done
+            // to it and where more comes from, and this one answers how any of
+            // it is drawn. A preference rather than a configuration — nothing
+            // in here changes what the app does, only what you see it as.
+            label: "Themes",
+            settings: <Themes />,
           },
         ]}
       />
@@ -252,6 +265,20 @@ export default async function SettingsPage() {
           />
         </Setting>
       </>
+    );
+  }
+
+  /** How the app draws what it holds. One question so far, and it is the one
+   *  that used to be asked on three pages at once. */
+  function Themes() {
+    return (
+      <Setting
+        title="Layout"
+        summary={layout === "grid" ? "Posters" : "Rows"}
+        hint="How the lists that can be read either way are drawn — the downloads log, the jobs page, and the releases found for your wishlist. Posters are for recognising a film and rows are for reading the figures on it; a shelf of artwork is the app's own default. This was a button on each of those pages, which made it three answers to one question."
+      >
+        <ListLayout layout={layout} />
+      </Setting>
     );
   }
 

@@ -1,3 +1,4 @@
+import { readLayout } from "@/lib/layout";
 import { hasJackett } from "@/lib/jackett";
 import { alreadyFetching } from "@/lib/qbittorrent";
 import { backfillWishlistCollections, getWishlist } from "@/lib/wishlist";
@@ -45,6 +46,7 @@ export default async function WishlistPage() {
           do that in a column the window's height has reached. */}
       <main className="mx-auto flex page-column flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
         <WishlistView
+          layout={readLayout()}
           entries={entries}
           finds={finds}
           answered={searched.map((find) => find.tmdbId)}

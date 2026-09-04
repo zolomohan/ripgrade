@@ -1,4 +1,5 @@
 import { getDownloadLog } from "@/lib/qbittorrent";
+import { readLayout } from "@/lib/layout";
 import { DownloadsView } from "./downloads-view";
 
 export const metadata = { title: "Downloads — RipGrade" };
@@ -16,11 +17,15 @@ export default async function DownloadsPage() {
    */
   const transfers = await getDownloadLog();
 
+  // Posters or rows, answered once under Settings → Themes rather than by a
+  // control on this page — see `readLayout`.
+  const layout = readLayout();
+
   return (
     // `flex-1`: the layout's column is the window's height, and this fills it —
     // which is what lets an empty state centre itself in the page.
     <main className="mx-auto flex page-column flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
-      <DownloadsView initial={transfers} />
+      <DownloadsView initial={transfers} layout={layout} />
     </main>
   );
 }

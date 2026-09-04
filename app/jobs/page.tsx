@@ -1,3 +1,4 @@
+import { readLayout } from "@/lib/layout";
 import { getStripJob } from "@/lib/audio-strip";
 import { getConvertJob, keepsEnhancementLayer } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
@@ -64,6 +65,7 @@ export default async function JobsPage() {
     // of; the layout's column is what holds it. See app/empty-state.tsx.
     <main className="mx-auto flex page-column flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
       <JobsView
+        layout={readLayout()}
         runs={runs.map((run) => ({
           ...run,
           film: run.path ? films.get(run.path) : undefined,

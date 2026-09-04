@@ -69,6 +69,7 @@ import {
   KEEP_EL_KEY,
   type ConvertJob,
 } from "@/lib/convert";
+import { LAYOUT_KEY, readLayout, type Layout } from "@/lib/layout";
 import {
   addToCustomSet,
   collectionDir,
@@ -1357,6 +1358,23 @@ export async function getKeepEnhancementLayer(): Promise<boolean> {
 
 export async function setKeepEnhancementLayer(on: boolean): Promise<void> {
   setSetting(KEEP_EL_KEY, on ? "on" : "off");
+  refresh();
+}
+
+/**
+ * How the lists are drawn, for the one control that sets it.
+ *
+ * `refresh()` rather than a reload, and it is what makes this work at all: the
+ * lists read the answer on the server, so a page already open redraws itself in
+ * the new shape the moment this returns — including the settings page the
+ * switch is standing on.
+ */
+export async function getListLayout(): Promise<Layout> {
+  return readLayout();
+}
+
+export async function setListLayout(next: Layout): Promise<void> {
+  setSetting(LAYOUT_KEY, next);
   refresh();
 }
 

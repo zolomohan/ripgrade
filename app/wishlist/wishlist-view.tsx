@@ -9,6 +9,7 @@ import { Art } from "@/app/art";
 import { Switch } from "@/app/controls";
 import type { GroupOption } from "@/app/grouping";
 import { ListingControls, useListingOptions } from "@/app/listing";
+import type { Layout } from "@/lib/layout";
 import { SectionHeading } from "@/app/section-heading";
 import { EmptyState } from "@/app/empty-state";
 import { TILE_FRAME, TILE_GRID_RULED } from "@/app/poster-tile";
@@ -162,7 +163,7 @@ function Held({ owned }: { owned: NonNullable<WishlistEntry["owned"]> }) {
     <Link
       href={href}
       onClick={(e) => e.stopPropagation()}
-      className="absolute inset-x-2 bottom-2 truncate rounded-chip bg-background/85 px-1.5 text-center text-[10px] leading-[18px] font-medium text-emerald-600 backdrop-blur dark:text-emerald-400"
+      className="absolute inset-x-2 bottom-2 truncate rounded-chip bg-background/85 px-1.5 text-center font-display text-[10px] leading-[18px] font-medium text-emerald-600 backdrop-blur dark:text-emerald-400"
     >
       {label}
     </Link>
@@ -249,6 +250,7 @@ export function WishlistView({
   wants,
   wantsChecked,
   jackettReady,
+  layout,
 }: {
   entries: WishlistEntry[];
   /** What the last sweep's wishlist pass turned up, one release per want. */
@@ -268,6 +270,8 @@ export function WishlistView({
   wants: number;
   wantsChecked: number;
   jackettReady: boolean;
+  /** Posters or rows, as answered once under Settings → Themes. */
+  layout: Layout;
 }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -413,7 +417,7 @@ export function WishlistView({
               sort={listing.sort}
               group={listing.group}
               groups={groups}
-              layout={listing.layout}
+              layout={layout}
             />
           </section>
         )}

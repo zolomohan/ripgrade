@@ -15,9 +15,9 @@ import { Art } from "@/app/art";
 import { ConfirmModal } from "@/app/confirm";
 import { BUTTON, Fact } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
-import { Grouped, pickGroup, type GroupOption } from "@/app/grouping";
+import { Grouped, SectionHead, type GroupOption } from "@/app/grouping";
 import { TaskHead } from "@/app/jobs/task-head";
-import { ListingBar, useListing, type Choice } from "@/app/listing";
+import type { Layout } from "@/lib/layout";
 import { Modal, useLingering } from "@/app/modal";
 import {
   PosterTile,
@@ -57,15 +57,15 @@ import { movieId, posterName } from "@/lib/routes";
  * fact about the queue or about the wishlist; where it came from is one line on
  * the row, said here along with everything else known about it.
  *
- * Both halves are read as posters or as rows, and each can be ranked — see
- * `SORTS`, which gives them separate menus because the questions are not the
- * same. Only the record is cut, and only one way: whether the fetch finished,
- * which is the one fact about a past download that is different in kind rather
- * than in degree. What is in flight is never cut, so the bar draws no Group
- * button on that tab at all.
+ * Both halves are on the page at once, newest first, drawn as posters or as
+ * rows according to the one answer given under Settings → Themes. Only the
+ * record is cut, and only one way: whether the fetch finished, which is the one
+ * fact about a past download that is different in kind rather than in degree.
+ * What is in flight is never cut.
  *
- * The two halves are the two tabs of a switch now rather than two sections
- * stacked down the page. See `TABS` for what that cost and what it bought.
+ * That leaves this page one control, and it is the right one: the record's own
+ * Group button. See `NEWEST_FIRST` for why nothing here is ranked, and
+ * `readLayout` for where the shape of it went.
  */
 const POLL_MS = 3000;
 
@@ -97,78 +97,35 @@ const SOURCE_LABEL = { upgrade: "Upgrade", wishlist: "Wishlist" } as const;
  * filled plate: a hairline ring alone disappears against a photograph.
  */
 const CHIP =
-  "rounded-chip px-2 text-[11px] leading-[20px] font-medium opacity-60 ring-1 ring-line-strong ring-inset";
+  "rounded-chip px-2 font-display text-[11px] leading-[20px] font-medium opacity-60 ring-1 ring-line-strong ring-inset";
 
 const speed = (bps: number) =>
   bps >= 1024 ** 2
     ? `${(bps / 1024 ** 2).toFixed(1)} MB/s`
     : `${Math.round(bps / 1024)} KB/s`;
 
-/**
- * The page's two tenses, as the two tabs of the switch every other list page
- * in this app keeps at the head of its row.
+/*
+ * The page's two tenses, one under the other.
  *
- * They were two stacked sections with the record collapsed under a summary
- * line, which left this page's control row holding one button — the layout
- * toggle, alone inside a `Bar` whose whole job is to draw one frame around
- * several controls and rule them apart. A frame around a single thing, floated
- * against an empty half of the row. Every other page here answers that row the
- * same way and this one could not, because it had nothing to put on the left.
- *
- * It had two things all along; they were stacked rather than switched. What is
- * arriving and what has arrived are exactly the two lists a switch is for, and
- * making them tabs is what lets the row be a row.
- *
- * The cost is real and worth stating: you can no longer see both at once. That
- * was the argument for opening the record rather than shutting it — "is that
+ * They were tabs for a while, and the argument was the control row: two stacked
+ * sections left this page's row holding a single button, and a switch gave the
+ * left half something to hold. The cost was stated at the time and is the
+ * reason they are stacked again — you could not see both at once, and "is that
  * film here yet" is answered as squarely by what has arrived as by what is
- * still arriving. What buys it back is that the tab is remembered in the
- * address like every other listing here, so the half you were reading is the
- * half you come back to.
- */
-const TABS = [
-  { key: "active", label: "Downloading" },
-  { key: "history", label: "History" },
-] as const;
-
-type Tab = (typeof TABS)[number]["key"];
-
-/**
- * How each half can be ranked.
+ * still arriving. Nobody comes to this page to read one half.
  *
- * Newest leads in both, which is the order the log already arrived in — so the
- * page opens exactly as it did before it could be sorted, and every other
- * option is something you asked for.
+ * So neither is a tab and neither is a click away. What is moving leads, being
+ * the half that changes while you watch it; the record follows under its own
+ * heading, which is where a log belongs.
  *
- * The two halves do not share a menu, because the questions are not the same.
- * A transfer in flight is ranked by how it is doing — how far along, how fast —
- * and neither means anything to a record of one that finished last March. The
- * record gets the two a log wants instead: the far end of it, and the big ones.
+ * Nothing is ranked either. Both halves are newest first, always — the order
+ * the log arrives in and the only order a record reads in. A sort menu offered
+ * five answers to a question a log does not ask: whichever finished last is the
+ * one you came to see, and "Title A–Z" over a list of things that happened is a
+ * filing cabinet, not a record.
  */
-const SORTS: Record<Tab, Choice[]> = {
-  active: [
-    { key: "added", label: "Newest first" },
-    { key: "progress", label: "Furthest along" },
-    { key: "speed", label: "Fastest" },
-    { key: "largest", label: "Largest" },
-    { key: "title", label: "Title A–Z" },
-  ],
-  history: [
-    { key: "added", label: "Newest first" },
-    { key: "oldest", label: "Oldest first" },
-    { key: "largest", label: "Largest" },
-    { key: "title", label: "Title A–Z" },
-  ],
-};
-
-/**
- * What is in flight is never cut, and the bar is told so by being handed one
- * option: `ListingControls` draws no Group button where there is nothing to
- * choose. A transfer is paused or it is moving, and both are on the row.
- */
-const ACTIVE_GROUPS: GroupOption<DownloadEntry>[] = [
-  { key: "none", label: "No grouping", of: () => "" },
-];
+const NEWEST_FIRST = (a: DownloadEntry, b: DownloadEntry) =>
+  b.addedAt - a.addedAt;
 
 /**
  * The record is cut one way, it opens cut, and it is the only cut it has ever
@@ -185,53 +142,27 @@ const ACTIVE_GROUPS: GroupOption<DownloadEntry>[] = [
  * qBittorrent still counts as completed, which is right: the file landed, and
  * what happened to the torrent afterwards is a different subject.
  */
-const HISTORY_GROUPS: GroupOption<DownloadEntry>[] = [
-  {
-    /*
-     * First, and so the tab's own default — see `pickGroup`, and `AUDIO_GROUPS`
-     * on the jobs page, which is the other list that opens cut.
-     *
-     * Most lists here open flat because they are rankings, and a ranking cut
-     * into sections is no longer one. The record is not a ranking: it is a log,
-     * and the two things in it are not the same kind of thing. Flat, a fetch
-     * that died at 4% sits between two that landed, wearing a plate that says
-     * what it would have scored had it arrived — which is the log inviting you
-     * to read a prediction as an outcome. Cut, the heading says which you are
-     * looking at before any row does.
-     */
-    key: "outcome",
-    label: "Outcome",
-    of: (entry) => (entry.completedAt ? "Completed" : "Cancelled"),
-    // Completed first: it is the larger half of any working setup and the one
-    // you came to check. A cancelled fetch is a thing you go looking for.
-    order: ["Completed", "Cancelled"],
-  },
-  { key: "none", label: "No grouping", of: () => "" },
-];
-
-const GROUPS: Record<Tab, GroupOption<DownloadEntry>[]> = {
-  active: ACTIVE_GROUPS,
-  history: HISTORY_GROUPS,
+const BY_OUTCOME: GroupOption<DownloadEntry> = {
+  /*
+   * The cut, rather than one of them. It was the first of two options — this
+   * and "No grouping" — which made a menu whose other answer was to undo the
+   * only thing it did.
+   *
+   * Most lists here open flat because they are rankings, and a ranking cut into
+   * sections is no longer one. The record is not a ranking: it is a log, and
+   * the two things in it are not the same kind of thing. Flat, a fetch that
+   * died at 4% sits between two that landed, wearing a plate saying what it
+   * would have scored had it arrived — which is the log inviting you to read a
+   * prediction as an outcome. Cut, the heading says which you are looking at
+   * before any row does. There was never a reading this page wanted flat.
+   */
+  key: "outcome",
+  label: "Outcome",
+  of: (entry) => (entry.completedAt ? "Completed" : "Cancelled"),
+  // Completed first: it is the larger half of any working setup and the one you
+  // came to check. A cancelled fetch is a thing you go looking for.
+  order: ["Completed", "Cancelled"],
 };
-
-/**
- * The comparators, by the key the menu above names them with.
- *
- * `live` is absent on a row qBittorrent has forgotten, which is most of an old
- * record — so size and progress fall back to nothing and those rows gather at
- * the bottom of the orders that ask about them. That is the honest place for
- * them: the client is the only thing that knew, and it no longer does.
- */
-const COMPARE: Record<string, (a: DownloadEntry, b: DownloadEntry) => number> =
-  {
-    added: (a, b) => b.addedAt - a.addedAt,
-    oldest: (a, b) => a.addedAt - b.addedAt,
-    largest: (a, b) => (b.live?.sizeBytes ?? 0) - (a.live?.sizeBytes ?? 0),
-    progress: (a, b) => (b.live?.progress ?? 0) - (a.live?.progress ?? 0),
-    speed: (a, b) => (b.live?.speedBps ?? 0) - (a.live?.speedBps ?? 0),
-    title: (a, b) =>
-      (a.filmTitle ?? a.title).localeCompare(b.filmTitle ?? b.title),
-  };
 
 const eta = (sec?: number) => {
   if (sec === undefined) return undefined;
@@ -719,12 +650,39 @@ function DownloadTile({
        * everywhere else: nothing is ticking this grid and a download is not on
        * a list it can be taken off, so neither the tick nor the cross wants it.
        *
-       * The stop sits outermost, in the corner itself, where the pointer lands
-       * and where the control you actually reach for should be. The cancel is
-       * the one further in, since it is the press there is no taking back.
+       * The cancel sits outermost, in the corner itself, and the pause is the
+       * one further in.
+       *
+       * The other way round for a while, on the argument that the corner is
+       * where the pointer lands and should therefore hold the control you
+       * actually reach for — which is the pause, a transfer being far more
+       * often paused than abandoned. The corner is spent on the cross instead
+       * now. It is the same corner every grid in this app puts a removal in —
+       * `RemoveButton`'s, the tick's — so a cross that sat second here was the
+       * one control on the page whose place had to be learned rather than
+       * known, and nothing is thrown away by it without the dialog saying so
+       * first.
        */
       tools={
         <>
+          {/* Red on the pointer rather than always, which is `RemoveButton`'s
+              rule and `BUTTON.danger`'s: a mark announces what it will do at
+              the moment you reach for it, not from across the grid.
+
+              It opens the same dialog the rows' menu item opens, so the words
+              are still said before anything is thrown away — which is what
+              lets this be a shape at all. */}
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            aria-label="Cancel this download"
+            title="Cancel download"
+            className={`${TILE_MARK} hover:text-red-400 disabled:opacity-50`}
+          >
+            <CrossIcon />
+          </button>
+
           {/* Only while it is running. Paused, the whole poster is the resume
               button — a second one up here would be two ways to do the same
               thing on one tile, and the smaller of the two. */}
@@ -744,24 +702,6 @@ function DownloadTile({
               )}
             </button>
           )}
-
-          {/* Red on the pointer rather than always, which is `RemoveButton`'s
-              rule and `BUTTON.danger`'s: a mark announces what it will do at
-              the moment you reach for it, not from across the grid.
-
-              It opens the same dialog the rows' menu item opens, so the words
-              are still said before anything is thrown away — which is what
-              lets this be a shape at all. */}
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            aria-label="Cancel this download"
-            title="Cancel download"
-            className={`${TILE_MARK} hover:text-red-400 disabled:opacity-50`}
-          >
-            <CrossIcon />
-          </button>
         </>
       }
       /*
@@ -1307,7 +1247,14 @@ function DownloadDetails({
   );
 }
 
-export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
+export function DownloadsView({
+  initial,
+  layout,
+}: {
+  initial: DownloadEntry[];
+  /** Posters or rows, as answered once under Settings → Themes. */
+  layout: Layout;
+}) {
   const [entries, setEntries] = useState(initial);
 
   /*
@@ -1326,16 +1273,6 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
     setServed(initial);
     setEntries(initial);
   }
-
-  /**
-   * Which half, in what order, drawn how — the three questions every listing
-   * page here asks, in the URL like all of them.
-   *
-   * This was `useLayout`, the one-question slice of the same hook, back when
-   * the page's whole control row was a layout toggle.
-   */
-  const listing = useListing(TABS, SORTS, GROUPS);
-  const { tab, layout } = listing;
 
   const [pending, startTransition] = useTransition();
   /** The last control that came back with a reason, until it is dismissed. */
@@ -1439,21 +1376,8 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
    * the next edit from sorting `entries` itself and quietly reordering the
    * state the poll writes back into.
    */
-  const order = COMPARE[listing.current.key] ?? COMPARE.added;
-  const active = entries.filter(inFlight).sort(order);
-  const past = entries.filter((e) => !inFlight(e)).sort(order);
-
-  /** Whichever half the switch is on, which is the only one drawn. */
-  const showing = tab === "active" ? active : past;
-
-  /**
-   * How this tab is cut, resolved from the key in the address.
-   *
-   * `useListing` hands back the chosen key; the option it names lives here with
-   * the buckets it sorts into, because the cut is a fact about these rows and
-   * not about the bar that offers it.
-   */
-  const grouping = pickGroup(GROUPS[tab], listing.group);
+  const active = entries.filter(inFlight).sort(NEWEST_FIRST);
+  const past = entries.filter((e) => !inFlight(e)).sort(NEWEST_FIRST);
 
   /**
    * Which rows name their poster, by hash.
@@ -1516,10 +1440,6 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
        carry the distance now, and a column that forgot to have one put the
        list against the controls. 2rem, as under every other head in the app. */
     <div className="flex flex-1 flex-col gap-8">
-      {/* The row every list page in this app keeps: which half on the left, how
-          to read it on the right. */}
-      <ListingBar listing={listing} />
-
       <div className="flex flex-1 flex-col gap-14">
         {/* Above both lists rather than against the row that failed: a control
           can be clicked from the row menu, which is gone by the time there is
@@ -1553,324 +1473,319 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
         {/* Each half says its own nothing, and says it in that half's terms.
             The page-wide empty state above answers "you have never fetched
             anything"; these two answer "nothing is moving" and "nothing has
-            finished", which are different facts and point different ways. */}
-        {showing.length === 0 && (
-          <EmptyState
-            icon={
-              tab === "active" ? (
-                <>
-                  <path d="M12 4v11m0 0 4-4m-4 4-4-4" />
-                  <path d="M4 20h16" />
-                </>
-              ) : (
-                <>
-                  <path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18" />
-                  <path d="M12 7v5l3.5 2" />
-                </>
-              )
-            }
-            title={
-              tab === "active" ? "Nothing downloading" : "Nothing finished yet"
-            }
-          >
-            {tab === "active"
-              ? "Everything sent to qBittorrent has arrived. What came in is under History."
-              : "Nothing has finished downloading yet — what is on its way is under Downloading."}
-          </EmptyState>
-        )}
+            finished", which are different facts and point different ways.
 
-        {tab === "active" && active.length > 0 && (
-          <section className="flex flex-col gap-5">
-            {layout === "grid" ? (
-              <div className={TILE_GRID_RULED}>
-                {active.map((entry, i) => (
-                  <DownloadTile
+            Under their own headings rather than instead of the page, now that
+            both halves are on it: an empty half of a page with a full half
+            below it has to say which half is empty, and the heading is what
+            says it. */}
+        <section className="flex flex-col gap-5">
+          <SectionHead
+            label="Downloading"
+            note={active.length > 0 ? `${active.length}` : undefined}
+          />
+
+          {active.length === 0 ? (
+            <p className="text-sm opacity-45">
+              Everything sent to qBittorrent has arrived.
+            </p>
+          ) : layout === "grid" ? (
+            <div className={TILE_GRID_RULED}>
+              {active.map((entry, i) => (
+                <DownloadTile
+                  key={entry.hash}
+                  entry={entry}
+                  name={named.get(entry.hash)}
+                  index={i}
+                  busy={pending}
+                  onPause={() =>
+                    control(() =>
+                      PAUSED_STATES.has(entry.live!.state)
+                        ? qbResume(entry.hash)
+                        : qbPause(entry.hash),
+                    )
+                  }
+                  onCancel={() => setConfirming({ kind: "cancel", entry })}
+                />
+              ))}
+            </div>
+          ) : (
+            <ul className="ruled flex flex-col">
+              {active.map((entry, i) => {
+                const d = entry.live!;
+                const paused = PAUSED_STATES.has(d.state);
+                // Floored to the hundredth, not rounded: a download at 99.999%
+                // is not finished, and the one number the row shows should never
+                // say it is before the file is.
+                const percent = Math.floor(d.progress * 10000) / 100;
+                return (
+                  <li
                     key={entry.hash}
-                    entry={entry}
-                    name={named.get(entry.hash)}
-                    index={i}
-                    busy={pending}
-                    onPause={() =>
-                      control(() =>
-                        PAUSED_STATES.has(entry.live!.state)
-                          ? qbResume(entry.hash)
-                          : qbPause(entry.hash),
-                      )
-                    }
-                    onCancel={() => setConfirming({ kind: "cancel", entry })}
-                  />
-                ))}
-              </div>
-            ) : (
-              <ul className="ruled flex flex-col">
-                {active.map((entry, i) => {
-                  const d = entry.live!;
-                  const paused = PAUSED_STATES.has(d.state);
-                  // Floored to the hundredth, not rounded: a download at 99.999%
-                  // is not finished, and the one number the row shows should never
-                  // say it is before the file is.
-                  const percent = Math.floor(d.progress * 10000) / 100;
-                  return (
-                    <li
-                      key={entry.hash}
-                      style={stagger(i)}
-                      className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-4"
-                    >
-                      <Poster entry={entry} name={named.get(entry.hash)} />
+                    style={stagger(i)}
+                    className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-4"
+                  >
+                    <Poster entry={entry} name={named.get(entry.hash)} />
 
-                      <div className="min-w-0 flex-1">
-                        {entry.filmTitle && (
-                          <p className="truncate text-base font-medium">
-                            {entry.filmTitle}
-                          </p>
-                        )}
-                        <p
-                          className={`truncate font-mono text-xs opacity-55 ${
-                            entry.filmTitle ? "mt-1.5" : ""
-                          }`}
-                          title={d.name}
-                        >
-                          {d.name}
+                    <div className="min-w-0 flex-1">
+                      {entry.filmTitle && (
+                        <p className="truncate text-base font-medium">
+                          {entry.filmTitle}
                         </p>
-                        {/* The bar: progress that reads at a glance across the
+                      )}
+                      <p
+                        className={`truncate font-mono text-xs opacity-55 ${
+                          entry.filmTitle ? "mt-1.5" : ""
+                        }`}
+                        title={d.name}
+                      >
+                        {d.name}
+                      </p>
+                      {/* The bar: progress that reads at a glance across the
                           row's whole width, which a dial never quite did. Lit
                           only while it is moving — a paused download keeps the
                           channel but throws no light, so the row that has
                           stopped is the dull one. */}
-                        {/* Held back from the right edge of its column, which the
+                      {/* Held back from the right edge of its column, which the
                           title and the file name run to but the bar should not:
                           those stop when the words stop, and a bar stops where
                           it is told, so at full width it was the one thing in
                           the row reaching for the ellipsis. */}
-                        <div className="bar-track mt-2.5 mr-10">
-                          <div
-                            className={`bar-fill motion-safe:transition-[width] motion-safe:duration-500 ${
-                              paused ? "bar-fill-idle" : ""
-                            }`}
-                            style={{ width: `${Math.min(100, percent)}%` }}
-                          />
-                        </div>
-
-                        <p className="mt-2 text-xs tabular-nums opacity-45">
-                          {[
-                            `${percent.toFixed(2)}% of ${gigabytes(d.sizeBytes)}`,
-                            !paused && d.speedBps > 0
-                              ? speed(d.speedBps)
-                              : undefined,
-                            paused
-                              ? "paused"
-                              : (eta(d.etaSec) ?? STATE_LABEL[d.state]),
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
+                      <div className="bar-track mt-2.5 mr-10">
+                        <div
+                          className={`bar-fill motion-safe:transition-[width] motion-safe:duration-500 ${
+                            paused ? "bar-fill-idle" : ""
+                          }`}
+                          style={{ width: `${Math.min(100, percent)}%` }}
+                        />
                       </div>
 
-                      {/* The reading, where the history rows keep theirs: a row
+                      <p className="mt-2 text-xs tabular-nums opacity-45">
+                        {[
+                          `${percent.toFixed(2)}% of ${gigabytes(d.sizeBytes)}`,
+                          !paused && d.speedBps > 0
+                            ? speed(d.speedBps)
+                            : undefined,
+                          paused
+                            ? "paused"
+                            : (eta(d.etaSec) ?? STATE_LABEL[d.state]),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    </div>
+
+                    {/* The reading, where the history rows keep theirs: a row
                         is read left to right and the score is the last word on
                         it before the controls. The same badge the tiles wear in
                         their top corner, off the same name. */}
-                      {entry.score !== undefined && (
-                        <ScoreBadge
-                          score={entry.score}
-                          theme={
-                            entry.status
-                              ? STATUS_THEME[entry.status]
-                              : undefined
-                          }
-                          title={
-                            entry.status
-                              ? `${entry.status} · ${entry.score} of 100`
-                              : `${entry.score} of 100`
-                          }
-                        />
-                      )}
-
-                      {/* The same ellipsis the history rows carry, so one column
-                        of marks runs down the page whatever state a row is in. */}
-                      <RowMenu
-                        busy={pending}
-                        items={[
-                          {
-                            label: paused ? "Resume" : "Pause",
-                            onSelect: () =>
-                              control(() =>
-                                paused
-                                  ? qbResume(entry.hash)
-                                  : qbPause(entry.hash),
-                              ),
-                          },
-                          {
-                            label: "Cancel this download",
-                            onSelect: () =>
-                              setConfirming({ kind: "cancel", entry }),
-                          },
-                        ]}
+                    {entry.score !== undefined && (
+                      <ScoreBadge
+                        score={entry.score}
+                        theme={
+                          entry.status ? STATUS_THEME[entry.status] : undefined
+                        }
+                        title={
+                          entry.status
+                            ? `${entry.status} · ${entry.score} of 100`
+                            : `${entry.score} of 100`
+                        }
                       />
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        )}
+                    )}
 
-        {/* The record, on its own tab.
+                    {/* The same ellipsis the history rows carry, so one column
+                        of marks runs down the page whatever state a row is in. */}
+                    <RowMenu
+                      busy={pending}
+                      items={[
+                        {
+                          label: paused ? "Resume" : "Pause",
+                          onSelect: () =>
+                            control(() =>
+                              paused
+                                ? qbResume(entry.hash)
+                                : qbPause(entry.hash),
+                            ),
+                        },
+                        {
+                          label: "Cancel this download",
+                          onSelect: () =>
+                            setConfirming({ kind: "cancel", entry }),
+                        },
+                      ]}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
-            It has been shut, then open, and is now neither. Shut was the rule
-            `CollapsibleSection` was written for — a log is a thing you go
-            looking for rather than one you read past — and it earned its keep
-            while this list was drawn at the foot of the queue and the wishlist,
-            pages you came to for something else. Open was the correction for a
-            page called Downloads, where the record is half the subject and
-            every visit began with a click to reach the half you came for.
+        {/* The record, under the half that is still happening.
 
-            A tab is what "half the subject" actually asks for. Neither list is
-            an appendix to the other, and neither has to be scrolled past to
-            reach the other one. What it costs is the glance that took both in
-            at once; what it buys is the row at the top of the page, which had
-            nothing to hold while these were one column. */}
-        {tab === "history" && past.length > 0 && (
-          /* Cut into sections where the Outcome menu asks for it, flat where it
+            It has been shut, then open, then a tab, and is now a section again.
+            Shut was `CollapsibleSection`'s rule — a log is a thing you go
+            looking for — and it earned its keep while this list was drawn at
+            the foot of the queue and the wishlist, pages you came to for
+            something else. Open was the correction for a page called Downloads,
+            where the record is half the subject. The tab was the correction for
+            a control row with nothing on its left.
+
+            None of those was worth what it cost, which was the glance that
+            takes both halves in at once: "is that film here yet" is answered as
+            squarely by what has arrived as by what is still arriving, and every
+            arrangement but this one made you ask it twice.
+
+            And no heading of its own. "History" stood over "Completed" and
+            "Cancelled", which is a heading whose only content is two more
+            headings — and neither of those needs telling apart from what is
+            downloading, since the half above says so and every row under here
+            has already finished. The cut is the record's name. */}
+        <section className="flex flex-col gap-5">
+          {past.length === 0 ? (
+            <p className="text-sm opacity-45">
+              Nothing has finished downloading yet.
+            </p>
+          ) : (
+            /* Cut into sections where the Outcome menu asks for it, flat where it
              does not — `Grouped` is the same component the jobs page and the
              wishlist part their lists with, headings, rule and all. The offset
              it hands back is what keeps the entrance stagger running down the
              page rather than restarting at every heading. */
-          <Grouped
-            items={past}
-            group={grouping}
-            note={(rows) => `${rows.length}`}
-          >
-            {(rows, offset) =>
-              layout === "grid" ? (
-                <div className={TILE_GRID_RULED}>
-                  {rows.map((entry, i) => (
-                    <HistoryTile
-                      key={entry.hash}
-                      entry={entry}
-                      name={named.get(entry.hash)}
-                      index={offset + i}
-                      onClear={() => setConfirming({ kind: "forget", entry })}
-                      onStopSeeding={
-                        seeding(entry)
-                          ? () => setConfirming({ kind: "seed", entry })
-                          : undefined
-                      }
-                      onRetry={
-                        retryable(entry)
-                          ? () => setConfirming({ kind: "retry", entry })
-                          : undefined
-                      }
-                      onOpen={() => setReading(entry.hash)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <ul className="ruled flex flex-col">
-                  {rows.map((entry, i) => {
-                    const d = entry.live;
-
-                    /*
-                     * There were two shouted chips here — REMOVED on a fetch that
-                     * never finished, FILES MISSING on one whose payload has since
-                     * been moved or deleted. Both were the loudest thing in a list
-                     * you open to read what has already happened, and both said
-                     * something the quiet line underneath says anyway: whether the
-                     * row finished, and whether qBittorrent still has it. A record
-                     * does not need to raise its voice.
-                     */
-                    return (
-                      <li
+            <Grouped
+              items={past}
+              group={BY_OUTCOME}
+              note={(rows) => `${rows.length}`}
+            >
+              {(rows, offset) =>
+                layout === "grid" ? (
+                  <div className={TILE_GRID_RULED}>
+                    {rows.map((entry, i) => (
+                      <HistoryTile
                         key={entry.hash}
-                        style={stagger(offset + i)}
-                        /* A role rather than a link, because the row holds
+                        entry={entry}
+                        name={named.get(entry.hash)}
+                        index={offset + i}
+                        onClear={() => setConfirming({ kind: "forget", entry })}
+                        onStopSeeding={
+                          seeding(entry)
+                            ? () => setConfirming({ kind: "seed", entry })
+                            : undefined
+                        }
+                        onRetry={
+                          retryable(entry)
+                            ? () => setConfirming({ kind: "retry", entry })
+                            : undefined
+                        }
+                        onOpen={() => setReading(entry.hash)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <ul className="ruled flex flex-col">
+                    {rows.map((entry, i) => {
+                      const d = entry.live;
+
+                      /*
+                       * There were two shouted chips here — REMOVED on a fetch that
+                       * never finished, FILES MISSING on one whose payload has since
+                       * been moved or deleted. Both were the loudest thing in a list
+                       * you open to read what has already happened, and both said
+                       * something the quiet line underneath says anyway: whether the
+                       * row finished, and whether qBittorrent still has it. A record
+                       * does not need to raise its voice.
+                       */
+                      return (
+                        <li
+                          key={entry.hash}
+                          style={stagger(offset + i)}
+                          /* A role rather than a link, because the row holds
                          buttons of its own and an anchor may not: the record
                          opens from a handler and the two marks below stop the
                          click on its way up. The same shape the jobs page's
                          rows take, for the same reason — see `TaskRow`. */
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setReading(entry.hash)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setReading(entry.hash);
-                          }
-                        }}
-                        aria-label={`${entry.filmTitle ?? entry.title} — ${historyLine(entry)}`}
-                        className="row-enter glow -mx-4 flex cursor-pointer items-center gap-5 rounded-card px-4 py-4 transition-colors hover:bg-surface-strong"
-                      >
-                        <Poster
-                          entry={entry}
-                          name={named.get(entry.hash)}
-                          dim={!d}
-                        />
-                        <div className="min-w-0 flex-1">
-                          {entry.filmTitle && (
-                            <p
-                              className={`truncate text-base font-medium ${d ? "" : "opacity-60"}`}
-                            >
-                              {entry.filmTitle}
-                            </p>
-                          )}
-                          <p
-                            className={`truncate font-mono text-xs ${d ? "opacity-55" : "opacity-40"} ${
-                              entry.filmTitle ? "mt-1.5" : ""
-                            }`}
-                            title={entry.title}
-                          >
-                            {entry.title}
-                          </p>
-
-                          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                            {d && SEEDING_STATES.has(d.state) && (
-                              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                                seeding
-                              </span>
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setReading(entry.hash)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setReading(entry.hash);
+                            }
+                          }}
+                          aria-label={`${entry.filmTitle ?? entry.title} — ${historyLine(entry)}`}
+                          className="row-enter glow -mx-4 flex cursor-pointer items-center gap-5 rounded-card px-4 py-4 transition-colors hover:bg-surface-strong"
+                        >
+                          <Poster
+                            entry={entry}
+                            name={named.get(entry.hash)}
+                            dim={!d}
+                          />
+                          <div className="min-w-0 flex-1">
+                            {entry.filmTitle && (
+                              <p
+                                className={`truncate text-base font-medium ${d ? "" : "opacity-60"}`}
+                              >
+                                {entry.filmTitle}
+                              </p>
                             )}
-                            {/* Which list sent it, as a chip rather than a word
+                            <p
+                              className={`truncate font-mono text-xs ${d ? "opacity-55" : "opacity-40"} ${
+                                entry.filmTitle ? "mt-1.5" : ""
+                              }`}
+                              title={entry.title}
+                            >
+                              {entry.title}
+                            </p>
+
+                            <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                              {d && SEEDING_STATES.has(d.state) && (
+                                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                  seeding
+                                </span>
+                              )}
+                              {/* Which list sent it, as a chip rather than a word
                             in the run: it is what the row *is*, not one more
                             detail about it. Kept here and dropped from the
                             tiles — a row has the width for a fact that is true
                             of every row, and a poster does not. */}
-                            <span className={`${CHIP} shrink-0`}>
-                              {SOURCE_LABEL[entry.source]}
-                            </span>
+                              <span className={`${CHIP} shrink-0`}>
+                                {SOURCE_LABEL[entry.source]}
+                              </span>
 
-                            {/* What the release claimed to be has gone from here
+                              {/* What the release claimed to be has gone from here
                             for the reason the tiles dropped it: those three are
                             read off the name, the score to the right is read
                             off the file, and a claim printed beside a
                             measurement reads as a second opinion of equal
                             standing. The record dialog still lists them. */}
-                            <span className="text-xs opacity-40">
-                              {historyLine(entry)}
-                            </span>
+                              <span className="text-xs opacity-40">
+                                {historyLine(entry)}
+                              </span>
+                            </div>
                           </div>
-                        </div>
 
-                        {/* The library's reading of what landed, where the tile
+                          {/* The library's reading of what landed, where the tile
                           puts it in the corner of the artwork: a row is read
                           left to right and the score is the last word on it,
                           which is where the film shelf's rows put theirs too.
                           Absent until the fetch has landed and been scanned. */}
-                        {entry.score !== undefined && (
-                          <ScoreBadge
-                            score={entry.score}
-                            theme={
-                              entry.status
-                                ? STATUS_THEME[entry.status]
-                                : undefined
-                            }
-                            title={
-                              entry.status
-                                ? `${entry.status} · ${entry.score} of 100`
-                                : `${entry.score} of 100`
-                            }
-                          />
-                        )}
+                          {entry.score !== undefined && (
+                            <ScoreBadge
+                              score={entry.score}
+                              theme={
+                                entry.status
+                                  ? STATUS_THEME[entry.status]
+                                  : undefined
+                              }
+                              title={
+                                entry.status
+                                  ? `${entry.status} · ${entry.score} of 100`
+                                  : `${entry.score} of 100`
+                              }
+                            />
+                          )}
 
-                        {/* What the tiles wear in the corner of the artwork, in
+                          {/* What the tiles wear in the corner of the artwork, in
                           the place a row keeps its controls. One at most, and
                           usually none: a fetch that finished and was cleaned up
                           after is a record and nothing else — and the two are
@@ -1884,68 +1799,69 @@ export function DownloadsView({ initial }: { initial: DownloadEntry[] }) {
                           where there was no control, a control's width in where
                           there was — and a column of readings that does not
                           line up is a column you cannot run your eye down. */}
-                        <div className="flex w-[4.5rem] shrink-0 justify-end">
-                          {/* One of the two that act on the fetch, and never
+                          <div className="flex w-[4.5rem] shrink-0 justify-end">
+                            {/* One of the two that act on the fetch, and never
                               both: a torrent still uploading can be stopped,
                               one that never landed can be sent again, and a row
                               cannot be in both states. */}
-                          {seeding(entry) ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirming({ kind: "seed", entry });
-                              }}
-                              aria-label="Stop seeding"
-                              title="Stop seeding"
-                              className={`${ROW_ACTION} opacity-50 hover:opacity-100`}
-                            >
-                              <TransportIcon paused={false} />
-                            </button>
-                          ) : (
-                            retryable(entry) && (
+                            {seeding(entry) ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setConfirming({ kind: "retry", entry });
+                                  setConfirming({ kind: "seed", entry });
                                 }}
-                                aria-label={`Download ${entry.filmTitle ?? entry.title} again`}
-                                title="Download again"
+                                aria-label="Stop seeding"
+                                title="Stop seeding"
                                 className={`${ROW_ACTION} opacity-50 hover:opacity-100`}
                               >
-                                <RetryIcon />
+                                <TransportIcon paused={false} />
                               </button>
-                            )
-                          )}
+                            ) : (
+                              retryable(entry) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirming({ kind: "retry", entry });
+                                  }}
+                                  aria-label={`Download ${entry.filmTitle ?? entry.title} again`}
+                                  title="Download again"
+                                  className={`${ROW_ACTION} opacity-50 hover:opacity-100`}
+                                >
+                                  <RetryIcon />
+                                </button>
+                              )
+                            )}
 
-                          {/* And the one every row has. The slot is drawn at
+                            {/* And the one every row has. The slot is drawn at
                               two buttons' width whether or not both are in it,
                               so the score to its left sits the same distance
                               from the edge on every row — a column of readings
                               that does not line up is one you cannot run your
                               eye down. */}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirming({ kind: "forget", entry });
-                            }}
-                            aria-label={`Clear ${entry.filmTitle ?? entry.title} from history`}
-                            title="Clear from history"
-                            className={`${ROW_ACTION} opacity-50 hover:text-red-400 hover:opacity-100`}
-                          >
-                            <BinIcon />
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )
-            }
-          </Grouped>
-        )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirming({ kind: "forget", entry });
+                              }}
+                              aria-label={`Clear ${entry.filmTitle ?? entry.title} from history`}
+                              title="Clear from history"
+                              className={`${ROW_ACTION} opacity-50 hover:text-red-400 hover:opacity-100`}
+                            >
+                              <BinIcon />
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )
+              }
+            </Grouped>
+          )}
+        </section>
       </div>
 
       {/* The record, over the list it was read on. Mounted beside the question
