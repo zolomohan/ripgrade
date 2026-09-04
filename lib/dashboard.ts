@@ -9,7 +9,6 @@ import { folderReachable } from "./reach";
 import { getLibraryRoots } from "./roots";
 import { movieId, showId } from "./routes";
 import { getShows } from "./shows";
-import { computeIssues, type IssueTally } from "./stats";
 import { hasCredentials } from "./tmdb";
 import {
   cleanupFiles,
@@ -113,7 +112,6 @@ export type Dashboard = {
       offline: number;
       films: WorkFilm<AudioTask>[];
     };
-    issues: IssueTally;
     /** Shows with a gap, and the episodes those gaps come to. */
     showsMissing: { shows: number; episodes: number };
   };
@@ -296,16 +294,6 @@ export async function getDashboard(): Promise<Dashboard> {
         films: shelfOf(tasks.dovi, (task) => task.sizeBytes),
       },
       audio: audioOf(tasks.audio),
-      /*
-       * Films, not the whole library — because the panel's own button opens
-       * `/library?f=issues`, and that shelf holds films. A count that sent you
-       * to a list of a different size would be worse than no count: every
-       * episode in this library is missing a logo, so folding them in turns a
-       * figure about work into a figure about television having no artwork.
-       *
-       * A show's own problems are on its page, where a season can be read.
-       */
-      issues: computeIssues(movies),
       showsMissing: missingOf(shows),
     },
     recent: {
@@ -438,6 +426,16 @@ export type RecentItem = {
   artAt?: number;
   /** Episodes that arrived together, where the tile stands for a show. */
   episodes?: number;
+  /**
+   * The line under the title, in the words the shelf this film came from uses.
+   *
+   * A film says what the library shelf says about it — the year and what the
+   * copy is — and a show says how much of it there is, which is what the shows
+   * shelf prints. Composed here rather than on the client because it is the
+   * same sentence those pages write, and two places writing it is two places
+   * to change it.
+   */
+  subtitle?: string;
   addedAt: number;
 };
 
@@ -522,6 +520,10 @@ function recentlyAdded(
     poster: item.poster,
     posterRemote: item.art.poster,
     artAt: item.artAt,
+    // The library tile's own line, fact for fact — see `LibraryView`.
+    subtitle: [item.year, item.resolution, item.releaseType]
+      .filter(Boolean)
+      .join(" · "),
     addedAt: item.addedAt,
   }));
 
@@ -543,6 +545,11 @@ function recentlyAdded(
       posterRemote: show.art.poster,
       artAt: show.artAt,
       episodes: episodes.filter((e) => e.addedAt === newest).length,
+      // The shows shelf's own line: how many seasons, and how many episodes.
+      subtitle: [
+        `${show.seasons.length} ${show.seasons.length === 1 ? "season" : "seasons"}`,
+        `${episodes.length} episodes`,
+      ].join(" · "),
       addedAt: newest,
     });
   }

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, ViewTransition } from "react";
 
 import { Art } from "./art";
-import { Bars, Card, Coverage, Stat } from "./charts";
+import { languageLine } from "./jobs/task-list";
+import { Card, Stat } from "./charts";
 import {
   checksFirst,
   doviRefusal,
@@ -26,7 +27,12 @@ import { stagger } from "./stagger";
 import type { Dashboard, DuplicateFilm, WorkFilm } from "@/lib/dashboard";
 import type { AudioTask, DoviTask } from "@/lib/queue-tasks";
 import { compareId, movieId, posterName } from "@/lib/routes";
-import { scoreTheme } from "./score-circle";
+import {
+  queueTheme,
+  ScoreBadge,
+  SCORE_PLATE,
+  scoreTheme,
+} from "./score-circle";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 
 /**
@@ -66,23 +72,6 @@ import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
  * what it was handed. Nothing extra is sent for the privilege, since the whole
  * `Dashboard` object was already going over as props.
  */
-
-/**
- * A severity's colour, as the rest of the app already spends it.
- *
- * The same three tones `/how-it-works` and the film page use: red is the one
- * that forces a verdict, amber is the one worth looking at, and info takes no
- * hue at all — a third colour for "nothing is wrong here" would spend the
- * channel on the one band that never needs it.
- *
- * Keyed by the label `computeIssues` writes rather than by position, so a
- * reordered or filtered tally cannot silently paint warnings red.
- */
-const SEVERITY_INK: Record<string, string> = {
-  Critical: "bg-red-500/85",
-  Warning: "bg-amber-500/80",
-  Info: "bg-foreground/25",
-};
 
 /**
  * One thing this app has to be able to reach.
@@ -186,7 +175,6 @@ export function DashboardView({
     recent.finds.count > 0 ||
     work.dovi.count > 0 ||
     work.audio.count > 0 ||
-    work.issues.filmsAffected > 0 ||
     work.showsMissing.shows > 0;
 
   return (
@@ -255,8 +243,7 @@ export function DashboardView({
 
         {!hasWork && (
           <p className="text-sm opacity-45">
-            Nothing outstanding — no upgrades queued, no rewrites to run and no
-            open issues.
+            Nothing outstanding — no upgrades queued and no rewrites to run.
           </p>
         )}
 
@@ -344,6 +331,13 @@ export function DashboardView({
          * actually done — and the figure in its corner is why it is in the
          * queue at all, so the shelf can be read without the page it came from.
          *
+         * Which is also why none of these headings carries a count any more.
+         * Each said "4 films" beside a title, and the row of figures directly
+         * above says the same thing at the size a figure deserves — a heading
+         * that repeats the number over it is a page telling you twice and
+         * emphasising neither. The titles name the queues; the figures count
+         * them.
+         *
          * Only where there is something in them. A heading over an empty strip
          * is the page reporting on its own layout.
          */}
@@ -368,7 +362,6 @@ export function DashboardView({
         {work.duplicates.films.length > 0 && (
           <Card
             title="Duplicates"
-            hint={`${count(work.duplicates.count)} ${work.duplicates.count === 1 ? "film" : "films"} · ${size(work.duplicates.bytes)} to reclaim`}
             index={1}
             // Where the rest of them are, on the shelf that already has a
             // filter for exactly this — the card holds six, and a library that
@@ -390,38 +383,75 @@ export function DashboardView({
         )}
 
         {work.upgrades.films.length > 0 && (
-          <Card
-            title="Upgrade queue"
-            // How many, and nothing else. "+23 to gain" was the queue's whole
-            // gain summed, and a sum of score points is a figure with no unit
-            // anybody holds a sense of: eleven films at two points each and two
-            // films at eleven are the same number and not the same afternoon.
-            // The posters below carry the gain that means something, one film
-            // at a time, which is the granularity the decision is made at.
-            hint={`${count(work.upgrades.count)} ${work.upgrades.count === 1 ? "film" : "films"}`}
-            index={2}
-          >
-            {/* Points of score, signed: the figure is what taking the release
-                would add to a film that already has a number. */}
+          <Card title="Upgrade queue" index={2}>
+            {/* The library shelf's own pairing over the same film, in the same
+                order: the gain leads, and the score keeps the corner every
+                shelf in this app keeps its reading in. It was the gain alone —
+                a number with nothing to be more than, on the one shelf whose
+                whole subject is the difference between two of them.
+
+                See the badge on `LibraryView`'s tile, which is this markup. */}
             <WorkShelf
               films={work.upgrades.films}
-              badge={(film) => `+${film.figure}`}
+              badge={(film) => (
+                <>
+                  <span
+                    className={`${SCORE_PLATE} text-emerald-600 dark:text-emerald-400`}
+                    title={`A release was found that would score ${film.item.hit.score} — ${film.figure} more than this copy`}
+                  >
+                    +{film.figure}
+                  </span>
+                  {/* `queueTheme`, not the library's banding — amber unless
+                      the copy is a hundred.
+
+                      The default bands a score on its own merits, which makes
+                      an 89 green, and green on this shelf is the one colour it
+                      cannot be: every film here is one the sweep found a better
+                      copy of, so a green plate says "nothing to do" on a poster
+                      whose whole reason for being on the page is that there is.
+                      Only a hundred closes the question, which is the rule the
+                      release lists already read by. */}
+                  <ScoreBadge
+                    score={film.item.currentScore}
+                    theme={queueTheme(film.item.currentScore)}
+                    title={`This copy scores ${film.item.currentScore} of 100`}
+                  />
+                </>
+              )}
+              reading={(film) => `+${film.figure}`}
+              // What the release is, which is what the queue is offering — the
+              // library shelf's own pair of facts, read off the found release
+              // rather than off the copy it would replace.
+              subtitle={(film) =>
+                [film.item.hit.resolution, film.item.hit.releaseType]
+                  .filter(Boolean)
+                  .join(" · ")
+              }
               onOpen={setRelease}
             />
           </Card>
         )}
 
         {work.dovi.films.length > 0 && (
-          <Card
-            title="Dolby Vision conversion queue"
-            hint={`${count(work.dovi.count)} ${work.dovi.count === 1 ? "file" : "files"} · ${size(work.dovi.bytes)}`}
-            index={3}
-          >
+          <Card title="Dolby Vision conversion queue" index={3}>
             {/* The file's own size, which is what a P7 to P8.1 rewrite has to
                 read and write — the cost of the job rather than its yield. */}
             <WorkShelf
               films={work.dovi.films}
-              badge={(film) => size(film.figure)}
+              badge={(film) => (
+                <span className={SHELF_READING}>{size(film.figure)}</span>
+              )}
+              reading={(film) => size(film.figure)}
+              // The jobs page's own line over a conversion, fact for fact.
+              subtitle={(film) =>
+                [
+                  "Profile 7",
+                  film.item.el && EL_LABEL[film.item.el],
+                  size(film.item.sizeBytes),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              }
               onOpen={setConverting}
             />
 
@@ -433,11 +463,7 @@ export function DashboardView({
         )}
 
         {work.audio.films.length > 0 && (
-          <Card
-            title="Strip Tracks queue"
-            hint={`${count(work.audio.count)} ${work.audio.count === 1 ? "file" : "files"} · ${work.audio.estimated ? "≈" : "−"}${size(work.audio.bytes)} freed`}
-            index={4}
-          >
+          <Card title="Strip Tracks queue" index={4}>
             {/* ≈ where the saving is bitrate × runtime, and nothing at all
                 where it was counted.
 
@@ -455,54 +481,26 @@ export function DashboardView({
                 the number means. */}
             <WorkShelf
               films={work.audio.films}
-              badge={(film) =>
+              badge={(film) => (
+                <span className={SHELF_READING}>
+                  {film.estimated ? "≈" : ""}
+                  {size(film.figure)}
+                </span>
+              )}
+              reading={(film) =>
                 `${film.estimated ? "≈" : ""}${size(film.figure)}`
               }
+              // And the jobs page's own line over a removal: which languages
+              // are going, and how big the file they are going from is.
+              subtitle={(film) =>
+                [
+                  languageLine(film.item.languages),
+                  `${size(film.item.sizeBytes)} file`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              }
               onOpen={setStripping}
-            />
-          </Card>
-        )}
-
-        {work.issues.filmsAffected > 0 && (
-          <Card
-            title="Open issues"
-            hint={`${count(work.issues.filmsAffected)} ${work.issues.filmsAffected === 1 ? "film" : "films"}`}
-            index={5}
-          >
-            {/* Red, amber, and the page's own ink — the three tones the film
-                page and `/how-it-works` already spend on a severity, so a
-                critical reads as the same thing wherever you meet it. */}
-            <Coverage
-              segments={work.issues.bySeverity}
-              tones={work.issues.bySeverity.map(
-                (band) => SEVERITY_INK[band.label] ?? SEVERITY_INK.Info,
-              )}
-              // Counts alone. These bands are a backlog, not a census — see
-              // `share` in app/charts.tsx.
-              share={false}
-            />
-
-            {work.issues.filmsCritical > 0 && (
-              // Films, where the bar counts issues: one film can hold three of
-              // them, and a critical is the severity that forces an upgrade
-              // verdict — the only one that changes what the app thinks of a
-              // film, which is worth a sentence of its own.
-              <p className="text-sm text-red-700 dark:text-red-300">
-                {count(work.issues.filmsCritical)}{" "}
-                {work.issues.filmsCritical === 1 ? "film has" : "films have"} a
-                critical issue.
-              </p>
-            )}
-
-            {/* Each check in words, from the catalogue that raises it. No
-                storage figure beside the counts: the bytes are the size of the
-                films an issue happens to sit on, not the size of the problem —
-                one truncated file is worse than sixty low-bitrate encodes, and
-                a terabyte printed next to it says the opposite. */}
-            <Bars
-              slices={work.issues.byCode}
-              unit="occurrences"
-              showBytes={false}
             />
           </Card>
         )}
@@ -691,11 +689,16 @@ export function DashboardView({
 /**
  * The page saying hello.
  *
- * Set in the display face rather than the wordmark's: Jim Nightshade belongs to
- * the mark in the rail and nowhere else — an app whose logo face turns up as a
- * page heading has two logos. Instrument Sans at this size is the same voice
- * every other heading here uses, only louder, which is what a first line should
- * be.
+ * Set in the wordmark's own face, and the only heading in the app that is. It
+ * is not a second logo: it is the same sentence the rail starts, carried across
+ * the gutter and finished — the app says its name, and then says hello in the
+ * same hand. Every other heading here stays Instrument Sans, so a page's title
+ * still reads as the app talking about the page rather than as the app talking.
+ *
+ * Jim Nightshade ships one weight, so nothing asks for a heavier one: `font-
+ * semibold` here got the browser's synthetic smear, and a script face is the
+ * one place that shows. `tracking-tight` went with it — the letters join, and
+ * pulling them together only closes the joins up.
  *
  * The greeting and nothing else. A sentence of totals under it — films,
  * episodes, terabytes, folders, when it was last read — restated figures the
@@ -714,19 +717,18 @@ export function DashboardView({
  */
 function Welcome({ greeting }: { greeting: string }) {
   return (
-    // Level with the wordmark, to the pixel. The page's `py-8` is the same 2rem
-    // the rail spends above its name, and the heading below is set at the
-    // wordmark's own size and leading — 30px, `leading-none` — so the two line
-    // boxes start on the same line and are the same height.
+    // Level with the wordmark, and now for nothing but the arithmetic. The
+    // page's `py-8` is the same 2rem the rail spends above its name, and the
+    // heading is set at the wordmark's size and leading — 30px, `leading-none`
+    // — so the two line boxes start on the same line and are the same height.
     //
-    // That still left the two texts four pixels apart, because a line box is
-    // not a baseline: Jim Nightshade sits 21px into its box and Instrument Sans
-    // 25px into an identical one, which is the faces disagreeing rather than
-    // the layout. `-mt-1` is that measured 4px and nothing else, so the
-    // greeting and the app's name rest on one line and the first thing said
-    // reads across the two columns.
-    <header className="row-enter -mt-1 flex flex-col gap-5">
-      <h1 className="font-display text-3xl leading-none font-semibold tracking-tight text-balance">
+    // The 4px this used to carry was the two faces disagreeing about where a
+    // baseline sits inside an identical box. One face now, so the baselines
+    // are the same measurement and the nudge is gone: the greeting and the
+    // app's name rest on one line, and the first thing said reads across the
+    // two columns.
+    <header className="row-enter flex flex-col gap-5">
+      <h1 className="font-logo text-3xl leading-none text-balance">
         {greeting}
       </h1>
 
@@ -870,10 +872,21 @@ function DuplicateShelf({ films }: { films: DuplicateFilm[] }) {
         key: film.key,
         href: `/compare/${compareId(film.key)}`,
         name: `${film.title}${film.year ? ` (${film.year})` : ""} — ${film.copies} copies, ${size(film.reclaimBytes)} to reclaim`,
+        title: film.title,
+        // The year, and how many of it there are. What the copies actually
+        // differ by is the panel that rises on hover — three lines of figures
+        // that no caption would hold — so this says only the fact that puts
+        // the tile on the shelf at all.
+        subtitle: [
+          film.year,
+          film.copies === 2 ? "2 copies" : `${film.copies} copies`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
         poster: film.poster,
         posterRemote: film.posterRemote,
         artAt: film.artAt,
-        badge: size(film.reclaimBytes),
+        badge: <span className={SHELF_READING}>{size(film.reclaimBytes)}</span>,
         hover: (
           <span className="flex flex-col gap-1.5">
             <DuplicateLine label="Keep" copy={film.keep} keeping />
@@ -948,6 +961,17 @@ function DuplicateShelf({ films }: { films: DuplicateFilm[] }) {
  * drawn across a row of artwork is a rule through a picture. See `.no-scrollbar`
  * in globals.css for why this one strip opts out of the app's own.
  */
+/**
+ * The plate a figure wears over a poster on these shelves.
+ *
+ * It was the corner slot's own markup, which was right while every shelf
+ * printed one number. The upgrade queue prints two — see `UpgradeBadge` — so
+ * the slot became a row that positions whatever it is given, and the plate is
+ * what a single figure puts on to stand in it.
+ */
+const SHELF_READING =
+  "rounded-full bg-background/85 px-2 py-0.5 font-display text-[11.5px] font-medium tabular-nums opacity-90 ring-1 ring-line backdrop-blur";
+
 const SHELF_MASK =
   "[mask-image:linear-gradient(to_right,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)]";
 
@@ -964,8 +988,25 @@ type Tile = {
   /** React's key, and the film's identity where a shelf claims the transition. */
   key: string;
   href: string;
-  /** What it is, for the tooltip and the screen reader that lost the caption. */
+  /** What it is, for the tooltip and the screen reader. */
   name: string;
+  /**
+   * The caption: what this is, and the line under it.
+   *
+   * The shelves printed nothing at all for a while, on the argument that a wall
+   * of artwork is read by recognising it and a title under every poster is a
+   * caption you have already skipped. That holds for the film you own and not
+   * for the queues, where a tile stands for a piece of work rather than for a
+   * film — what has to be read there is which conversion, of what size, in what
+   * layer, and none of that is on the artwork.
+   *
+   * So it is the caption the rest of the app writes: the title in the page's
+   * own weight and one grey line under it, exactly as `PosterTile` sets it on
+   * the library shelf and the jobs page. Each shelf says what its own page
+   * would say about the same record.
+   */
+  title: string;
+  subtitle?: string;
   poster?: string;
   posterRemote?: string;
   artAt?: number;
@@ -977,8 +1018,16 @@ type Tile = {
    * transition simply does not run. So one shelf claims and the rest link.
    */
   transitionName?: string;
-  /** The one figure worth printing over the artwork. */
-  badge?: string;
+  /**
+   * What is printed over the artwork, top right.
+   *
+   * A node rather than a string, because one shelf's reading is a pair. The
+   * upgrade queue prints what the library's own shelf prints of the same film —
+   * the gain and the score it would be added to — and two plates cannot be a
+   * string. Every other shelf hands one figure in `SHELF_READING`, which is
+   * what a string used to be wrapped in here.
+   */
+  badge?: React.ReactNode;
   /**
    * What the poster does instead of going to `href`, on the shelves whose click
    * is a question rather than an address.
@@ -1021,7 +1070,21 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
 
   return (
     <ul
-      className={`no-scrollbar -mx-6 flex gap-4 overflow-x-auto px-6 sm:-mx-8 sm:px-8 md:mr-[calc(100%+17rem-100vw)] md:ml-[-17rem] md:pr-[calc(100vw-100%-17rem)] md:pl-[17rem] ${SHELF_MASK}`}
+      /*
+       * `-my-3 py-3` is room for the lift, and it is not optional.
+       *
+       * `overflow-x-auto` cannot scroll one axis and spill the other: the
+       * moment either overflow is not `visible`, the other computes to `auto`
+       * too, so this row clips its own top and bottom at exactly the poster's
+       * edge. A tile that rises and turns under the pointer was being sliced
+       * along both — measured at 8.7px of it, which is most of the lift.
+       *
+       * So the strip is given twelve pixels of its own inside and takes them
+       * straight back outside, the way it already trades `-mx` against `px` to
+       * bleed the artwork to the page's edges. The shelf occupies the same
+       * band it always did; the tiles simply have somewhere to go.
+       */
+      className={`no-scrollbar -mx-6 -my-3 flex gap-4 overflow-x-auto px-6 py-3 sm:-mx-8 sm:px-8 md:mr-[calc(100%+17rem-100vw)] md:ml-[-17rem] md:pr-[calc(100vw-100%-17rem)] md:pl-[17rem] ${SHELF_MASK}`}
     >
       {tiles.map((tile, i) => {
         /* The name the tile no longer prints. A wall of artwork with nothing
@@ -1031,17 +1094,43 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
         const named = {
           "aria-label": tile.name,
           title: tile.name,
-          className: "group glow block w-full rounded-control text-left",
+          className: "group flex w-full flex-col gap-2 text-left",
         };
 
+        /*
+         * The library's tile, at this shelf's size.
+         *
+         * `glow glow-over tilt` is `TILE_FRAME`'s own hover — the light that
+         * follows the pointer across the picture, and the lift and turn that
+         * say which one you are on. Nothing here drives it: the listener in
+         * app/glow.tsx is one handler on the document that finds the nearest
+         * `.glow`, so a tile joins the behaviour by wearing the classes.
+         *
+         * On the frame rather than on the link, which is where it was. A link
+         * that glows is a rectangle of light behind a poster that does not
+         * move; the frame is the thing with a picture in it, and the ring, the
+         * badge and the panel all tilt with it as one object.
+         *
+         * Its own radius, ring and fill, taken off the `Art` inside it: the
+         * glow's gradient inherits the border radius of the element it is on,
+         * and `overflow-hidden` is what keeps the lift from carrying the
+         * artwork's corners past the frame's.
+         *
+         * `rounded-card`, which is what a poster is drawn on everywhere else —
+         * `TILE_FRAME`, the collection fans, the film page's own hero. This
+         * shelf spent `rounded-control` on 8px against the library's 14 at
+         * almost exactly the same size, which read as two shapes of tile for
+         * one kind of thing. The hover panel below takes `rounded-b-card` with
+         * it: it sits in the frame's bottom corners, so its curve is the
+         * frame's or it is a corner drawn inside a corner.
+         */
         const picture = (
-          <span className="relative block">
+          <span className="glow glow-over tilt relative block h-72 w-48 overflow-hidden rounded-card bg-surface-strong ring-1 ring-line">
             {tile.poster || tile.posterRemote ? (
               <Art
                 src={tile.poster}
                 remote={tile.posterRemote}
                 version={tile.artAt}
-                transitionName={tile.transitionName}
                 // The library's own ask, which is `Art`'s default: these are
                 // now the size the shelves on `/library` draw, so they want the
                 // same file. 192pt is 384 device pixels on the screens this is
@@ -1050,18 +1139,16 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
                 // `Art` maps the two together.
                 size="w342"
                 loading="lazy"
-                className="h-72 w-48 rounded-control object-cover ring-1 ring-line"
+                className="h-full w-full object-cover"
               />
-            ) : (
-              <span className="block h-72 w-48 rounded-control bg-surface-strong" />
-            )}
+            ) : null}
 
             {/* What this poster is standing for — twelve episodes, four
                 points of score, nine gigabytes. Over the artwork rather than
                 under the title, because it is a fact about the picture and a
                 line of text below would read as a subtitle instead. */}
             {tile.badge && (
-              <span className="absolute top-1.5 right-1.5 rounded-chip bg-background/85 px-1.5 py-0.5 text-[10px] font-medium tabular-nums opacity-90 ring-1 ring-line backdrop-blur">
+              <span className="absolute top-1.5 right-1.5 flex items-center gap-1">
                 {tile.badge}
               </span>
             )}
@@ -1078,11 +1165,58 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
                 a caption instead of the poster would be the same press with a
                 different target. */}
             {tile.hover && (
-              <span className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-2 rounded-b-control bg-gradient-to-t from-background via-background/95 to-transparent px-2 pt-6 pb-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:transition-none">
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-2 rounded-b-card bg-gradient-to-t from-background via-background/95 to-transparent px-2 pt-6 pb-2 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100 motion-reduce:transition-none">
                 {tile.hover}
               </span>
             )}
           </span>
+        );
+
+        /*
+         * And the whole frame is what travels, not the picture inside it.
+         *
+         * The name was on the `Art`, which is the mistake `PosterTile` already
+         * documents: the image flies to the page it opens and leaves the ring
+         * and the badge standing where the tile was, so the shelf comes apart
+         * mid-flight. Round the frame, the tile arrives as one object — the
+         * same pairing `/library` makes, under the same `posterName`, so a
+         * film recognised here morphs into the poster on its own page.
+         *
+         * Only the shelf that claims the name is wrapped. The queues below
+         * repeat each other's films and open dialogs rather than pages, and a
+         * name claimed twice on one page aborts the transition for both — see
+         * `Tile.transitionName`.
+         */
+        /* `PosterTile`'s own caption, class for class: the title at the page's
+           text size and one grey line under it. Inside the link, because the
+           title under a poster is part of the poster as far as anybody pressing
+           it is concerned — the same call the shelves make. */
+        const caption = (
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span
+              className="min-w-0 truncate text-sm font-medium"
+              title={tile.title}
+            >
+              {tile.title}
+            </span>
+            {tile.subtitle && (
+              <span className="min-w-0 truncate text-[11px] opacity-45">
+                {tile.subtitle}
+              </span>
+            )}
+          </span>
+        );
+
+        const travelling = tile.transitionName ? (
+          <ViewTransition
+            name={tile.transitionName}
+            share="morph"
+            default="none"
+          >
+            {picture}
+          </ViewTransition>
+        ) : (
+          picture
         );
 
         return (
@@ -1101,11 +1235,13 @@ function Shelf({ tiles }: { tiles: Tile[] }) {
                 nowhere is a promise the shelf cannot keep. */}
             {tile.onOpen ? (
               <button type="button" onClick={tile.onOpen} {...named}>
-                {picture}
+                {travelling}
+                {caption}
               </button>
             ) : (
               <Link href={tile.href} {...named}>
-                {picture}
+                {travelling}
+                {caption}
               </Link>
             )}
           </li>
@@ -1128,6 +1264,8 @@ function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
         key: item.posterKey,
         href: item.href,
         name: nameOf(item),
+        title: item.title,
+        subtitle: item.subtitle,
         poster: item.poster,
         posterRemote: item.posterRemote,
         artAt: item.artAt,
@@ -1138,9 +1276,11 @@ function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
         // other's films where this one repeats nothing.
         transitionName: posterName(item.posterKey),
         badge:
-          item.episodes === undefined
-            ? undefined
-            : `${count(item.episodes)} ep${item.episodes === 1 ? "" : "s"}`,
+          item.episodes === undefined ? undefined : (
+            <span className={SHELF_READING}>
+              {count(item.episodes)} ep{item.episodes === 1 ? "" : "s"}
+            </span>
+          ),
       }))}
     />
   );
@@ -1173,11 +1313,38 @@ function RecentShelf({ items }: { items: Dashboard["recent"]["added"] }) {
 function WorkShelf<T>({
   films,
   badge,
+  reading,
+  subtitle,
   onOpen,
 }: {
   films: WorkFilm<T>[];
-  /** How this queue's figure reads — a gain, a size, a saving. */
-  badge: (film: WorkFilm<T>) => string;
+  /**
+   * What this queue prints in the corner — a gain, a size, a saving.
+   *
+   * A node, because the upgrade queue's is the library's own pair. The two that
+   * print one figure wrap it in `SHELF_READING` themselves, which is the plate
+   * the slot used to apply for them.
+   */
+  badge: (film: WorkFilm<T>) => React.ReactNode;
+  /**
+   * The line under the title, read off the queue's own record.
+   *
+   * Per queue rather than shared, because what you need told about a tile is
+   * whatever its own page tells you: the jobs page prints the layer and the
+   * size over a conversion and the languages over a track removal, and a shelf
+   * that stands in for those lists should not say something else. The record
+   * travels with the tile already — see `WorkFilm.item` — so this is read on
+   * the client from what the dialog behind the poster is going to open on.
+   */
+  subtitle: (film: WorkFilm<T>) => string;
+  /**
+   * The same figure in words, for the tooltip and the screen reader.
+   *
+   * Separate from `badge` now that a badge can be markup: the tile's accessible
+   * name has always been "the film — what it is here for", and a React node
+   * interpolated into a template literal is "[object Object]".
+   */
+  reading: (film: WorkFilm<T>) => string;
   /** The dialog this queue answers with, opened on the record behind the tile. */
   onOpen: (item: T) => void;
 }) {
@@ -1186,7 +1353,9 @@ function WorkShelf<T>({
       tiles={films.map((film) => ({
         key: film.posterKey,
         href: film.href,
-        name: `${film.title} — ${badge(film)}`,
+        name: `${film.title} — ${reading(film)}`,
+        title: film.title,
+        subtitle: subtitle(film),
         poster: film.poster,
         posterRemote: film.posterRemote,
         artAt: film.artAt,
@@ -1267,7 +1436,7 @@ function OkChip({ check }: { check: Check }) {
   return (
     <li
       title={check.title}
-      className="rounded-chip px-2 text-[11px] leading-[22px] font-medium opacity-60 ring-1 ring-line-strong ring-inset"
+      className="rounded-chip px-2 font-display text-[11px] leading-[22px] font-medium opacity-60 ring-1 ring-line-strong ring-inset"
     >
       {check.name}
       <span className="sr-only"> — available</span>

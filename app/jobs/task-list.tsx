@@ -1329,7 +1329,7 @@ export function DoviTasks({
 // ---------------------------------------------------------------------------
 
 /** "German, Spanish and 2 more" — the languages, without a wall of them. */
-function languageLine(codes: string[]): string {
+export function languageLine(codes: string[]): string {
   const names = [...new Set(codes.map(languageName))];
   if (names.length <= 3) return names.join(", ");
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
