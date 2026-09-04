@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, ViewTransition } from "react";
 
 import { Art } from "@/app/art";
-import { TILE_FRAME } from "@/app/poster-tile";
+import { PAUSED_STATES, useTransfersByFilm } from "@/app/downloads/live";
+import { TILE_FRAME, TILE_READING } from "@/app/poster-tile";
 import { Heart } from "@/app/heart";
 import { saveWish } from "@/app/wish";
 import { scoreTheme } from "@/app/score-circle";
@@ -14,6 +15,7 @@ import { pace } from "@/app/collections/collections-view";
 import { stagger } from "@/app/stagger";
 import { filmKey, movieId, posterName } from "@/lib/routes";
 import type { CollectionFilm, CollectionSet } from "@/lib/collections";
+import type { DownloadEntry } from "@/lib/qbittorrent";
 
 /**
  * One set, split by the only question worth asking of it: which of these do you
@@ -126,16 +128,29 @@ function Absent({
   film,
   index,
   wishlisted,
+  arriving,
   onWish,
   onRemove,
 }: {
   film: CollectionFilm;
   index: number;
   wishlisted: boolean;
+  /**
+   * The transfer bringing this film, where one is in flight — see
+   * `useTransfersByFilm`.
+   */
+  arriving?: DownloadEntry;
   /** Toggles: the heart is a switch, not a one-way door. */
   onWish: () => void;
   onRemove?: () => void;
 }) {
+  const live = arriving?.live;
+  const paused = live ? PAUSED_STATES.has(live.state) : false;
+  // Floored, as the downloads page floors it: a transfer at 99.99% has not
+  // landed, and the one number on the poster must not round it up to a film you
+  // have. See `DownloadTile`.
+  const percent = live ? Math.floor(live.progress * 100) : 0;
+
   /*
    * Held back so the two halves of the page read apart at a glance, and brought
    * most of the way up under the pointer.
@@ -181,9 +196,14 @@ function Absent({
           >
             {poster}
 
-            <span className="pointer-events-none absolute inset-x-2 bottom-2 rounded-chip bg-background/85 py-1 text-center font-display text-[10px] font-medium opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
-              Find releases
-            </span>
+            {/* Not while something is already coming: the plate below stands in
+                the same place, and offering to go and find a release for a film
+                that is 60% here is the page arguing with itself. */}
+            {!live && (
+              <span className="pointer-events-none absolute inset-x-2 bottom-2 rounded-chip bg-background/85 py-1 text-center font-display text-[10px] font-medium opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+                Find releases
+              </span>
+            )}
           </Link>
         )}
 
@@ -219,6 +239,47 @@ function Absent({
             title="Remove from collection"
             onClick={onRemove}
           />
+        )}
+
+        {live && (
+          /*
+           * How far in it is, on the film it is arriving for.
+           *
+           * "Not in the library" is a true statement about a film being
+           * fetched, and a shelf that says only that is a shelf you check
+           * against the downloads page. The gap is what the plate closes: the
+           * answer to "is it coming" belongs on the poster you asked it of.
+           *
+           * The downloads page's own reading and the downloads page's own bar —
+           * same plate, same white bar over artwork, dulled the same way when a
+           * transfer is stopped. What is left out is everything that is about
+           * the transfer rather than the film: no speed, no ETA, no controls. A
+           * film on a collection shelf is being watched for its arrival, and
+           * the page that manages transfers is one click away.
+           */
+          <div className="pointer-events-none absolute inset-x-2 bottom-2 flex flex-col gap-1">
+            <span
+              className={`${TILE_READING} max-w-full self-start truncate`}
+              title={
+                paused
+                  ? `Downloading ${film.title} — paused at ${percent}%`
+                  : `Downloading ${film.title} — ${percent}%`
+              }
+            >
+              {percent}%{paused ? " · paused" : ""}
+            </span>
+
+            {/* Lit while it moves and dull while it does not, as on every other
+                bar in the app — see `.bar-over`. */}
+            <div className="bar-track bar-track-thin bar-over">
+              <div
+                className={`bar-fill motion-safe:transition-[width] motion-safe:duration-500 ${
+                  paused ? "bar-fill-idle" : ""
+                }`}
+                style={{ width: `${Math.min(100, percent)}%` }}
+              />
+            </div>
+          </div>
         )}
       </div>
 
@@ -269,6 +330,16 @@ export function CollectionView({
     (pressed[film.tmdbId] ?? onList.has(film.tmdbId));
 
   const missing = set.missing ?? [];
+
+  /**
+   * What is on its way, so the half of the page headed "Not in the library" can
+   * say which of it is already coming.
+   *
+   * Read only where there is something missing to be arriving: a complete set
+   * has no tile to draw a transfer on, and polling the client to establish that
+   * over and over is a request per shelf for nothing. See `useTransfersByFilm`.
+   */
+  const arriving = useTransfersByFilm(missing.length > 0);
 
   function wish(film: CollectionFilm) {
     if (film.tmdbId === undefined) return;
@@ -332,6 +403,11 @@ export function CollectionView({
                 film={film}
                 index={i}
                 wishlisted={wanted(film)}
+                arriving={
+                  film.tmdbId === undefined
+                    ? undefined
+                    : arriving.get(film.tmdbId)
+                }
                 onWish={() => wish(film)}
                 onRemove={onRemove && (() => onRemove(filmKey(film)))}
               />

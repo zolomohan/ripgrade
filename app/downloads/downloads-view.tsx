@@ -14,6 +14,12 @@ import {
 import { Art } from "@/app/art";
 import { ConfirmModal } from "@/app/confirm";
 import { BUTTON, Fact } from "@/app/controls";
+import {
+  IDLE_POLL_MS,
+  inFlight,
+  PAUSED_STATES,
+  POLL_MS,
+} from "@/app/downloads/live";
 import { EmptyState } from "@/app/empty-state";
 import { Grouped, SectionHead, type GroupOption } from "@/app/grouping";
 import { TaskHead } from "@/app/jobs/task-head";
@@ -34,7 +40,7 @@ import type { DownloadEntry } from "@/lib/qbittorrent";
 import { movieId, posterName } from "@/lib/routes";
 import { Glass } from "@/app/glass";
 
-/**
+/*
  * Everything ever handed to qBittorrent, in two tenses.
  *
  * The top half is now: what is moving, how fast, and the controls that change
@@ -67,16 +73,12 @@ import { Glass } from "@/app/glass";
  * That leaves this page one control, and it is the right one: the record's own
  * Group button. See `NEWEST_FIRST` for why nothing here is ranked, and
  * `readLayout` for where the shape of it went.
+ *
+ * The two speeds it is polled at, and the client states it reads, are in
+ * app/downloads/live.ts — this page is no longer the only thing that watches a
+ * transfer, and a fetch in flight has to be described the same way wherever it
+ * is drawn.
  */
-const POLL_MS = 3000;
-
-/**
- * The same read, at the pace a finished row deserves: it is waiting on
- * something a person did in another window, not on a transfer. Slow enough
- * that a page of seeded history is not a torrent of requests, quick enough
- * that "it stopped in qBittorrent" and "it says so here" are the same glance.
- */
-const IDLE_POLL_MS = 15_000;
 
 const gigabytes = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 
@@ -212,19 +214,6 @@ const STATE_LABEL: Record<string, string> = {
   moving: "moving files",
   checkingResumeData: "checking",
 };
-
-const PAUSED_STATES = new Set(["pausedDL", "stoppedDL"]);
-
-/**
- * Listed, but not arriving and not going to without a person.
- *
- * A finished torrent whose files have since been moved or deleted reads as
- * `missingFiles` with its progress back at zero, which is the client saying
- * something about the drive rather than about a download. Under "Downloading"
- * that row is a fetch starting over — it is not one, and nothing is coming. It
- * belongs in history, where the record of it already is.
- */
-const LOST_STATES = new Set(["error", "missingFiles"]);
 
 /** Still uploading to peers — the states worth an explicit stop. */
 const SEEDING_STATES = new Set([
@@ -1369,9 +1358,6 @@ export function DownloadsView({
   /** And whether it is still uploading, which is the one thing left to stop. */
   const seeding = (entry: DownloadEntry) =>
     Boolean(entry.live && SEEDING_STATES.has(entry.live.state));
-
-  const inFlight = (e: DownloadEntry) =>
-    Boolean(e.live && !e.live.done && !LOST_STATES.has(e.live.state));
 
   /**
    * The two halves, each ranked by whatever its own menu is set to.

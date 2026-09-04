@@ -532,6 +532,18 @@ export type DownloadEntry = {
   /** The film the release was fetched for, when the send knew it. */
   filmTitle?: string;
   /**
+   * Which film that is to TMDb, where the log could work it out.
+   *
+   * Worked out on every read rather than stored, exactly as `filmPath` is —
+   * `resolveFilm` matches the release name against the library and then the
+   * wishlist, and either answer carries TMDb's number with it. It is here so
+   * that a page holding TMDb films rather than files can ask whether one of
+   * them is on its way: a collection knows its missing films by this number and
+   * by nothing else, and matching on titles would be the parser's guess
+   * compared against TMDb's spelling.
+   */
+  tmdbId?: number;
+  /**
    * The TMDb path behind the poster — what a row falls back to when the film
    * is not in the library, or is on a drive that is not plugged in.
    */
@@ -939,6 +951,8 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
       completedAt,
       lastState: current?.state ?? row.last_state ?? undefined,
       filmTitle: row.film_title ?? undefined,
+      // Never stored, for `filmPath`'s reason: it is the match this read made.
+      tmdbId: film?.tmdbId,
       // What the library says now, and what the send recorded only where the
       // film can no longer be found. The stored path is a snapshot taken at
       // the button; the match is re-made on every read, and where it succeeds
