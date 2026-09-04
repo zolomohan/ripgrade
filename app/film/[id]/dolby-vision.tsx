@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 
+import { toast } from "glaceui";
+
 import { Panel } from "@/app/panel";
 import { useEffect, useRef, useState } from "react";
 
@@ -236,7 +238,19 @@ function RecipesModal({
   const [copied, setCopied] = useState<string | null>(null);
 
   async function copy(recipe: Recipe) {
-    await navigator.clipboard.writeText(recipe.command);
+    /* The clipboard is refused outright on an insecure origin, and this app is
+       very often on one — the same `http://nas.local:6969` that cannot register
+       a service worker; see app/service-worker.tsx. Uncaught, the button simply
+       never said anything: no tick, no reason, and a command still in the
+       terminal you were about to paste into. */
+    try {
+      await navigator.clipboard.writeText(recipe.command);
+    } catch {
+      toast.error(
+        "This browser would not let the page copy — select it and copy by hand.",
+      );
+      return;
+    }
     setCopied(recipe.id);
     setTimeout(() => setCopied(null), 2000);
   }

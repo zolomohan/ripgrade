@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, ViewTransition } from "react";
 
-import { addWish, removeWish } from "@/app/actions";
 import { Art } from "@/app/art";
 import { TILE_FRAME } from "@/app/poster-tile";
 import { Heart } from "@/app/heart";
+import { saveWish } from "@/app/wish";
 import { scoreTheme } from "@/app/score-circle";
 import { OVER_ART, RemoveButton, WANTED_ART } from "@/app/tile-button";
 import { pace } from "@/app/collections/collections-view";
@@ -279,16 +279,16 @@ export function CollectionView({
     // than after the round trip — which is the whole of what the pop is for.
     setPressed((answers) => ({ ...answers, [id]: next }));
     startTransition(async () => {
-      if (next) {
-        await addWish({
-          id,
-          title: film.title,
-          year: film.year ? String(film.year) : undefined,
-          posterPath: film.posterPath,
-          overview: film.overview,
-        });
-      } else {
-        await removeWish(id, "movie");
+      const saved = await saveWish(next, {
+        id,
+        title: film.title,
+        year: film.year ? String(film.year) : undefined,
+        posterPath: film.posterPath,
+        overview: film.overview,
+      });
+      if (!saved) {
+        setPressed((answers) => ({ ...answers, [id]: !next }));
+        return;
       }
       router.refresh();
     });

@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import {
-  addWish,
-  removeWish,
   searchTorrents,
   universalSearch,
   type DiscoverHit,
@@ -18,6 +16,7 @@ import { Bar, BarSearch, ICONS, MenuItem, Popover } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
 import { TILE_FRAME, TILE_GRID_PANEL } from "@/app/poster-tile";
 import { Heart } from "@/app/heart";
+import { saveWish } from "@/app/wish";
 import { Result, SORTS, type Sort } from "@/app/release-search";
 import { scoreTheme, STATUS_THEME } from "@/app/score-circle";
 import { stagger } from "@/app/stagger";
@@ -652,8 +651,11 @@ export function SearchView() {
     WANTS.set(wantKey(hit), next);
     setWants({ ...wants, [wantKey(hit)]: next });
     startSaving(async () => {
-      if (next) await addWish(hit);
-      else await removeWish(hit.id, hit.kind);
+      if (await saveWish(next, hit)) return;
+      // Both copies of the answer go back, or the module would hand the press
+      // straight back to the next page that reads it.
+      WANTS.set(wantKey(hit), !next);
+      setWants((was) => ({ ...was, [wantKey(hit)]: !next }));
     });
   }
 

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { toast } from "glaceui";
+
 import {
   collectionsForFilm,
   createCollection,
@@ -145,6 +147,10 @@ export function AddToCollection({ film }: { film: CollectionAdd }) {
         return;
       }
 
+      // The row it made is behind a menu that is closing, and the set itself
+      // is on a page you are not on. Unlike the ticks above — which answer
+      // where they were clicked — this one has nowhere on screen to land.
+      toast.success(`${name} created, with this film in it.`);
       setNaming(false);
       setSets(await collectionsForFilm(film));
     });

@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 
+import { toast } from "glaceui";
+
 import { addLibraryFolder, browse, removeLibraryFolder } from "./actions";
 import { ConfirmModal } from "./confirm";
 import { FolderPicker } from "./folder-picker";
@@ -125,7 +127,16 @@ export function FolderSection({
           busy={pending}
           onConfirm={() =>
             startTransition(async () => {
-              await removeLibraryFolder(asking);
+              // The count is the whole consequence, and it is the one part of
+              // this that happens where you cannot see it: the films this
+              // dropped are on shelves in another part of the app. The dialog
+              // warned that they would go; this says how many did.
+              const { removed } = await removeLibraryFolder(asking);
+              toast.success(
+                removed
+                  ? `Folder removed · ${removed.toLocaleString("en-GB")} film${removed === 1 ? "" : "s"} forgotten`
+                  : "Folder removed.",
+              );
               setConfirming(null);
             })
           }

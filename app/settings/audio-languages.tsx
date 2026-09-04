@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 
+import { toast } from "glaceui";
+
 import { setAudioLanguages } from "../actions";
 import type { AudioPreference } from "@/lib/audio-plan";
 import type { LibraryLanguage } from "@/lib/audio-prefs";
@@ -39,7 +41,15 @@ export function AudioLanguages({
   const commit = (next: AudioPreference) => {
     setChosen(next);
     startTransition(async () => {
-      await setAudioLanguages(next);
+      try {
+        await setAudioLanguages(next);
+      } catch {
+        // The tick has already moved, and a preference is not a form with a
+        // place to put a sentence — so the tick goes back and the sentence
+        // goes to the toaster.
+        setChosen(chosen);
+        toast.error("That audio preference did not save.");
+      }
     });
   };
 

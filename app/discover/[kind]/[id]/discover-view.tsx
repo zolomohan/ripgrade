@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
-import { addWish, removeWish, type CollectionAdd } from "@/app/actions";
+import { type CollectionAdd } from "@/app/actions";
 import { Art } from "@/app/art";
 import { HERO_BOX, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { AddToCollection } from "@/app/film/[id]/add-to-collection";
 import { BackButton } from "@/app/film/[id]/back-button";
 import { HERO_BUTTON } from "@/app/film/[id]/hero-button";
 import { Heart } from "@/app/heart";
+import { saveWish } from "@/app/wish";
 import { posterName } from "@/lib/routes";
 import type { WishKind } from "@/lib/wishlist";
 import { Downloads, type DiscoverSubject } from "./downloads";
@@ -104,18 +105,17 @@ export function DiscoverView({
     const next = !wanted;
     setWanted(next);
     startSaving(async () => {
-      if (next) {
-        await addWish({
-          id: wish.tmdbId,
-          kind: wish.kind,
-          title: wish.title,
-          year: wish.year ? String(wish.year) : undefined,
-          posterPath: wish.posterPath,
-          overview: wish.overview,
-        });
-      } else {
-        await removeWish(wish.tmdbId, wish.kind);
-      }
+      const saved = await saveWish(next, {
+        id: wish.tmdbId,
+        kind: wish.kind,
+        title: wish.title,
+        year: wish.year ? String(wish.year) : undefined,
+        posterPath: wish.posterPath,
+        overview: wish.overview,
+      });
+      // The heart goes back where it was. A mark that stays where you put it
+      // over a write that did not happen is worse than one that never moved.
+      if (!saved) setWanted(!next);
     });
   }
 

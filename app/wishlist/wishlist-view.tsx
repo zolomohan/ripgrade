@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { addTransitionType, useTransition, ViewTransition } from "react";
 
-import { removeWish } from "@/app/actions";
 import { Art } from "@/app/art";
 import { Switch } from "@/app/controls";
 import type { GroupOption } from "@/app/grouping";
@@ -18,6 +17,7 @@ import { movieId, posterName, showId } from "@/lib/routes";
 import { stagger } from "@/app/stagger";
 import { RemoveButton } from "@/app/tile-button";
 import { RescanButton } from "@/app/rescan-button";
+import { saveWish } from "@/app/wish";
 import { useTabParam } from "@/app/tab-param";
 import { DOWNLOAD_SORTS, DownloadsView, RELEASE_GROUPS } from "./finds-view";
 import type { WishlistEntry } from "@/lib/wishlist";
@@ -336,7 +336,17 @@ export function WishlistView({
   const remove = (entry: WishlistEntry) =>
     startTransition(async () => {
       addTransitionType("wish-remove");
-      await removeWish(entry.tmdbId, entry.kind);
+      // Nothing to put back on a failure, which is why this one only reports.
+      // The tile leaves when the refresh below brings a shorter list, so a
+      // write that did not happen simply never takes it off the shelf.
+      if (
+        !(await saveWish(false, {
+          id: entry.tmdbId,
+          kind: entry.kind,
+          title: entry.title,
+        }))
+      )
+        return;
       router.refresh();
     });
 

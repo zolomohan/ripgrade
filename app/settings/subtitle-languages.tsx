@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 
+import { toast } from "glaceui";
+
 import { setSubtitleLanguages } from "../actions";
 import type { SubtitlePreference } from "@/lib/audio-plan";
 import type { SubtitleLanguage } from "@/lib/subtitle-prefs";
@@ -40,7 +42,15 @@ export function SubtitleLanguages({
   const commit = (next: SubtitlePreference) => {
     setChosen(next);
     startTransition(async () => {
-      await setSubtitleLanguages(next);
+      try {
+        await setSubtitleLanguages(next);
+      } catch {
+        // The tick has already moved, and a preference is not a form with a
+        // place to put a sentence — so the tick goes back and the sentence
+        // goes to the toaster.
+        setChosen(chosen);
+        toast.error("That subtitle preference did not save.");
+      }
     });
   };
 

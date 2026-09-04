@@ -1,6 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+
+import { toast } from "glaceui";
 import {
   useEffect,
   useRef,
@@ -485,6 +487,11 @@ export function CustomCollectionView({
             () => deleteCollection(set.id),
             () => {
               setDeleting(false);
+              // The one act on this page that ends somewhere else: the page
+              // that could have said so is the page being deleted, and the
+              // list you land on looks exactly as it would if nothing had
+              // happened — one row shorter.
+              toast.success(`${set.name} deleted.`);
               // The plain address, which is the half this set was on.
               router.replace("/collections");
             },
