@@ -68,8 +68,7 @@ export function Seasons({
    * do name theirs ("Book One: Water", "Part 2: The Aftermath"), and that is
    * worth a line of its own.
    */
-  const named =
-    season.name.trim().toLowerCase() !== `season ${season.number}`;
+  const named = season.name.trim().toLowerCase() !== `season ${season.number}`;
 
   return (
     <section className="mt-12 flex flex-col gap-5">
@@ -122,9 +121,7 @@ export function Seasons({
           {[
             // Only where no pill is saying it: a single-season series has no
             // switcher, so the line is the only thing that can.
-            named || seasons.length > 1
-              ? undefined
-              : `Season ${season.number}`,
+            named || seasons.length > 1 ? undefined : `Season ${season.number}`,
             episodeCount(season.episodeCount),
             airDate(season.airDate),
           ]

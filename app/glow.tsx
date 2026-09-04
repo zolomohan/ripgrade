@@ -45,8 +45,14 @@ export function Glow() {
         // and an angle cannot be made of pixels: the CSS would need the
         // element's own width to divide by, which is the one thing it has no
         // way to ask for.
-        row.style.setProperty("--gnx", String(round((x / box.width - 0.5) * 2)));
-        row.style.setProperty("--gny", String(round((y / box.height - 0.5) * 2)));
+        row.style.setProperty(
+          "--gnx",
+          String(round((x / box.width - 0.5) * 2)),
+        );
+        row.style.setProperty(
+          "--gny",
+          String(round((y / box.height - 0.5) * 2)),
+        );
       }
 
       /*

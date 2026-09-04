@@ -103,9 +103,7 @@ export function SubtitleLanguages({
           </div>
 
           <Note>
-            {chosen.languages.length === 0 &&
-            !chosen.original &&
-            !chosen.forced
+            {chosen.languages.length === 0 && !chosen.original && !chosen.forced
               ? "Nothing is preferred, so every subtitle track in the library is offered for removal."
               : "Everything else is what the queue offers to remove. A track that names no language at all is always kept."}
           </Note>

@@ -149,7 +149,10 @@ export function ScanProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!result) return;
-    const id = setTimeout(() => setResult(null), RESULT_VISIBLE_MS[result.kind]);
+    const id = setTimeout(
+      () => setResult(null),
+      RESULT_VISIBLE_MS[result.kind],
+    );
     return () => clearTimeout(id);
   }, [result]);
 

@@ -253,7 +253,8 @@ export function Downloads({
                   className="min-w-0 flex-1 truncate text-[11px] opacity-45"
                   title={search.query}
                 >
-                  Searched for <span className="font-mono">“{search.query}”</span>
+                  Searched for{" "}
+                  <span className="font-mono">“{search.query}”</span>
                 </p>
                 <button
                   type="button"
