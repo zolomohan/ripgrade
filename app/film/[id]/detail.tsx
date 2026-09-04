@@ -33,8 +33,8 @@ import { FormatBadges } from "@/app/format-badges";
 import { UpgradeButton } from "@/app/release-search";
 import { NoDisc } from "@/app/no-disc";
 import { Panel } from "@/app/panel";
-import { ScoreBreakdown } from "@/app/score-breakdown";
 import { ScoreRing, SubScore } from "@/app/score-card";
+import { ScoreWhyTrigger } from "@/app/score-why";
 import { AddToCollection } from "./add-to-collection";
 import { ArtworkEditor } from "./artwork-editor";
 import { TrackTables } from "./tracks";
@@ -452,58 +452,69 @@ export async function DetailPage({
           </div>
         </div>
 
-        {/* Scores */}
-        <section className="mt-10 flex flex-col items-center gap-8 py-2 sm:flex-row sm:items-stretch">
-          <div className="flex shrink-0 flex-col items-center justify-center gap-3">
-            <div className="flex items-center gap-5">
-              <ScoreRing
-                score={movie.scores.overall}
-                ring={theme.ring}
-                caption={breakdown.relative ? "vs disc" : "overall"}
-              />
-              {/* The rubric score, kept neutral so the verdict colour stays
-                  unique to the comparison. */}
-              {breakdown.relative && (
+        {/* Scores. The whole card opens the working — see `ScoreWhyTrigger`. */}
+        <ScoreWhyTrigger
+          subject={{
+            title: movie.tmdb?.title ?? movie.fileName,
+            scores: movie.scores,
+            breakdown,
+          }}
+          ring={theme.ring}
+          label={`Score ${movie.scores.overall} — how this was scored`}
+          className="mt-10"
+        >
+          <section className="flex flex-col items-center gap-8 py-3 sm:flex-row sm:items-stretch">
+            <div className="flex shrink-0 flex-col items-center justify-center gap-3">
+              <div className="flex items-center gap-5">
                 <ScoreRing
-                  score={breakdown.absolute}
-                  ring="stroke-foreground/35"
-                  caption="absolute"
-                  ceiling={breakdown.discScore}
+                  score={movie.scores.overall}
+                  ring={theme.ring}
+                  caption={breakdown.relative ? "vs disc" : "overall"}
                 />
-              )}
-            </div>
-            {/* No status pill: the ring colour says it, exactly as in the
+                {/* The rubric score, kept neutral so the verdict colour stays
+                  unique to the comparison. */}
+                {breakdown.relative && (
+                  <ScoreRing
+                    score={breakdown.absolute}
+                    ring="stroke-foreground/35"
+                    caption="absolute"
+                    ceiling={breakdown.discScore}
+                  />
+                )}
+              </div>
+              {/* No status pill: the ring colour says it, exactly as in the
                 library list. Kept for screen readers, which cannot see colour. */}
-            <span className="sr-only">{movie.status}</span>
-          </div>
+              <span className="sr-only">{movie.status}</span>
+            </div>
 
-          {/* A vertical rule on wide screens keeps the ring and the breakdown
+            {/* A vertical rule on wide screens keeps the ring and the breakdown
               reading as two halves of one card rather than a loose stack. */}
-          <div
-            aria-hidden
-            className="hidden w-px shrink-0 bg-gradient-to-b from-transparent via-line-strong to-transparent sm:block"
-          />
+            <div
+              aria-hidden
+              className="hidden w-px shrink-0 bg-gradient-to-b from-transparent via-line-strong to-transparent sm:block"
+            />
 
-          <div className="flex w-full flex-1 flex-col justify-center gap-3">
-            <SubScore
-              label="Video"
-              value={movie.scores.video}
-              ceiling={movie.disc?.discParts?.video}
-              escalates
-            />
-            <SubScore
-              label="Audio"
-              value={movie.scores.audio}
-              ceiling={movie.disc?.discParts?.audio}
-              escalates
-            />
-            <SubScore
-              label="Release"
-              value={movie.scores.release}
-              ceiling={movie.disc?.discParts?.release}
-            />
-          </div>
-        </section>
+            <div className="flex w-full flex-1 flex-col justify-center gap-3">
+              <SubScore
+                label="Video"
+                value={movie.scores.video}
+                ceiling={movie.disc?.discParts?.video}
+                escalates
+              />
+              <SubScore
+                label="Audio"
+                value={movie.scores.audio}
+                ceiling={movie.disc?.discParts?.audio}
+                escalates
+              />
+              <SubScore
+                label="Release"
+                value={movie.scores.release}
+                ceiling={movie.disc?.discParts?.release}
+              />
+            </div>
+          </section>
+        </ScoreWhyTrigger>
 
         {/*
          * What this copy is, and what is wrong with it — one list.
@@ -1049,19 +1060,6 @@ export async function DetailPage({
             listing you cannot act on and a listing you can are the same table
             with a column added — and because the removal it feeds is the same
             remux the audio one starts. */}
-
-        {/* Last, because it explains what the top of the page already showed. */}
-        <Panel
-          title="Why this score"
-          // "vs disc", in the words the ring under the poster already uses.
-          summary={
-            breakdown.relative
-              ? `${movie.scores.overall} vs the best quality available`
-              : `${movie.scores.overall} on the rubric alone`
-          }
-        >
-          <ScoreBreakdown scores={movie.scores} breakdown={breakdown} />
-        </Panel>
       </div>
     </main>
   );

@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { CloseButton, Modal } from "@/app/modal";
-import { ScoreBreakdown } from "@/app/score-breakdown";
+import {
+  RULE,
+  ScoreHero,
+  ScoreReading,
+  ScoreViewSwitch,
+  scoreViews,
+  type ScoreViewId,
+} from "@/app/score-breakdown";
 import { ScoreDial } from "@/app/score-circle";
 import { scoreFacts, type Breakdown, type ScorableFacts } from "@/lib/derive";
 import { guessFromTitle, type KnownDimension } from "@/lib/release-title";
@@ -67,8 +74,6 @@ export type PredictedScore = {
    * Vision as lost points on a film whose best disc is HDR10.
    */
   discShape?: ScorableFacts;
-  /** What "better" is better than, where the list was measuring against one. */
-  reference?: { kind: "copy" | "disc"; delta: number };
 };
 
 /** The four things a release name can state, in the words the breakdown uses. */
@@ -86,44 +91,34 @@ function sentence(parts: string[]): string {
 }
 
 /**
- * How far the reading can be trusted, in a sentence.
+ * How far the reading can be trusted.
  *
  * The rubric scores every dimension whether or not the name mentioned it, which
  * is the only way to score anything at all — but a name that states one of the
- * four has been scored mostly on defaults, and the meters below will look
- * exactly as confident as a name that states all four. This is the one thing
- * the film page's breakdown has no equivalent of, because a probed file has
- * nothing to be unsure about.
+ * four has been scored mostly on defaults, and the meters below look exactly as
+ * confident either way. The film page's breakdown has no equivalent, because a
+ * probed file has nothing to be unsure about.
+ *
+ * Only what was missing, and only when something was. A name that states all
+ * four used to get a paragraph saying so, which is a dialog reporting that it
+ * has nothing to report.
  */
 function Confidence({ known }: { known: KnownDimension[] }) {
-  const stated = known.map((dimension) => DIMENSION[dimension]);
   const missing = (Object.keys(DIMENSION) as KnownDimension[])
     .filter((dimension) => !known.includes(dimension))
     .map((dimension) => DIMENSION[dimension]);
 
-  if (missing.length === 0) {
-    return (
-      <p className="text-xs opacity-50">
-        The name states all four dimensions, so nothing below was assumed — but
-        stating a thing and being it are still two different claims.
-      </p>
-    );
-  }
+  if (missing.length === 0) return null;
 
   return (
     <p className="text-xs opacity-50">
-      {stated.length === 0
-        ? "The name states none of the four dimensions"
-        : `The name states ${sentence(stated)}`}
-      , so {sentence(missing)} {missing.length === 1 ? "was" : "were"} scored on
-      the rubric&rsquo;s defaults rather than on anything this release actually
-      said. Those lines are a floor, not a reading.
+      Not stated: {sentence(missing)} — scored on defaults.
     </p>
   );
 }
 
 /**
- * The dialog itself.
+ * The chrome both readings share.
  *
  * Opened from inside other dialogs — the release search, the release details —
  * so it takes Escape in the capture phase and stops it there. Every dialog in
@@ -132,18 +127,59 @@ function Confidence({ known }: { known: KnownDimension[] }) {
  * answer, press Escape, and find yourself back on the film with the search
  * gone. See app/modal.tsx, whose own handler is a bubble-phase listener on the
  * same target and so never runs once this has stopped the event.
+ *
+ * Everything between the head and the breakdown is the caller's, because it is
+ * the one part that differs: a prediction has a name to show and a confidence to
+ * admit to, and a measured file has neither and needs neither. The breakdown
+ * itself is the same component either way — that is the whole point of a
+ * predicted 84 being meant to mean what a measured 84 means.
+ *
+ * The head is the head every dialog in this app wears: one word, and the
+ * controls that govern the whole panel held to the right of it. The switch
+ * between the two readings is one of those, so it goes on the title line rather
+ * than floating above the working it governs.
+ *
+ * Under it, the arrangement the top of a film's page has always used — ring,
+ * rule, three meters. The dialog used to open on a small dial and four
+ * sentences restating the number beside it, which is the one shape in the app
+ * that showed a score without showing what it was made of.
  */
-function WhyModal({
+function WhyShell({
   open,
   onClose,
-  subject,
-  theme,
+  label,
+  ring,
+  children,
+  footer,
+  scores,
+  breakdown,
 }: {
   open: boolean;
   onClose: () => void;
-  subject: PredictedScore;
-  theme?: { stroke: string; text: string };
+  /** The accessible name. Says the number the head does not print. */
+  label: string;
+  /** The verdict colour of the ring you pressed, carried onto the hero's. */
+  ring?: string;
+  /** Whatever the subject has to say for itself, above the working. */
+  children?: React.ReactNode;
+  /**
+   * What this is a reading of, under everything it was read from.
+   *
+   * A release name is evidence, not a heading. It sat in a bordered card near
+   * the top for a while, which gave the longest and least readable string in
+   * the dialog the most emphatic frame in it — above the meters that actually
+   * answer the question.
+   */
+  footer?: React.ReactNode;
+  scores: { video: number; audio: number; release: number; overall: number };
+  breakdown: Breakdown;
 }) {
+  const { rubric, vsDisc } = scoreViews(scores, breakdown);
+
+  // The disc reading first where there is one: it is the number you pressed,
+  // and the one that says whether there is anything to do about this file.
+  const [showing, setShowing] = useState<ScoreViewId>("disc");
+  const view = vsDisc && showing === "disc" ? vsDisc : rubric;
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -155,6 +191,79 @@ function WhyModal({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open, onClose]);
 
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      label={label}
+      panelClassName="flex max-h-[85vh] w-full max-w-xl flex-col gap-5 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
+    >
+      <>
+        <header className="flex items-center gap-3">
+          <h2 className="min-w-0 flex-1 truncate text-base font-semibold">
+            Score
+          </h2>
+          {vsDisc && <ScoreViewSwitch value={view.id} onChange={setShowing} />}
+          <CloseButton onClick={onClose} />
+        </header>
+
+        {/*
+         * The floor the title stands on.
+         *
+         * `rule-head` elsewhere, which is weighted at the left and gone by the
+         * middle — right for a heading it underlines, and not for this panel,
+         * where two more hairlines cross the full width below it and a third
+         * that fades out halfway reads as a missing divider rather than a
+         * quiet one. All three are the same line here.
+         */}
+        <div aria-hidden className={RULE} />
+
+        {/* The pressed ring's colour is carried in, but only onto the reading
+            it was a verdict about. The rubric total colours itself — see
+            `ScoreHero`. */}
+        <ScoreHero view={view} ring={view.id === "disc" ? ring : undefined} />
+
+        <div aria-hidden className={RULE} />
+
+        {/* `empty:hidden` because everything in here is conditional: a name
+            that states all four dimensions and has not drifted has nothing to
+            say, and an empty box would still take the panel's gap on both
+            sides of itself. */}
+        <div className="flex min-w-0 flex-col gap-2 empty:hidden">
+          {children}
+        </div>
+
+        <ScoreReading
+          view={view}
+          breakdown={breakdown}
+          tabbed={Boolean(vsDisc)}
+        />
+
+        {footer && (
+          <footer className="flex flex-col gap-3">
+            <div aria-hidden className={RULE} />
+            <p className="font-mono text-[11px] break-all opacity-45">
+              {footer}
+            </p>
+          </footer>
+        )}
+      </>
+    </Modal>
+  );
+}
+
+/** The dialog for a release nobody has fetched: read off its name, never measured. */
+function PredictedWhyModal({
+  open,
+  onClose,
+  subject,
+  ring,
+}: {
+  open: boolean;
+  onClose: () => void;
+  subject: PredictedScore;
+  ring?: string;
+}) {
   const {
     title,
     facts,
@@ -164,7 +273,6 @@ function WhyModal({
     relative,
     discScore,
     discShape,
-    reference,
   } = subject;
 
   const reading = useMemo(() => {
@@ -221,95 +329,33 @@ function WhyModal({
   }, [title, facts, sizeBytes, stored, score, relative, discScore, discShape]);
 
   return (
-    <Modal
+    <WhyShell
       open={open}
       onClose={onClose}
       label={`Why ${title} scores ${score}`}
-      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-5 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
+      ring={ring}
+      scores={reading.scores}
+      breakdown={reading.breakdown}
+      // The string every line above was read off, whole and wrapping, in the
+      // face this app keeps for things you read character by character.
+      footer={title}
     >
-      <>
-        {/* No header bar, as the release dialog settled: a reading and the
-            thing it is a reading of, against the top of the panel, already say
-            where the dialog begins. The way out goes in the corner it goes in
-            everywhere else. */}
-        <div className="flex items-start gap-4">
-          <ScoreDial
-            score={score}
-            theme={theme}
-            size={56}
-            title={
-              relative
-                ? `Predicted ${score}% of the best release`
-                : `Predicted ${score} of 100`
-            }
-            srLabel={`Predicted score ${score}`}
-          />
+      <Confidence known={reading.known} />
 
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <h2 className="text-sm font-semibold">
-              {relative
-                ? `${score}% of the best release there is`
-                : `${score} out of 100`}
-            </h2>
-
-            <p className="text-xs opacity-45">
-              Predicted from the name below, never measured — nothing about this
-              file has been fetched or probed.
-            </p>
-
-            {reference && (
-              <p className="text-xs opacity-45">
-                {reference.delta === 0
-                  ? reference.kind === "disc"
-                    ? "Level with the disc, which is as far as anything gets."
-                    : "Level with the copy on your drive."
-                  : reference.delta > 0
-                    ? `${reference.delta} above ${
-                        reference.kind === "disc" ? "the disc" : "your copy"
-                      }.`
-                    : `${Math.abs(reference.delta)} short of ${
-                        reference.kind === "disc" ? "the disc" : "your copy"
-                      }.`}
-              </p>
-            )}
-          </div>
-
-          <div className="self-start">
-            <CloseButton onClick={onClose} />
-          </div>
-        </div>
-
-        {/* The string every line below was read off, set the way the release
-            dialog sets it: whole, wrapping, in the face this app keeps for
-            things you read character by character. */}
-        <p className="rounded-control border border-line px-3 py-2 font-mono text-[11px] break-all opacity-60">
-          {title}
+      {reading.drifted && (
+        <p className="text-xs opacity-50">
+          Re-read from the name here. Without the film&rsquo;s runtime the lines
+          below can sit under the figure above rather than adding up to it.
         </p>
+      )}
 
-        <Confidence known={reading.known} />
-
-        {reading.drifted && (
-          <p className="text-xs opacity-50">
-            This row was stored before the reading was kept with it, so the name
-            has been read again here — and it has not landed where the row did.
-            Bitrate density needs the film&rsquo;s runtime, which the row does
-            not carry, so on an encode the lines below sit under the figure
-            above rather than adding up to it.
-          </p>
-        )}
-
-        {reading.unanchored && (
-          <p className="text-xs opacity-50">
-            The figure above is a share of the best disc for this film, but the
-            disc&rsquo;s own score was not stored with this row — so the working
-            below stops at the rubric total it was taken from, and signs off as
-            though no disc were known. One is missing here; there was one.
-          </p>
-        )}
-
-        <ScoreBreakdown scores={reading.scores} breakdown={reading.breakdown} />
-      </>
-    </Modal>
+      {reading.unanchored && (
+        <p className="text-xs opacity-50">
+          The disc&rsquo;s own score was not stored with this row, so the
+          working below stops at the rubric total the share was taken from.
+        </p>
+      )}
+    </WhyShell>
   );
 }
 
@@ -340,35 +386,206 @@ export function PredictedScoreDial({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen(true);
-        }}
-        aria-label={`${srLabel} — how this was scored`}
-        // A disc that lights up under the ring, which is the row hover this app
-        // already uses, curved to what it sits behind. The ring itself is left
-        // alone: a second ring around a ring is a target drawn twice.
-        className="rounded-full transition-colors hover:bg-surface-strong"
-      >
-        <ScoreDial
-          score={subject.score}
-          theme={theme}
-          size={size}
-          // The tooltip stays on the dial rather than the button, where the
-          // inner one would win the hover anyway — so it says both things.
-          title={`${title} · press for the working`}
-          srLabel={srLabel}
-        />
-      </button>
+      <WhyButton
+        srLabel={srLabel}
+        onOpen={() => setOpen(true)}
+        score={subject.score}
+        theme={theme}
+        title={title}
+        size={size}
+      />
 
-      <WhyModal
+      <PredictedWhyModal
         open={open}
         onClose={() => setOpen(false)}
         subject={subject}
-        theme={theme}
+        ring={theme?.stroke}
       />
     </>
+  );
+}
+
+/** A file on the drive, already probed — what the rubric made of what is there. */
+export type MeasuredScore = {
+  /** What this copy is of, for the dialog to name itself after. */
+  title: string;
+  scores: { video: number; audio: number; release: number; overall: number };
+  breakdown: Breakdown;
+};
+
+function MeasuredWhyModal({
+  open,
+  onClose,
+  subject,
+  ring,
+}: {
+  open: boolean;
+  onClose: () => void;
+  subject: MeasuredScore;
+  ring?: string;
+}) {
+  const { title, scores, breakdown } = subject;
+
+  return (
+    <WhyShell
+      open={open}
+      onClose={onClose}
+      label={`Why ${title} scores ${scores.overall}`}
+      ring={ring}
+      scores={scores}
+      breakdown={breakdown}
+    />
+  );
+}
+
+/**
+ * A whole card as the way in, for the one page that already draws the reading.
+ *
+ * A film's page opens on the ring and the three meters the dialog now opens on
+ * too, so it had no need of the dialog's copy of them — it had a "Why this
+ * score" panel at the foot instead, and the ring at the top scrolled you down
+ * to it. Two answers to the same question, a page apart, only one of which
+ * looked like the answer everywhere else in the app.
+ *
+ * The panel is gone and the card it duplicated is the control: press the
+ * scores and the working opens over them, exactly as pressing a release's ring
+ * opens the working behind that. The markup stays with the page — it is that
+ * page's layout, not this component's — and arrives here as children.
+ */
+export function ScoreWhyTrigger({
+  subject,
+  ring,
+  label,
+  className = "",
+  children,
+}: {
+  subject: MeasuredScore;
+  /** The verdict stroke the page already drew its own ring in. */
+  ring?: string;
+  label: string;
+  /** The page's own spacing, which belongs outside the lit area. */
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={label}
+        // The row hover this app uses everywhere, curved to the card it lights
+        // up. `text-left` because a button centres its contents and this one
+        // holds a layout rather than a word.
+        //
+        // The space above the card is the button's own margin and not the
+        // card's. A button is its own formatting context, so a margin on the
+        // section inside it cannot collapse out through it — it stayed within
+        // the box and the hover lit forty pixels of nothing above the rings.
+        className={`glow -mx-4 w-[calc(100%+2rem)] rounded-card px-4 text-left transition-colors hover:bg-surface ${className}`}
+      >
+        {children}
+      </button>
+
+      <MeasuredWhyModal
+        open={open}
+        onClose={() => setOpen(false)}
+        subject={subject}
+        ring={ring}
+      />
+    </>
+  );
+}
+
+/**
+ * The same gesture for a file you already hold.
+ *
+ * An episode's ring answered nothing when pressed, while a torrent's ring in
+ * the search window opened the whole rubric — the same drawing, on the same
+ * scale, behaving two different ways depending on which page it was on. The
+ * working is better evidence on the measured side, not worse.
+ */
+export function MeasuredScoreDial({
+  subject,
+  theme,
+  title,
+  srLabel,
+  size,
+}: {
+  subject: MeasuredScore;
+  theme?: { stroke: string; text: string };
+  title: string;
+  srLabel: string;
+  size?: number;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <WhyButton
+        srLabel={srLabel}
+        onOpen={() => setOpen(true)}
+        score={subject.scores.overall}
+        theme={theme}
+        title={title}
+        size={size}
+      />
+
+      <MeasuredWhyModal
+        open={open}
+        onClose={() => setOpen(false)}
+        subject={subject}
+        ring={theme?.stroke}
+      />
+    </>
+  );
+}
+
+/**
+ * The ring as a control.
+ *
+ * The press is stopped on its way up, because these sit on rows and tiles that
+ * are themselves clickable and asking why is not the same gesture as opening
+ * the thing.
+ */
+function WhyButton({
+  score,
+  theme,
+  title,
+  srLabel,
+  size,
+  onOpen,
+}: {
+  score: number;
+  theme?: { stroke: string; text: string };
+  title: string;
+  srLabel: string;
+  size?: number;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      aria-label={`${srLabel} — how this was scored`}
+      // A disc that lights up under the ring, which is the row hover this app
+      // already uses, curved to what it sits behind. The ring itself is left
+      // alone: a second ring around a ring is a target drawn twice.
+      className="rounded-full transition-colors hover:bg-surface-strong"
+    >
+      <ScoreDial
+        score={score}
+        theme={theme}
+        size={size}
+        // The tooltip stays on the dial rather than the button, where the
+        // inner one would win the hover anyway — so it says both things.
+        title={`${title} · press for the working`}
+        srLabel={srLabel}
+      />
+    </button>
   );
 }

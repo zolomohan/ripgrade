@@ -299,10 +299,6 @@ export function Result({
             relative: release.relative,
             discScore: release.discScore,
             discShape: release.discShape,
-            reference:
-              referenceKind && release.delta !== undefined
-                ? { kind: referenceKind, delta: release.delta }
-                : undefined,
           }}
           theme={
             release.standing === "unknown"

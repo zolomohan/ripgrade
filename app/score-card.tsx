@@ -107,12 +107,24 @@ export function SubScore({
   value,
   ceiling,
   escalates,
+  tone,
 }: {
   label: string;
   value: number;
   ceiling?: number;
   /** Video and audio go red when far short; release only ever goes amber. */
   escalates?: boolean;
+  /**
+   * The bar's colour, where the caller bands it itself.
+   *
+   * The rule below is this component's own: a shortfall against the mark, with
+   * a second threshold for a picture or a sound gap worth escalating. It is
+   * the right rule beside a poster, where the meters are the only reading on
+   * screen. The score dialog bands every bar in it the way it bands the ring —
+   * see `barTone` — and a hero meter drawing itself by a different rule than
+   * the ring beside it was the two disagreeing about the same figure.
+   */
+  tone?: string;
 }) {
   const short = ceiling !== undefined && value < ceiling;
   const severe =
@@ -127,13 +139,14 @@ export function SubScore({
       <span className="relative h-1.5 flex-1 rounded-full bg-surface-strong">
         <span
           className={`score-bar absolute inset-y-0 left-0 rounded-full ${
-            ceiling === undefined
+            tone ??
+            (ceiling === undefined
               ? "bg-foreground/55"
               : severe
                 ? "bg-red-500/75"
                 : short
                   ? "bg-amber-500/70"
-                  : "bg-emerald-500/70"
+                  : "bg-emerald-500/70")
           }`}
           style={{ width: `${value}%` }}
         />

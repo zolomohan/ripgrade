@@ -1,11 +1,18 @@
+"use client";
+
 import Link from "next/link";
 
+import { Switch } from "@/app/controls";
+import { ScoreRing, SubScore } from "@/app/score-card";
+import { STATUS_THEME } from "@/app/score-circle";
 import {
   asShareOfDisc,
+  statusFor,
   VIDEO_CEILING_BONUS,
   WEIGHTS,
   type Breakdown,
   type ScoreLine,
+  type Status,
 } from "@/lib/derive";
 
 /**
@@ -23,21 +30,80 @@ import {
  * torrent opens this same breakdown; see app/score-why.tsx, which supplies a
  * `Breakdown` built from a release name rather than from a probed file.
  *
- * No state and no dialog of its own, so no "use client": it is markup, and the
- * two callers decide whether it sits on a page or inside a modal.
+ * It holds one piece of state and no dialog of its own — which of the two
+ * readings you are looking at, where a disc makes two of them — and the callers
+ * go on deciding whether it sits on a page or inside a modal.
+ *
+ * Two readings, because there are two honest answers and they disagree. A copy
+ * scored against the best disc anyone pressed says what is left to *do* about
+ * it; the same copy scored against the rubric's ideal says what it *is*. The
+ * relative reading used to be the only one drawn, with the absolute total
+ * mentioned in a closing sentence you could not open — so the number the ring
+ * under a film's poster shows as "absolute" had no working anywhere. They are a
+ * switch apart now, in the words that ring already uses.
  *
  * Each criterion is a meter rather than a bare fraction: 20/25 has to be
- * computed to be read, a bar four-fifths full is read at a glance — and a
- * short bar is amber because a short bar is precisely what "upgrade
- * recommended" means everywhere else in the app. The bars are static: on the
- * film's page this lives in a <details>, where a mount animation would have
- * played while shut.
+ * computed to be read, and a bar four-fifths full is read at a glance.
+ *
+ * They fill on the same clock as the hero's three, and for the same reason the
+ * hero's do: the panel should read as one instrument settling rather than as a
+ * card that has arrived and a list that has not. They were static for as long
+ * as this lived in a `<details>` at the foot of a film's page, where a mount
+ * animation would have played to nobody while the panel was shut. It opens in
+ * a dialog now, and a dialog mounts when you ask for it.
  */
 
-const RULE =
+/**
+ * The hairline that parts one thing from the next, fading at both ends.
+ *
+ * Exported because the dialog parts its own sections with it — under the hero,
+ * and above the name in the footer. `rule-head` in globals.css is the other
+ * one, weighted at the left because it belongs to the heading above it rather
+ * than lying between two things.
+ */
+/**
+ * The verdict palette in the weight a bar is drawn at.
+ *
+ * The same three colours the ring wears and grouped exactly as `STATUS_THEME`
+ * groups them — this is the fill rather than the stroke, and a bar carries more
+ * area than a 3px arc, so it is drawn back a little.
+ */
+const BAR_TONE: Record<Status, string> = {
+  "Best Available": "bg-emerald-500/70",
+  Reference: "bg-emerald-500/70",
+  Excellent: "bg-emerald-500/70",
+  Good: "bg-amber-500/70",
+  "Upgrade Recommended": "bg-amber-500/70",
+  "Must Upgrade": "bg-red-500/75",
+};
+
+/**
+ * One rule for every bar in the panel: how full it is, banded the way the ring
+ * above it bands the same fraction.
+ *
+ * The panel used to hold three rules at once. A criterion's meter was grey when
+ * full and amber otherwise, so a line at 1/22 and a line at 21/22 were the same
+ * colour. The hero's meters had a rule of their own — anything short was amber,
+ * anything under four fifths of its mark was red — which put a red bar under an
+ * amber ring reading the same 78. And the ring banded properly. Now the ring's
+ * banding is the only one, and a bar says what a ring at that figure would.
+ *
+ * A criterion whose maximum is nought is parity by definition: the disc has
+ * none of it either, and you cannot fall short of a blank.
+ */
+export function barTone(
+  points: number,
+  max: number,
+  relative: boolean,
+): string {
+  const share = max > 0 ? Math.round((points / max) * 100) : 100;
+  return BAR_TONE[statusFor(share, relative)];
+}
+
+export const RULE =
   "h-px shrink-0 bg-gradient-to-r from-transparent via-line-strong to-transparent";
 
-function LineRow({ line }: { line: ScoreLine }) {
+function LineRow({ line, relative }: { line: ScoreLine; relative: boolean }) {
   // Measured against a disc, a line can beat what it is measured against —
   // better sound than the disc was pressed with. That is a full bar and then
   // some, and the bar stops at full while the figures say the rest.
@@ -65,9 +131,7 @@ function LineRow({ line }: { line: ScoreLine }) {
 
       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-strong">
         <div
-          className={`h-full rounded-full ${
-            full ? "bg-foreground/45" : "bg-amber-500/70"
-          }`}
+          className={`score-bar h-full rounded-full ${barTone(line.points, line.max, relative)}`}
           style={{
             width: `${Math.min(100, line.max > 0 ? (line.points / line.max) * 100 : 100)}%`,
           }}
@@ -82,12 +146,15 @@ function Component({
   weight,
   score,
   lines,
+  relative,
   unmeasured,
 }: {
   title: string;
   weight: number;
   score: number;
   lines: ScoreLine[];
+  /** Which scale these figures are on, for the meters to band against. */
+  relative: boolean;
   /** Set where the disc scores nothing here, so there is no share to take. */
   unmeasured?: boolean;
 }) {
@@ -117,14 +184,13 @@ function Component({
 
       {unmeasured && (
         <p className="mt-1 text-xs opacity-50">
-          The disc lists nothing here, so this reads on the rubric alone and
-          counts as parity — you cannot fall short of a blank.
+          The disc lists nothing here — counted as parity.
         </p>
       )}
 
       <div className="mt-2">
         {lines.map((line) => (
-          <LineRow key={line.label} line={line} />
+          <LineRow key={line.label} line={line} relative={relative} />
         ))}
       </div>
 
@@ -207,71 +273,107 @@ function sectionOf(
     : { lines: mine, score: 100, unmeasured: true };
 }
 
-export function ScoreBreakdown({
-  scores,
-  breakdown,
-}: {
-  scores: { video: number; audio: number; release: number; overall: number };
-  breakdown: Breakdown;
-}) {
-  // Every meter measured against whatever the score itself was measured
-  // against. A disc-relative number explained against the rubric's ideal is
-  // working for some other number: it lists points the score never charged
-  // for, and the two disagree in front of you.
-  const video = sectionOf(breakdown.video, scores.video, breakdown.disc?.video);
-  const audio = sectionOf(breakdown.audio, scores.audio, breakdown.disc?.audio);
-  const release = sectionOf(
-    breakdown.release,
-    scores.release,
-    breakdown.disc?.release,
-  );
+/**
+ * One complete reading of one file: three sets of meters and the sum they make.
+ *
+ * The two differ in what full marks mean. Against the disc, a criterion's
+ * maximum is whatever the disc itself scored for it — so Dolby Vision is not
+ * points lost on a film whose best disc is HDR10, and every share is capped at
+ * parity. On the rubric, the maximum is the rubric's own, which no disc need
+ * ever have reached.
+ */
+export type ScoreViewId = "disc" | "rubric";
 
-  const shared = Boolean(breakdown.disc);
+export type ScoreView = {
+  id: ScoreViewId;
+  /** The word the ring under a film's poster already uses for this reading. */
+  label: string;
+  video: Section;
+  audio: Section;
+  release: Section;
+  overall: number;
+  /**
+   * How far the disc reaches on each meter.
+   *
+   * The disc's own rubric totals on the absolute reading; a flat 100 on the
+   * disc-relative one, where parity is the ceiling by construction. Always
+   * present where a disc is known, because this is also what tells `SubScore`
+   * it has something to grade against: without a ceiling it has no shortfall
+   * to colour and draws every bar in the neutral grey it keeps for a bar that
+   * is only a quantity.
+   */
+  ceilings?: { video: number; audio: number; release: number };
+};
+
+/**
+ * The meters and the arithmetic for whichever reading is on screen.
+ *
+ * `tabbed` is not decoration: it decides whether the closing sentence can point
+ * at the other reading as something one press away, or has to state it as a
+ * figure the panel is not going to show its working for.
+ */
+export function ScoreReading({
+  view,
+  breakdown,
+  tabbed,
+}: {
+  view: ScoreView;
+  breakdown: Breakdown;
+  tabbed: boolean;
+}) {
+  const vsDisc = view.id === "disc";
+
+  /*
+   * The one thing left to say, where the figures have not already said it.
+   *
+   * Each of these used to be two or three sentences, and the ceiling that did
+   * not bind used to get a sentence explaining that nothing had happened — a
+   * dialog talking to fill the space under its own working. What survives is
+   * the fact you cannot read off a meter: what the other reading makes of the
+   * same file, and why the number stopped where it did.
+   */
+  const note = vsDisc
+    ? view.overall === 100
+      ? "Nothing better exists to upgrade to."
+      : `Shares are capped at parity. On the rubric alone: ${breakdown.absolute}.`
+    : breakdown.cappedByVideo
+      ? `Capped: sound and container cannot lift a file more than ${VIDEO_CEILING_BONUS} points above its picture.`
+      : undefined;
 
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-sm opacity-60">
-        {shared
-          ? "Each category is scored as a share of the best disc's own — its points for a criterion are what full marks are worth here — and the three are then blended. A full bar is a criterion the disc has nothing more of; an amber one is where the points went."
-          : "Each category is scored out of 100 from the criteria below, then blended. A full bar is a criterion at its maximum; an amber one is where the points went."}
-      </p>
-
       <Component
         title="Video"
         weight={WEIGHTS.video}
-        score={video.score}
-        lines={video.lines}
-        unmeasured={video.unmeasured}
+        score={view.video.score}
+        lines={view.video.lines}
+        relative={vsDisc}
+        unmeasured={view.video.unmeasured}
       />
       <div aria-hidden className={RULE} />
 
       <Component
         title="Audio"
         weight={WEIGHTS.audio}
-        score={audio.score}
-        lines={audio.lines}
-        unmeasured={audio.unmeasured}
+        score={view.audio.score}
+        lines={view.audio.lines}
+        relative={vsDisc}
+        unmeasured={view.audio.unmeasured}
       />
       <div aria-hidden className={RULE} />
 
       <Component
         title="Release"
         weight={WEIGHTS.release}
-        score={release.score}
-        lines={release.lines}
-        unmeasured={release.unmeasured}
+        score={view.release.score}
+        lines={view.release.lines}
+        relative={vsDisc}
+        unmeasured={view.release.unmeasured}
       />
       <div aria-hidden className={RULE} />
 
       <section className="flex flex-col gap-1">
         <h3 className="font-medium">Final calculation</h3>
-        {shared && (
-          <p className="text-sm opacity-60">
-            Scored against the best disc that exists for this film, not against
-            an abstract ideal — so a flawless copy of a modest release is still
-            a 100.
-          </p>
-        )}
 
         {/* The same arithmetic that was one line of formula soup, told a step
             at a time: what each number is in words, how it was made in mono
@@ -284,16 +386,16 @@ export function ScoreBreakdown({
             and closed on "78 ÷ 93", a division that did not produce the number
             printed beside it. */}
         <div className="mt-2 flex flex-col divide-y divide-line">
-          {shared ? null : (
+          {vsDisc ? null : (
             <>
               <Step
                 label="The three, blended"
-                working={`${scores.video} × ${WEIGHTS.video} + ${scores.audio} × ${WEIGHTS.audio} + ${scores.release} × ${WEIGHTS.release}`}
+                working={`${view.video.score} × ${WEIGHTS.video} + ${view.audio.score} × ${WEIGHTS.audio} + ${view.release.score} × ${WEIGHTS.release}`}
                 value={breakdown.weighted}
               />
               <Step
                 label="Video ceiling"
-                working={`picture quality ${scores.video} + ${VIDEO_CEILING_BONUS}`}
+                working={`picture quality ${view.video.score} + ${VIDEO_CEILING_BONUS}`}
                 value={breakdown.ceiling}
               />
               <Step
@@ -310,41 +412,222 @@ export function ScoreBreakdown({
           <div className="flex items-center justify-between gap-4 pt-3">
             <span className="min-w-0">
               <span className="block text-sm font-medium">
-                {shared
+                {vsDisc
                   ? "The three shares, blended"
-                  : "No disc data — scored on the rubric alone"}
+                  : tabbed
+                    ? "The rubric alone, with no disc in it"
+                    : "No disc data — scored on the rubric alone"}
               </span>
-              {shared && (
+              {vsDisc && (
                 <span className="mt-0.5 block font-mono text-xs opacity-45">
-                  {video.score} × {WEIGHTS.video} + {audio.score} ×{" "}
-                  {WEIGHTS.audio} + {release.score} × {WEIGHTS.release}
+                  {view.video.score} × {WEIGHTS.video} + {view.audio.score} ×{" "}
+                  {WEIGHTS.audio} + {view.release.score} × {WEIGHTS.release}
                 </span>
               )}
             </span>
             <span className="shrink-0 font-score text-xl font-semibold tabular-nums">
-              {scores.overall}
+              {view.overall}
             </span>
           </div>
         </div>
 
-        <p className="mt-3 text-xs opacity-50">
-          {scores.overall === 100 && shared
-            ? "This copy is as good as the best release available, so there is nothing to upgrade to."
-            : shared
-              ? `Each share is capped at parity, so beating the disc in one place cannot pay for falling short in another. Marked against the rubric's own ideal instead — a disc nobody pressed — this scores ${breakdown.absolute}.`
-              : breakdown.cappedByVideo
-                ? `The weighted total reached ${breakdown.weighted}, but strong audio and a clean container cannot lift a file more than ${VIDEO_CEILING_BONUS} points above its picture quality.`
-                : "The ceiling did not bind here — the weighted total was already below it."}
-        </p>
+        {note && <p className="mt-3 text-xs opacity-50">{note}</p>}
       </section>
 
-      <p className="text-sm opacity-60">
-        The full rubric, including every threshold, is on the{" "}
+      <p className="text-xs opacity-50">
+        Every threshold is on{" "}
         <Link href="/how-it-works" className="underline underline-offset-4">
           How it works
-        </Link>{" "}
-        page.
+        </Link>
+        .
       </p>
     </div>
+  );
+}
+
+const totalOf = (lines: ScoreLine[]) =>
+  lines.reduce((running, line) => running + line.points, 0);
+
+/**
+ * The readings available for one file — both where a disc is known, one where
+ * it is not.
+ *
+ * A plain function rather than a hook, because two very different callers need
+ * the same arithmetic: the panel at the foot of a film's page, which keeps its
+ * own state and draws its own switch, and the dialog, which puts the switch in
+ * its header and has to own the state to do it.
+ */
+export function scoreViews(
+  scores: { video: number; audio: number; release: number; overall: number },
+  breakdown: Breakdown,
+): { rubric: ScoreView; vsDisc?: ScoreView } {
+  const disc = breakdown.disc;
+
+  const rubric: ScoreView = {
+    id: "rubric",
+    label: "Absolute",
+    video: sectionOf(breakdown.video, scores.video),
+    audio: sectionOf(breakdown.audio, scores.audio),
+    release: sectionOf(breakdown.release, scores.release),
+    /*
+     * The rubric's own total — except where it is the only reading there is.
+     *
+     * A row whose score is a share of a disc it cannot name still has to close
+     * on the number you pressed, or the working belongs to some other score.
+     * With a disc in hand that number is under `vs disc`, and this reading is
+     * free to be what it says it is. See the `unanchored` note in
+     * app/score-why.tsx.
+     */
+    overall: disc ? breakdown.absolute : scores.overall,
+    ceilings: disc && {
+      video: totalOf(disc.video),
+      audio: totalOf(disc.audio),
+      release: totalOf(disc.release),
+    },
+  };
+
+  if (!disc) return { rubric };
+
+  return {
+    rubric,
+    vsDisc: {
+      id: "disc",
+      label: "vs disc",
+      // Every meter measured against whatever the score itself was measured
+      // against. A disc-relative number explained against the rubric's ideal is
+      // working for some other number: it lists points the score never charged
+      // for, and the two disagree in front of you.
+      video: sectionOf(breakdown.video, scores.video, disc.video),
+      audio: sectionOf(breakdown.audio, scores.audio, disc.audio),
+      release: sectionOf(breakdown.release, scores.release, disc.release),
+      overall: scores.overall,
+      // Parity, on every meter. `asShareOfDisc` has already capped each one
+      // there, so 100 is both the mark and the truth: it is what "as good as
+      // the disc" looks like, and it is what makes a bar green at parity and
+      // amber below it rather than grey at either.
+      ceilings: { video: 100, audio: 100, release: 100 },
+    },
+  };
+}
+
+/**
+ * Which reading you are looking at.
+ *
+ * Its own export because it does not always sit above the working it governs:
+ * in the dialog it goes on the title line, where every other dialog in this app
+ * keeps the controls that apply to the whole panel.
+ */
+export function ScoreViewSwitch({
+  value,
+  onChange,
+}: {
+  value: ScoreViewId;
+  onChange: (id: ScoreViewId) => void;
+}) {
+  /* The names alone. The two scores were on the track as counts for a while,
+     which made the switch a third place the numbers are printed — after the
+     ring beside it and the sign-off at the foot of whichever reading is open —
+     and a figure on an unselected tab reads as a tally of what is behind it
+     rather than as the score itself. */
+  return (
+    <Switch
+      value={value}
+      onChange={(key) => onChange(key as ScoreViewId)}
+      options={[
+        { key: "disc", label: "vs disc" },
+        { key: "rubric", label: "Absolute" },
+      ]}
+    />
+  );
+}
+
+/**
+ * The reading at a glance: the ring, and the three meters it is made of.
+ *
+ * The same arrangement the top of a film's page has always used — ring, rule,
+ * three bars — so a score explained in a dialog is laid out the way the same
+ * score is laid out on the page it belongs to. The dialog used to open on a
+ * small dial and a paragraph instead, which is the one shape in the app that
+ * showed a score without showing what it was made of.
+ */
+export function ScoreHero({
+  view,
+  ring,
+}: {
+  view: ScoreView;
+  /**
+   * The colour of the ring that was pressed to get here, where there was one.
+   *
+   * Only ever honoured for the reading it belongs to. A list's verdict colour
+   * is a verdict about the score on the ring — a share of the disc, where the
+   * list was measuring against one — and repainting the rubric total with it
+   * would be answering a question nobody asked of that number.
+   */
+  ring?: string;
+}) {
+  /*
+   * Failing that, the number colours itself — on the scale it was measured on.
+   *
+   * The two scales band differently: 91 is a reference copy on the rubric and
+   * a copy visibly short of its disc as a share of one, which is what
+   * `statusFor` exists to keep straight. The absolute ring used to be a flat
+   * neutral grey, borrowed from the film page where it sits *beside* the
+   * relative one and greys precisely to stay out of its way. Here only one
+   * ring is on screen at a time, so grey was the ring declining to say
+   * anything at all.
+   */
+  const relative = view.id === "disc";
+  const banded = STATUS_THEME[statusFor(view.overall, relative)];
+
+  /*
+   * Each meter banded exactly as the ring beside it — one rule for every bar
+   * in the panel. See `barTone`.
+   *
+   * Out of a hundred and not out of the ceiling, because a hundred is what the
+   * bar's own width is drawn against: the mark on the track says how far the
+   * disc reaches, and the colour says how good the figure is. Banding it
+   * against the ceiling instead would paint a bar four fifths full in the
+   * colour of one nearly full.
+   */
+  const tone = (section: Section) => barTone(section.score, 100, relative);
+
+  return (
+    <section className="flex flex-col items-center gap-6 sm:flex-row sm:items-stretch">
+      <div className="flex shrink-0 items-center justify-center">
+        <ScoreRing
+          score={view.overall}
+          ring={ring ?? banded.stroke}
+          caption={view.label}
+        />
+      </div>
+
+      {/* A vertical rule on wide screens keeps the ring and the meters reading
+          as two halves of one card rather than a loose stack. */}
+      <div
+        aria-hidden
+        className="hidden w-px shrink-0 bg-gradient-to-b from-transparent via-line-strong to-transparent sm:block"
+      />
+
+      <div className="flex w-full flex-1 flex-col justify-center gap-3">
+        <SubScore
+          label="Video"
+          value={view.video.score}
+          ceiling={view.ceilings?.video}
+          tone={tone(view.video)}
+        />
+        <SubScore
+          label="Audio"
+          value={view.audio.score}
+          ceiling={view.ceilings?.audio}
+          tone={tone(view.audio)}
+        />
+        <SubScore
+          label="Release"
+          value={view.release.score}
+          ceiling={view.ceilings?.release}
+          tone={tone(view.release)}
+        />
+      </div>
+    </section>
   );
 }

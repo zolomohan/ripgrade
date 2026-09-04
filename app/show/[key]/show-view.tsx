@@ -17,7 +17,8 @@ import { HERO_BOX_SHORT, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { DiscReview } from "@/app/film/[id]/disc-review";
 import { ReleaseSearchModal } from "@/app/release-search";
 import { stagger } from "@/app/stagger";
-import { ScoreCircle, ScoreDial } from "@/app/score-circle";
+import { ScoreDial, STATUS_THEME } from "@/app/score-circle";
+import { MeasuredScoreDial } from "@/app/score-why";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { openIssues } from "@/lib/derive";
 import { entryFromSpec, qualityLabel } from "@/lib/disc-entry";
@@ -124,12 +125,24 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
 
   return (
     <li style={stagger(index)} className="row-enter">
-      {/* The whole card is the link — everything on it is about one file, so
-          anywhere on it is the same destination. */}
-      <Link
-        href={`/episode/${movieId(item.path)}`}
-        className="glow group -mx-5 flex flex-col gap-5 rounded-row px-5 py-5 transition-colors hover:bg-surface sm:flex-row"
-      >
+      {/*
+       * The whole card is the link — everything on it is about one file, so
+       * anywhere on it is the same destination.
+       *
+       * The link is an overlay rather than a wrapper. The ring in the corner
+       * became a button when it gained its working, and a button inside a link
+       * is invalid nesting: a keyboard finds one control where there are two,
+       * and a press on the ring is a navigation the mouse only avoids because
+       * the handler stops it. Laid over the card instead, it still catches
+       * anywhere you press — and anything that wants a press of its own rises
+       * above it and simply takes one.
+       */}
+      <div className="group relative -mx-5 flex flex-col gap-5 rounded-row px-5 py-5 transition-colors hover:bg-surface sm:flex-row">
+        <Link
+          href={`/episode/${movieId(item.path)}`}
+          aria-label={episode.title ?? item.fileName}
+          className="glow absolute inset-0 z-10 rounded-row"
+        />
         {/* The still leads: a picture is how you recognise which episode this is,
           and the rest of the card is numbers. */}
         <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-card bg-surface-strong ring-1 ring-line sm:w-56">
@@ -190,8 +203,21 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
             </div>
 
             {/* The same ring the film shelf uses: the number is the score and the
-              colour is the verdict, which a bare figure cannot say. */}
-            <ScoreCircle movie={item} />
+              colour is the verdict, which a bare figure cannot say. Above the
+              link that covers the card, because pressing it asks a different
+              question from opening the episode — see app/score-why.tsx. */}
+            <span className="relative z-20 shrink-0">
+              <MeasuredScoreDial
+                subject={{
+                  title: episode.title ?? item.fileName,
+                  scores: item.scores,
+                  breakdown: item.breakdown,
+                }}
+                theme={STATUS_THEME[item.status]}
+                title={`${item.status} · ${item.scores.overall} of 100`}
+                srLabel={`${item.status}, score ${item.scores.overall} of 100`}
+              />
+            </span>
           </div>
 
           {/* The file, in one line: the marks say the formats, and what they
@@ -214,7 +240,7 @@ function Episode({ episode, index }: { episode: ShowEpisode; index: number }) {
             </p>
           </div>
         </div>
-      </Link>
+      </div>
     </li>
   );
 }

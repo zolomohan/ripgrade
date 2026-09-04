@@ -276,10 +276,6 @@ export function ReleaseDetails({
               relative: hit.relative,
               discScore: hit.discScore,
               discShape: hit.discShape,
-              reference:
-                currentScore === undefined
-                  ? undefined
-                  : { kind: "copy", delta: hit.score - currentScore },
             }}
             theme={queueTheme(hit.score)}
             size={56}
