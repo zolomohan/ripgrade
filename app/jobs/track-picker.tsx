@@ -94,6 +94,23 @@ type Row = { key: string; title: string; meta: string; bytes?: number };
 const join = (parts: (string | false | undefined)[]) =>
   parts.filter(Boolean).join(" · ");
 
+/**
+ * What a track is called, under what it is encoded in.
+ *
+ * The name a disc gave it and the two flags that change what it is for, which
+ * are one sentence rather than three columns: "Surround 7.1 · default" is how
+ * you would say it out loud, and it was `Track` and a slice of `Flags` sitting
+ * apart from the codec they describe.
+ */
+const audioDetail = (track: AudioTrack) =>
+  [
+    track.title,
+    track.forced ? "forced" : null,
+    track.default ? "default" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
 const audioRow = (track: AudioTrack, ordinal: number): Row => ({
   key: `a${ordinal}`,
   title: track.language ? languageName(track.language) : "Untagged",
@@ -579,8 +596,13 @@ export function TrackPicker({
                     codec is what you check second, once you know which row you
                     are looking at. */}
                 <th className="px-4 py-2 font-medium">Language</th>
+                {/* One column, two lines. The codec and the name a disc gave
+                    the track are the same fact at two levels of detail — "TrueHD
+                    Atmos" and then "Surround 7.1", or nothing at all — and as
+                    two columns the second was mostly a column of dashes that
+                    pushed Size out to the far edge. Stacked, the name is a
+                    subtitle to the codec, which is what it reads as. */}
                 <th className="px-4 py-2 font-medium">Format</th>
-                <th className="px-4 py-2 font-medium">Track</th>
                 <th className="px-4 py-2 text-right font-medium">Size</th>
               </tr>
             </thead>
@@ -620,15 +642,15 @@ export function TrackPicker({
                     <td className={`px-4 py-2 ${ticked ? "line-through" : ""}`}>
                       {track.language ? languageName(track.language) : "—"}
                     </td>
-                    <td className="px-4 py-2 opacity-70">{track.label}</td>
                     <td className="px-4 py-2 opacity-70">
-                      {[
-                        track.title,
-                        track.forced ? "forced" : null,
-                        track.default ? "default" : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
+                      <span className="block">{track.label}</span>
+                      {/* Only when there is one. A subtitle that says "—" is a
+                          line of nothing under every row that has no name. */}
+                      {audioDetail(track) && (
+                        <span className="mt-0.5 block text-xs opacity-65">
+                          {audioDetail(track)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums opacity-70">
                       {track.sizeBytes === undefined ? (
@@ -659,8 +681,11 @@ export function TrackPicker({
               <tr>
                 <th className="w-8 px-4 py-2" />
                 <th className="px-4 py-2 font-medium">Language</th>
+                {/* Stacked, as on the audio table above. Flags stays a column
+                    of its own here: forced and SDH are what you are picking
+                    between on this screen, and a thing you scan down a column
+                    for is not a subtitle to something else. */}
                 <th className="px-4 py-2 font-medium">Format</th>
-                <th className="px-4 py-2 font-medium">Track</th>
                 <th className="px-4 py-2 font-medium">Flags</th>
                 <th className="px-4 py-2 text-right font-medium">Size</th>
               </tr>
@@ -687,9 +712,13 @@ export function TrackPicker({
                     <td className={`px-4 py-2 ${ticked ? "line-through" : ""}`}>
                       {track.language ? languageName(track.language) : "—"}
                     </td>
-                    <td className="px-4 py-2 opacity-70">{track.format}</td>
                     <td className="px-4 py-2 opacity-70">
-                      {track.title || "—"}
+                      <span className="block">{track.format}</span>
+                      {track.title && (
+                        <span className="mt-0.5 block text-xs opacity-65">
+                          {track.title}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2 opacity-70">
                       {[

@@ -1335,6 +1335,31 @@ export function languageLine(codes: string[]): string {
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
 }
 
+/**
+ * "8 tracks · 4.2 GB" — what a row is offering, in the two numbers that decide
+ * whether you want it.
+ *
+ * It was the languages going and the size of the file they are in: "German,
+ * Spanish · 12.4 GB file". Both true and neither the question. Which languages
+ * a rip carries is a fact about the disc it was pressed from, and the file's
+ * own size is a fact about the film — what you are choosing between on this
+ * tab is how much clutter comes out and how much space that buys, and neither
+ * of those was on the line.
+ *
+ * Audio and text counted together, because they leave in the same remux. A
+ * film with nothing to lose but subtitles still earns a row here, and its line
+ * should say nine rather than nothing.
+ *
+ * `≈` where any part of the total is bitrate × runtime rather than counted,
+ * the same mark the figure beside it carries for the same reason.
+ */
+export const removalLine = (task: AudioTask): string => {
+  const tracks = task.removing + task.removingSubtitles;
+  return `${tracks} track${tracks === 1 ? "" : "s"} · ${
+    task.estimated ? "≈" : ""
+  }${size(task.freedBytes)}`;
+};
+
 /** What a removal is worth, first — and then the other ways of asking. */
 export const AUDIO_SORTS: SortOption<AudioTask>[] = [
   {
@@ -1639,10 +1664,10 @@ export function AudioQueued({
           index={index}
           chips={
             <span className="min-w-0 truncate text-xs opacity-40">
-              {languageLine(task.languages)} · {size(task.sizeBytes)} file
+              {removalLine(task)}
             </span>
           }
-          facts={[languageLine(task.languages), `${size(task.sizeBytes)} file`]}
+          facts={[removalLine(task)]}
           figure={
             <>
               <span className="text-sm font-medium tabular-nums opacity-55">
@@ -2038,19 +2063,23 @@ export function AudioTasks({
                   label: `Remove the proposed tracks from ${task.title}`,
                 }}
                 chips={
-                  // No count chip. What is going is named — the languages — and
-                  // what it is worth is the figure on the right; "8 of 9 tracks"
-                  // sat between them saying neither.
+                  // The count and the saving — see `removalLine`. It was the
+                  // languages and the file's own size, on the reasoning that
+                  // what is going should be named rather than counted. Which
+                  // holds right up until you are deciding: a name tells you
+                  // what leaves, and a count and a figure tell you whether to
+                  // let it.
                   <span className="min-w-0 truncate text-xs opacity-40">
-                    {languageLine(task.languages)} · {size(task.sizeBytes)} file
+                    {removalLine(task)}
                   </span>
                 }
-                // The languages, and only those. The file's own size was the
-                // second half of this line and a size in the corner above it —
-                // two figures in gigabytes on one tile, and at a glance the
-                // pair read as the same fact said twice. The corner keeps the
-                // one this tab is about; the row still prints both.
-                facts={[languageLine(task.languages)]}
+                // The same line in the row layout. It does repeat the figure in
+                // the corner, which this deliberately avoided before — two
+                // sizes on one tile did read as one fact said twice. The count
+                // in front of it is what makes it a different sentence now:
+                // the corner says what you save, and this says what it costs
+                // in tracks to save it.
+                facts={[removalLine(task)]}
                 figure={
                   <>
                     <span
