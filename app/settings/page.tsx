@@ -3,6 +3,8 @@ import {
   getSubtitleLanguages,
   getConvertTempDir,
   getKeepEnhancementLayer,
+  getGlassPosters,
+  getGlassTuning,
   getListLayout,
   getJackettStatus,
   getLibraryFolders,
@@ -14,6 +16,7 @@ import {
 import { AudioLanguages } from "./audio-languages";
 import { SubtitleLanguages } from "./subtitle-languages";
 import { EnhancementLayer } from "./el-backup";
+import { GlassTuning } from "./glass-tuning";
 import { ListLayout } from "./list-layout";
 import { FolderSection } from "../folder-section";
 import { ScanButton } from "../scan-button";
@@ -27,6 +30,7 @@ import { Row } from "./parts";
 import { SettingsTabs } from "./settings-tabs";
 import { Tmdb } from "./tmdb";
 import { DEFAULT_ROOT } from "@/lib/browse";
+import { glassSummary } from "@/lib/glass";
 import { size } from "@/app/format";
 
 export const metadata = { title: "Settings — RipGrade" };
@@ -43,8 +47,15 @@ export const dynamic = "force-dynamic";
  * of them said.
  *
  * Shut, the line beside the name is what the setting is set to, which is the
- * whole of what you need when you are looking for a different one; open, it
- * says why you would touch it and then lets you.
+ * whole of what you need when you are looking for a different one; open, it is
+ * the controls and nothing else.
+ *
+ * It used to open onto a paragraph saying why you would touch it, and every one
+ * of the eleven settings here had one. Eleven paragraphs is a page you read
+ * past rather than a page you use, and none of them were news after the first
+ * time: the argument for a setting is worth making once and worth having to
+ * hand forever, which is a tooltip and not a body. It is on the title now —
+ * see `Explained` in app/controls.tsx.
  */
 function Setting({
   title,
@@ -55,15 +66,13 @@ function Setting({
   title: string;
   /** What it is set to now — the line the shut row shows. */
   summary: string;
+  /** Why you would touch it, on the title rather than under it — see `Panel`. */
   hint: string;
   children: React.ReactNode;
 }) {
   return (
-    <Panel title={title} summary={summary}>
-      <div className="flex flex-col gap-5">
-        <p className="max-w-prose text-sm opacity-55">{hint}</p>
-        {children}
-      </div>
+    <Panel title={title} hint={hint} summary={summary}>
+      <div className="flex flex-col gap-5">{children}</div>
     </Panel>
   );
 }
@@ -82,6 +91,8 @@ export default async function SettingsPage() {
   const audio = await getAudioLanguages();
   const subtitles = await getSubtitleLanguages();
   const layout = await getListLayout();
+  const glass = await getGlassTuning();
+  const glassPosters = await getGlassPosters();
 
   /** What the shut row says: the languages kept, in the order they were shown. */
   const audioSummary = [
@@ -268,17 +279,27 @@ export default async function SettingsPage() {
     );
   }
 
-  /** How the app draws what it holds. One question so far, and it is the one
-   *  that used to be asked on three pages at once. */
+  /** How the app draws what it holds: the shape its lists take, and what its
+   *  chrome is made of. */
   function Themes() {
     return (
-      <Setting
-        title="Layout"
-        summary={layout === "grid" ? "Posters" : "Rows"}
-        hint="How the lists that can be read either way are drawn — the downloads log, the jobs page, and the releases found for your wishlist. Posters are for recognising a film and rows are for reading the figures on it; a shelf of artwork is the app's own default. This was a button on each of those pages, which made it three answers to one question."
-      >
-        <ListLayout layout={layout} />
-      </Setting>
+      <>
+        <Setting
+          title="Layout"
+          summary={layout === "grid" ? "Posters" : "Rows"}
+          hint="How the lists that can be read either way are drawn — the downloads log, the jobs page, and the releases found for your wishlist. Posters are for recognising a film and rows are for reading the figures on it; a shelf of artwork is the app's own default. This was a button on each of those pages, which made it three answers to one question."
+        >
+          <ListLayout layout={layout} />
+        </Setting>
+
+        <Setting
+          title="Glass"
+          summary={glassSummary(glass)}
+          hint="Every surface standing in front of the page rather than in it is a pane of glass — the rail down the side, the bar at the top of a phone. Real glass, not a blur behind a rectangle: the rim bends what passes under it and splits it a little into colour. The seven properties of that material, set once for all of it, shown over a shelf of your own posters. Carry the pane across the shelf to find an edge worth watching, drag its corner to see the same numbers at another size, and double-click it to put it back."
+        >
+          <GlassTuning tuning={glass} posters={glassPosters} />
+        </Setting>
+      </>
     );
   }
 

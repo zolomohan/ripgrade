@@ -13,9 +13,12 @@
  * else. Nothing draws a border of its own. The panel around them is the frame.
  *
  * No hooks and no "use client": the page is a server component and reaches for
- * a couple of these directly.
+ * a couple of these directly. `Explained` is the exception and is imported as
+ * what it is — a client component rendered by server ones, which is the one
+ * direction that crossing works in.
  */
 
+import { Explained } from "../controls";
 import { stagger } from "../stagger";
 
 /**
@@ -115,7 +118,10 @@ export function Note({ children }: { children: React.ReactNode }) {
  */
 export function Failure({ children }: { children: React.ReactNode }) {
   return (
-    <p role="alert" className="font-mono text-xs text-red-600 dark:text-red-400">
+    <p
+      role="alert"
+      className="font-mono text-xs text-red-600 dark:text-red-400"
+    >
       {children}
     </p>
   );
@@ -128,6 +134,11 @@ export function Failure({ children }: { children: React.ReactNode }) {
  * itself — the same join every list in this app makes. The rule runs the width
  * of the column and no further: it belongs to the setting above it, not to the
  * page.
+ *
+ * One line, where it used to be two. The second was the hint, set small and
+ * faint under the title, and a panel of four rows was four titles competing
+ * with four explanations of them — which is the argument the settings made
+ * against their own paragraphs, at a smaller size. It is on the title now.
  */
 export function Row({
   title,
@@ -135,14 +146,16 @@ export function Row({
   children,
 }: {
   title: string;
+  /** On the title, the way a setting's own is — see `Panel` in app/panel.tsx. */
   hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 border-t border-line pt-4">
       <div className="min-w-0 flex-1">
-        <p className="text-sm">{title}</p>
-        {hint && <p className="mt-0.5 max-w-prose text-xs opacity-45">{hint}</p>}
+        <p className="text-sm">
+          {hint ? <Explained hint={hint}>{title}</Explained> : title}
+        </p>
       </div>
       {children}
     </div>
