@@ -16,6 +16,7 @@ import { Spinner } from "@/app/spinner";
 import { imageUrl } from "@/lib/image-url";
 import { HERO_BUTTON } from "./hero-button";
 import { CloseButton, Modal } from "@/app/modal";
+import { Glass } from "@/app/glass";
 
 type Tab = "poster" | "fanart" | "logo";
 
@@ -28,7 +29,29 @@ type Tab = "poster" | "fanart" | "logo";
  */
 const KINDS: Record<
   Tab,
-  { label: string; file: string; grid: string; shape: string; count: number }
+  {
+    label: string;
+    file: string;
+    grid: string;
+    shape: string;
+    count: number;
+    /**
+     * The mark beside the word in the menu that picks between these.
+     *
+     * Two of the three are a plain rectangle and differ only in their
+     * proportions, which is not a shortage of invention: the proportions are
+     * the whole difference. A poster is 2:3 and a backdrop is 16:9, and those
+     * are the two shapes the dialog behind this menu lays out — `shape` above
+     * says so in Tailwind and these say the same thing on a 24×24 grid. Tall
+     * against wide is also about the easiest distinction there is at 14px,
+     * where a picture-with-a-mountain in each would be one grey smudge twice.
+     *
+     * The logo is the odd one and gets the odd mark: not a frame at all, but
+     * lettering, because a logo here is a film's title set as art rather than
+     * a picture of it.
+     */
+    icon: string;
+  }
 > = {
   poster: {
     label: "Poster",
@@ -36,6 +59,8 @@ const KINDS: Record<
     grid: "grid-cols-3 sm:grid-cols-6",
     shape: "aspect-[2/3]",
     count: 12,
+    // 12 × 18 on the grid, which is 2:3 exactly.
+    icon: "M6 3h12v18H6z",
   },
   fanart: {
     label: "Backdrop",
@@ -43,6 +68,8 @@ const KINDS: Record<
     grid: "grid-cols-2 sm:grid-cols-3",
     shape: "aspect-video",
     count: 6,
+    // 18 × 10, near enough 16:9 at this size.
+    icon: "M3 7h18v10H3z",
   },
   logo: {
     label: "Logo",
@@ -50,6 +77,9 @@ const KINDS: Record<
     grid: "grid-cols-2 sm:grid-cols-4",
     shape: "h-24",
     count: 8,
+    // A letter on a baseline — the type mark, and the only one of the three
+    // with no box round it.
+    icon: "M4 7V5h16v2M12 5v14M9.5 19h5",
   },
 };
 type Sort = "default" | "largest";
@@ -300,25 +330,49 @@ export function ArtworkEditor({
           </button>
         )}
 
+        {/* Downward, like every other menu in the app. It opened upward on
+            `bottom-full` because the trigger sits low in the hero — but a menu
+            that grows out of the top of its button is the one thing on the page
+            that does, and the three items it holds are short enough to fall
+            below it without reaching anything. Consistency is the whole of the
+            argument: you learn where a menu appears once. */}
         {menu && (
-          <div className="row-enter absolute right-0 bottom-full z-30 mb-2 w-40 overflow-hidden glass-panel rounded-card border border-line py-1 shadow-2xl">
-            {(
-              [
-                ["poster", "Poster"],
-                ["fanart", "Backdrop"],
-                ["logo", "Logo"],
-              ] as [Tab, string][]
-            ).map(([kind, label]) => (
-              <button
-                key={kind}
-                type="button"
-                onClick={() => openWith(kind)}
-                className="block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-surface-strong"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <Glass
+            radius={14}
+            className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-40 overflow-hidden py-1"
+          >
+            {/* From `KINDS` rather than from a list of its own. The three
+                labels were written out here as well as up there, which is two
+                places to rename a thing — and the mark each row needs is a
+                fact about the kind, so it lives where the rest of them do. */}
+            {(Object.entries(KINDS) as [Tab, (typeof KINDS)[Tab]][]).map(
+              ([kind, { label, icon }]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => openWith(kind)}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-strong"
+                >
+                  {/* At the size of the word beside it and at the app's usual
+                      stroke, like the rail's marks: a mark that outweighs its
+                      label is a mark being asked to do the label's job. */}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                    className="h-3.5 w-3.5 shrink-0 opacity-60"
+                  >
+                    <path d={icon} />
+                  </svg>
+                  {label}
+                </button>
+              ),
+            )}
+          </Glass>
         )}
       </div>
 
@@ -330,7 +384,7 @@ export function ArtworkEditor({
         open={open}
         onClose={() => setOpen(false)}
         label={`Choose ${KINDS[tab].label.toLowerCase()}`}
-        panelClassName="flex h-[min(80vh,44rem)] w-full max-w-5xl flex-col glass-panel rounded-card border border-line shadow-2xl"
+        panelClassName="flex h-[min(80vh,44rem)] w-full max-w-5xl flex-col"
       >
         <>
           <div className="flex shrink-0 flex-wrap items-center gap-3 px-5 pt-5 pb-4">
