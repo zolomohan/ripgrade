@@ -369,7 +369,6 @@ function Card({
   index: number;
 }) {
   const theme = STATUS_THEME[movie.status];
-  const open = openIssues(movie);
 
   return (
     <PosterTile
@@ -378,9 +377,9 @@ function Card({
         remote: movie.art.poster,
         version: movie.artAt,
       }}
-      // The whole tile is the thing that travels — its frame, the score on it
-      // and the issue count with it. Naming the image inside instead left the
-      // badge and the ring behind while the picture flew off alone.
+      // The whole tile is the thing that travels — its frame and the score on
+      // it. Naming the image inside instead left the badge and the ring behind
+      // while the picture flew off alone.
       transitionName={posterName(movie.path)}
       title={movie.title}
       year={movie.year}
@@ -405,13 +404,6 @@ function Card({
             title={`${movie.status} · ${movie.scores.overall} of 100`}
           />
         </div>
-      }
-      note={
-        open.length > 0 ? (
-          <span className="rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
-            {open.length} {open.length === 1 ? "issue" : "issues"}
-          </span>
-        ) : undefined
       }
       /*
        * The queue's whole offer, on the shelf where the film lives, behind one

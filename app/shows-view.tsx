@@ -631,11 +631,10 @@ function Shelf({ shows }: { shows: Show[] }) {
  * This was the poster frame, the caption, the entrance and the stagger written
  * out by hand, which is the twenty lines `PosterTile` exists to stop being
  * copied. What is genuinely this shelf's is what goes in the corners: the
- * average score, and the two counts that say why you would open it.
+ * average score, and the count of what is missing.
  */
 function ShowTile({ show, index }: { show: Show; index: number }) {
   const gaps = missing(show);
-  const issues = issuesOf(show);
 
   return (
     <PosterTile
@@ -657,23 +656,14 @@ function ShowTile({ show, index }: { show: Show; index: number }) {
         />
       }
       note={
-        (gaps > 0 || issues > 0) && (
-          /* What is wrong with the show, on the show: a gap in a season and a
-             flawed file are both reasons to open it, and both belong where the
-             eye already is. The gaps are counted only once TMDb has said how
-             long each season runs — before that the figure would be holes in
-             the numbering, which reads as a stronger claim than it is. */
-          <span className="flex flex-wrap items-center gap-1">
-            {gaps > 0 && (
-              <span className="rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
-                {gaps} missing
-              </span>
-            )}
-            {issues > 0 && (
-              <span className="rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
-                {issues} {issues === 1 ? "issue" : "issues"}
-              </span>
-            )}
+        gaps > 0 && (
+          /* What is missing from the show, on the show: a gap in a season is a
+             reason to open it, and it belongs where the eye already is. The
+             gaps are counted only once TMDb has said how long each season runs
+             — before that the figure would be holes in the numbering, which
+             reads as a stronger claim than it is. */
+          <span className="rounded-chip bg-background/85 px-1.5 font-display text-[10px] leading-[18px] font-medium text-amber-700 backdrop-blur dark:text-amber-300">
+            {gaps} missing
           </span>
         )
       }
