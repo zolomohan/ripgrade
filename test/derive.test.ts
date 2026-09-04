@@ -22,6 +22,7 @@ import {
   scoreFacts,
   titleKey,
   type DoviScan,
+  statusFor,
 } from "../lib/derive";
 import { guessFromTitle } from "../lib/release-title";
 
@@ -930,11 +931,24 @@ const spiderMan = ceiling({
   audioTracks: ["Dolby TrueHD 7.1", "Dolby Digital 5.1"],
 });
 
+test("the same number bands differently on the two scales", () => {
+  // 91 on the rubric is a reference copy; 91% of the disc is a copy visibly
+  // short of it. Anything printing a status beside a score has to say which of
+  // the two it measured — see `statusFor`.
+  assert.equal(statusFor(91, false), "Reference");
+  assert.equal(statusFor(91, true), "Good");
+
+  // Parity is the top of the relative scale, and nothing beats a disc.
+  assert.equal(statusFor(100, true), "Best Available");
+});
+
 test("a disc without Dolby Vision never charges a release for missing it", () => {
-  // The reported case. The name states no HDR at all, so the rubric scores it
-  // SDR and 8-bit — but the disc it is a copy of is HDR10, and Dolby Vision is
-  // not a thing anyone could own. Listing it as lost points explained the
-  // score with an upgrade that does not exist.
+  // The reported case. The name states no HDR at all, and the disc it is a copy
+  // of is HDR10 — so Dolby Vision is not a thing anyone could own here, and
+  // listing it as lost points explained the score with an upgrade that does not
+  // exist. The rubric now reads the unlabelled UHD remux as the HDR10 it must
+  // be (see `hdrOf`), which leaves the picture matching its disc line for line:
+  // nothing is owed, so nothing is offered.
   const { facts } = guessFromTitle(
     "The Amazing Spider Man 2012 PROPER 2160p BluRay REMUX HEVC DTS HD MA TrueHD 7 1 Atmos FGT",
   );

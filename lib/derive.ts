@@ -44,6 +44,37 @@ export const RELEASE_POINTS = {
 } as const;
 
 /** Overall score bands, checked high to low. */
+/**
+ * The bands a disc-relative score is read by.
+ *
+ * A share of the disc is a different measurement from a rubric total and cannot
+ * borrow its thresholds: 90 on the rubric is a reference copy, while 90% of the
+ * disc is a copy visibly short of the disc. Parity is the top of this scale
+ * rather than something to reach past, which is why it opens at 100.
+ */
+export const RELATIVE_BANDS: {
+  min: number;
+  status: Status;
+  priority: Priority;
+}[] = [
+  { min: 100, status: "Best Available", priority: "None" },
+  { min: 85, status: "Good", priority: "Low" },
+  { min: 65, status: "Upgrade Recommended", priority: "Medium" },
+  { min: 0, status: "Must Upgrade", priority: "High" },
+];
+
+/**
+ * The verdict a score carries, on whichever of the two scales it was measured.
+ *
+ * Which scale a number is on is not visible in the number — 91 is a reference
+ * copy on the rubric and a copy short of its disc as a share of one — so
+ * anything printing a status beside a score has to say which it means.
+ */
+export function statusFor(score: number, relative: boolean): Status {
+  const bands = relative ? RELATIVE_BANDS : STATUS_BANDS;
+  return bands.find((band) => score >= band.min)?.status ?? "Must Upgrade";
+}
+
 export const STATUS_BANDS: {
   min: number;
   status: Status;
@@ -1934,11 +1965,10 @@ function verdict(
     // Otherwise the relative score is the verdict. Banding it here rather than
     // keying off "are there any gaps" is what stops a 91 with one gap ranking
     // below a 76 with none.
-    if (overall >= 100) return { status: "Best Available", priority: "None" };
-    if (overall >= 85) return { status: "Good", priority: "Low" };
-    if (overall >= 65)
-      return { status: "Upgrade Recommended", priority: "Medium" };
-    return { status: "Must Upgrade", priority: "High" };
+    const relative = RELATIVE_BANDS.find((b) => overall >= b.min);
+    return relative
+      ? { status: relative.status, priority: relative.priority }
+      : { status: "Must Upgrade", priority: "High" };
   }
 
   const band = STATUS_BANDS.find((b) => overall >= b.min);

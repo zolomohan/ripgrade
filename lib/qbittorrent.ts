@@ -1,7 +1,16 @@
 import "server-only";
 
 import { db, getSetting, setSetting } from "./db";
-import { titleKey, type Status } from "./derive";
+import {
+  discShape,
+  relativeToDisc,
+  scoreFacts,
+  statusFor,
+  titleKey,
+  type ScorableFacts,
+  type Status,
+} from "./derive";
+import { getDiscs } from "./disc";
 import { getMovies, type LibraryItem } from "./library";
 import { guessFromTitle, type ReleaseTags } from "./release-title";
 import { getWishlist, type WishlistEntry } from "./wishlist";
@@ -226,6 +235,15 @@ function parseMagnet(magnet: string): { hash?: string; name?: string } {
 export type FilmContext = {
   title?: string;
   posterPath?: string;
+  /**
+   * Which film this is to TMDb, and through TMDb to the disc table.
+   *
+   * Carried for the same reason `runtimeMinutes` is: not to show, but so the
+   * release can be scored the way the queue scored it. A prediction is a share
+   * of the film's best disc wherever one is known, and the disc is filed under
+   * this number.
+   */
+  tmdbId?: number;
   /**
    * The file in the library, when the match was one. Never stored — a film can
    * arrive or leave between two reads of the log — so it is worked out again
@@ -542,8 +560,11 @@ export type DownloadEntry = {
    * What this release is predicted to score, read off its own name.
    *
    * The same rubric and the same reading the queue and the search window put on
-   * every release before you fetch it — `guessFromTitle` — so a row in this log
-   * wears the number it wore on the button you pressed. That is the honest one
+   * every release before you fetch it — `guessFromTitle`, then expressed as a
+   * share of the film's best disc wherever one is known — so a row in this log
+   * wears the number it wore on the button you pressed. It did not always: the
+   * share was the one part the log could not do without the disc in hand, and
+   * a release the queue offered at 91 arrived here at 88. That is the honest one
    * to print here: a download has no measured score of its own until the file
    * lands and a scan reads it, and the log is a record of what was fetched
    * rather than of what the library currently holds.
@@ -672,6 +693,7 @@ function resolveFilm(
     if (movie?.tmdb) {
       return {
         title: movie.tmdb.title,
+        tmdbId: movie.tmdb.id,
         posterPath: movie.art.poster,
         path: movie.path,
         poster: movie.poster,
@@ -685,7 +707,13 @@ function resolveFilm(
     const wish = library.wishes.find(
       (w) => titleKey(w.title, pass.year ? w.year : undefined) === pass.key,
     );
-    if (wish) return { title: wish.title, posterPath: wish.posterPath };
+    if (wish) {
+      return {
+        title: wish.title,
+        tmdbId: wish.tmdbId,
+        posterPath: wish.posterPath,
+      };
+    }
   }
 
   return undefined;
@@ -790,6 +818,41 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
   // Read once for the whole pass, and handed to every match below.
   const library = { movies: getMovies(), wishes: getWishlist() };
 
+  /*
+   * The disc table, read once and scored on demand.
+   *
+   * A prediction is only comparable with the number on the button that fetched
+   * it if it is measured against the same thing, and the queue measures against
+   * the film's best disc — see `StoredHit.score` and `findUpgrades`. This log
+   * had no disc in hand and fell back to the bare rubric, so the same release
+   * wore 91 in the queue and 88 here, on the same rubric, from the same name.
+   *
+   * Memoised per film rather than per row: several rows can be the same film,
+   * and reading a disc costs a JSON parse and a full rubric pass over it.
+   */
+  const discs = getDiscs();
+  const discScores = new Map<
+    number,
+    { parts: ReturnType<typeof scoreFacts>["scores"]; shape: ScorableFacts }
+  >();
+
+  const discFor = (tmdbId?: number) => {
+    if (tmdbId === undefined) return undefined;
+
+    const memo = discScores.get(tmdbId);
+    if (memo) return memo;
+
+    const best = discs.get(tmdbId)?.best;
+    if (!best) return undefined;
+
+    // `audio` here, `audioTracks` to the rubric — the same rename `library.ts`
+    // and `findUpgrades` make at this boundary.
+    const shape = discShape({ ...best, audioTracks: best.audio });
+    const entry = { parts: scoreFacts(shape).scores, shape };
+    discScores.set(tmdbId, entry);
+    return entry;
+  };
+
   const entries = rows.map((row): DownloadEntry => {
     const current = live?.get(row.hash);
     let completedAt = row.completed_at ?? undefined;
@@ -827,6 +890,21 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
           })
         : parsed;
     const { facts } = guess;
+
+    /*
+     * And expressed as a share of the disc, where the film has one.
+     *
+     * `relativeToDisc` caps each dimension at parity, so a release that matches
+     * the disc reads 100 rather than whatever the rubric would have charged it
+     * for not being better than the best thing there is. The rubric total
+     * stands only for a film with no disc found — exactly as it does in the
+     * queue, which is the point.
+     */
+    const disc = discFor(film?.tmdbId);
+    const relative = Boolean(disc && disc.parts.overall > 0);
+    const score = relative
+      ? relativeToDisc(guess.scores, disc!.parts)
+      : guess.scores.overall;
 
     if (!row.film_title && film) {
       row.film_title = film.title ?? null;
@@ -872,8 +950,11 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
       // The library's reading of what landed, where the film is on the drive.
       // What the name promises, on the rubric every release in the app is read
       // by — see `DownloadEntry.score`.
-      score: guess.scores.overall,
-      status: guess.status,
+      score,
+      // Banded on the scale the number is actually on: 91 is a reference copy
+      // on the rubric and a copy short of its disc as a share of one, and the
+      // badge prints the two side by side.
+      status: statusFor(score, relative),
       // The client's figure while there is one, and the last one it gave
       // otherwise — see `measure` above.
       sizeBytes: current?.sizeBytes ?? row.size_bytes ?? undefined,
