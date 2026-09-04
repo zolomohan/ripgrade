@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BUTTON } from "./button";
 import { DashboardView } from "./dashboard-view";
 import { EmptyState } from "./empty-state";
+import { pickGreeting } from "./greeting";
 import { getDashboard } from "@/lib/dashboard";
 import { getLibraryRoots } from "@/lib/roots";
 
@@ -15,6 +16,7 @@ export const metadata = { title: "RipGrade" };
 export default async function Page() {
   const roots = getLibraryRoots();
   const data = await getDashboard();
+  const greeting = pickGreeting();
 
   // Nothing scanned means every figure below would be a zero, and a page of
   // zeroes is not a report on an empty library — it is a report on a library
@@ -60,7 +62,7 @@ export default async function Page() {
             : "Point RipGrade at the folder your films live in and it will read every file, score it, and say what is worth replacing."}
         </EmptyState>
       ) : (
-        <DashboardView data={data} />
+        <DashboardView data={data} greeting={greeting} />
       )}
     </main>
   );

@@ -106,7 +106,13 @@ type Check = {
   title?: string;
 };
 
-export function DashboardView({ data }: { data: Dashboard }) {
+export function DashboardView({
+  data,
+  greeting,
+}: {
+  data: Dashboard;
+  greeting: string;
+}) {
   const { now, headline, work, recent, system } = data;
   const router = useRouter();
 
@@ -185,7 +191,7 @@ export function DashboardView({ data }: { data: Dashboard }) {
 
   return (
     <div className="flex flex-col gap-12">
-      <Welcome />
+      <Welcome greeting={greeting} />
 
       {/*
        * Six figures, the verdict first and its workings after. The score is
@@ -706,17 +712,22 @@ export function DashboardView({ data }: { data: Dashboard }) {
  * So the header is one line and its rule. Nothing on this page is pressed any
  * more; the figures are links and the work is where they go.
  */
-function Welcome() {
+function Welcome({ greeting }: { greeting: string }) {
   return (
-    // No margin of its own. The page's `py-8` is the same 2rem the rail spends
-    // above its wordmark, so the greeting starts on the line the app's name
-    // starts on and the first thing said reads across the two columns. It also
-    // puts this page where every other one already began: theirs open straight
-    // into their first block, and the dashboard was the only one standing off
-    // the top.
-    <header className="row-enter flex flex-col gap-5">
-      <h1 className="font-display text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-        Welcome back
+    // Level with the wordmark, to the pixel. The page's `py-8` is the same 2rem
+    // the rail spends above its name, and the heading below is set at the
+    // wordmark's own size and leading — 30px, `leading-none` — so the two line
+    // boxes start on the same line and are the same height.
+    //
+    // That still left the two texts four pixels apart, because a line box is
+    // not a baseline: Jim Nightshade sits 21px into its box and Instrument Sans
+    // 25px into an identical one, which is the faces disagreeing rather than
+    // the layout. `-mt-1` is that measured 4px and nothing else, so the
+    // greeting and the app's name rest on one line and the first thing said
+    // reads across the two columns.
+    <header className="row-enter -mt-1 flex flex-col gap-5">
+      <h1 className="font-display text-3xl leading-none font-semibold tracking-tight text-balance">
+        {greeting}
       </h1>
 
       {/* The same hairline every heading in this app stands on — weighted
