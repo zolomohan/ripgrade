@@ -1542,9 +1542,37 @@ body {
   /* And no corner light, for the reason the rail above has none and always the
      same reason the rail has no sweep: this is the sidebar in its other shape,
      and "the sidebar never catches the light" is not a rule that should depend
-     on how
-     wide the window is. */
+     on how wide the window is. */
   background: var(--g-bg);
+}
+
+/*
+ * And the two edges a `border-width` cannot reach, which is where the line
+ * along the top of the rail was coming from.
+ *
+ * Zeroing three of the four borders above took away three borders and nothing
+ * else. Glacé draws its rim twice more, and neither time is it a border:
+ *
+ *   - `box-shadow: …, inset 0 1px 0.5px var(--g-highlight)` — a lit hairline
+ *     laid inside the top edge. On a card that is where the light falls, and
+ *     most of what stops one reading flat. On a pane whose top edge is the top
+ *     of the window it is a rule drawn across the head of the app.
+ *   - `::before` — a masked gradient ring, one pixel wide, on all four sides at
+ *     once. There is no asking it for three of them.
+ *
+ * So the sidebar keeps `--g-shadow` without the inset, and drops the ring. What
+ * is left to say where the glass ends is the one border neither of them zeroed:
+ * the right edge of the rail and the bottom of the bar, which are the only
+ * edges either has that face the page rather than the window.
+ */
+.glace-glass.rail-pane,
+.glace-glass.rail-bar {
+  box-shadow: var(--g-shadow);
+}
+
+.glace-glass.rail-pane::before,
+.glace-glass.rail-bar::before {
+  display: none;
 }
 
 /* No label to pad around — see `MenuButton` in app/sidebar.tsx. The square it
