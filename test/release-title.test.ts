@@ -157,9 +157,61 @@ test("DTS-HD MA is lossless and plain DTS is not", () => {
   );
 });
 
+test("a format spelled in plain words is the same format", () => {
+  // Some groups punctuate nothing: "DTS HD MA 5 1" is the same track as
+  // "DTS-HD.MA.5.1", but the spaced spelling used to fall through to plain
+  // lossy DTS and lose the release its own lossless bonus.
+  const facts = guessFromTitle(
+    "Quantum of Solace 2008 2160p UHD BluRay REMUX DoVi HEVC DTS HD MA 5 1 SYS",
+  ).facts;
+  assert.equal(facts.audio[0].format, "DTS-HD MA");
+  assert.equal(facts.audio[0].lossless, true);
+  assert.equal(facts.audio[0].channels, 6);
+
+  assert.equal(
+    guessFromTitle("X 2020 1080p BluRay TRUE HD 7 1 G").facts.audio[0].format,
+    "TrueHD",
+  );
+});
+
 test("DD+ is lossy and TrueHD is lossless", () => {
   assert.equal(guessFromTitle("X.2020.1080p.WEB-DL.DDP5.1-G").facts.audio[0].lossless, false);
   assert.equal(guessFromTitle("X.2020.1080p.BluRay.TrueHD.7.1-G").facts.audio[0].lossless, true);
+});
+
+test("an unlabelled UHD remux is read as the HDR10 it must be", () => {
+  // Ultra HD Blu-ray mandates an HDR10 base layer, so a 2160p remux that never
+  // says so is not SDR. Read as SDR it lost the HDR criterion and the ten-bit
+  // point together — the twenty-six video points between predicting 91 for this
+  // release and scanning it at 100 once it landed.
+  const guess = guessFromTitle(
+    "Captain America The First Avenger 2011 UHD BluRay 2160p TrueHD Atmos 7 1 HEVC REMUX-FraMeSToR",
+  );
+  assert.equal(guess.facts.hdr, "HDR10");
+  assert.equal(guess.facts.bitDepth, 10);
+
+  // Inferred, not stated: the name still never said, and confidence has to go
+  // on saying so.
+  assert.ok(!guess.known.includes("hdr"));
+});
+
+test("only a UHD disc source gets the benefit of that doubt", () => {
+  // Being 2160p says nothing about mastering on its own, and plenty of streams
+  // and hobby encodes at that resolution really are SDR.
+  for (const name of [
+    "X 2020 2160p WEB-DL DDP5 1 H 265-G",
+    "X 2020 2160p BluRay x265 DTS-HD MA 5 1-G",
+    "X 2020 1080p BluRay REMUX AVC DTS-HD MA 5 1-G",
+  ]) {
+    assert.equal(guessFromTitle(name).facts.hdr, "SDR", name);
+  }
+
+  // And a name that does state it is still read, not assumed over.
+  assert.equal(
+    guessFromTitle("X 2020 2160p UHD BluRay REMUX DV HDR HEVC TrueHD 7 1-G")
+      .facts.hdr,
+    "Dolby Vision",
+  );
 });
 
 test("HDR implies 10-bit without the name having to say so", () => {

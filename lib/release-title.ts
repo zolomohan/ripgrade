@@ -207,7 +207,19 @@ function resolutionOf(name: string): {
   return { resolution: "unknown", stated: false };
 }
 
-function hdrOf(name: string): {
+/**
+ * What the name says about dynamic range — and, where it says nothing, what its
+ * source makes near-certain.
+ *
+ * Takes the resolution and release type it has already been read for, for the
+ * fallback at the bottom alone. Everything above it reads the name and only the
+ * name.
+ */
+function hdrOf(
+  name: string,
+  resolution: ScorableFacts["resolution"],
+  releaseType: ReleaseType,
+): {
   hdr: HdrKind;
   dvProfile?: number;
   stated: boolean;
@@ -230,7 +242,26 @@ function hdrOf(name: string): {
     return { hdr: "HDR10+", stated: true };
   }
   if (has(name, "hdr10|hdr|hlg|pq")) return { hdr: "HDR10", stated: true };
-  return { hdr: "SDR", stated: false };
+
+  /*
+   * Nothing stated. Ultra HD Blu-ray mandates an HDR10 base layer, so a 2160p
+   * remux of one is not SDR whatever its name leaves out — and reading the
+   * silence as SDR charged it the whole HDR criterion plus the ten-bit point.
+   * Twenty-six video points, which is the difference between predicting 91 for
+   * a release and scanning it at 100 the moment it lands.
+   *
+   * The same trade `audioOf` makes with "Assumed 5.1": a name that states
+   * nothing gets the reading its source makes near-certain rather than the
+   * worst one available. And `stated` stays false either way — this is an
+   * inference, and `confidence` goes on reporting that the name never said.
+   *
+   * REMUX only, deliberately. Being 2160p says nothing about mastering on its
+   * own: a UHD WEB-DL or a hobby encode at that resolution is genuinely SDR
+   * often enough that assuming otherwise would be inventing points rather than
+   * declining to deduct them.
+   */
+  const uhdDisc = resolution === "2160p" && releaseType === "REMUX";
+  return { hdr: uhdDisc ? "HDR10" : "SDR", stated: false };
 }
 
 /**
@@ -258,6 +289,23 @@ function releaseOf(name: string): { type: ReleaseType; stated: boolean } {
 // --- Audio ------------------------------------------------------------------
 
 /**
+ * What can stand between the words of a format name.
+ *
+ * A format is written every way a scene name is punctuated: "DTS-HD.MA",
+ * "DTS.HD.MA", and — from groups that name their releases in plain words —
+ * "DTS HD MA". These were matched with `-?`, which admitted the hyphen and
+ * nothing else, so a spaced name missed "DTS-HD MA" and fell through the list
+ * to plain lossy "DTS" below it. That is not a near miss: it costs the whole
+ * lossless bonus, and the breakdown then offers the release its own soundtrack
+ * back as points left on the table.
+ *
+ * Optional, because the separator is often absent too ("DTSHD", "TrueHD").
+ * `hasAudio` and `token` still require a real boundary either side of the whole
+ * match, so widening the gap between the words cannot widen what counts as one.
+ */
+const SEP = "[.\\s_-]?";
+
+/**
  * The single best track the name mentions.
  *
  * The rubric already scores only the best track, so there is no point trying to
@@ -266,7 +314,7 @@ function releaseOf(name: string): { type: ReleaseType; stated: boolean } {
  */
 function audioOf(name: string): { audio: AudioTrack[]; stated: boolean } {
   const atmos = has(name, "atmos");
-  const dtsx = has(name, "dts-?x");
+  const dtsx = has(name, `dts${SEP}x`);
 
   const channels = name.match(/(?:^|[.\s_])([1-9])[.\s_]([01])(?=$|[.\s_\-])/);
   const channelCount = channels
@@ -275,15 +323,15 @@ function audioOf(name: string): { audio: AudioTrack[]; stated: boolean } {
 
   const formats: [string, string, boolean][] = [
     // [pattern, label, lossless]
-    ["truehd|true-?hd", "TrueHD", true],
-    ["dts-?hd[.\\s_-]?ma|dtshd[.\\s_-]?ma|dts-?ma", "DTS-HD MA", true],
-    ["dts-?x", "DTS:X", true],
+    [`true${SEP}hd`, "TrueHD", true],
+    [`dts${SEP}hd${SEP}ma|dts${SEP}ma`, "DTS-HD MA", true],
+    [`dts${SEP}x`, "DTS:X", true],
     ["flac", "FLAC", true],
     ["lpcm|pcm", "LPCM", true],
-    ["dts-?hd[.\\s_-]?hra?|dts-?hr", "DTS-HD HRA", false],
-    ["e-?ac-?3|ddp|dd\\+|eac3", "E-AC-3", false],
-    ["dts-?es|dts", "DTS", false],
-    ["ac-?3|dd(?![p+])", "AC-3", false],
+    [`dts${SEP}hd${SEP}hra?|dts${SEP}hr`, "DTS-HD HRA", false],
+    [`e${SEP}ac${SEP}3|ddp|dd\\+|eac3`, "E-AC-3", false],
+    [`dts${SEP}es|dts`, "DTS", false],
+    [`ac${SEP}3|dd(?![p+])`, "AC-3", false],
     ["aac", "AAC", false],
     ["opus", "Opus", false],
     ["mp3", "MP3", false],
@@ -434,8 +482,14 @@ export function guessFromTitle(
   const tags = parseReleaseTitle(name);
 
   const { resolution, stated: resolutionStated } = resolutionOf(name);
-  const { hdr, dvProfile, stated: hdrStated } = hdrOf(name);
+  // Before the HDR read, which falls back on both of them where the name is
+  // silent — see `hdrOf`.
   const { type: releaseType, stated: releaseStated } = releaseOf(name);
+  const { hdr, dvProfile, stated: hdrStated } = hdrOf(
+    name,
+    resolution,
+    releaseType,
+  );
   const { audio, stated: audioStated } = audioOf(name);
 
   // A season pack's size covers every episode in it, so dividing it by one
@@ -447,7 +501,9 @@ export function guessFromTitle(
     hdr,
     dvProfile,
     releaseType,
-    // HDR is 10-bit by definition, so a name that states one states the other.
+    // HDR is 10-bit by definition, so a name that states one states the other —
+    // and a UHD disc is 10-bit by specification, which is what makes the
+    // inferred HDR10 above carry the depth with it rather than only the colour.
     bitDepth: hdr !== "SDR" ? 10 : has(name, "10-?bit") ? 10 : undefined,
     bpp: estimateBpp(resolution, audio, sizeBytes, options.runtimeMinutes),
     audio,

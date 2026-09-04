@@ -946,10 +946,7 @@ test("a disc without Dolby Vision never charges a release for missing it", () =>
   assert.ok(video);
 
   const notes = video.lines.map((line) => line.note).filter(Boolean);
-  assert.deepEqual(notes, [
-    "HDR10 would score (+16)",
-    "10-bit would score (+4)",
-  ]);
+  assert.deepEqual(notes, []);
   assert.ok(!notes.some((note) => /Dolby Vision/.test(note!)));
 });
 
