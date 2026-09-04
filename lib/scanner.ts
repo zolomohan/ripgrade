@@ -6,6 +6,7 @@ import path from "node:path";
 import { findArtwork, type Artwork } from "./artwork";
 import { downloadMissingArtwork } from "./auto-artwork";
 import { db } from "./db";
+import { driveName, volumeOf } from "./drive";
 import { hasJackett } from "./jackett";
 import { notifyJobs } from "./job-events";
 import { startSweep } from "./upgrade-sweep";
@@ -170,6 +171,46 @@ async function whyUnreachable(root: string): Promise<string | null> {
     if (code === "EACCES" || code === "EPERM") return "permission refused";
     return code ? `unreadable (${code})` : "unreadable";
   }
+}
+
+/**
+ * One unreachable root as a sentence about a drive.
+ *
+ * `whyUnreachable` answers in the app's own shorthand, and the pair was
+ * reported as it stood: "/Volumes/Expansion/Movies (not plugged in)". Every
+ * word of that is true and none of it is addressed to a person — a path they
+ * did not type, a reason in brackets, and the one word that would tell them
+ * what to do buried at the end of both. What they have in front of them is a
+ * drive with a name on it, so that is what this says.
+ *
+ * The whole path is still there to be had: it is what the rail shows while the
+ * scan runs, and what the folder list in Settings is made of.
+ */
+function unreachableSentence({
+  root,
+  why,
+}: {
+  root: string;
+  why: string;
+}): string {
+  // A drive is named as itself, because that is what is written on the thing
+  // you plug in. Anything else — a bind mount inside the container, a folder
+  // on the internal disk — is named as a folder, or "movies is not plugged in"
+  // would be said about a directory nobody can plug in or out of.
+  const volume = volumeOf(root);
+  const it = volume ? volume.name : `the folder ${driveName(root)}`;
+  // The same words at the head of a sentence. A drive's name is already
+  // capitalised by whoever formatted it; "the folder" is not.
+  const opens = it[0].toUpperCase() + it.slice(1);
+
+  if (why === "not plugged in")
+    return volume ? `${opens} is not plugged in` : `${opens} is not there`;
+  if (why === "permission refused")
+    return `RipGrade is not allowed to read ${it}`;
+  if (why === "readable but empty")
+    return `${opens} is there, but nothing is on it`;
+  if (why === "not a folder") return `${opens} is not a folder`;
+  return `${opens} could not be read`;
 }
 
 /** How often the watcher below looks, and how long it keeps looking. */
@@ -658,9 +699,9 @@ export function startScan(
       // when you are most likely to be looking for something to fetch. The
       // failure is still reported exactly as loudly afterwards.
       if (walked.length === 0) {
-        const message = `Nothing was scanned — the library is untouched. ${unreachable
-          .map((u) => `${u.root} (${u.why})`)
-          .join(", ")}`;
+        const message = `${unreachable
+          .map(unreachableSentence)
+          .join(" · ")}. Nothing was scanned, and the library is untouched.`;
 
         await runWishlistPass(searchedLater);
 
@@ -693,7 +734,7 @@ export function startScan(
       setState({
         ...current(),
         removed,
-        skipped: unreachable.map((u) => `${u.root} (${u.why})`),
+        skipped: unreachable.map(unreachableSentence),
       });
 
       // One folder of several missing is the same problem as all of them, and

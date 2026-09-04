@@ -4,6 +4,8 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 
+import { volumeOf } from "./drive";
+
 const execFileAsync = promisify(execFile);
 
 /**
@@ -28,15 +30,6 @@ export async function revealInFinder(filePath: string): Promise<void> {
     );
   }
   await execFileAsync("open", ["-R", filePath]);
-}
-
-/**
- * The volume an external drive is mounted under, for a path that lives on one.
- * Null for the internal disk, which is never the thing that went missing.
- */
-function volumeOf(filePath: string): { path: string; name: string } | null {
-  const match = /^\/Volumes\/([^/]+)/.exec(filePath);
-  return match ? { path: match[0], name: match[1] } : null;
 }
 
 /**

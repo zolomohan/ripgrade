@@ -99,10 +99,16 @@ function outcome(scan: ScanState): Result | null {
   // A folder that could not be read is the one outcome worth colouring like a
   // failure even though the scan finished: what it holds was left out of
   // everything below, and silently.
+  //
+  // Each entry is already a sentence about a drive rather than a path with a
+  // reason in brackets — see `unreachableSentence` in lib/scanner.ts, which is
+  // where both this and the failure above are worded.
   if (scan.skipped?.length) {
     return {
       kind: "error",
-      text: `Skipped and left untouched: ${scan.skipped.join(", ")}`,
+      text: `${scan.skipped.join(" · ")}. Everything on ${
+        scan.skipped.length === 1 ? "it" : "them"
+      } was left as it was.`,
     };
   }
 
