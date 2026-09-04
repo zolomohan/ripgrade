@@ -57,8 +57,8 @@
   --bar-glow: color-mix(in srgb, var(--foreground) 32%, transparent);
 
   /*
-   * Frosted surfaces — see `.glass` and `.glass-panel` at the foot of this
-   * file.
+   * The frosted surface, singular now — see the Glacé block at the foot of
+   * this file, which is what reads it.
    *
    * The page's own background and nothing else, held short of opaque. Which is
    * the whole point: over a flat page these are the page, and the surface
@@ -67,21 +67,43 @@
    * announces itself while there is nothing behind it is a grey stripe down the
    * side of the app.
    *
-   * Two weights, because they are held against two different things: the rail
-   * stands over the page, and a dialog stands over the page *and* the veil that
-   * darkens it. The panel is the thinner of the two for exactly that reason —
-   * the veil has already taken half the light out of everything behind it, so
-   * a dialog at the rail's alpha is a flat block with a rumour of the page in
-   * it. It was the more solid of the two on the reasoning that it had more to
-   * see through, which is the right observation and the wrong conclusion: what
-   * more to see through means is less in the way, not more.
+   * One weight, where there were two. A dialog had a thinner one of its own,
+   * because it stands over the page *and* the veil that darkens it, and the
+   * veil has already taken half the light out of everything behind it. That is
+   * still true, and it is no longer a reason for a second token: a dialog is a
+   * Glacé pane now like everything else that floats, and what a pane holds is
+   * the one figure in Settings. Somebody wanting dialogs thinner than menus
+   * would be asking for two glasses, which is the thing this app spent the
+   * migration getting rid of.
    *
-   * Mixed from `--background` rather than written out, so there is one pair of
-   * these and not a pair per colour scheme — the dark block below only has to
-   * change the background they are made of.
+   * Mixed from `--background` rather than written out, so there is one of these
+   * and not one per colour scheme — the dark block below only has to change the
+   * background it is made of.
+   *
+   * How short of opaque the first of them is, though, is not written here at
+   * all. It is the one part of the glass preference that is a colour rather
+   * than a filter, so it is the one part that travels as CSS: the root layout
+   * writes `--glass-opacity` onto <html> from the setting, and the 62% below is
+   * only what a document that has not said stands at. Everything else those
+   * panes are tuned by reaches them as props — see lib/glass.ts.
    */
-  --glass: color-mix(in srgb, var(--background) 85%, transparent);
-  --glass-panel: color-mix(in srgb, var(--background) 78%, transparent);
+  --glass: color-mix(
+    in srgb,
+    var(--background) var(--glass-opacity, 62%),
+    transparent
+  );
+
+  /*
+   * The light that lands on the top edge of a pane and runs down its rim — the
+   * one thing that says a surface has thickness rather than being a hole cut in
+   * the page. Read by the Glacé surfaces at the foot of this file.
+   *
+   * Nearly white here and barely anything in the dark block, which is not an
+   * inconsistency: on a white page the specular is a highlight against a light
+   * ground and has to be brighter than it to be seen at all, and on a black one
+   * the same value at the same strength is a chalk line drawn round the rail.
+   */
+  --glass-specular: rgba(255, 255, 255, 0.9);
 
   /*
    * A panel opening. Out is quicker than in, as everywhere else here: opening
@@ -113,6 +135,8 @@
 
     --glow: rgba(255, 255, 255, 0.07);
     --glow-over: rgba(255, 255, 255, 0.06);
+
+    --glass-specular: rgba(255, 255, 255, 0.14);
 
     /* Here it is light, so it can be one. */
     --bar-glow: color-mix(in srgb, var(--foreground) 70%, transparent);
@@ -1262,6 +1286,115 @@ body {
 }
 
 /*
+ * A tooltip arriving, which is the smallest movement in the app.
+ *
+ * Four pixels and a hair of scale, down from the word it belongs to rather
+ * than up off the page: it is a thing the title is producing, so it should look
+ * like it came out of the title. `rise-in` above is the other direction and
+ * three times the distance, which is right for a panel coming up into place and
+ * far too much for a bubble that appears under your pointer — at 14px it read
+ * as a small window opening rather than as a label being shown.
+ *
+ * Quick, because it is on hover: anything longer than about a tenth of a second
+ * means the sentence is still moving when your eye reaches it, and a tooltip
+ * you have to wait for is one you stop asking for. Out is not animated at all —
+ * it is unmounted, and a label that lingers after the pointer has left is a
+ * label in the way of whatever you moved on to.
+ *
+ * `transform-origin` at the top so the scale grows downward out of the trigger
+ * rather than in from both edges.
+ */
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+
+/*
+ * One word turning into another — see `Flip` in app/controls.tsx.
+ *
+ * A solid lying flat with a word on each face, turned about the axis running
+ * left to right through its middle. The face you were reading tips away from
+ * you and out of sight; the next comes up from the front into the place it
+ * left. Positive `rotateX` is what takes a face away from the viewer, so out
+ * runs 0 → 90 and in runs −90 → 0, and the pair reads as one object rolling in
+ * a single direction rather than two cards being swapped.
+ *
+ * `perspective` on the box and not on the faces, so both turn about the same
+ * vanishing point — which is the difference between a solid and two independent
+ * flaps. Shallow at 200px: a long perspective flattens the turn into a vertical
+ * squash, and a short one throws the far edge so wide that the word smears.
+ *
+ * The outgoing face is taken out of the flow and pinned over the incoming one.
+ * They are of different lengths — Library, Discover, Indexers — and a turn that
+ * also changed the width of the button would drag the search field sideways
+ * mid-word. The button states its own width for that reason; this keeps to it.
+ *
+ * Out is quicker than in and starts at once, so the two overlap in the middle
+ * of the turn rather than queueing: a face arriving after the last one has
+ * wholly gone is a blank, and a blank where a word should be reads as a fault.
+ */
+.flip {
+  position: relative;
+  perspective: 200px;
+}
+
+.flip > * {
+  display: inline-block;
+  backface-visibility: hidden;
+}
+
+.flip .flip-out {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+@keyframes flip-in {
+  from {
+    opacity: 0;
+    transform: rotateX(-90deg);
+  }
+}
+
+@keyframes flip-out {
+  to {
+    opacity: 0;
+    transform: rotateX(90deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .flip .flip-in {
+    animation: flip-in 320ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  }
+
+  .flip .flip-out {
+    animation: flip-out 260ms cubic-bezier(0.4, 0, 0.7, 0.4) forwards;
+  }
+}
+
+/*
+ * Asked for none, and it is none: the word simply changes. The outgoing copy is
+ * still mounted for its 320ms, so it has to be put away rather than left lying
+ * over the new one.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .flip .flip-out {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tip-in {
+    transform-origin: top left;
+    animation: tip-in 120ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+}
+
+/*
  * A morph is a small area moving between two points it is already anchored to,
  * which is gentler than a slide across the viewport — but it is still motion,
  * and asking for less of it should mean none. The pages then cut, which is what
@@ -1302,29 +1435,381 @@ body {
  * call sites drop their `bg-background` all the same; a class that only works
  * because of cascade order is a class the next edit breaks.
  */
-.glass {
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(12px) saturate(180%);
-  backdrop-filter: blur(12px) saturate(180%);
-}
+/*
+ * The other kind of glass, and the reason `.glass` is no longer written here.
+ *
+ * The rail used to be `.glass`: the page's own background held short of opaque
+ * over a blur, which is a frosted pane and nothing more. It is Glacé's now —
+ * see app/sidebar.tsx — and Glacé's surfaces are a different claim. They bend
+ * the backdrop at the rim rather than only softening it, with a specular edge
+ * and a chromatic fringe on it, so what passes behind the rail arrives at the
+ * edge distorted the way it would through a real pane with thickness. That is
+ * the one thing a `backdrop-filter: blur()` cannot do at any radius, and it is
+ * the whole reason for the swap. Everything that floats has followed it since —
+ * every dialog, every menu, every tooltip — so `.glass-panel`, which was the
+ * blur those wore, is gone with `.glass`. The one claim made here against that
+ * was that a sheet standing over a veil has nothing behind it worth refracting;
+ * `Modal` in app/modal.tsx is where it is answered, and the short of it is that
+ * a dialog filters the page, not the veil.
+ *
+ * What is below is not a theme for Glacé so much as a refusal of one. The kit
+ * ships two palettes of its own and picks between them with a `tone` prop,
+ * which would give this app a third opinion about what a border is worth and a
+ * fourth about what a shadow is — and it would pick per element, in JavaScript,
+ * from a scheme that is only ever known to CSS here. So every `--g-*` is bound
+ * to the token this app already answers that question with, and `tone` stops
+ * meaning anything: the surfaces follow `prefers-color-scheme` because
+ * `--background` and `--line` do.
+ *
+ * One `--g-bg` and not two. Glacé thins a surface when refraction is on, so the
+ * bend has more to show through it, which is a sound default and the wrong
+ * shape for a thing with a slider on it: the setting would move one number and
+ * a second would quietly overrule it whenever the lens was on. There is one
+ * opacity now, and it is the one in Settings.
+ *
+ * Written against `[data-tone]` rather than the bare class because that is the
+ * weight the rules being answered carry — Glacé's own `[data-tone="light"]` and
+ * `[data-refract]` are two-selector rules, and a one-class rule here would lose
+ * to them however late it came.
+ */
+.glace-glass[data-tone] {
+  --g-bg: var(--glass);
+  --g-border: var(--line);
+  --g-highlight: var(--glass-specular);
+  --g-text: var(--foreground);
+  /* The rail throws a shadow onto the page, not onto a stage. Glacé's own is
+     a floating card's; a pane fixed against the edge of the window casts the
+     short one. */
+  --g-shadow: 0 0 24px rgba(0, 0, 0, 0.1);
 
-.glass-panel {
-  background: var(--glass-panel);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
+  /* The kit names a system stack, which is the one thing here it has no
+     business having an opinion about: this app sets its own faces on <html>
+     and everything in it inherits them. */
+  font-family: inherit;
 }
 
 /*
- * Without the filter the translucency is just a washed-out surface with the
- * page legible through it, which is worse than no effect at all — so where
- * there is no blur to be had, these are simply the page's own background.
+ * Where the rail's two panes stand, and why that is said here.
+ *
+ * The note above `.glass-panel` cuts both ways: everything in this file is
+ * unlayered and beats Tailwind's utilities, and so is Glacé's sheet. It sets
+ * `position: relative` on every surface, because the specular rim and the sheen
+ * are children laid over the whole of one — so the `fixed` and `sticky` written
+ * in the class lists in app/sidebar.tsx would each lose to it, and lose without
+ * a word: the rail would drop into the flow of the page and shove the library
+ * sideways. Said at this weight, they hold.
  */
-@supports not (
-  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
-) {
-  .glass,
-  .glass-panel {
-    background: var(--background);
+.glace-glass.rail-pane {
+  position: fixed;
+}
+
+.glace-glass.rail-bar {
+  position: sticky;
+}
+
+/*
+ * A Glacé surface is a card, and a card draws all four of its edges. Two of
+ * these are not cards: they are panes held against the side and the top of the
+ * window, and three edges of each lie along the edge of the screen. Drawn
+ * there, they are a hairline ruled around the window rather than around
+ * anything in the app — so each keeps only the edge that faces the page, which
+ * is the one the old `border-r` and `border-b` drew.
+ */
+.glace-glass.rail-pane {
+  border-block-width: 0;
+  border-inline-start-width: 0;
+
+  /*
+   * And no corner light, which is the other half of the same argument.
+   *
+   * Glacé lays a radial highlight over every surface, thrown from its top left
+   * corner across about half of it. On a card that is the light in the room
+   * catching one corner of a small pane, and it is what stops a card reading as
+   * a flat rectangle. This is not a card: it is a column the height of the
+   * window, so the same gradient is a wash covering the brand, the search and
+   * the first four links, fading out somewhere around Stats — a bright patch at
+   * the top of the rail rather than a lit corner, and one that puts the app's
+   * name in the brightest part of it. `--g-bg` alone, and the rim below is left
+   * to say where the glass is.
+   */
+  background: var(--g-bg);
+}
+
+.glace-glass.rail-bar {
+  border-inline-width: 0;
+  border-block-start-width: 0;
+
+  /* And no corner light, for the reason the rail above has none and always the
+     same reason the rail has no sweep: this is the sidebar in its other shape,
+     and "the sidebar never catches the light" is not a rule that should depend
+     on how
+     wide the window is. */
+  background: var(--g-bg);
+}
+
+/* No label to pad around — see `MenuButton` in app/sidebar.tsx. The square it
+   is given by `h-10 w-10` is the whole of the target. */
+.glace-glass.rail-menu {
+  padding: 0;
+}
+
+/*
+ * The sheen, taken away.
+ *
+ * `Glass` and `GlassCard` are told about the setting as a prop and simply do
+ * not draw the streak when it is off — this is for `GlassButton`, which cannot
+ * be. Glacé writes `glace-glass--sheen` into every button's class list
+ * unconditionally and exposes no way to decline it, so the only place to say no
+ * is here. See `GlassButton` in app/glass.tsx.
+ *
+ * The rail's own button carries this whatever the setting says. A rail is the
+ * one surface in the app you are not looking at: it is what you cross on the
+ * way to something, and a highlight that sweeps every time the pointer passes
+ * is a thing at the edge of vision asking to be looked at, several times a
+ * minute, about nothing. See app/sidebar.tsx.
+ */
+.glace-glass.no-sheen .glace-sheen {
+  display: none;
+}
+
+/*
+ * The same switch, for every surface at once, and for the half of the sheen
+ * that is not the sweep.
+ *
+ * Glacé draws two specular flourishes and they are easy to take for one thing,
+ * because they are one thing: light catching the surface. `.glace-sheen` is the
+ * streak that travels across on hover, and the `background` of every pane is a
+ * radial highlight thrown from its top left corner across about half of it —
+ * static, always on, and much the more visible of the two on anything the size
+ * of a dialog. Turning the sweep off and leaving a white glow sitting in the
+ * corner of every modal is answering half the question.
+ *
+ * On the document rather than per component, because it is one setting and
+ * because the corner light is a `background`, which a surface cannot decline
+ * with a prop the way it declines the sheen. `:root[data-sheen="off"]` also
+ * outweighs the `[data-tone]` rules above without having to argue with them.
+ *
+ * The rim survives, and should: the 1px gradient border is what says the pane
+ * has an edge and a thickness. That is structure, not flourish.
+ */
+:root[data-sheen="off"] .glace-glass {
+  background: var(--g-bg);
+}
+
+:root[data-sheen="off"] .glace-sheen {
+  display: none;
+}
+
+/*
+ * And the toasts, which need saying separately because they are not built out
+ * of `.glace-glass` at all.
+ *
+ * Every other surface in the app goes through `Glass`, so the rule above
+ * reaches all of them at once. The toaster is Glacé's own component and draws
+ * its own everything on `[data-glace-toast]` — the corner light is a layer of
+ * that element's `background` rather than of a shared class, and there is no
+ * sheen span to hide because a toast has no hover state to sweep on. So this
+ * is the same switch said again in the toaster's own vocabulary: the tint, and
+ * not the light laid over it.
+ *
+ * The rim on `::before` stays, as it does everywhere else. It is 1px of
+ * gradient border and it is what says the thing has an edge — a toast without
+ * one is a paragraph floating in the corner of the window.
+ */
+:root[data-sheen="off"] [data-glace-toast] {
+  background: var(--glace-bg);
+}
+
+/*
+ * And the trap the sheen brings with it, closed once for the whole app.
+ *
+ * Glacé lifts a sheened surface's children over the streak with
+ * `position: relative; z-index: 1`. The intent is right and the `position` is
+ * the problem: it is unlayered, so it beats Tailwind's `absolute` the way
+ * `position: relative` on the surface itself beats it three times over
+ * elsewhere in this file — and a child that was pinned to a corner drops into
+ * the flow the moment sheen is switched on. The settings preview's own resize
+ * handle is exactly that child, and every menu and dialog in the app is one
+ * `absolute` away from the same.
+ *
+ * Only the three positions a class can ask for. Anything static keeps Glacé's
+ * `relative`, which is what it was for, and loses nothing: the sheen span is
+ * the first child, so DOM order already paints the rest over it and the
+ * z-index is belt to that brace.
+ */
+.glace-glass--sheen > .absolute {
+  position: absolute;
+}
+
+.glace-glass--sheen > .fixed {
+  position: fixed;
+}
+
+.glace-glass--sheen > .sticky {
+  position: sticky;
+}
+
+/*
+ * A toast, which is Glacé's own component and so does not read `--g-bg`.
+ *
+ * Every other pane in the app is a `Glass` and takes its fill from the token
+ * above. The toaster is the kit's own stack, with its own variables under
+ * `[data-glace-toaster]`, and it ships two palettes and picks between them by
+ * theme — the same thing the surfaces do with `tone`, and it gets the same
+ * answer here. One glass in this app, and the opacity slider moves all of it.
+ *
+ * See app/toast.tsx for what is and is not sent to these.
+ */
+[data-glace-toaster][data-theme="light"],
+[data-glace-toaster][data-theme="dark"] {
+  --glace-bg: var(--glass);
+  --glace-border: var(--line);
+  --glace-text: var(--foreground);
+  --glace-muted: color-mix(in srgb, var(--foreground) 60%, transparent);
+  --glace-highlight: var(--glass-specular);
+  --glace-radius: 14px;
+  --glace-btn-bg: var(--foreground);
+  --glace-btn-fg: var(--background);
+  --glace-btn-ghost: var(--surface-strong);
+  --glace-close-bg: var(--surface-strong);
+}
+
+/* And the same for a toast with the lens on, which Glacé likewise thins on its
+   own — one opacity, the one in Settings. */
+[data-glace-toaster][data-theme="light"] [data-glace-toast][data-refract],
+[data-glace-toaster][data-theme="dark"] [data-glace-toast][data-refract] {
+  --glace-bg: var(--glass);
+}
+
+/*
+ * A menu, a tooltip, a receipt — anything that opens off a control and hangs
+ * over the page with nothing between the two.
+ *
+ * These are the best refraction in the app after the rail, and for the same
+ * reason: a dialog filters a page the veil has already dimmed and softened,
+ * and these filter the shelf itself. Nothing here says so, because the surface
+ * already does it — this is only the shadow, which is the one thing a floating
+ * pane cannot inherit from a fixed one. Shorter than a dialog's and longer
+ * than none: a menu is lifted off the page but still attached to the button it
+ * came out of.
+ */
+.glace-glass.overlay-pane {
+  /*
+   * And the positioning, for the third time in this file and the same reason as
+   * the other two: Glacé sets `position: relative` on every surface, unlayered,
+   * so the `absolute` in each of these class lists loses to it. Every one of
+   * these hangs off a control by `top-full` and an edge — a menu that fell back
+   * into the flow would push the bar it belongs to sideways and open below the
+   * page rather than over it.
+   *
+   * Written here rather than nine times because there is nothing per-site about
+   * it: an overlay pane is a thing positioned against its trigger, and that is
+   * what the class means.
+   */
+  position: absolute;
+
+  --g-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+/*
+ * A dialog, which is a Glacé pane like the rail but standing much further off
+ * the page — see `Modal` in app/modal.tsx.
+ *
+ * Only the shadow. Everything else a dialog needs, the surface already draws;
+ * this is the one value tuned for a pane fixed to the edge of the window and
+ * wrong for one floating in the middle of it. `--g-shadow` above is the rail's:
+ * a short, even glow, because a rail casts onto the page it is joined to. A
+ * dialog is lifted clear of the page and over a veil, and what says so is a
+ * long shadow thrown downward — which is what the `shadow-2xl` every caller
+ * used to pass was doing, and what it can no longer do now that the surface
+ * writes its own `box-shadow`.
+ */
+.glace-glass.modal-pane {
+  --g-shadow: 0 24px 60px rgba(0, 0, 0, 0.34), 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+/*
+ * The pane in the Settings preview, which you can pick up and drag about its
+ * stage — see `Preview` in app/settings/glass-tuning.tsx.
+ *
+ * Here for the same reason `.rail-pane` is: Glacé sets `position: relative` on
+ * every surface, unlayered, so an `absolute` in the class list would lose to it
+ * and the pane would sit in the flow of the stage refusing to be moved. Said at
+ * this weight, it holds.
+ */
+.glace-glass.glass-preview {
+  position: absolute;
+}
+
+/*
+ * What the glass preview in Settings stands on — see `Preview` in
+ * app/settings/glass-tuning.tsx.
+ *
+ * A pane of glass over a flat page is invisible, and deliberately so: that is
+ * the entire argument of `--glass` at the head of this file. Which makes a
+ * preview on the settings page a problem, because the settings page is a flat
+ * page — six sliders moving nothing at all. So this is a backdrop built to be
+ * looked through, one layer per thing there is a slider for.
+ *
+ * The grid is the important one, and it is why there is a grid at all rather
+ * than a photograph. Refraction is a displacement, and a displacement is only
+ * ever visible on something whose shape you already know: a poster bent at the
+ * rim looks like a poster, and a straight line bent at the rim looks bent. The
+ * lines are a hairline on a 16px pitch so that a 5% rim on a small pane still
+ * has three or four of them crossing it.
+ *
+ * Then colour, in blocks large enough to survive a heavy blur, because
+ * saturation has nothing to act on in a greyscale app and this stage has to
+ * stand in for the shelf of artwork the rail actually passes over. Fixed hues
+ * and not tokens: these are the posters, not the interface, and they should
+ * not restate the page's own palette back at it.
+ *
+ * The whole thing is dimmed in the dark scheme rather than recoloured. What
+ * changes between the two is how much light is behind the glass, which is the
+ * real difference between a rail over a bright shelf and a rail over a dim
+ * one — and the point of the preview is that it is the same material either
+ * way.
+ */
+.glass-stage {
+  --stage-rule: rgba(0, 0, 0, 0.16);
+  background-color: #f4f4f7;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      var(--stage-rule) 0 1px,
+      transparent 1px 16px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      var(--stage-rule) 0 1px,
+      transparent 1px 16px
+    ),
+    radial-gradient(
+      58% 80% at 12% 18%,
+      rgba(240, 50, 110, 0.62),
+      transparent 62%
+    ),
+    radial-gradient(
+      52% 74% at 86% 24%,
+      rgba(242, 165, 22, 0.62),
+      transparent 60%
+    ),
+    radial-gradient(
+      64% 86% at 74% 88%,
+      rgba(29, 126, 240, 0.62),
+      transparent 62%
+    ),
+    radial-gradient(
+      56% 70% at 26% 92%,
+      rgba(23, 184, 146, 0.62),
+      transparent 60%
+    );
+}
+
+@media (prefers-color-scheme: dark) {
+  .glass-stage {
+    --stage-rule: rgba(255, 255, 255, 0.18);
+    background-color: #0e0e12;
   }
 }
 

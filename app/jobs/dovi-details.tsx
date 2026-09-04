@@ -52,7 +52,7 @@ export function DoviDetails({
       open={open}
       onClose={onClose}
       label={`${task.title} — what converting it would do`}
-      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
+      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto p-6"
     >
       <>
         {/* The same head the track picker wears, and for the same reason: both

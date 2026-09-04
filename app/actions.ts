@@ -7,6 +7,15 @@ import path from "node:path";
 import { listDirectory, type DirListing } from "@/lib/browse";
 import { getSetting, setSetting } from "@/lib/db";
 import {
+  GLASS_DEFAULTS,
+  GLASS_KEY,
+  parseGlass,
+  serialiseGlass,
+  withGlass,
+  type GlassPoster,
+  type GlassTuning,
+} from "@/lib/glass";
+import {
   MAX_UPLOAD_BYTES,
   recordArtworkSource,
   reindexDir,
@@ -120,7 +129,7 @@ import {
   getLibraryRoots,
   removeLibraryRoot,
 } from "@/lib/roots";
-import { revealInFinder } from "@/lib/system";
+import { missingFileReason, revealInFinder } from "@/lib/system";
 import { setExtendedCut } from "@/lib/triage";
 import {
   cancelThumbRebuild,
@@ -180,6 +189,7 @@ import {
   clearTmdbToken,
   getMovie as getTmdbMovie,
   getTmdbToken,
+  getTrendingMovies,
   getTvImages,
   getTvShow,
   hasCredentials,
@@ -418,7 +428,7 @@ export async function reprobeMovie(
   // Asked here rather than left to `stat` inside the probe, which would answer
   // an unplugged drive with a path and an errno.
   if (!filePresent(moviePath)) {
-    return { ok: false, error: "The file is not on the drive right now." };
+    return { ok: false, error: missingFileReason(moviePath) };
   }
 
   try {
@@ -1379,6 +1389,150 @@ export async function setListLayout(next: Layout): Promise<void> {
 }
 
 /**
+ * What glass looks like, for every pane in the app at once.
+ *
+ * Read in the root layout rather than by the surfaces themselves — they are
+ * client components scattered down the tree, and a preference each of them
+ * fetched for itself is one round trip per pane and a first paint in the
+ * default look. One read at the top, handed down through `GlassProvider`, and
+ * the rail is the right glass in the frame it first appears in.
+ *
+ * See lib/glass.ts, which owns the shape and the ranges, and app/glass.tsx,
+ * which turns what comes back into Glacé's props.
+ */
+export async function getGlassTuning(): Promise<GlassTuning> {
+  return parseGlass(getSetting(GLASS_KEY));
+}
+
+/**
+ * One knob, against whatever the other six are set to.
+ *
+ * A slider knows its own number and nothing about the rest, so it sends the
+ * one field and this merges it — clamped by `withGlass` on the way in, because
+ * a range is enforced where the value is stored and not where it is dragged.
+ *
+ * `refresh()` because the panes are drawn from the layout, and the layout is
+ * the thing that has to be re-read: the setting redraws the rail standing
+ * beside the slider that changed it.
+ */
+export async function setGlassTuning(
+  next: Partial<GlassTuning>,
+): Promise<void> {
+  setSetting(
+    GLASS_KEY,
+    serialiseGlass(withGlass(parseGlass(getSetting(GLASS_KEY)), next)),
+  );
+  refresh();
+}
+
+/** Back to the look the app ships with — see `GLASS_DEFAULTS`. */
+export async function resetGlassTuning(): Promise<void> {
+  setSetting(GLASS_KEY, serialiseGlass(GLASS_DEFAULTS));
+  refresh();
+}
+
+/**
+ * How many tiles it takes to cover the stage.
+ *
+ * Eight columns at the widest and a poster is half as wide as it is tall, so
+ * six rows is more than the stage is ever tall enough to show — which is the
+ * point. The shelf is a backdrop, and one that stops two thirds of the way
+ * down is a backdrop with a hole in it.
+ */
+const SHELF = 48;
+
+/**
+ * The week's trending posters, fetched once and kept.
+ *
+ * The settings page re-renders on every slider you let go of, and each render
+ * asks for the shelf again — so without this, dragging one knob end to end is
+ * a TMDb request per pause. What is behind the glass does not change while you
+ * are looking through it, and a week's trending does not change in an hour.
+ *
+ * Only a shelf that came back is kept. An unconfigured TMDb is not cached at
+ * all, or connecting it would leave the preview standing on the old empty
+ * answer for the rest of the afternoon, and neither is a failed fetch.
+ */
+const SHELF_TTL_MS = 60 * 60_000;
+let trending: { at: number; posters: GlassPoster[] } | undefined;
+
+async function trendingPosters(want: number): Promise<GlassPoster[]> {
+  if (trending && Date.now() - trending.at < SHELF_TTL_MS) {
+    return trending.posters.slice(0, want);
+  }
+  if (!hasCredentials()) return [];
+
+  const posters: GlassPoster[] = [];
+  try {
+    // A page is twenty films, which is not a shelf. Three of them is, and the
+    // loop stops early rather than asking for a page it has no room for.
+    for (let page = 1; page <= 3 && posters.length < SHELF; page++) {
+      const { results } = await getTrendingMovies(page);
+      if (results.length === 0) break;
+      for (const film of results) {
+        if (film.poster_path) posters.push({ posterRemote: film.poster_path });
+      }
+    }
+  } catch {
+    // Decoration. A shelf that could not be fetched is a preview with fewer
+    // posters on it, not an error worth putting on the settings page.
+    return posters;
+  }
+
+  if (posters.length > 0) trending = { at: Date.now(), posters };
+  return posters.slice(0, want);
+}
+
+/**
+ * A shelf of posters for the glass preview to stand on — yours first.
+ *
+ * The preview used to stand on a stage of ruled lines and coloured blobs, and
+ * the lines were the argument for it: a displacement is only visible on
+ * something whose shape you already know. But a shelf of posters is a grid of
+ * rectangles with gaps between them, so it has straight lines of its own — and
+ * it is the actual thing the rail passes over. A preview over invented
+ * artwork is a preview of a situation that never happens.
+ *
+ * Straight from `artwork`, which is where every image this app has found is
+ * indexed, rather than through a films query: the preview wants pictures and
+ * nothing else about them — no title, no path, nothing to click.
+ *
+ * Ordered rather than sampled, and that is the whole reason it is not random.
+ * The settings page re-renders on every slider you let go of, and a shelf that
+ * reshuffled each time would be the one thing on screen moving for a reason
+ * that has nothing to do with the glass.
+ *
+ * A library too small to cover the stage is topped up from TMDb's trending —
+ * still posters, still the artwork this app deals in, and the alternative is a
+ * preview whose bottom half is bare page. What comes back is not stored: these
+ * are not films you have, and nothing but this shelf ever asks for them.
+ *
+ * A handful of posters and no TMDb is the last case, and there the shelf is
+ * laid out again from the start until it is covered. Eight columns and any
+ * small number of posters do not divide, so the repeat lands somewhere new on
+ * every row rather than ruling a column of the same picture down the stage.
+ */
+export async function getGlassPosters(): Promise<GlassPoster[]> {
+  const mine = db
+    .prepare(
+      `SELECT poster, poster_src AS posterRemote, found_at AS artAt
+         FROM artwork
+        WHERE poster IS NOT NULL OR poster_src IS NOT NULL
+        ORDER BY found_at DESC, dir
+        LIMIT ?`,
+    )
+    .all(SHELF) as GlassPoster[];
+
+  if (mine.length >= SHELF) return mine;
+
+  const shelf = [...mine, ...(await trendingPosters(SHELF - mine.length))];
+  if (shelf.length === 0) return shelf;
+
+  for (let at = 0; shelf.length < SHELF; at++) shelf.push(shelf[at]);
+  return shelf;
+}
+
+/**
  * Rebuilds the Profile 7 file from the layer a conversion kept aside.
  *
  * Minutes of disk and a job of its own, unlike `restoreOriginal` — that one is
@@ -1788,16 +1942,20 @@ export async function reveal(
   moviePath: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!knownMoviePath(moviePath)) {
-    return { ok: false, error: `Unknown file: ${moviePath}` };
+    return { ok: false, error: "That file is not in the library." };
   }
+  // Asked here rather than left to `open`, which answers an unplugged drive
+  // with its own command line and the whole path — a paragraph of shell in a
+  // toast, when the sentence the person needs is which drive to plug in.
+  if (!filePresent(moviePath)) {
+    return { ok: false, error: missingFileReason(moviePath) };
+  }
+
   try {
     await revealInFinder(moviePath);
     return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+  } catch {
+    return { ok: false, error: "Finder would not open that file." };
   }
 }
 

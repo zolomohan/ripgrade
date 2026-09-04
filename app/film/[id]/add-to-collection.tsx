@@ -12,6 +12,7 @@ import {
 import { NameDialog } from "@/app/collections/name-dialog";
 import { Spinner } from "@/app/spinner";
 import { HERO_BUTTON } from "./hero-button";
+import { Glass } from "@/app/glass";
 
 /**
  * Filing a film into a set of your own, from the film.
@@ -181,7 +182,10 @@ export function AddToCollection({ film }: { film: CollectionAdd }) {
         </button>
 
         {open && (
-          <div className="row-enter absolute top-full right-0 z-30 mt-2 max-h-80 w-60 overflow-y-auto glass-panel rounded-card border border-line py-1 shadow-2xl">
+          <Glass
+            radius={14}
+            className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 max-h-80 w-60 overflow-y-auto py-1"
+          >
             {sets === null ? (
               <p className="flex items-center gap-2 px-3 py-2 text-sm opacity-50">
                 <Spinner />
@@ -266,7 +270,7 @@ export function AddToCollection({ film }: { film: CollectionAdd }) {
                 )}
               </>
             )}
-          </div>
+          </Glass>
         )}
       </div>
 

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import type { CSSProperties } from "react";
 import { connection } from "next/server";
 import {
   Inter,
@@ -7,6 +8,15 @@ import {
   Jim_Nightshade,
   Orbitron,
 } from "next/font/google";
+/*
+ * Glacé's own sheet, ahead of ours so ours has the last word.
+ *
+ * It ships unlayered plain CSS — `.glace-glass` and the rest — and so does the
+ * block at the foot of globals.css that tells those surfaces which colours and
+ * which face this app uses. Two unlayered rules of equal weight are settled by
+ * order, and this is the order.
+ */
+import "glaceui/styles.css";
 import "./globals.css";
 import { getStripJob } from "@/lib/audio-strip";
 import { getConvertJob } from "@/lib/convert";
@@ -16,7 +26,9 @@ import { hasQb } from "@/lib/qbittorrent";
 import { getScanState } from "@/lib/scanner";
 import { getThumbJob } from "@/lib/thumbs";
 import { getSweepJob } from "@/lib/upgrade-sweep";
+import { getGlassTuning } from "./actions";
 import { CapabilitiesProvider } from "./capabilities";
+import { GlassProvider } from "./glass";
 import { JobsProvider } from "./jobs-provider";
 import { ScanProvider } from "./scan-provider";
 import { Glow } from "./glow";
@@ -25,6 +37,7 @@ import { SearchProvider } from "./search/dialog";
 import { ServiceWorker } from "./service-worker";
 import { Sidebar } from "./sidebar";
 import { Splash } from "./splash";
+import { Toasts } from "./toast";
 
 // Inter for the interface: it holds up at 11px, which this app leans on, and
 // its tabular figures keep the score columns from jittering.
@@ -121,6 +134,15 @@ export default async function RootLayout({
    */
   await connection();
 
+  /*
+   * How glass is drawn, read here because every pane in the app is drawn from
+   * here down and none of them should be asking separately. Two things come
+   * out of it: the props Glacé takes, handed to the client through
+   * `GlassProvider`, and the one part of it that is a colour rather than a
+   * filter, written onto <html> below as a custom property.
+   */
+  const glass = await getGlassTuning();
+
   // Seeded here so a reload mid-job shows progress immediately, before the
   // job stream has connected.
   const jobs = {
@@ -139,6 +161,24 @@ export default async function RootLayout({
       // the load itself: every list rendered under the splash reads it, and
       // `SplashDone` clears it once the splash is gone. See globals.css.
       data-splash=""
+      /*
+       * The one part of the glass preference that is a colour and not a filter,
+       * so it travels as CSS rather than as a prop: `--glass` in globals.css is
+       * mixed from the page background at this percentage, and every Glacé
+       * surface takes its fill from it. Set on the document because it is one
+       * value for the whole app, and set here rather than in the provider so it
+       * is already right in the first frame — a pane that arrives opaque and
+       * clears once the client has mounted is a pane you watch load.
+       */
+      style={{ "--glass-opacity": `${glass.opacity}%` } as CSSProperties}
+      /*
+       * And the sheen, as an attribute rather than a property, because what
+       * it switches is a `background` and a `display` rather than a value. Both
+       * halves of it — the streak that sweeps on hover and the light sitting in
+       * every pane's top left corner — are off together or on together, which
+       * is how anyone looking at them reads them. See globals.css.
+       */
+      data-sheen={glass.sheen ? "on" : "off"}
       className={`${inter.variable} ${display.variable} ${mono.variable} ${logo.variable} ${score.variable} h-full antialiased`}
     >
       <body className="min-h-full">
@@ -146,13 +186,19 @@ export default async function RootLayout({
         <ServiceWorker />
         <RememberListing />
         <Glow />
-        <CapabilitiesProvider qb={hasQb()}>
-          <JobsProvider initial={jobs}>
-            <ScanProvider>
-              {/* Around both the rail and the page, because the rail's own
+        <GlassProvider tuning={glass}>
+          <CapabilitiesProvider qb={hasQb()}>
+            <JobsProvider initial={jobs}>
+              <ScanProvider>
+                {/* Around both the rail and the page, because the rail's own
                   search button opens the window that hangs over the page. */}
-              <SearchProvider>
-                {/* One column, exactly the height of the window, holding the
+                {/* Inside the glass provider, because a toast is a pane like
+                  the rest and is tuned by the same setting; outside the search
+                  and the page, because what it reports is not about either. */}
+                <Toasts />
+
+                <SearchProvider>
+                  {/* One column, exactly the height of the window, holding the
                     rail and the page both.
 
                     It is here so a page can simply say `flex-1` and be as tall
@@ -165,9 +211,9 @@ export default async function RootLayout({
                     every list page scrolled a header's worth on a phone with
                     nothing below the fold. Claimed once, above the header, and
                     the arithmetic comes out. */}
-                <div className="flex min-h-dvh flex-col">
-                  <Sidebar />
-                  {/* Clears the rail at the width the rail is standing there.
+                  <div className="flex min-h-dvh flex-col">
+                    <Sidebar />
+                    {/* Clears the rail at the width the rail is standing there.
                       Below it the rail is a drawer, fixed and off the side of
                       the screen, taking up no room to be cleared — what the
                       content follows down there is the bar the drawer hides
@@ -183,14 +229,15 @@ export default async function RootLayout({
                       `clip` rather than `hidden`: hidden makes this a scroll
                       container, which would break any sticky heading inside it,
                       and clip does not. */}
-                  <div className="flex flex-1 flex-col overflow-x-clip md:pl-56">
-                    {children}
+                    <div className="flex flex-1 flex-col overflow-x-clip md:pl-56">
+                      {children}
+                    </div>
                   </div>
-                </div>
-              </SearchProvider>
-            </ScanProvider>
-          </JobsProvider>
-        </CapabilitiesProvider>
+                </SearchProvider>
+              </ScanProvider>
+            </JobsProvider>
+          </CapabilitiesProvider>
+        </GlassProvider>
       </body>
     </html>
   );

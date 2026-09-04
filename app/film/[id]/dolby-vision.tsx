@@ -246,7 +246,7 @@ function RecipesModal({
       open={open}
       onClose={onClose}
       label={title}
-      panelClassName="flex max-h-[min(85vh,46rem)] w-full max-w-2xl flex-col overflow-hidden glass-panel rounded-card border border-line shadow-2xl"
+      panelClassName="flex max-h-[min(85vh,46rem)] w-full max-w-2xl flex-col overflow-hidden"
     >
       <>
         <header className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6 pb-4">

@@ -184,7 +184,7 @@ export function ProcessDetails({
       label={label ?? `${shown.title} — progress`}
       // Capped at the viewport, because the log below can be as tall as it
       // likes and a dialog taller than the screen has no way out of itself.
-      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 glass-panel rounded-card border border-line p-6 shadow-2xl"
+      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 p-6"
     >
       <>
         {/* The name and the way out, and nothing else. The figure used to sit

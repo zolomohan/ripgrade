@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+
+import { Glass } from "./glass";
 
 /**
  * The pieces the library bar is built from, shared with the show shelf.
@@ -348,6 +350,64 @@ export const ICONS = {
  * Escape to close — so the row stays a row of buttons rather than a mix of
  * native selects and a panel that pushed the list down the page.
  */
+/**
+ * A word replaced by turning it out of sight, rather than by being swapped.
+ *
+ * The search scope is the case this exists for. Tab cycles it while you are
+ * typing — see `SearchView` — so the label under your eye changes without
+ * anything being clicked, and a straight swap at that distance from the cursor
+ * is a flicker you notice and cannot account for. Something has to say which
+ * way the change went.
+ *
+ * So the two words are two faces of a solid turning on its long axis: the one
+ * you were reading tips away from you and down, and the next comes up into its
+ * place from the front. `perspective` is what makes that a rotation rather than
+ * a vertical squash — without it the faces scale and the whole thing reads as a
+ * blind being drawn. See `.flip` in globals.css.
+ *
+ * Both faces are on screen together for the length of the turn, which is what
+ * the outgoing copy is for. It is `aria-hidden` and out of the flow: what a
+ * reader should hear is the value, once, not the value it stopped being.
+ */
+function Flip({ children }: { children: string }) {
+  const [shown, setShown] = useState(children);
+  const [gone, setGone] = useState<string | null>(null);
+  /* Bumped on every change, and used as a key on both faces. Two presses of
+     Tab inside one turn are two turns, and without this the second would find
+     the elements already mid-animation and let them finish the first. */
+  const [turn, setTurn] = useState(0);
+
+  if (shown !== children) {
+    setGone(shown);
+    setShown(children);
+    setTurn((was) => was + 1);
+  }
+
+  useEffect(() => {
+    if (gone === null) return;
+    // The length of `flip-out`, after which there is nothing left to see and
+    // the copy is only an element in the way.
+    const timer = setTimeout(() => setGone(null), 320);
+    return () => clearTimeout(timer);
+  }, [gone, turn]);
+
+  return (
+    <span className="flip hidden sm:inline-block">
+      {/* Not on the first render: a value that turns into place as the page
+          arrives is a page that looks like it changed its mind. */}
+      <span key={turn} className={turn === 0 ? undefined : "flip-in"}>
+        {shown}
+      </span>
+
+      {gone !== null && (
+        <span key={`${turn}-gone`} aria-hidden className="flip-out">
+          {gone}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function Popover({
   icon,
   label,
@@ -429,7 +489,7 @@ export function Popover({
         >
           <path d={icon} />
         </svg>
-        {value && <span className="hidden sm:inline">{value}</span>}
+        {value && <Flip>{value}</Flip>}
         {caret && (
           <svg
             viewBox="0 0 24 24"
@@ -460,14 +520,29 @@ export function Popover({
         )}
       </button>
 
+      {/*
+       * The menu, and the best glass in the app after the rail.
+       *
+       * A dialog has a veil under it that has already taken most of the light
+       * out of the page; this has nothing between it and the shelf. It opens
+       * directly over posters, at the top of a listing, which is exactly the
+       * case `--glass` was written for — so the rim has real edges to bend and
+       * the saturation has real colour to lift. Whatever the Glass setting is
+       * doing, this is where you see it doing it.
+       *
+       * `overlay` is only the shadow: a menu hangs off a control rather than
+       * floating clear of the page, so it throws a shorter one than a dialog.
+       * See globals.css.
+       */}
       {open && (
-        <div
-          className={`row-enter absolute top-full ${
+        <Glass
+          radius={14}
+          className={`row-enter overlay-pane absolute top-full ${
             align === "left" ? "left-0" : "right-0"
-          } z-30 mt-2 ${width} overflow-hidden glass-panel rounded-card border border-line shadow-2xl`}
+          } z-30 mt-2 ${width} overflow-hidden`}
         >
           {children(() => setOpen(false))}
-        </div>
+        </Glass>
       )}
     </div>
   );
@@ -506,6 +581,81 @@ export function MenuItem({
         </svg>
       )}
     </button>
+  );
+}
+
+/**
+ * A word that explains itself when you point at it.
+ *
+ * `HelpTip` below is the other half of this pair and the older one: a `?` you
+ * click, for a control whose name cannot carry the explanation. This is for
+ * the opposite case — where there is already a title standing over the thing,
+ * and the explanation was a paragraph under it.
+ *
+ * Settings had eleven of those paragraphs, plus one on most of the rows
+ * inside, and the page had turned into an essay you scrolled past to reach a
+ * folder picker. The prose was not wrong; it was just always on, and a
+ * sentence you have read nine times is furniture. Under the title it is there
+ * the once you need it and gone the rest of the time.
+ *
+ * Dotted rather than solid, because a solid underline in this app is a link
+ * and this goes nowhere. It comes down out of the title rather than appearing —
+ * see `.tip-in` in globals.css for how far and how fast, and why nothing
+ * animates on the way out.
+ *
+ * Hover, and focus, and deliberately not tap. On a touchscreen a `pointerenter`
+ * arrives with the tap that is opening the panel, so a tooltip triggered by it
+ * would flash up and be swept away by the same finger — worse than not being
+ * there. It is a tab stop of its own so that a keyboard can reach what a
+ * pointer can, and `aria-describedby` is what ties the two together for a
+ * reader that announces neither.
+ */
+export function Explained({
+  hint,
+  children,
+  className = "",
+}: {
+  hint: string;
+  children: React.ReactNode;
+  /** Where the bubble hangs, for the rows that would push it off the edge. */
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+
+  return (
+    <span className="relative inline-flex">
+      <span
+        tabIndex={0}
+        aria-describedby={open ? id : undefined}
+        onPointerEnter={(event) => {
+          if (event.pointerType === "mouse") setOpen(true);
+        }}
+        onPointerLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        // The gesture for leaving anything that has appeared over the page,
+        // the same as every dialog here.
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setOpen(false);
+        }}
+        className="cursor-help underline decoration-line-strong decoration-dotted underline-offset-4"
+      >
+        {children}
+      </span>
+
+      {open && (
+        <Glass
+          as="span"
+          id={id}
+          role="tooltip"
+          radius={8}
+          className={`tip-in overlay-pane absolute top-full left-0 z-40 mt-2 block w-72 p-2.5 text-[11px] leading-relaxed font-normal ${className}`}
+        >
+          {hint}
+        </Glass>
+      )}
+    </span>
   );
 }
 
@@ -550,12 +700,14 @@ export function HelpTip({ text }: { text: string }) {
       </button>
 
       {open && (
-        <span
+        <Glass
+          as="span"
           role="tooltip"
-          className="absolute top-full right-0 z-30 mt-1.5 w-60 glass-panel rounded-control border border-line p-2.5 text-[11px] leading-relaxed shadow-lg"
+          radius={8}
+          className="tip-in overlay-pane absolute top-full right-0 z-30 mt-1.5 block w-60 p-2.5 text-[11px] leading-relaxed"
         >
           {text}
-        </span>
+        </Glass>
       )}
     </span>
   );

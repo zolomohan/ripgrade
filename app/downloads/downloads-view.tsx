@@ -32,6 +32,7 @@ import { stagger } from "@/app/stagger";
 import { RemoveButton, TILE_MARK } from "@/app/tile-button";
 import type { DownloadEntry } from "@/lib/qbittorrent";
 import { movieId, posterName } from "@/lib/routes";
+import { Glass } from "@/app/glass";
 
 /**
  * Everything ever handed to qBittorrent, in two tenses.
@@ -530,7 +531,10 @@ function RowMenu({
       </button>
 
       {open && (
-        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-56 overflow-hidden glass-panel rounded-card border border-line py-1 shadow-2xl">
+        <Glass
+          radius={14}
+          className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-56 overflow-hidden py-1"
+        >
           {items.map((item) => (
             <button
               key={item.label}
@@ -544,7 +548,7 @@ function RowMenu({
               {item.label}
             </button>
           ))}
-        </div>
+        </Glass>
       )}
     </div>
   );
@@ -1110,7 +1114,7 @@ function DownloadDetails({
       onClose={onClose}
       dismissible={!asking}
       label={`${film} — download details`}
-      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
+      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto p-6"
     >
       <>
         {/* The head the jobs page's dialogs wear, because this is the same kind

@@ -281,7 +281,8 @@ export function AddFilms({
       /* A stated height rather than one that follows the contents: the answer
          runs from nothing to two dozen tiles, and a dialog that resizes with it
          moves the field you are typing in. What arrives inside it scrolls. */
-      panelClassName="mt-[6vh] flex h-[min(78vh,44rem)] w-full max-w-4xl flex-col self-start overflow-hidden glass-panel rounded-panel border border-line p-4 shadow-2xl"
+      radius="panel"
+      panelClassName="mt-[6vh] flex h-[min(78vh,44rem)] w-full max-w-4xl flex-col self-start overflow-hidden p-4"
     >
       <>
         <div className="flex shrink-0 items-center gap-3">

@@ -3,6 +3,15 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { Glass } from "./glass";
+
+/**
+ * The two corners a dialog turns, as the tokens they are in globals.css:
+ * `--radius-card` for the fifteen that are cards, `--radius-panel` for the two
+ * that are a window onto a list — the search and the collection picker.
+ */
+const CORNER = { card: 14, panel: 36 } as const;
+
 /**
  * The shell every dialog in the app is drawn in.
  *
@@ -117,6 +126,7 @@ export function Modal({
   onClose,
   label,
   panelClassName,
+  radius = "card",
   dismissible = true,
   children,
 }: {
@@ -124,8 +134,23 @@ export function Modal({
   onClose: () => void;
   /** Names the dialog for a screen reader — it has no visible title to borrow. */
   label: string;
-  /** Size and shape; the frame, shadow and animation come from here. */
+  /**
+   * Size and layout, and the animation. Not the frame any more: the border, the
+   * fill, the shadow and the corner all come from the glass below, so a caller
+   * passing `border border-line` or `shadow-2xl` is writing something the pane
+   * already draws — and, in the border's case, something it will lose to.
+   */
   panelClassName?: string;
+  /**
+   * Which of the app's two dialog corners this one turns.
+   *
+   * A number, in the end, because Glacé writes `border-radius` as an inline
+   * style — it has to, since the displacement map is cut to the pane's exact
+   * rounded shape — and an inline style beats the `rounded-card` class every
+   * caller used to pass. So the two radii this app has for dialogs are named
+   * here instead, and stay the tokens they were.
+   */
+  radius?: keyof typeof CORNER;
   /** False while something is running that a stray click must not interrupt. */
   dismissible?: boolean;
   children: React.ReactNode;
@@ -182,6 +207,15 @@ export function Modal({
    * it diffuses like every other pane here. Hence the empty div: the sheet is
    * a layer of its own now, and this outer box is only the frame that centres
    * the dialog and catches the click outside it.
+   *
+   * That arrangement is also what makes the panel worth building out of Glacé
+   * rather than a blur. It was written here for a while that a dialog standing
+   * over a veil has nothing behind it worth refracting, and the paragraph above
+   * is the refutation: what a panel filters is the page, not the veil's fill.
+   * It is a low-contrast backdrop — the veil has already taken 38% of the light
+   * out and softened what is left — so the rim reads quietly here where it
+   * reads plainly on the rail. Quietly is not nothing, and it is the same
+   * material either way, which is the point of there being one setting for it.
    */
   return createPortal(
     <div
@@ -193,17 +227,19 @@ export function Modal({
         className={`modal-veil absolute inset-0 ${leaving ? "is-leaving" : ""}`}
       />
 
-      <div
+      <Glass
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        onClick={(event) => event.stopPropagation()}
-        // `relative` only so it is painted after the sheet it stands on: both
-        // are positioned, so the order is the one they are written in.
-        className={`modal-panel relative ${leaving ? "is-leaving" : ""} ${panelClassName ?? ""}`}
+        radius={CORNER[radius]}
+        onClick={(event: React.MouseEvent) => event.stopPropagation()}
+        // No `relative` any more, and none needed: every Glacé surface is
+        // positioned, which is what puts this after the sheet it stands on —
+        // both are positioned, so the order is the one they are written in.
+        className={`modal-pane modal-panel ${leaving ? "is-leaving" : ""} ${panelClassName ?? ""}`}
       >
         {children}
-      </div>
+      </Glass>
     </div>,
     target,
   );

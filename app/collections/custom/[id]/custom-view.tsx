@@ -34,6 +34,7 @@ import {
   customCollectionKey,
 } from "@/lib/routes";
 import { AddFilms } from "./add-films";
+import { Glass } from "@/app/glass";
 
 /**
  * The set's own actions, folded behind one ellipsis.
@@ -52,7 +53,8 @@ import { AddFilms } from "./add-films";
  * in enough of what a menu is (where it opens, what its trigger looks like,
  * whether an item can be dangerous) that the shared thing would be a component
  * with an option per caller. What they actually share is the panel, and that is
- * already shared: `glass-panel` and the classes beside it below.
+ * already shared: a Glacé `Glass` wearing `overlay-pane`, the same surface
+ * every menu and tooltip in the app opens as.
  */
 function SetMenu({
   onRename,
@@ -108,7 +110,10 @@ function SetMenu({
       </button>
 
       {open && (
-        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-44 overflow-hidden glass-panel rounded-card border border-line py-1 shadow-2xl">
+        <Glass
+          radius={14}
+          className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-44 overflow-hidden py-1"
+        >
           {items.map((item) => (
             <button
               key={item.label}
@@ -129,7 +134,7 @@ function SetMenu({
               {item.label}
             </button>
           ))}
-        </div>
+        </Glass>
       )}
     </div>
   );

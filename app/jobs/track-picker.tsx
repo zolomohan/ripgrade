@@ -428,7 +428,7 @@ export function TrackPicker({
       // The cap is set by the screen that needs the most — the review, whose
       // two columns of cards are what this has to hold without scrolling on an
       // ordinary file.
-      panelClassName="flex h-[min(90dvh,54rem)] w-full max-w-4xl flex-col gap-3 glass-panel rounded-card border border-line p-6 shadow-2xl"
+      panelClassName="flex h-[min(90dvh,54rem)] w-full max-w-4xl flex-col gap-3 p-6"
     >
       {/* Which file this is about, in the shape every dialog on this page uses
           — see app/jobs/task-head.tsx, which is where the poster, the title and

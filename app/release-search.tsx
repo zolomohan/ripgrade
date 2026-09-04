@@ -537,7 +537,7 @@ export function ReleaseSearchModal({
       open={open}
       onClose={onClose}
       label={`Releases for ${title}`}
-      panelClassName="flex h-[min(85vh,46rem)] w-full max-w-4xl flex-col overflow-hidden glass-panel rounded-card border border-line shadow-2xl"
+      panelClassName="flex h-[min(85vh,46rem)] w-full max-w-4xl flex-col overflow-hidden"
     >
       <>
         <header className="flex shrink-0 items-start gap-4 px-5 pt-5 pb-4">

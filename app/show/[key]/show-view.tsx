@@ -31,6 +31,7 @@ import type {
   ShowSeason,
 } from "@/lib/shows";
 import { size } from "@/app/format";
+import { Glass } from "@/app/glass";
 
 /**
  * A show, season by season.
@@ -572,7 +573,10 @@ function SeasonUpgrade({
       </button>
 
       {open && (
-        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-64 overflow-hidden glass-panel rounded-card border border-line py-1 shadow-2xl">
+        <Glass
+          radius={14}
+          className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-64 overflow-hidden py-1"
+        >
           {seasons.map((season) => {
             const score = seasonScore(season);
             const best = score >= 100;
@@ -607,7 +611,7 @@ function SeasonUpgrade({
               </button>
             );
           })}
-        </div>
+        </Glass>
       )}
 
       {shown && (

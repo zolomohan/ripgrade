@@ -7,6 +7,8 @@ import { CONTROL_H, ICONS } from "@/app/controls";
 import { useJobs } from "@/app/jobs-provider";
 import { useScan } from "@/app/scan-provider";
 import { Spinner } from "@/app/spinner";
+import { Glass } from "@/app/glass";
+import { toast } from "glaceui";
 
 /**
  * The library shelf's Scan, and the three passes standing behind it.
@@ -48,19 +50,9 @@ export function LibraryScanButton({ jackettReady }: { jackettReady: boolean }) {
   // itself through the rail, like everything else here.
   const [starting, start] = useTransition();
   const [open, setOpen] = useState(false);
-  /** What the last menu press did, for the one pass with no job to watch. */
-  const [said, setSaid] = useState<string | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
 
   const busy = scanning || sweeping || starting;
-
-  // Long enough to read, short enough that it is gone before it becomes part
-  // of the furniture — the window a finished scan's summary gets in the rail.
-  useEffect(() => {
-    if (!said) return;
-    const id = setTimeout(() => setSaid(null), 8000);
-    return () => clearTimeout(id);
-  }, [said]);
 
   // Click away or press Escape, exactly as `Popover` does — the same menu
   // behaviour the filter bar has, because this is the same kind of menu.
@@ -85,7 +77,8 @@ export function LibraryScanButton({ jackettReady }: { jackettReady: boolean }) {
     {
       key: "upgrades",
       label: "Upgrade scan",
-      detail: "Search for a better copy of every film, including today's checks",
+      detail:
+        "Search for a better copy of every film, including today's checks",
       searches: true,
       run: async () => {
         // The stream is a moment behind the action that caused it, and a menu
@@ -96,7 +89,8 @@ export function LibraryScanButton({ jackettReady }: { jackettReady: boolean }) {
     {
       key: "wishlist",
       label: "Wishlist scan",
-      detail: "Search for every want, and fetch the discs they are scored against",
+      detail:
+        "Search for every want, and fetch the discs they are scored against",
       searches: true,
       run: async () => {
         apply({ sweep: await rescanWishlist() });
@@ -111,7 +105,7 @@ export function LibraryScanButton({ jackettReady }: { jackettReady: boolean }) {
         // The only pass here that is over before the rail could draw it, so it
         // is the only one that has to report on itself.
         const count = await rederive();
-        setSaid(`${count} film${count === 1 ? "" : "s"} re-derived`);
+        toast.success(`${count} film${count === 1 ? "" : "s"} re-derived`);
       },
     },
   ];
@@ -134,7 +128,6 @@ export function LibraryScanButton({ jackettReady }: { jackettReady: boolean }) {
           disabled={busy}
           onClick={() =>
             start(async () => {
-              setSaid(null);
               // The provider owns the scan for the whole app: it applies the
               // job, and it is what turns a refusal — no library folder — into
               // the line the rail shows.
@@ -209,7 +202,10 @@ export function LibraryScanButton({ jackettReady }: { jackettReady: boolean }) {
       </div>
 
       {open && (
-        <div className="row-enter absolute top-full right-0 z-30 mt-2 w-80 overflow-hidden glass-panel rounded-card border border-line shadow-2xl">
+        <Glass
+          radius={14}
+          className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-80 overflow-hidden"
+        >
           <div className="flex flex-col divide-y divide-line">
             {passes.map((pass) => {
               const why = refusal(pass);
@@ -222,7 +218,6 @@ export function LibraryScanButton({ jackettReady }: { jackettReady: boolean }) {
                   title={why}
                   onClick={() =>
                     start(async () => {
-                      setSaid(null);
                       setOpen(false);
                       await pass.run();
                     })
@@ -237,18 +232,7 @@ export function LibraryScanButton({ jackettReady }: { jackettReady: boolean }) {
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* The re-derive's receipt. It touches no disk and no indexer, so it is
-          over in the time the menu takes to close and the rail never carries
-          it — leaving the one pass here that would otherwise look like nothing
-          happened. Sits under the control rather than inside the menu, which
-          by then is shut. */}
-      {said && !open && (
-        <span className="glass-panel absolute top-full right-0 z-20 mt-2 rounded-chip border border-line px-2.5 py-1 text-[11px] whitespace-nowrap opacity-70 shadow">
-          {said}
-        </span>
+        </Glass>
       )}
     </div>
   );

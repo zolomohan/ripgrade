@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
+
+import { toast } from "glaceui";
 
 import { reveal } from "@/app/actions";
 import { Spinner } from "@/app/spinner";
@@ -11,7 +13,6 @@ import { HERO_BUTTON } from "./hero-button";
  * revealing, not just the ones with something wrong.
  */
 export function RevealInFinder({ moviePath }: { moviePath: string }) {
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   return (
@@ -24,7 +25,11 @@ export function RevealInFinder({ moviePath }: { moviePath: string }) {
         onClick={() =>
           startTransition(async () => {
             const result = await reveal(moviePath);
-            setError(result.ok ? null : result.error);
+            /* A failure here is the Finder refusing, or a drive that is not
+               plugged in — nothing about this page and nothing this button can
+               offer to fix. It was a red chip hung under the button, which put
+               a permission error into the hero of a film. */
+            if (!result.ok) toast.error(result.error);
           })
         }
         className={HERO_BUTTON}
@@ -45,12 +50,6 @@ export function RevealInFinder({ moviePath }: { moviePath: string }) {
           </svg>
         )}
       </button>
-
-      {error && (
-        <span className="glass-panel absolute top-full right-0 mt-1 rounded-chip border border-line px-2 py-1 text-[11px] whitespace-nowrap text-red-600 shadow dark:text-red-400">
-          {error}
-        </span>
-      )}
     </span>
   );
 }

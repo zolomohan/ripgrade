@@ -196,7 +196,7 @@ function WhyShell({
       open={open}
       onClose={onClose}
       label={label}
-      panelClassName="flex max-h-[85vh] w-full max-w-xl flex-col gap-5 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
+      panelClassName="flex max-h-[85vh] w-full max-w-xl flex-col gap-5 overflow-y-auto p-6"
     >
       <>
         <header className="flex items-center gap-3">

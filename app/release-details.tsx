@@ -165,7 +165,7 @@ export function ReleaseDetails({
       open={open}
       onClose={onClose}
       label={`${title} — release details`}
-      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto glass-panel rounded-card border border-line p-6 shadow-2xl"
+      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto p-6"
     >
       <>
         {/* No head of its own, which is the rule the conversion dialog settled

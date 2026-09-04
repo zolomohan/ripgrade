@@ -116,6 +116,21 @@ export function searchMovies(
   });
 }
 
+/**
+ * What everyone watched this week, wanted here for the posters alone.
+ *
+ * The only call in this file that is not about a film you own or are looking
+ * for. The glass preview stands on a shelf of your own artwork, and a library
+ * with four films in it cannot cover one — so this is what the shelf is padded
+ * out with. Trending rather than `/movie/popular`, which is a lifetime ranking
+ * and returns the same twenty forever.
+ */
+export function getTrendingMovies(
+  page = 1,
+): Promise<{ results: { id: number; poster_path?: string | null }[] }> {
+  return api("/trending/movie/week", { page: String(page) });
+}
+
 /** Resolves an IMDb id (many of your remuxes embed one) to a TMDb record. */
 export async function findByImdbId(
   imdbId: string,
