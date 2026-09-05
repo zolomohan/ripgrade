@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { appendOutput, visibleOutput } from "../lib/job-output";
+import { appendOutput, appendTail, visibleOutput } from "../lib/job-output";
 
 /*
  * The two things this has to get right are the two things a naive split gets
@@ -72,4 +72,32 @@ test("nothing read yet reads as nothing to show", () => {
   assert.deepEqual(visibleOutput(undefined), []);
   assert.deepEqual(visibleOutput([]), []);
   assert.deepEqual(visibleOutput([""]), []);
+});
+
+/*
+ * The raw tail, which is the other thing a job keeps. What matters is that it
+ * cannot grow: it is fed from a `data` handler by tools that print a line per
+ * frame, and the file they are printing about is two hours long.
+ */
+
+test("the tail is built up across chunks", () => {
+  let tail = appendTail("", "Reading the RPU");
+  tail = appendTail(tail, " — frame 1\n");
+
+  assert.equal(tail, "Reading the RPU — frame 1\n");
+});
+
+test("the tail holds its size however much is poured into it", () => {
+  let tail = "";
+  for (let i = 0; i < 100_000; i++) tail = appendTail(tail, `frame ${i}\n`, 64);
+
+  assert.equal(tail.length, 64);
+  assert.ok(tail.endsWith("frame 99999\n"));
+});
+
+test("what is kept is the end, where a tool says why it stopped", () => {
+  const said = "\nffmpeg: invalid data";
+  const tail = appendTail("noise".repeat(100), said, said.length);
+
+  assert.equal(tail, said);
 });

@@ -17,7 +17,7 @@ import {
 import { AUDIO_BACKUP_SUFFIX } from "./derive";
 import { notifyJobs } from "./job-events";
 import { ended, recordDiscardedBackup, recordRun } from "./job-history";
-import { appendOutput, commandLine } from "./job-output";
+import { appendOutput, appendTail, commandLine } from "./job-output";
 import { deriveAll } from "./library";
 import { compareRuntime } from "./media";
 import { reprobeFile } from "./scanner";
@@ -561,7 +561,7 @@ export function startStripAudio(
     let output: string[] = [];
     const read = (chunk: Buffer) => {
       const text = chunk.toString();
-      tail = (tail + text).slice(-4000);
+      tail = appendTail(tail, text);
       output = appendOutput(output, text);
 
       // Reprinted as it climbs, so the last match in the chunk wins.

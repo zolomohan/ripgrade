@@ -125,6 +125,41 @@ export function getScanState(): ScanState {
   return current();
 }
 
+/**
+ * Every status a scan passes through, which is what "a scan is running" means.
+ *
+ * Not `status === "scanning"` alone. That is the walk and the probing — the
+ * first minute of a pass that then spends an hour reading RPUs, matching
+ * against TMDb, fetching artwork, looking up discs and searching for wants,
+ * each under a status of its own. A guard naming only the first phase read
+ * every one of those as "nothing is running", which is how a second scan came
+ * to be started on top of a first, and a third on top of that: each one
+ * holding its own file list, its own derive and its own requests in flight.
+ *
+ * The same list the rail draws from — see `BUSY` in app/scan-provider.tsx,
+ * which cannot share this one: that file is a client component and this module
+ * is server-only.
+ */
+const WORKING: ScanState["status"][] = [
+  "scanning",
+  "dovi",
+  "matching",
+  "artwork",
+  "discs",
+  "wishlist",
+];
+
+/** Whether a scan is under way, in any of its phases. */
+const working = (): boolean => WORKING.includes(current().status);
+
+/**
+ * The same question, for callers outside this module — the actions layer asks
+ * it before offering anything that would end in a restart.
+ */
+export function scanBusy(): boolean {
+  return working();
+}
+
 /** Windows/NAS bookkeeping folders that appear on exFAT and NTFS drives. */
 const SKIP_DIRS = new Set([
   "System Volume Information",
@@ -213,6 +248,33 @@ function unreachableSentence({
   return `${opens} could not be read`;
 }
 
+/**
+ * Whether a root would actually give a scan something, which is the question
+ * the watcher has to ask and `reachable` cannot answer.
+ *
+ * A root reaches the missing list for two different reasons: the drive is not
+ * there, or the drive is there and yields nothing — `readable but empty`,
+ * which is a folder that stats as a directory and walks to no files. A drive
+ * ejected and re-mounted by macOS under another name leaves exactly that
+ * behind, and so does one that is spun down or erroring on read.
+ *
+ * Asked with a stat, the second kind answers "I am back" the instant it is
+ * asked, every time. The watcher started a scan, the scan found the folder as
+ * empty as before and re-armed the watcher on its way out, and twenty seconds
+ * later the whole thing happened again — a full pass over the library every
+ * twenty seconds for as long as the process lived, each begun on top of the
+ * last, until the machine gave out.
+ *
+ * So recovery is tested the way the scan itself tests it: can this be read,
+ * and is there a film under it. Asked of the first file rather than all of
+ * them — a populated drive answers on the first folder it opens, and an empty
+ * one has nothing to walk.
+ */
+async function answers(root: string): Promise<boolean> {
+  if (!(await reachable(root))) return false;
+  return (await walk(root).next()).done !== true;
+}
+
 /** How often the watcher below looks, and how long it keeps looking. */
 const WATCH_EVERY_MS = 20_000;
 const WATCH_FOR_MS = 30 * 60_000;
@@ -248,10 +310,11 @@ function watchForRoots(missing: string[], roots: string[]): void {
     if (waited >= WATCH_FOR_MS) return stopWatchingRoots();
 
     // A scan already under way will report on these roots itself, and arms
-    // this again on its way out if any of them are still missing.
-    if (current().status === "scanning") return;
+    // this again on its way out if any of them are still missing. Every phase
+    // of one counts — see `working`.
+    if (working()) return;
 
-    const back: boolean[] = await Promise.all(missing.map(reachable));
+    const back: boolean[] = await Promise.all(missing.map(answers));
     if (back.some(Boolean)) {
       stopWatchingRoots();
       startScan(roots);
@@ -630,7 +693,7 @@ export function startScan(
     sweep?: boolean;
   } = {},
 ): ScanState {
-  if (current().status === "scanning") return current();
+  if (working()) return current();
 
   // Whether the wants are somebody else's to search. Either a forced sweep is
   // really coming — without Jackett there is no sweep at all, and deferring to

@@ -12,6 +12,11 @@
  * open tab several times a second, so it holds a window on the last few lines
  * rather than a log: enough to answer "what is it doing", not enough to scroll
  * through afterwards.
+ *
+ * Both halves live here now — the lines a dialog draws, and the raw tail the
+ * failure message is read out of. They are bounded for the same reason and were
+ * bounded in different places, which is how one of them came to not be bounded
+ * at all. See `appendTail`.
  */
 
 /**
@@ -66,6 +71,30 @@ export function appendOutput(
     });
 
   return next.length > limit ? next.slice(next.length - limit) : next;
+}
+
+/**
+ * How much of a tool's raw output is kept for the sentence that explains a
+ * failure. Larger than the window above because it is not on the wire — it is
+ * read once, at the end, by whatever turns an exit code into a reason.
+ */
+export const TAIL_CHARS = 4000;
+
+/**
+ * The last of what a tool has said, held at a fixed size.
+ *
+ * `appendOutput`'s counterpart for the other thing every job here keeps: the
+ * raw text, unsplit, for the failure message. Same reason it is bounded — a
+ * tool that prints a line per frame prints hundreds of thousands of them over
+ * a long file, and a string concatenated in a `data` handler with nothing
+ * trimming it grows for as long as the job runs. `lib/dovi.ts` had exactly
+ * that, on the longest-running job in the app.
+ *
+ * The tail rather than the head because that is the half that is read: every
+ * caller wants the last few lines, which is where a tool says why it stopped.
+ */
+export function appendTail(held: string, chunk: string, limit = TAIL_CHARS) {
+  return (held + chunk).slice(-limit);
 }
 
 /**

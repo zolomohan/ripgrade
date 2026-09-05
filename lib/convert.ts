@@ -9,7 +9,7 @@ import { getSetting } from "./db";
 import { BACKUP_SUFFIX, EL_ARCHIVE_SUFFIX } from "./derive";
 import { scanDovi } from "./dovi";
 import { ended, recordDiscardedBackup, recordRun } from "./job-history";
-import { appendOutput, commandLine } from "./job-output";
+import { appendOutput, appendTail, commandLine } from "./job-output";
 import { notifyJobs } from "./job-events";
 import { compareRuntime } from "./media";
 import { deriveAll } from "./library";
@@ -590,7 +590,7 @@ export function startConvert(
 
     const read = (chunk: Buffer) => {
       const text = chunk.toString().replace(ANSI, "");
-      tail = (tail + text).slice(-4000);
+      tail = appendTail(tail, text);
       output = appendOutput(output, text);
 
       // Every step is reprinted as it progresses, so the last match wins.
@@ -876,7 +876,7 @@ export function startRebuild(
 
     const read = (chunk: Buffer) => {
       const text = chunk.toString().replace(ANSI, "");
-      tail = (tail + text).slice(-4000);
+      tail = appendTail(tail, text);
       output = appendOutput(output, text);
       setJob({ ...current(), output });
     };

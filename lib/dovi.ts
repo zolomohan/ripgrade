@@ -11,6 +11,7 @@ import { db } from "./db";
 import type { DoviDepth, DoviScan } from "./derive";
 import { notifyJobs } from "./job-events";
 import { ended, recordRun } from "./job-history";
+import { appendTail } from "./job-output";
 
 const execFileAsync = promisify(execFile);
 
@@ -174,7 +175,7 @@ function extractRpu(
       const text = chunk.toString();
 
       if (!opts.onProgress) {
-        ffErr += text;
+        ffErr = appendTail(ffErr, text);
         return;
       }
 
@@ -190,7 +191,7 @@ function extractRpu(
       for (const line of lines) {
         const [key, value] = line.split("=");
         if (value === undefined) {
-          ffErr += line + "\n";
+          ffErr = appendTail(ffErr, line + "\n");
         } else if (key === "frame") {
           frames = Number(value) || 0;
         } else if (key === "out_time_us" && opts.durationSec) {
@@ -205,7 +206,7 @@ function extractRpu(
     });
 
     dovi.stderr.on("data", (chunk: Buffer) => {
-      doviErr += chunk.toString();
+      doviErr = appendTail(doviErr, chunk.toString());
     });
 
     let ffDone = false;
@@ -221,7 +222,7 @@ function extractRpu(
     };
 
     ff.on("error", (err) => {
-      ffErr += err.message;
+      ffErr = appendTail(ffErr, err.message);
       ffDone = true;
       settle();
     });
@@ -230,7 +231,7 @@ function extractRpu(
       settle();
     });
     dovi.on("error", (err) => {
-      doviErr += err.message;
+      doviErr = appendTail(doviErr, err.message);
       doviCode = -1;
       settle();
     });
