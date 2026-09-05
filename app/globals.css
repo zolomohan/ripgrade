@@ -1962,6 +1962,57 @@ body {
   display: none;
 }
 
+/*
+ * And the pixels the window gained by covering the screen.
+ *
+ * `viewport-fit: cover` in app/layout.tsx stops iOS laying the page out between
+ * the status bar and the home indicator and hands it both — which is the point,
+ * the bar being glass behind the clock rather than a black strip above it. What
+ * comes back the other way is a set of distances: `env(safe-area-inset-*)` is
+ * how far in from each edge of the window it is safe to put something, `0px`
+ * on any screen with nothing in the way and a real number on the ones with a
+ * notch or a pill. So every rule here is the old value on a desktop and the old
+ * value plus a strip on a phone.
+ *
+ * The ones that restate a utility — `0.75rem` is the bar's `py-3` — win for the
+ * reason everything in this file wins over a utility: `@import "tailwindcss"`
+ * puts those in `@layer utilities` and an unlayered declaration outranks a
+ * layer. The value is repeated rather than added to, which is the cost of it.
+ */
+.glace-glass.rail-bar {
+  padding-block-start: calc(0.75rem + env(safe-area-inset-top));
+}
+
+/* On the drawer itself and not on the scrolling column inside it, so the glass
+   still reaches the top of the screen and only the brand under it comes down —
+   pad the column and the pane's own top edge would sit below the clock, which
+   is the seam this was all meant to remove. */
+.glace-glass.rail-pane {
+  padding-block-start: env(safe-area-inset-top);
+  padding-inline-start: env(safe-area-inset-left);
+}
+
+/*
+ * The sides, once, for everything standing in the flow of the page — the bar
+ * above included, which is sticky and so still a child of this. Landscape is
+ * the only time these are anything: a phone on its side puts the notch along
+ * one edge and the rounded corners along both.
+ *
+ * Not on `.page-body`, which is where it looks like it belongs: that carries
+ * `md:pl-56` to clear the rail, and an unlayered `padding-inline` here would
+ * outrank it and drop every page on a wide screen underneath the sidebar.
+ */
+body {
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+}
+
+/* And the foot, where the home indicator would otherwise lie across the last
+   row of a list. Inside the `min-h-dvh` column rather than on it, so this is
+   space at the end of the content and never height the window has to grow by. */
+.page-body {
+  padding-block-end: env(safe-area-inset-bottom);
+}
+
 /* No label to pad around — see `MenuButton` in app/sidebar.tsx. The square it
    is given by `h-10 w-10` is the whole of the target. */
 .glace-glass.rail-menu {

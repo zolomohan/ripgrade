@@ -115,16 +115,37 @@ export const metadata: Metadata = {
 export async function generateViewport(): Promise<Viewport> {
   const theme = await getTheme();
 
-  if (theme === "light") return { themeColor: LIGHT };
-  if (theme === "dark") return { themeColor: DARK };
+  if (theme === "light") return { ...COVER, themeColor: LIGHT };
+  if (theme === "dark") return { ...COVER, themeColor: DARK };
 
   return {
+    ...COVER,
     themeColor: [
       { media: "(prefers-color-scheme: light)", color: LIGHT },
       { media: "(prefers-color-scheme: dark)", color: DARK },
     ],
   };
 }
+
+/**
+ * The window is the whole screen — the strip behind the status bar and the one
+ * behind the home indicator included.
+ *
+ * `statusBarStyle: "black-translucent"` above has asked for that all along, and
+ * on its own it never got it. Without `viewport-fit: cover` iOS lays the page
+ * out inside the safe area and fills what is left over from `themeColor`, which
+ * is the flat black bar across the top of the installed app: the app was not
+ * drawing there because it had never been given the pixels. The two settings
+ * are one setting, and this is its other half — the backdrop now runs to the
+ * top of the phone and the rail's bar is glass behind the clock rather than a
+ * seam below it.
+ *
+ * What arrives with it is `env(safe-area-inset-*)`, zero on every screen with
+ * nothing in the way and a real distance on the ones with a notch. Everything
+ * this app stands against an edge of the window pads itself by one — see the
+ * safe-area block in globals.css, which is the rest of this change.
+ */
+const COVER = { viewportFit: "cover" } as const;
 
 const LIGHT = "#ffffff";
 const DARK = "#0b0b0d";
