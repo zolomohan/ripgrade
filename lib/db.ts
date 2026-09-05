@@ -380,24 +380,33 @@ function open(): Database.Database {
   mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
   const db = new Database(DB_PATH);
+
+  /*
+   * Wait for a writer rather than failing at the sight of one, and set this
+   * before anything else touches the file.
+   *
+   * SQLite gives up the instant a lock is held, which is fine for one process
+   * and wrong for this one: `next build` collects its routes in parallel
+   * workers, every worker evaluates this module, and every one of them opens
+   * the database and runs the schema on the way past. Whichever lost the race
+   * threw `SQLITE_BUSY` and took the build down looking like a broken
+   * migration.
+   *
+   * First, because the very next line is one of the ones that can lose. A
+   * timeout set after `journal_mode` does not cover `journal_mode`, and on a
+   * database being created for the first time by several workers at once that
+   * is precisely the statement they collide on: switching to WAL takes a brief
+   * exclusive lock on a file the others are opening in the same instant.
+   *
+   * Five seconds is far longer than any write here takes and far shorter than
+   * a person waits before assuming the app has hung.
+   */
+  db.pragma("busy_timeout = 5000");
+
   // WAL lets a long scan write while page requests read.
   db.pragma("journal_mode = WAL");
   // Scans write in batched transactions, so durability per-statement is wasted work.
   db.pragma("synchronous = NORMAL");
-  /*
-   * Wait for a writer rather than failing at the sight of one.
-   *
-   * SQLite's default is to give up the instant a lock is held, which is fine
-   * for one process and wrong for this one: `next build` collects its routes
-   * in parallel workers, every worker evaluates this module, and every one of
-   * them runs the schema below on the way past. Whichever loses the race threw
-   * `SQLITE_BUSY` and took the build down with it — an error that looked like
-   * a broken migration and was really two processes arriving together.
-   *
-   * Five seconds is far longer than any of the writes here take and far
-   * shorter than a person waits before assuming the app has hung.
-   */
-  db.pragma("busy_timeout = 5000");
   return db;
 }
 
