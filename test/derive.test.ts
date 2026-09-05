@@ -423,6 +423,23 @@ test("perfect audio cannot lift a 1080p SDR file into the top tier", () => {
   assert.ok(d.scores.overall < 75, `expected capped score, got ${d.scores.overall}`);
 });
 
+test("MediaInfo's abbreviated DTS-HD MA still reads as lossless", () => {
+  // The long name only survives while there is no extension to append, so the
+  // short form is what a DTS:X track arrives under. Read as lossy, this file
+  // scored its German 5.1 instead: no object audio, and 6 channels.
+  const d = derive(
+    "/m/HP4/Harry.Potter.2005.2160p.BluRay.REMUX.HEVC.DTS-X.7.1.mkv",
+    50e9,
+    mediainfo({ Encoded_Application: "mkvmerge" }, { Format: "HEVC" }, [
+      { Format: "DTS", Format_Commercial_IfAny: "DTS-HD MA + DTS:X", Format_AdditionalFeatures: "XLL X", Channels: "8", Language: "en" },
+      { Format: "DTS", Format_Commercial_IfAny: "DTS-HD Master Audio", Channels: "6", Language: "de" },
+    ]),
+  );
+  assert.equal(d.audio[0].lossless, true);
+  assert.equal(d.audio[0].dtsx, true);
+  assert.equal(d.scores.audio, 100);
+});
+
 // ---------------------------------------------------------------------------
 // Subtitle tracks
 // ---------------------------------------------------------------------------

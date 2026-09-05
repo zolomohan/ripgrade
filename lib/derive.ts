@@ -881,7 +881,17 @@ function hdr10Of(video: Track): Hdr10Static | undefined {
   return Object.values(hdr10).some((v) => v !== undefined) ? hdr10 : undefined;
 }
 
-const LOSSLESS = /MLP FBA|TrueHD|DTS-HD Master|PCM|FLAC|ALAC/i;
+/**
+ * The lossless formats, under every name a muxer writes them by.
+ *
+ * "MA" as well as "Master" because MediaInfo abbreviates the moment it has an
+ * extension to append: a plain track is "DTS-HD Master Audio", the same track
+ * carrying DTS:X is "DTS-HD MA + DTS:X". The short form therefore lands on
+ * exactly the best tracks, and a rip whose English DTS:X track read as lossy
+ * lost the best-track contest to whatever foreign-language DTS-HD MA 5.1 the
+ * disc also carried — which is the track the rubric then scored.
+ */
+const LOSSLESS = /MLP FBA|TrueHD|DTS-HD M(?:aster|A)\b|PCM|FLAC|ALAC/i;
 
 /**
  * What one track costs, in bytes.
