@@ -41,10 +41,14 @@ export async function GET(request: Request) {
   // request that cannot be honoured — sharp choking on the file — falls back
   // to the original rather than failing; only a missing original is a 404,
   // and the <img> onError fallback takes over from there.
+  // Read before the thumbnail, because it is what decides whether finding the
+  // thumbnail costs a trip to the drive. See `getThumb`.
+  const version = Number(params.get("v")) || undefined;
+
   let served = target;
   const width = Number(params.get("w"));
   if (width && THUMB_WIDTHS.has(width)) {
-    const thumb = await getThumb(target, width);
+    const thumb = await getThumb(target, width, version);
     if (thumb) {
       served = thumb;
       type = "image/webp";

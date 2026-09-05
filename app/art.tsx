@@ -32,6 +32,7 @@ export function Art({
   size = "w342",
   version,
   transitionName,
+  thumb,
   alt = "",
   className,
   loading,
@@ -56,6 +57,17 @@ export function Art({
    * every name costs the browser a snapshot on every transition.
    */
   transitionName?: string;
+  /**
+   * The cached width to ask for, overriding what `size` implies.
+   *
+   * `size` is a TMDb bucket, and it has to stay one — it is what the fallback
+   * URL is built from. Most of the time the local width follows from it, and
+   * the table below is that. A logo is where the two come apart: it is a hero
+   * image by every measure TMDb has a name for, and it is drawn at 384 pixels
+   * beside one. Asked for at the backdrop's width it cost about as much as the
+   * original it replaced, which is a cache doing the work and not the saving.
+   */
+  thumb?: number;
   alt?: string;
   className?: string;
   loading?: "lazy" | "eager";
@@ -66,12 +78,25 @@ export function Art({
    * The local width asked for, from the same bucket the TMDb fallback uses —
    * a tile drawn at w342 wants the cached thumbnail, not a full scan of the
    * original off the external drive. Roughly 2× the drawn size, which is what
-   * a retina screen samples. "original" maps to nothing: the heroes want the
-   * file itself, full resolution being the point of owning it.
+   * a retina screen samples.
+   *
+   * "original" used to map to nothing, on the reasoning that a hero wants the
+   * file itself and full resolution is the point of owning it. The first half
+   * is right and the second was answering a question nobody asked: what the
+   * hero wants is to be drawn, and a backdrop behind a gradient veil is not
+   * inspected at 2880 pixels. What that cost was a detail page that could not
+   * be drawn at all without the drive spun up — the one part of the app the
+   * thumbnail cache was never covering, and the part you reach by clicking a
+   * poster that came out of it.
+   *
+   * The name still means original to TMDb, which is the fallback and a
+   * different question: `imageUrl` takes `size` as it stands.
    */
-  const thumbWidth = { w92: 160, w342: 640, w780: 1280 }[
-    size as "w92" | "w342" | "w780"
-  ];
+  const thumbWidth =
+    thumb ??
+    { w92: 160, w342: 640, w780: 1280, original: 1920 }[
+      size as "w92" | "w342" | "w780" | "original"
+    ];
 
   const local = src && !failed ? artUrl(src, version, thumbWidth) : undefined;
   const source = local ?? (remote ? imageUrl(remote, size) : undefined);

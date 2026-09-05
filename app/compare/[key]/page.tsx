@@ -346,6 +346,8 @@ export default async function ComparePage({
             remote={keep.art.logo}
             version={keep.artAt}
             size="original"
+              // Drawn at 384 across at the very most; see `thumb`.
+              thumb={1280}
             className="enter-drop pointer-events-none absolute top-6 right-6 z-[5] max-h-16 w-auto max-w-[40vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:max-h-20 sm:max-w-sm"
           />
         )}

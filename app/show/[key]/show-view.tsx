@@ -943,6 +943,8 @@ export function ShowView({
             remote={show.art.logo}
             version={show.artAt}
             size="original"
+              // Drawn at 384 across at the very most; see `thumb`.
+              thumb={1280}
             className="enter-drop pointer-events-none absolute top-6 right-6 z-[5] max-h-20 w-auto max-w-[45vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:top-8 sm:right-8 sm:max-h-24 sm:max-w-sm"
           />
         )}

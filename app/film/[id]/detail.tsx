@@ -327,6 +327,8 @@ export async function DetailPage({
               remote={movie.art.logo ?? tv?.show.art.logo}
               version={artAt(movie.logo)}
               size="original"
+              // Drawn at 384 across at the very most; see `thumb`.
+              thumb={1280}
               className="max-h-20 w-auto max-w-[45vw] object-contain object-right drop-shadow-[0_2px_14px_rgba(0,0,0,0.6)] sm:max-h-28 sm:max-w-sm"
             />
           </div>
