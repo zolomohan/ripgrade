@@ -59,6 +59,34 @@ export const queueTheme = (score: number) =>
   score >= 100 ? STATUS_THEME.Reference : STATUS_THEME.Good;
 
 /**
+ * And a collection's rule, which is a third thing again.
+ *
+ * A shelf's number is an average, and an average is a claim about every film
+ * under it. The library's banding says green from 78, which on one film is the
+ * right answer — it is an excellent copy, and there is nothing to do about it
+ * tonight. On a set of nine it means the set is one part short and eight parts
+ * perfect, or nine parts nearly-there, and there is no telling which from the
+ * colour. Green is the one reading a page of shelves is scanned for, and here
+ * it can only honestly mean the thing a collection is ever finished by: every
+ * film in it as good as it gets.
+ *
+ * So parity is the only green, exactly as it is on the queue — and unlike the
+ * queue, which grades jobs you might do tonight and has no use for a verdict
+ * worse than "worth doing", the bottom of the scale is kept. A shelf averaging
+ * 30 is not the same shelf as one averaging 80, and the library's own line
+ * between amber and red is where it already draws it.
+ */
+export const collectionTheme = (score: number) => {
+  if (score >= 100) return STATUS_THEME.Reference;
+
+  // Read off the bands rather than restated as a number: the boundary belongs
+  // to the library, and a copy of it here is a copy that goes stale the day the
+  // rubric moves. Identity, because `scoreTheme` returns these very objects.
+  const band = scoreTheme(score);
+  return band === STATUS_THEME["Must Upgrade"] ? band : STATUS_THEME.Good;
+};
+
+/**
  * A score as a ring: the number in the middle, the arc showing how far round it
  * got, and the colour carrying the verdict — a film can be red at 66 and green
  * at 66 depending on what it is being measured against.

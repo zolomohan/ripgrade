@@ -48,6 +48,18 @@ export const collectionTitleName = (key: number | string) =>
 export const collectionMetaName = (key: number | string) =>
   `collection-meta-${key}`;
 
+/**
+ * And the set's standing, which is one dial in two sizes.
+ *
+ * The row carries it small at the head of the line and the set's own page
+ * carries it large beside the heading, and they are the same reading of the
+ * same shelf — so it travels between them rather than being drawn twice. Both
+ * boxes are square, which is why this one pairing can wear the poster's own
+ * `morph` and come out undistorted at every frame of the flight.
+ */
+export const collectionScoreName = (key: number | string) =>
+  `collection-score-${key}`;
+
 /** A set of your own, named apart from the TMDb set that shares its number. */
 export const customCollectionKey = (id: number) => `c${id}`;
 

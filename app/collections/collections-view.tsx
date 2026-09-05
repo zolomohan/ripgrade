@@ -24,6 +24,7 @@ import {
 } from "@/lib/routes";
 import { useTabParam } from "@/app/tab-param";
 import { NewCollection } from "./new-collection";
+import { collectionAverage, SCORE_DIAL_REM, SetScoreDial } from "./set-score";
 
 /**
  * The sets, one line each.
@@ -111,6 +112,16 @@ const TUCK_REM = 1;
 const CLEAR_REM = 2;
 
 /**
+ * And what the row spends before the words even start: the score at its head,
+ * plus the row's own 1rem gap after it.
+ *
+ * Constant because the dial is drawn at one size and drawn on every row —
+ * including the rows with nothing to grade, which draw it empty precisely so
+ * that this stays a constant and the names stay in one column.
+ */
+const LEAD_REM = SCORE_DIAL_REM + 1;
+
+/**
  * How many posters fit in the row beside its name.
  *
  * The fan is what is left of a grid of every film in every collection, and it
@@ -172,7 +183,7 @@ function useFanRoom(films: number, name: string, meta: string) {
       const wanted = Math.max(
         ...[...block.querySelectorAll("p")].map((p) => p.scrollWidth),
       );
-      const room = inside - wanted - CLEAR_REM * rem;
+      const room = inside - LEAD_REM * rem - wanted - CLEAR_REM * rem;
 
       // The first poster costs its whole width and every one after it only the
       // part that shows, which is what makes a fan cheaper than a row.
@@ -227,7 +238,7 @@ function useFanRoom(films: number, name: string, meta: string) {
  * that one poster flying out of one row; what it buys is every other poster in
  * the list flying at all.
  *
- * Claimed over each set's whole list rather than the part of the fan that fits,
+ * Claimed over each set's held list rather than the part of the fan that fits,
  * because how many fit is measured in the browser after the first paint and this
  * has to be settled while rendering. The cost is a poster held back in a later
  * row for a film an earlier row is not actually showing; the guarantee is that
@@ -255,11 +266,11 @@ function claimPosters(rows: CollectionFilm[][]): ReadonlySet<string>[] {
 /**
  * The name a poster in a fan answers to, whether or not it has anywhere to go.
  *
- * A held film wears the name it wears everywhere in the app, because that is
- * what pairs it with the grid on the set's page and the tile on the shelf. A
- * film you do not own has no such counterpart and gets a name of its own
- * anyway — one that pairs with nothing, and is here purely so the poster is
- * *captured*.
+ * A film wears the name it wears everywhere in the app, because that is what
+ * pairs it with the grid on the set's page and the tile on the shelf. One an
+ * earlier row already claimed cannot wear it a second time and gets a name of
+ * its own instead — one that pairs with nothing, and is here purely so the
+ * poster is *captured*.
  *
  * Which is the whole point of it. A transitioning element is lifted out of the
  * page into a layer painted above all of it, so a fan where four posters fly and
@@ -319,6 +330,8 @@ function Fan({
   travels,
   scope,
 }: {
+  /** Films off the drive, and nothing else — see `Yours`, which is where the
+      half a set does not hold is dropped. */
   films: CollectionFilm[];
   /** Which of them this row is the one to fly — see `claimPosters`. */
   travels: ReadonlySet<string>;
@@ -326,11 +339,19 @@ function Fan({
   scope: number | string;
 }) {
   /*
-   * Whether a poster is paired with a tile on the set's own page. The held ones
-   * are, and the page lays those out first; a set of your own can also hold
-   * films you do not own, and those travel nowhere — they are drawn in the fan
-   * because a set you made is mostly recognised by the films in it, but they
-   * carry no name and so no pace.
+   * Nothing to fan, which a set of your own can now be: one naming only films
+   * you have not got yet holds no artwork off the drive. Returned as nothing
+   * rather than as an empty box, since the box is not empty — `pl-4` is a
+   * finger of dead space at the end of a row with no posters in it.
+   */
+  if (films.length === 0) return null;
+
+  /*
+   * Whether a poster is paired with a tile on the set's own page.
+   *
+   * All of them are held now, and the page lays every held film out — so the
+   * only reason one of these stays behind is that an earlier row in the list
+   * got to the same film first and took the name. See `claimPosters`.
    */
   const flies = (film: CollectionFilm) =>
     Boolean(film.owned && travels.has(film.owned.path));
@@ -438,6 +459,7 @@ function Row({
   href,
   name,
   meta,
+  score,
   films,
   travels,
   transitionKey,
@@ -446,6 +468,8 @@ function Row({
   href: string;
   name: string;
   meta: string;
+  /** How the set stands, or null where you hold none of it to grade. */
+  score: number | null;
   films: CollectionFilm[];
   /** Which of this row's films it is the one to fly — see `claimPosters`. */
   travels: ReadonlySet<string>;
@@ -466,6 +490,13 @@ function Row({
       // sends it four pixels low. See globals.css.
       className="glow row-enter-still -mx-3 flex items-center gap-4 rounded-card px-3 py-3 transition-colors hover:bg-surface"
     >
+      {/* The set's standing, first thing on the line — which is the order the
+          answer is wanted in. The list exists to say which shelves are short,
+          and a column of numbers down the left is read at a glance where the
+          same numbers trailing each name are read one row at a time. It grows
+          into the ring on the page it opens. */}
+      <SetScoreDial score={score} transitionKey={transitionKey} />
+
       <div ref={words} className="min-w-0 flex-1">
         <ViewTransition
           name={collectionTitleName(transitionKey)}
@@ -493,9 +524,9 @@ function Row({
         </ViewTransition>
       </div>
 
-      {/* The first however-many, which are the held ones and then the rest —
-          the same order the set's own page lays them out in, so what travels
-          is the front of the fan into the front of the grid. */}
+      {/* The first however-many of the films you hold, in the order the set's
+          own page lays them out in — so what travels is the front of the fan
+          into the front of the grid. */}
       <Fan
         films={films.slice(0, shown)}
         travels={travels}
@@ -553,6 +584,7 @@ function Found({ sets }: { sets: CollectionSet[] }) {
             href={`/collections/${set.id}`}
             name={set.name}
             meta={films(set.owned.length)}
+            score={collectionAverage(set.owned)}
             films={set.owned}
             travels={travels[i]}
             transitionKey={set.id}
@@ -586,11 +618,26 @@ function Yours({ sets }: { sets: CustomSet[] }) {
     );
   }
 
-  // Held first, so the ones that travel to the set's page lead each fan and
-  // their order matches the grid they are travelling into.
-  const rows = sets.map((set) => [...set.owned, ...(set.missing ?? [])]);
-  // And this is the list that needs it: your lists overlap, and until now one
-  // film on two of them silently killed every transition on the page.
+  /*
+   * The held half, and only the held half.
+   *
+   * A set of your own can name films you have not got — that is most of what
+   * they are for — and the fan used to draw those too, on the argument that a
+   * set is recognised by the films in it whether or not they are on a drive.
+   * What that actually produced was a row of artwork making a claim the row
+   * does not mean: these are pictures of the library, everywhere else in the
+   * app, and a fan of ten where you hold two says you hold ten. The count
+   * beside the name still speaks for the whole list; the artwork speaks for the
+   * part of it you can watch tonight.
+   *
+   * It also settles the fan's other job. Every poster in it now has a tile on
+   * the set's own page to fly into, so the flight is the whole fan arriving
+   * rather than the front of it arriving and the back of it appearing.
+   */
+  const rows = sets.map((set) => set.owned);
+  // Claimed across the list, because this is the list that needs it: your sets
+  // overlap, and until this existed one film on two of them silently killed
+  // every transition on the page.
   const travels = claimPosters(rows);
 
   return (
@@ -601,7 +648,10 @@ function Yours({ sets }: { sets: CustomSet[] }) {
           <Row
             href={`/collections/custom/${set.id}`}
             name={set.name}
-            meta={films(rows[i].length)}
+            // The whole list, held or not: what the set *is* is a count of
+            // films, and the shelf below says which of them are missing.
+            meta={films(set.owned.length + (set.missing?.length ?? 0))}
+            score={collectionAverage(set.owned)}
             films={rows[i]}
             travels={travels[i]}
             transitionKey={customCollectionKey(set.id)}

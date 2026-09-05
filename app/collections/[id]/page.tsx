@@ -4,8 +4,7 @@ import { ViewTransition } from "react";
 import { Art } from "@/app/art";
 import { HERO_BOX_SHORT, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { BackButton } from "@/app/film/[id]/back-button";
-import { ScoreRing } from "@/app/score-card";
-import { scoreTheme } from "@/app/score-circle";
+import { collectionAverage, SetScoreRing } from "@/app/collections/set-score";
 import { getCollectionSet } from "@/lib/collections";
 import { collectionMetaName, collectionTitleName } from "@/lib/routes";
 import { getMovies } from "@/lib/library";
@@ -36,15 +35,7 @@ export default async function CollectionPage({
   const set = await getCollectionSet(id, getMovies());
   if (!set) notFound();
 
-  // The set's standing, which is the average of what you actually hold — the
-  // films you do not have score nothing and would only drag it toward zero for
-  // being absent, which is the other question this page already answers.
-  const average = set.owned.length
-    ? Math.round(
-        set.owned.reduce((sum, film) => sum + (film.owned?.score ?? 0), 0) /
-          set.owned.length,
-      )
-    : 0;
+  const average = collectionAverage(set.owned);
 
   return (
     // The same shape a film and a show open with: artwork first, then the name
@@ -101,15 +92,9 @@ export default async function CollectionPage({
             </ViewTransition>
           </div>
 
-          {/* The same ring a film carries, at the head of the set: one number
-              for the shelf, drawn the way every other score in the app is. */}
-          {set.owned.length > 0 && (
-            <ScoreRing
-              score={average}
-              ring={scoreTheme(average).stroke}
-              caption="average"
-            />
-          )}
+          {/* The dial the row carried, arrived and grown: one number for the
+              shelf, drawn the way every other score in the app is. */}
+          <SetScoreRing score={average} transitionKey={set.id} />
         </div>
 
         <CollectionView set={set} wishlisted={[...getWishlistIds()]} />

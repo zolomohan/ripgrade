@@ -16,12 +16,17 @@ import { HERO_BOX_SHORT, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { CollectionView } from "@/app/collections/[id]/collection-view";
 import { NameDialog } from "@/app/collections/name-dialog";
 import { ConfirmModal } from "@/app/confirm";
-import { BUTTON, useDismiss, useOverlay } from "@/app/controls";
+import {
+  BUTTON,
+  ICONS,
+  MenuAction,
+  useDismiss,
+  useOverlay,
+} from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
 import { BackButton } from "@/app/film/[id]/back-button";
 import { HERO_BUTTON } from "@/app/film/[id]/hero-button";
-import { ScoreRing } from "@/app/score-card";
-import { scoreTheme } from "@/app/score-circle";
+import { collectionAverage, SetScoreRing } from "@/app/collections/set-score";
 import { Spinner } from "@/app/spinner";
 import type { CustomSet } from "@/lib/custom-collections";
 import {
@@ -48,9 +53,10 @@ import { Glass } from "@/app/glass";
  * app now — the artwork editor's, the transfers row's, this — and they differ
  * in enough of what a menu is (where it opens, what its trigger looks like,
  * whether an item can be dangerous) that the shared thing would be a component
- * with an option per caller. What they actually share is the panel, and that is
- * already shared: a Glacé `Glass` wearing `overlay-pane`, the same surface
- * every menu and tooltip in the app opens as.
+ * with an option per caller. What they share is the panel and the rows in it,
+ * and both of those are shared already: a Glacé `Glass` wearing `overlay-pane`,
+ * the same surface every menu and tooltip in the app opens as, and `MenuAction`
+ * for the rows — which is where the marks beside these two words come from.
  */
 function SetMenu({
   onRename,
@@ -66,8 +72,8 @@ function SetMenu({
   const [shown, leaving] = useOverlay(open);
 
   const items = [
-    { label: "Rename", onSelect: onRename, danger: false },
-    { label: "Delete", onSelect: onDelete, danger: true },
+    { label: "Rename", icon: ICONS.rename, onSelect: onRename, danger: false },
+    { label: "Delete", icon: ICONS.bin, onSelect: onDelete, danger: true },
   ];
 
   return (
@@ -98,24 +104,16 @@ function SetMenu({
           className={`${leaving ? "pop-out" : "row-enter"} overlay-pane absolute top-full right-0 z-30 mt-2 w-44 overflow-hidden py-1`}
         >
           {items.map((item) => (
-            <button
+            <MenuAction
               key={item.label}
-              type="button"
+              icon={item.icon}
+              label={item.label}
+              danger={item.danger}
               onClick={() => {
                 setOpen(false);
                 item.onSelect();
               }}
-              /* The red arrives on hover, when you are reaching for it — the
-                 rule `BUTTON.danger` keeps. The dialog behind it is where the
-                 colour belongs standing. */
-              className={`glow flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
-                item.danger
-                  ? "hover:bg-red-500/[0.08] hover:text-red-700 dark:hover:text-red-300"
-                  : "hover:bg-surface-strong"
-              }`}
-            >
-              {item.label}
-            </button>
+            />
           ))}
         </Glass>
       )}
@@ -159,17 +157,7 @@ export function CustomCollectionView({
   const missing = set.missing ?? [];
   const total = set.owned.length + missing.length;
 
-  /**
-   * The set's standing, which is the average of what you actually hold — the
-   * films you do not have score nothing and would only drag it toward zero for
-   * being absent, which is the other question this page already answers.
-   */
-  const average = set.owned.length
-    ? Math.round(
-        set.owned.reduce((sum, film) => sum + (film.owned?.score ?? 0), 0) /
-          set.owned.length,
-      )
-    : 0;
+  const average = collectionAverage(set.owned);
 
   /**
    * One write, with whatever it says on the way out.
@@ -258,47 +246,6 @@ export function CustomCollectionView({
         )}
 
         <BackButton label="Back to collections" />
-
-        <input
-          ref={picker}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={(event) => {
-            const chosen = event.target.files?.[0];
-            // Cleared so that picking the same file again counts as a change
-            // again — which is what you do after one fails.
-            event.target.value = "";
-            if (chosen) upload(chosen);
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => picker.current?.click()}
-          disabled={uploading}
-          aria-label="Upload a backdrop"
-          title={set.backdrop ? "Replace the backdrop" : "Upload a backdrop"}
-          className={`absolute top-6 right-6 ${HERO_BUTTON}`}
-        >
-          {uploading ? (
-            <Spinner className="h-4 w-4" />
-          ) : (
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="h-4 w-4"
-            >
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <path d="m21 15-5-5L5 21" />
-            </svg>
-          )}
-        </button>
       </div>
 
       {/* relative + z-10: the hero above is positioned, so without its own
@@ -341,15 +288,19 @@ export function CustomCollectionView({
 
           <div className="flex items-center gap-4">
             {/*
-             * Two marks where there were three words.
+             * Three marks where there were three words, and every one of them
+             * on the same line.
              *
-             * Adding is the thing you came to this page to do, so it keeps a
-             * button of its own — a plus, which is the one icon that needs no
-             * label. What is left is a rename and a delete: neither is anything
-             * you do often, and a delete standing out on the page beside the
-             * action you *are* here for is a hazard rather than a convenience.
-             * Both go behind the ellipsis, where they have to be read before
-             * they can be pressed.
+             * Adding is the thing you came to this page to do, so it leads — a
+             * plus, which is the one icon that needs no label. The picture
+             * comes next: it used to hang alone in the top corner of the hero,
+             * which is a fourth place to look for a control on a page that
+             * already has one place for them, and being over the artwork it was
+             * changing said nothing the icon does not say by itself. Rename and
+             * delete stay behind the ellipsis, where they have to be read
+             * before they can be pressed — neither is anything you do often,
+             * and a delete standing out beside the action you *are* here for is
+             * a hazard rather than a convenience.
              */}
             <div className="flex items-center gap-2">
               <button
@@ -372,21 +323,63 @@ export function CustomCollectionView({
                 </svg>
               </button>
 
+              {/* The other way in is still dropping an image on the hero
+                  itself, which is why the input lives beside the button rather
+                  than inside it: two gestures, one upload. */}
+              <input
+                ref={picker}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(event) => {
+                  const chosen = event.target.files?.[0];
+                  // Cleared so that picking the same file again counts as a
+                  // change again — which is what you do after one fails.
+                  event.target.value = "";
+                  if (chosen) upload(chosen);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => picker.current?.click()}
+                disabled={uploading}
+                aria-label={
+                  set.backdrop ? "Replace the backdrop" : "Upload a backdrop"
+                }
+                title={
+                  set.backdrop ? "Replace the backdrop" : "Upload a backdrop"
+                }
+                className={HERO_BUTTON}
+              >
+                {uploading ? (
+                  <Spinner className="h-4 w-4" />
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                    className="h-4 w-4"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <path d="m21 15-5-5L5 21" />
+                  </svg>
+                )}
+              </button>
+
               <SetMenu
                 onRename={() => setRenaming(true)}
                 onDelete={() => setDeleting(true)}
               />
             </div>
 
-            {/* The same ring a film carries, at the head of the set: one number
-                for the shelf, drawn the way every other score in the app is. */}
-            {set.owned.length > 0 && (
-              <ScoreRing
-                score={average}
-                ring={scoreTheme(average).stroke}
-                caption="average"
-              />
-            )}
+            {/* The dial the row carried, arrived and grown: one number for the
+                shelf, drawn the way every other score in the app is. */}
+            <SetScoreRing score={average} transitionKey={key} />
           </div>
         </div>
 
