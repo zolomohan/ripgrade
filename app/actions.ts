@@ -86,6 +86,11 @@ import {
   KEEP_EL_KEY,
   type ConvertJob,
 } from "@/lib/convert";
+import {
+  BACKDROP_KEY,
+  readBackdrop,
+  type Backdrop,
+} from "@/lib/backdrop";
 import { LAYOUT_KEY, readLayout, type Layout } from "@/lib/layout";
 import {
   addToCustomSet,
@@ -1478,6 +1483,25 @@ export async function getTheme(): Promise<Theme> {
 
 export async function setTheme(next: Theme): Promise<void> {
   setSetting(THEME_KEY, next);
+  refresh();
+}
+
+/**
+ * How far the artwork at the head of a page is allowed to spread — see
+ * lib/backdrop.ts.
+ *
+ * Read in the root layout beside the scheme and the glass, because what it sets
+ * is one more attribute on <html>: every rule the two full modes need is
+ * already written against `[data-backdrop]` in globals.css, so the six pages
+ * that draw a hero say nothing about this and never learn it was asked.
+ * `refresh()` redraws from that root, so the window fills the moment you press.
+ */
+export async function getBackdrop(): Promise<Backdrop> {
+  return readBackdrop();
+}
+
+export async function setBackdrop(next: Backdrop): Promise<void> {
+  setSetting(BACKDROP_KEY, next);
   refresh();
 }
 

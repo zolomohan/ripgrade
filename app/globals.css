@@ -367,6 +367,290 @@ body {
 }
 
 /*
+ * ---------------------------------------------------------------------------
+ * The backdrop at the head of a page, and the three things it is allowed to be.
+ *
+ * Six pages open on artwork — a film, an episode, a show, a comparison, a TMDb
+ * collection and one of your own — through the four class names in
+ * app/hero-art.ts. What those names mean is decided here rather than there,
+ * because it is decided by a setting: `data-backdrop` on <html> is written by
+ * the root layout from the Backdrop preference, and everything below is what
+ * changes when it does. See lib/backdrop.ts. Absent, this section is the band
+ * the app has always drawn.
+ *
+ * The heights first, and here rather than as utilities on the boxes, because
+ * two things need them now — the hero itself and the glass sheet that has to
+ * begin where the hero ends. One pair of numbers, read by both.
+ *
+ * They grow at the steps the page column grows at, and by about half of what
+ * proportion would ask for: height is spent out of the fold, and a hero that
+ * keeps its 16:9 on a 2560px screen is a picture you scroll past to reach the
+ * film. `--hero-tall` is for the pages whose subject is the picture, `--hero-
+ * short` for the ones whose subject is the list under it.
+ */
+:root {
+  --hero-tall: 24rem;
+  --hero-short: 18rem;
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --hero-tall: 32rem;
+    --hero-short: 24rem;
+  }
+}
+
+@media (min-width: 100rem) {
+  :root {
+    --hero-tall: 36rem;
+    --hero-short: 28rem;
+  }
+}
+
+@media (min-width: 120rem) {
+  :root {
+    --hero-tall: 40rem;
+    --hero-short: 32rem;
+  }
+}
+
+@media (min-width: 160rem) {
+  :root {
+    --hero-tall: 46rem;
+    --hero-short: 36rem;
+  }
+}
+
+.hero-box {
+  height: var(--hero-tall);
+}
+
+.hero-box-short {
+  height: var(--hero-short);
+}
+
+/*
+ * Which of the two this page opened with, said on the column so that the sheet
+ * standing beside the page can read it. `:has()` is doing the one job nothing
+ * else can here: the hero is somewhere inside `{children}` and the sheet is a
+ * sibling of it, so there is no way down from one to the other and no prop to
+ * thread — the pages are six, and half of them are server components that never
+ * hear the setting at all.
+ *
+ * Set unconditionally, band included, so there is only ever one definition of
+ * where a hero ends.
+ */
+.page-body:has(.hero-box) {
+  --hero-h: var(--hero-tall);
+}
+
+.page-body:has(.hero-box-short) {
+  --hero-h: var(--hero-short);
+}
+
+/*
+ * And now the two modes that fill the window.
+ *
+ * The picture leaves the column. `position: fixed` takes it out of the flow
+ * entirely and measures it against the viewport, which is the whole trick: the
+ * 14rem the rail occupies is padding on the column, and padding is not
+ * something a fixed element is inside. So the frame runs edge to edge and top
+ * to bottom, and the rail stands on it rather than beside it — which is the
+ * material the Glass setting has been describing all along, finally given
+ * something behind it worth bending.
+ *
+ * `z-index: -1` is what keeps it a backdrop rather than a lid. Negative depth
+ * paints after the canvas and before any of the page's own text, and the canvas
+ * is where `background` on <body> ends up, so nothing of the page is lost
+ * behind it. Neither the hero box nor the column is a stacking context — both
+ * are positioned with no z-index of their own — so this depth is measured
+ * against the document, and the rail's z-30 clears it comfortably.
+ *
+ * The column's `overflow-x: clip` does not reach either of these: a clip only
+ * applies to descendants whose containing block is inside it, and the
+ * containing block of a fixed element is the window.
+ *
+ * The hero box keeps its height. It is no longer holding the picture, but it is
+ * still holding the space the picture is meant to be looked at in before the
+ * page begins — without it the content would start at the top of the frame and
+ * the mode would be a wallpaper with a page stapled over it.
+ */
+:root[data-backdrop] :is(.hero-box, .hero-box-short) {
+  overflow: visible;
+}
+
+:root[data-backdrop] .hero-art,
+:root[data-backdrop] .hero-veil {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100vw;
+  height: 100dvh;
+  /* Preflight caps every image at the width of what holds it, which is exactly
+     right until an image is deliberately wider than what holds it. Fixed, the
+     containing block is the window and the cap never bites; scrolling, it is a
+     hero box that stops at the rail, and the frame was quietly trimmed back to
+     the column it was supposed to be escaping. */
+  max-width: none;
+}
+
+/*
+ * The veil, gentler than the band's.
+ *
+ * The band's ramp had to do all of the work: it was the only thing between the
+ * artwork and the words, so it went to the full page colour a third of the way
+ * up. Filling the window it is one of two, and the sheet below is the one that
+ * makes text legible — so this is left to do the other half of the job, which
+ * is to keep the foot of the window from being a photograph a caption is
+ * floating on. Pinned to the viewport, it holds that floor wherever you scroll.
+ */
+:root[data-backdrop] .hero-veil {
+  background-image: linear-gradient(
+    to top,
+    var(--background) 0%,
+    color-mix(in oklab, var(--background) 62%, transparent) 24%,
+    color-mix(in oklab, var(--background) 18%, transparent) 50%,
+    transparent 72%
+  );
+}
+
+/*
+ * The other of the two, which differs in one word and one number.
+ *
+ * `absolute` instead of `fixed` puts the frame back in the document, anchored
+ * to the hero box — so it is still a window's worth of picture, and it leaves
+ * with the page rather than sitting under it. The hero box's own left edge is
+ * inside the rail's padding, which fixed positioning ignored and absolute does
+ * not, so the 14rem is subtracted by hand at exactly the width the rail appears
+ * at. Below that the rail is a drawer and takes no room, so there is nothing to
+ * subtract.
+ *
+ * `overflow: visible` on the box above is what lets a window-tall picture live
+ * in a 36rem-tall parent; the column's horizontal clip absorbs the few pixels
+ * `100vw` overshoots by, the scrollbar gutter being held open — the same
+ * arithmetic the full-bleed shelves rely on.
+ */
+:root[data-backdrop="scrolling"] .hero-art,
+:root[data-backdrop="scrolling"] .hero-veil {
+  position: absolute;
+  inset: 0 auto auto 0;
+}
+
+@media (min-width: 48rem) {
+  :root[data-backdrop="scrolling"] .hero-art,
+  :root[data-backdrop="scrolling"] .hero-veil {
+    left: -14rem;
+  }
+}
+
+/*
+ * The sheet the page is read off — see app/page-glass.tsx for what it is and
+ * why it is a Glacé surface rather than a tint.
+ *
+ * Hidden by default, because it is rendered from the root layout and most pages
+ * have no hero for it to stand under; `:has()` is again the only thing that can
+ * tell. `position` at two class names' weight, because Glacé sets `relative` on
+ * every surface it draws and would otherwise drop this into the flow of the
+ * page — the same claim the rail makes further down this file.
+ *
+ * It begins a hero's height up the page, less an overlap: a film pulls its
+ * poster and title back over the foot of the picture by 7rem, and the sheet
+ * has to be under those rather than starting below them. The mask then fades it
+ * in across that whole overlap, so it is nothing where the artwork is at full
+ * strength and solid by the time the picture has ended.
+ *
+ * The mask is what makes this a lighting condition rather than a frosted
+ * rectangle laid on a photo: it thickens out of the picture at the top and
+ * thins back into the page at the bottom, so there is no line anywhere to catch
+ * on. Glacé's specular rim and its refraction are children of the element and
+ * are masked with it, which is what stops the pane from being outlined in light
+ * at a boundary that is meant not to exist.
+ *
+ * The ramp is eased rather than straight, and that is not a nicety. A linear
+ * fade is smooth in the middle and has a corner at each end — the alpha is
+ * climbing at full rate one pixel and flat the next — and a corner in a
+ * gradient is a faint line the eye finds even when it cannot say what it is
+ * looking at. Standing still that line is subtle; pinned behind a page that
+ * scrolls, it travels up the window as a soft band, which is the one thing this
+ * pane must not do. So the stops trace a smootherstep instead: alpha, its slope
+ * and its curvature all reach zero at both ends, and there is no moment at
+ * which anything changes abruptly enough to draw an edge. Eleven stops is what
+ * it takes for the browser's straight interpolation between them to stay under
+ * what a gradient in eight bits can show.
+ *
+ * Twenty rem to arrive in, where it was twelve. Length is the other half of the
+ * same argument: the same curve spread further is a shallower slope at every
+ * point, and a shallower slope is a fade that is happening rather than one you
+ * watch happen.
+ *
+ * Only down, though. There was a matching fade at each side, and it was the one
+ * edge that had nothing to soften: the window is where the page ends already,
+ * and a pane that thins out before it reaches the window reads as a strip of
+ * glass laid down the middle rather than as the page itself being glass. Left
+ * and right it runs the full width — under the rail on one side, to the window
+ * on the other.
+ */
+.page-glass {
+  display: none;
+}
+
+.glace-glass.page-glass {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+:root[data-backdrop]
+  .page-body:has(.hero-box, .hero-box-short)
+  > .page-glass {
+  display: block;
+  /*
+   * How long the pane takes to arrive, and it is one number because two things
+   * are measured from it: where the element starts, and where its mask reaches
+   * full strength. They have to be the same number or the fade lands somewhere
+   * other than the foot of the picture.
+   */
+  --page-glass-in: 20rem;
+  /* Never above the top of the page, which a short hero on a phone would
+     otherwise put it — the fade would then begin off-screen and the first thing
+     you saw would already be half glass. */
+  top: max(0px, calc(var(--hero-h) - var(--page-glass-in)));
+  right: 0;
+  bottom: 0;
+  left: 0;
+  mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0) 0,
+    rgb(0 0 0 / 0.009) calc(var(--page-glass-in) * 0.1),
+    rgb(0 0 0 / 0.058) calc(var(--page-glass-in) * 0.2),
+    rgb(0 0 0 / 0.163) calc(var(--page-glass-in) * 0.3),
+    rgb(0 0 0 / 0.317) calc(var(--page-glass-in) * 0.4),
+    rgb(0 0 0 / 0.5) calc(var(--page-glass-in) * 0.5),
+    rgb(0 0 0 / 0.683) calc(var(--page-glass-in) * 0.6),
+    rgb(0 0 0 / 0.837) calc(var(--page-glass-in) * 0.7),
+    rgb(0 0 0 / 0.942) calc(var(--page-glass-in) * 0.8),
+    rgb(0 0 0 / 0.991) calc(var(--page-glass-in) * 0.9),
+    rgb(0 0 0 / 1) var(--page-glass-in),
+    rgb(0 0 0 / 1) calc(100% - 12rem),
+    rgb(0 0 0 / 0.942) calc(100% - 9.6rem),
+    rgb(0 0 0 / 0.683) calc(100% - 7.2rem),
+    rgb(0 0 0 / 0.317) calc(100% - 4.8rem),
+    rgb(0 0 0 / 0.058) calc(100% - 2.4rem),
+    rgb(0 0 0 / 0) 100%
+  );
+}
+
+/*
+ * And the column becomes what the sheet is measured against. Only in the two
+ * full modes and only where there is a hero, so the containing block every
+ * absolutely positioned thing in the app already resolves against is left alone
+ * everywhere else.
+ */
+:root[data-backdrop] .page-body:has(.hero-box, .hero-box-short) {
+  position: relative;
+}
+
+/*
  * A single visible focus treatment for every interactive element. Inputs set
  * `outline-none` for their own border-colour focus style, so without this
  * keyboard focus was invisible across the whole app.

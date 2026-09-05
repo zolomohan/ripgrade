@@ -4,6 +4,7 @@ import {
   getConvertTempDir,
   getDataLocation,
   getKeepEnhancementLayer,
+  getBackdrop,
   getGlassPosters,
   getTheme,
   getGlassTuning,
@@ -21,6 +22,7 @@ import { SubtitleLanguages } from "./subtitle-languages";
 import { EnhancementLayer } from "./el-backup";
 import { GlassTuning } from "./glass-tuning";
 import { ThemeChoice } from "./theme-choice";
+import { BackdropChoice } from "./backdrop-choice";
 import { ListLayout } from "./list-layout";
 import { FolderSection } from "../folder-section";
 import { ScanButton } from "../scan-button";
@@ -99,6 +101,7 @@ export default async function SettingsPage() {
   const theme = await getTheme();
   const glass = await getGlassTuning();
   const glassPosters = await getGlassPosters();
+  const backdrop = await getBackdrop();
 
   /** What the shut row says: the languages kept, in the order they were shown. */
   const audioSummary = [
@@ -313,6 +316,26 @@ export default async function SettingsPage() {
           hint="Light or dark, or whatever the machine is set to. The app has had both palettes since the beginning and the machine was the only thing allowed to choose between them — which is the right default and a poor rule, since a laptop following the sun does not know this app is looked at in a dark room, or that a shelf of artwork reads better on white."
         >
           <ThemeChoice theme={theme} />
+        </Setting>
+
+        {/* Second, and next to the scheme rather than next to Glass, because
+            what it changes is the same kind of thing: how much of the window a
+            page is allowed to be, before anything is drawn on it. It does put
+            a film behind the rail, and the rail is what the Glass setting is
+            about — but that is what the choice produces rather than what it
+            asks. */}
+        <Setting
+          title="Backdrop"
+          summary={
+            backdrop === "band"
+              ? "A band at the top"
+              : backdrop === "fixed"
+                ? "The whole window, fixed"
+                : "The whole window, scrolling"
+          }
+          hint="Six pages open on a frame of the film, and a band is the cautious way to show one: a strip at the head of the column, starting where the rail stops. Given the whole window it runs behind the rail instead, which is the first time anything in this app has put a picture behind the glass — the page is then read off a pane over it. Fixed keeps the frame still and moves the page across it; scrolling lets it leave with the page."
+        >
+          <BackdropChoice backdrop={backdrop} />
         </Setting>
 
         <Setting

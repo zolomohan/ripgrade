@@ -34,13 +34,16 @@
  * picture you have to scroll past to reach the film. Each step adds about half
  * of what proportion would ask for — enough that the crop keeps opening up,
  * little enough that the page under it is still on the screen.
+ *
+ * The heights themselves are `--hero-tall` and `--hero-short` in globals.css
+ * rather than utilities here, because the glass sheet under the content has to
+ * know where the picture ends and a number written in two places is a number
+ * that ends up written two ways. See `Backdrop` in lib/backdrop.ts.
  */
-export const HERO_BOX =
-  "relative h-96 w-full overflow-hidden sm:h-[32rem] wide:h-[36rem] ultra:h-[40rem] cinema:h-[46rem]";
+export const HERO_BOX = "hero-box relative w-full overflow-hidden";
 
 /** The same, for the pages whose subject is the list under it. */
-export const HERO_BOX_SHORT =
-  "relative h-72 w-full overflow-hidden sm:h-96 wide:h-[28rem] ultra:h-[32rem] cinema:h-[36rem]";
+export const HERO_BOX_SHORT = "hero-box-short relative w-full overflow-hidden";
 
 /**
  * Anchored to the top rather than the middle.
@@ -54,7 +57,7 @@ export const HERO_BOX_SHORT =
  * the picture that survives is the part that is still visible.
  */
 export const HERO_ART =
-  "enter-veil absolute inset-0 h-full w-full object-cover object-top";
+  "hero-art enter-veil absolute inset-0 h-full w-full object-cover object-top";
 
 /**
  * What turns the foot of it into page.
@@ -66,4 +69,4 @@ export const HERO_ART =
  * anything.
  */
 export const HERO_VEIL =
-  "absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20";
+  "hero-veil absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20";

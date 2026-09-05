@@ -19,6 +19,7 @@ import {
 import "glaceui/styles.css";
 import "./globals.css";
 import { getStripJob } from "@/lib/audio-strip";
+import { backdropAttribute } from "@/lib/backdrop";
 import { themeAttribute } from "@/lib/theme";
 import { getConvertJob } from "@/lib/convert";
 import { getDoviJob } from "@/lib/dovi";
@@ -27,12 +28,13 @@ import { hasQb } from "@/lib/qbittorrent";
 import { getScanState } from "@/lib/scanner";
 import { getThumbJob } from "@/lib/thumbs";
 import { getSweepJob } from "@/lib/upgrade-sweep";
-import { getGlassTuning, getTheme } from "./actions";
+import { getBackdrop, getGlassTuning, getTheme } from "./actions";
 import { CapabilitiesProvider } from "./capabilities";
 import { GlassProvider } from "./glass";
 import { JobsProvider } from "./jobs-provider";
 import { ScanProvider } from "./scan-provider";
 import { Glow } from "./glow";
+import { PageGlass } from "./page-glass";
 import { RememberListing } from "./return-to";
 import { SearchProvider } from "./search/dialog";
 import { ServiceWorker } from "./service-worker";
@@ -175,6 +177,15 @@ export default async function RootLayout({
    */
   const theme = await getTheme();
 
+  /*
+   * And how far a page's artwork is allowed to spread, which travels the same
+   * way and for the same reason: what the two full modes need is `overflow`,
+   * `position` and a mask, all of them written against `[data-backdrop]` in
+   * globals.css. The six pages that open on a picture are not told which mode
+   * they are in and do not have to be.
+   */
+  const backdrop = await getBackdrop();
+
   // Seeded here so a reload mid-job shows progress immediately, before the
   // job stream has connected.
   const jobs = {
@@ -194,6 +205,12 @@ export default async function RootLayout({
       // `SplashDone` clears it once the splash is gone. See globals.css.
       data-splash=""
       data-theme={themeAttribute(theme)}
+      /*
+       * Absent for the band, which is what every rule in globals.css already
+       * draws — see `backdropAttribute`. Present, it says the backdrop fills
+       * the window and whether it stays there while the page moves over it.
+       */
+      data-backdrop={backdropAttribute(backdrop)}
       /*
        * The one part of the glass preference that is a colour and not a filter,
        * so it travels as CSS rather than as a prop: `--glass` in globals.css is
@@ -262,8 +279,17 @@ export default async function RootLayout({
                       `clip` rather than `hidden`: hidden makes this a scroll
                       container, which would break any sticky heading inside it,
                       and clip does not. */}
-                    <div className="flex flex-1 flex-col overflow-x-clip md:pl-56">
+                    <div className="page-body flex flex-1 flex-col overflow-x-clip md:pl-56">
                       {children}
+
+                      {/* After the page rather than before it, which is what
+                        puts it over the backdrop and under the words: both sit
+                        at `z-index: -1`, neither is in a stacking context of
+                        its own, and at equal depth the later element wins.
+                        Only where the backdrop fills the window — with the
+                        picture in a band there is nothing behind the page for
+                        a pane to be glass against. See ./page-glass.tsx. */}
+                      {backdrop !== "band" && <PageGlass />}
                     </div>
                   </div>
                 </SearchProvider>
