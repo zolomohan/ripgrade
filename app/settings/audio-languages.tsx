@@ -105,11 +105,13 @@ export function AudioLanguages({
             })}
           </div>
 
-          <Note>
-            {chosen.languages.length === 0 && !chosen.original
-              ? "Nothing is preferred, so nothing is proposed for removal."
-              : "Everything else is what the audio queue offers to remove. A track that names no language at all is always kept — on an English release that is usually the English one."}
-          </Note>
+          {/* Only the empty case says anything. The other branch explained
+              what the chips above it already show — that what is not kept is
+              what gets offered up — and a sentence restating the control it
+              sits under is a sentence read once. */}
+          {chosen.languages.length === 0 && !chosen.original && (
+            <Note>Nothing is preferred, so nothing is proposed for removal.</Note>
+          )}
         </div>
       ) : (
         <Note>

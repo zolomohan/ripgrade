@@ -18,7 +18,7 @@
  * direction that crossing works in.
  */
 
-import { Explained, FIELD } from "../controls";
+import { Explained, MenuItem, Popover } from "../controls";
 import { stagger } from "../stagger";
 
 /**
@@ -175,13 +175,24 @@ export function SettingRow({
         <p className="mt-1 text-xs leading-relaxed opacity-50">{blurb}</p>
       </div>
 
-      {/* The controls keep their own arrangement — most are a reading of the
-          current state and a button, laid out exactly this way already — and
-          only have to sit inside a column that ends where the page does.
-          Both columns start at the top: centred, a name sat halfway down
-          beside a tall control, and a column of rows drawn that way has no
-          line for the eye to run along. */}
-      <div className="min-w-0">{children}</div>
+      {/*
+       * The control, at the right-hand edge.
+       *
+       * Ranged right rather than filling the column, so every row on the page
+       * ends on the same vertical line — which is the edge the eye comes back
+       * to once it has found the row it wants, and the reason a settings page
+       * scans as a list rather than as fourteen little layouts. It is also
+       * what stopped the shorter controls wrapping: a status and a toggle told
+       * to spread across a column too narrow for both put the toggle on a line
+       * of its own, under the sentence it belonged beside.
+       *
+       * Both columns start at the top. Centred, a name sat halfway down beside
+       * a tall control, and a column of rows drawn that way has no line for
+       * the eye to run along at all.
+       */}
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
+        {children}
+      </div>
     </div>
   );
 }
@@ -192,16 +203,22 @@ export function SettingRow({
  * These were segmented switches — every option on screen, the chosen one lit.
  * That control earns its place at the head of a page, where the choices are
  * the page's own divisions and seeing all of them is the point. In a settings
- * row it is the wrong shape twice over: it puts three or four words where the
- * row beside it puts one, so the right-hand column never lines up, and it
- * states the alternatives with the same weight as the answer. What a settings
- * row wants to say is what the setting is, and a switch says what it could be.
+ * row it is wrong twice over: it puts three or four words where the row beside
+ * it puts one, so the right-hand column never lines up, and it states the
+ * alternatives with the same weight as the answer. A settings row is there to
+ * say what the setting is; a switch says what it could be.
  *
- * A native `<select>` in the app's own pill — `FIELD.select`, with the chevron
- * the release list and the artwork chooser draw beside theirs, since every
- * engine's own arrow is a different shape and none of them a pill. Native
- * because a menu that a keyboard, a screen reader and a phone all already know
- * how to open is not worth rebuilding.
+ * `Popover` and `MenuItem`, which is what every other menu in this app is made
+ * of — the sort and grouping menus on a shelf, the scope on the search page.
+ * It was briefly a native `<select>` on the reasoning that a menu a keyboard
+ * and a phone already know how to open is not worth rebuilding, and that is
+ * true and beside the point: this app draws its own menus, and one row of one
+ * page rendering the platform's instead is the seam you notice.
+ *
+ * The trigger takes a border here, which is the one thing it does not have in
+ * a bar. A bar draws one frame around all of its controls and rules them
+ * apart; a settings row has no frame, so the control has to be its own edge or
+ * it reads as a word floating at the end of a line.
  */
 export function Choice<T extends string>({
   value,
@@ -217,32 +234,36 @@ export function Choice<T extends string>({
   disabled?: boolean;
   onChange: (next: T) => void;
 }) {
+  const current = options.find((option) => option.value === value);
+
   return (
-    <div className="relative inline-flex">
-      <select
-        value={value}
-        aria-label={label}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value as T)}
-        className={`${FIELD.select} disabled:opacity-50`}
+    <div className={disabled ? "pointer-events-none opacity-50" : undefined}>
+      <Popover
+        label={label}
+        // The value is the whole of what the trigger says — see `icon`.
+        value={current?.label ?? value}
+        caret
+        align="right"
+        width="w-44"
+        buttonClassName="h-9 rounded-full border border-line"
       >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 opacity-40"
-      >
-        <path d="m6 9 6 6 6-6" />
-      </svg>
+        {(close) => (
+          <div className="py-1">
+            {options.map((option) => (
+              <MenuItem
+                key={option.value}
+                active={option.value === value}
+                onClick={() => {
+                  onChange(option.value);
+                  close();
+                }}
+              >
+                {option.label}
+              </MenuItem>
+            ))}
+          </div>
+        )}
+      </Popover>
     </div>
   );
 }

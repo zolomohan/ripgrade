@@ -112,11 +112,16 @@ export function SubtitleLanguages({
             })}
           </div>
 
-          <Note>
-            {chosen.languages.length === 0 && !chosen.original && !chosen.forced
-              ? "Nothing is preferred, so every subtitle track in the library is offered for removal."
-              : "Everything else is what the queue offers to remove. A track that names no language at all is always kept."}
-          </Note>
+          {/* Only the empty case says anything. The other branch explained
+              what the chips above it already show — that what is not kept is
+              what gets offered up — and a sentence restating the control it
+              sits under is a sentence read once. */}
+          {chosen.languages.length === 0 && !chosen.original && !chosen.forced && (
+            <Note>
+              Nothing is preferred, so every subtitle track in the library is
+              offered for removal.
+            </Note>
+          )}
         </div>
       ) : (
         <Note>

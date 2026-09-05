@@ -427,7 +427,13 @@ export function Popover({
   buttonClassName = "",
   children,
 }: {
-  icon: string;
+  /**
+   * The mark on the trigger. Optional: in a bar every control is an icon and a
+   * word, and the icon is what you find it by. A settings row already names
+   * the thing to the left of the control, so a second mark beside the value is
+   * a picture of a question that has already been asked.
+   */
+  icon?: string;
   label: string;
   value?: string;
   badge?: number;
@@ -472,17 +478,19 @@ export function Popover({
           open || badge ? "bg-surface-strong" : "hover:bg-surface-strong"
         } ${buttonClassName}`}
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-4 w-4 opacity-50"
-        >
-          <path d={icon} />
-        </svg>
+        {icon && (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4 opacity-50"
+          >
+            <path d={icon} />
+          </svg>
+        )}
         {value && <Flip>{value}</Flip>}
         {caret && (
           <svg

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -19,13 +19,16 @@ import path from "node:path";
  * own file watcher. A server left running through an afternoon of scanning
  * pays for that in memory, and it is memory nothing ever gives back.
  *
- * So the location is a setting, chosen on the Settings page like the scratch
- * space and the library folders are.
+ * So the location is a setting, and one you set from outside the app. It was
+ * briefly a row on the Settings page; the row went, because the deployment
+ * that most needs the directory moved is the one where the environment has
+ * already decided and the app may not argue — and a control that is inert
+ * wherever it matters is a control that lies.
  *
- * It is the one setting that cannot be a row in `settings`, and the reason is
+ * It could not have been a row in `settings` in any case, and the reason is
  * the shape of the thing: that table lives in the database, and this names the
  * directory the database is in. Reading it would mean opening the file whose
- * location it is the answer to. So it is written where it can be read before
+ * location it is the answer to. So it is read from where it can be read before
  * anything else exists — one line, one absolute path, in the file below.
  *
  * Three places it can come from, strongest first:
@@ -53,7 +56,6 @@ export const POINTER_FILE = path.join(process.cwd(), ".ripgrade-data-dir");
 /** Where it lands when nobody has said otherwise. */
 export const DEFAULT_DATA_DIR = path.join(process.cwd(), "data");
 
-export type DataDirSource = "environment" | "chosen" | "default";
 
 function chosenDataDir(): string | undefined {
   try {
@@ -74,26 +76,3 @@ const fromPointer = fromEnvironment ? undefined : chosenDataDir();
 
 export const DATA_DIR = fromEnvironment ?? fromPointer ?? DEFAULT_DATA_DIR;
 
-/**
- * Which of the three it came from, so the Settings row can say who is deciding
- * — and stop offering to change something it is not this app's turn to change.
- */
-export const DATA_DIR_SOURCE: DataDirSource = fromEnvironment
-  ? "environment"
-  : fromPointer
-    ? "chosen"
-    : "default";
-
-/**
- * Writes the choice down. Read on the next start and not before — see
- * `moveDataStore`, which is what calls this, and why a restart is the last
- * step of moving.
- */
-export function rememberDataDir(target: string): void {
-  writeFileSync(POINTER_FILE, `${path.resolve(target)}\n`, "utf8");
-}
-
-/** Back to `data/` under the project: the pointer goes, rather than pointing there. */
-export function forgetDataDir(): void {
-  rmSync(POINTER_FILE, { force: true });
-}

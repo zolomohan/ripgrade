@@ -53,7 +53,7 @@ export function SettingDialog({
       dismissible={!busy}
       panelClassName={`flex w-full flex-col overflow-hidden ${
         size === "bench"
-          ? "max-h-[min(92vh,58rem)] max-w-6xl"
+          ? "max-h-[min(94vh,68rem)] max-w-[min(96rem,94vw)]"
           : `max-h-[min(85vh,44rem)] ${size === "wide" ? "max-w-2xl" : "max-w-lg"}`
       }`}
     >

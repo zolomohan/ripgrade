@@ -5,13 +5,6 @@ import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { listDirectory, type DirListing } from "@/lib/browse";
-import {
-  DATA_DIR,
-  DATA_DIR_SOURCE,
-  DEFAULT_DATA_DIR,
-  type DataDirSource,
-} from "@/lib/data-dir";
-import { moveDataStore, type MoveResult } from "@/lib/data-move";
 import { getSetting, setSetting } from "@/lib/db";
 import { readTheme, THEME_KEY, type Theme } from "@/lib/theme";
 import {
@@ -138,7 +131,6 @@ import {
 import { movieId, showId } from "@/lib/routes";
 import {
   reprobeFile,
-  scanBusy,
   startScan,
   type ScanState,
 } from "@/lib/scanner";
@@ -152,7 +144,6 @@ import { setExtendedCut } from "@/lib/triage";
 import {
   cancelThumbRebuild,
   clearThumbCache,
-  getThumbJob,
   startThumbRebuild,
   thumbCacheStats,
   type ThumbJob,
@@ -360,66 +351,6 @@ export async function stopThumbRebuild(): Promise<ThumbJob> {
   return cancelThumbRebuild();
 }
 
-// ---------------------------------------------------------------------------
-// Where the data is kept
-// ---------------------------------------------------------------------------
-
-export type DataLocation = {
-  path: string;
-  source: DataDirSource;
-  /** `data/` under the project, for the row to name what it would go back to. */
-  fallback: string;
-};
-
-export async function getDataLocation(): Promise<DataLocation> {
-  return {
-    path: DATA_DIR,
-    source: DATA_DIR_SOURCE,
-    fallback: DEFAULT_DATA_DIR,
-  };
-}
-
-/**
- * Copies the database, the thumbnails and your own sets somewhere else, and
- * records it as the place to look on the next start.
- *
- * Refused while anything is running, which is not caution about the copy — a
- * copy of a checkpointed database is safe whatever else is happening — but
- * about what comes after it. The whole point of the move is the restart that
- * follows, and a scan or a conversion killed halfway through by somebody
- * restarting for an unrelated reason is an hour of drive thrown away. So the
- * offer is only made when there is nothing to lose by taking it.
- */
-export async function moveDataFolder(target: string): Promise<MoveResult> {
-  if (DATA_DIR_SOURCE === "environment") {
-    return {
-      ok: false,
-      error:
-        "RIPGRADE_DATA_DIR is set in this app's environment, and that wins over anything chosen here — a container's filesystem is not the one you are looking at. Change it there.",
-    };
-  }
-
-  const busy = runningJob();
-  if (busy) {
-    return {
-      ok: false,
-      error: `Moving means restarting, and ${busy} is running. Wait for it to finish.`,
-    };
-  }
-
-  return moveDataStore(target);
-}
-
-/** Whatever is under way, named as it would be said in a sentence. */
-function runningJob(): string | undefined {
-  if (scanBusy()) return "a scan";
-  if (getConvertJob().status === "running") return "a conversion";
-  if (getDoviJob().status === "running") return "a Dolby Vision pass";
-  if (getStripJob().status === "running") return "a track removal";
-  if (getSweepJob().status === "running") return "a sweep";
-  if (getThumbJob().status === "running") return "a thumbnail rebuild";
-  return undefined;
-}
 
 /** The maintenance scan: read the folders, and leave the asking cheap. */
 export async function beginScan(): Promise<ScanState> {

@@ -2,7 +2,6 @@ import {
   getAudioLanguages,
   getSubtitleLanguages,
   getConvertTempDir,
-  getDataLocation,
   getKeepEnhancementLayer,
   getBackdrop,
   getGlassPosters,
@@ -17,22 +16,20 @@ import {
   getTmdbStatus,
 } from "../actions";
 import { AudioLanguages } from "./audio-languages";
-import { DataFolder } from "./data-folder";
+import { LibraryFolders } from "./library-folders";
 import { SubtitleLanguages } from "./subtitle-languages";
 import { EnhancementLayer } from "./el-backup";
 import { GlassPanel } from "./glass-panel";
 import { ThemeChoice } from "./theme-choice";
 import { BackdropChoice } from "./backdrop-choice";
 import { ListLayout } from "./list-layout";
-import { FolderSection } from "../folder-section";
-import { ScanButton } from "../scan-button";
 import { Jackett } from "./jackett";
 import { Qbittorrent } from "./qbittorrent";
 import { QueueThreshold } from "./queue-threshold";
 import { TempFolder } from "./temp-folder";
 import { Thumbs } from "./thumbs";
 import { SettingsTabs } from "./settings-tabs";
-import { Row, SettingRow } from "./parts";
+import { SettingRow } from "./parts";
 import { Tmdb } from "./tmdb";
 import { DEFAULT_ROOT } from "@/lib/browse";
 import { glassSummary } from "@/lib/glass";
@@ -78,7 +75,6 @@ export default async function SettingsPage() {
   const qb = await getQbStatus();
   const tmdb = await getTmdbStatus();
   const thumbs = await getThumbCache();
-  const dataLocation = await getDataLocation();
   const queue = await getQueueRules();
   const audio = await getAudioLanguages();
   const subtitles = await getSubtitleLanguages();
@@ -169,18 +165,7 @@ export default async function SettingsPage() {
           blurb="The folders a scan walks. Everything the app knows comes from these."
           hint="Everything the app knows comes from scanning these. Add as many as the library is spread across — one scan walks all of them, and one runs every time the app starts."
         >
-          <FolderSection roots={roots} defaultPath={DEFAULT_ROOT} />
-
-          {/* Only once there is something to walk: a scan of no folders is an
-              error message dressed as a button. */}
-          {roots.length > 0 && (
-            <Row
-              title="Scan now"
-              hint="For when you have just moved a file and would rather not restart. Progress shows in the rail, wherever you go next."
-            >
-              <ScanButton />
-            </Row>
-          )}
+          <LibraryFolders roots={roots} defaultPath={DEFAULT_ROOT} />
         </Setting>
 
         <Setting
@@ -199,13 +184,6 @@ export default async function SettingsPage() {
           <Thumbs files={thumbs.files} bytes={thumbs.bytes} />
         </Setting>
 
-        <Setting
-          title="Data folder"
-          blurb="Where the database, the thumbnails and your own sets are kept."
-          hint="The database, the thumbnail cache and the artwork for sets of your own — everything the app makes for itself, and none of your films. Worth moving out of the project if you run from source: `next dev` watches the project folder and cannot be told not to, so a scan's write-ahead log becomes thousands of change events for the dev server to handle. The store is copied, not moved, and read from its new home after a restart."
-        >
-          <DataFolder location={dataLocation} />
-        </Setting>
       </>
     );
   }
@@ -232,7 +210,7 @@ export default async function SettingsPage() {
 
         <Setting
           title="Audio languages"
-          blurb="Which languages are worth the space. Audio is half a remux."
+          blurb="Which languages are worth the space they take."
           hint="Which languages are worth the space they take. On a remux the audio is routinely half the file, and a disc carries every language it was pressed with — so everything you do not keep is what the Jobs page's Strip Tracks tab offers to remove, one film at a time, original kept beside it."
         >
           <AudioLanguages
