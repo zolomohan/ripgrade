@@ -4,7 +4,12 @@ import path from "node:path";
 
 import { db } from "./db";
 import { titleKey } from "./derive";
-import { getEpisodes, type LibraryItem } from "./library";
+import {
+  forShelf,
+  getEpisodes,
+  type LibraryItem,
+  type ShelfItem,
+} from "./library";
 import type { DiscLookup } from "./bluray";
 import { getSeasonRecords, getShowRecords, getTvMatches } from "./tv";
 import { getSeasonDiscs } from "./tv-disc";
@@ -55,6 +60,34 @@ export type ShowSeason = {
   /** The year it first aired — what tells one season's disc set from another. */
   year?: number;
 };
+
+/**
+ * A show as the shelf needs it: every episode trimmed the way a film is.
+ *
+ * The episodes are the larger half of `/library`, not the films — three
+ * hundred of them against ninety, each carrying the same breakdown and track
+ * list a film does. The shows shelf reads three fields off an episode
+ * (`hdr`, `releaseType`, `resolution`) to say what a season is made of, and
+ * nothing else. See `ShelfItem` in lib/library.ts for the whole argument.
+ */
+export type ShelfShow = Omit<Show, "seasons"> & {
+  seasons: (Omit<ShowSeason, "episodes"> & {
+    episodes: (Omit<ShowEpisode, "item"> & { item: ShelfItem })[];
+  })[];
+};
+
+export function forShelfShow(show: Show): ShelfShow {
+  return {
+    ...show,
+    seasons: show.seasons.map((season) => ({
+      ...season,
+      episodes: season.episodes.map((episode) => ({
+        ...episode,
+        item: forShelf(episode.item),
+      })),
+    })),
+  };
+}
 
 export type Show = {
   key: string;

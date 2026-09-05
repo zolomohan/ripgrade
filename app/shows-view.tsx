@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 
 import { openIssues } from "@/lib/derive";
-import type { LibraryItem } from "@/lib/library";
+import type { ShelfItem } from "@/lib/library";
 import { posterName, showId } from "@/lib/routes";
 import {
   SHOW_VERDICT_ORDER,
@@ -12,7 +12,7 @@ import {
   showGaps as missing,
   showVerdict,
 } from "@/lib/show-verdict";
-import type { Show } from "@/lib/shows";
+import type { ShelfShow } from "@/lib/shows";
 import { Bar, BUTTON, HelpTip, ICONS, MenuItem, Popover } from "./controls";
 import { EmptyState } from "./empty-state";
 import { PosterTile, TILE_GRID } from "./poster-tile";
@@ -47,7 +47,7 @@ import { size } from "./format";
  * the way a shelf of films can.
  */
 
-const issuesOf = (show: Show) =>
+const issuesOf = (show: ShelfShow) =>
   episodesOf(show).reduce((n, e) => n + openIssues(e).length, 0);
 
 /**
@@ -55,16 +55,16 @@ const issuesOf = (show: Show) =>
  * on a show where one episode is SDR would be a lie, and the one episode that
  * breaks the run is exactly what you are looking for.
  */
-const all = (show: Show, test: (episode: LibraryItem) => boolean) =>
+const all = (show: ShelfShow, test: (episode: ShelfItem) => boolean) =>
   episodesOf(show).every(test);
 
-const any = (show: Show, test: (episode: LibraryItem) => boolean) =>
+const any = (show: ShelfShow, test: (episode: ShelfItem) => boolean) =>
   episodesOf(show).some(test);
 
 const FACETS: {
   key: string;
   label: string;
-  options: { key: string; label: string; test: (show: Show) => boolean }[];
+  options: { key: string; label: string; test: (show: ShelfShow) => boolean }[];
 }[] = [
   {
     key: "resolution",
@@ -173,7 +173,7 @@ const serialiseSelection = (selection: Selection) =>
   );
 
 /** Options within a row are OR-ed; rows are AND-ed. Exclusions always win. */
-function matches(show: Show, selection: Selection): boolean {
+function matches(show: ShelfShow, selection: Selection): boolean {
   for (const [key, mode] of selection) {
     if (mode === "exclude" && OPTIONS.get(key)!.test(show)) return false;
   }
@@ -208,7 +208,7 @@ function matches(show: Show, selection: Selection): boolean {
 const GROUPS: {
   key: string;
   label: string;
-  of: (show: Show) => string;
+  of: (show: ShelfShow) => string;
   /** Fixed order for the buckets; anything unlisted sorts alphabetically after. */
   order?: string[];
 }[] = [
@@ -242,7 +242,7 @@ const GROUPS: {
 const SORTS: {
   key: string;
   label: string;
-  compare: (a: Show, b: Show) => number;
+  compare: (a: ShelfShow, b: ShelfShow) => number;
 }[] = [
   // Worst first by default: the shelf is a to-do list before it is a catalogue,
   // and the show most worth doing something about should not need a sort to be
@@ -276,7 +276,7 @@ export function ShowsView({
   tabs,
   action,
 }: {
-  shows: Show[];
+  shows: ShelfShow[];
   /** The shelf switch, at the head of this shelf's own row of controls. */
   tabs: React.ReactNode;
   /** The page's own control, at the end of the row — see app/library-tabs.tsx. */
@@ -330,10 +330,10 @@ export function ShowsView({
 
   // Buckets follow the group's declared order; anything unlisted trails it
   // alphabetically — the film shelf's rule, because it is the same shelf.
-  const buckets: [string, Show[]][] = (() => {
+  const buckets: [string, ShelfShow[]][] = (() => {
     if (grouping.key === "none") return [];
 
-    const map = new Map<string, Show[]>();
+    const map = new Map<string, ShelfShow[]>();
     for (const show of shown) {
       const name = grouping.of(show);
       const bucket = map.get(name);
@@ -614,7 +614,7 @@ export function ShowsView({
 }
 
 /** The shelf, for the whole library or for one bucket of it. */
-function Shelf({ shows }: { shows: Show[] }) {
+function Shelf({ shows }: { shows: ShelfShow[] }) {
   return (
     <div className={TILE_GRID}>
       {shows.map((show, i) => (
@@ -633,7 +633,7 @@ function Shelf({ shows }: { shows: Show[] }) {
  * copied. What is genuinely this shelf's is what goes in the corners: the
  * average score, and the count of what is missing.
  */
-function ShowTile({ show, index }: { show: Show; index: number }) {
+function ShowTile({ show, index }: { show: ShelfShow; index: number }) {
   const gaps = missing(show);
 
   return (

@@ -1,7 +1,7 @@
 "use client";
 
-import type { LibraryItem } from "@/lib/library";
-import type { Show } from "@/lib/shows";
+import type { ShelfItem } from "@/lib/library";
+import type { ShelfShow } from "@/lib/shows";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import { Switch } from "./controls";
 import { useTabParam } from "./tab-param";
@@ -28,8 +28,8 @@ export function LibraryTabs({
   upgrades,
   jackettReady,
 }: {
-  movies: LibraryItem[];
-  shows: Show[];
+  movies: ShelfItem[];
+  shows: ShelfShow[];
   /**
    * The better copies the sweep found, for the film shelf alone.
    *

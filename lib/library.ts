@@ -252,6 +252,50 @@ export function getLibrary(): LibraryItem[] {
   });
 }
 
+/**
+ * A file as a shelf needs it, which is a good deal less than a file.
+ *
+ * `LibraryItem` is written for the film's own page, where every fact about the
+ * copy is on screen at once: why it scored what it did, line by line; every
+ * subtitle track in the container; the sentences behind the verdict. A shelf
+ * draws a poster, a title, a year and a number, and filters on a handful of
+ * booleans — and it is handed four hundred of them at once.
+ *
+ * Handed the whole thing, `/library` serialised 2.7 MB into the page. Two
+ * thirds of that was four fields no shelf reads: `breakdown` alone was a third
+ * of it, sixteen scored lines per file each carrying a label, a detail
+ * sentence and a spec, for a shelf that shows the total. The browser paid for
+ * all of it — decompressing, parsing and building React elements — on the
+ * click that asked for the page, which is what made the sidebar feel dead.
+ *
+ * An `Omit` rather than a hand-written type so this cannot drift from what it
+ * is a projection of, and so that the compiler is what proves the claim above:
+ * a shelf that starts reading one of these fields stops compiling, rather than
+ * quietly putting the megabyte back.
+ *
+ * `issues` was on this list until the compiler said otherwise — the shelf reads
+ * it for the state dot on a tile and for the "needs attention" filter. It is
+ * under two per cent of the payload and it stays, which is the whole reason to
+ * write this as a type the build checks rather than a list somebody maintains.
+ */
+export type ShelfItem = Omit<
+  LibraryItem,
+  "breakdown" | "subtitles" | "reasons"
+>;
+
+/**
+ * The projection, done by destructuring so that a field added to `Derived`
+ * arrives on the shelf by default. Dropping something is the deliberate act,
+ * which is the right way round: a new field is far more likely to be a small
+ * fact a shelf might want than another sixteen-line breakdown.
+ */
+export function forShelf(item: LibraryItem): ShelfItem {
+  /* eslint-disable @typescript-eslint/no-unused-vars */
+  const { breakdown, subtitles, reasons, ...rest } = item;
+  /* eslint-enable @typescript-eslint/no-unused-vars */
+  return rest;
+}
+
 /** The films. Everything movie-shaped in this app means this, not every file. */
 export function getMovies(): LibraryItem[] {
   return getLibrary().filter((m) => m.kind === "movie");

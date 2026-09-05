@@ -2,6 +2,31 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   experimental: {
+    /*
+     * How long the client keeps a page it has already been given.
+     *
+     * Stated rather than inherited, because the default moved under this app
+     * once already: `dynamic` was thirty seconds until Next 15 and is zero
+     * now, and zero means a page is thrown away the moment you leave it. Every
+     * route here is dynamic, so nothing was ever kept and every visit to a tab
+     * was a fresh fetch of the whole thing.
+     *
+     * `static` is the number that actually applies to the rail, since its
+     * links prefetch in full — see `prefetch` in app/sidebar.tsx — and five
+     * minutes of a library that changes only when a scan writes to it is not a
+     * gamble. `dynamic` is raised off the floor for everything else: the film
+     * pages, opened from a shelf and stepped back out of, where thirty seconds
+     * covers the way you actually move through them.
+     *
+     * Neither number is load-bearing for freshness. The server actions call
+     * `refresh()` after a write and the scan's end does the same through the
+     * job stream, so a change on disk clears these rather than waiting them
+     * out.
+     */
+    staleTimes: {
+      dynamic: 30,
+      static: 300,
+    },
     // Lets a route change be a view transition, which is what carries a poster
     // from its tile in the library across to the page it opens. React's
     // <ViewTransition> does the pairing; this flag is what makes navigation

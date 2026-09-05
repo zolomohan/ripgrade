@@ -562,6 +562,34 @@ export function Sidebar() {
                       ref={register(page.href)}
                       href={page.href}
                       aria-current={active ? "page" : undefined}
+                      /*
+                       * The whole page, fetched before it is asked for.
+                       *
+                       * `auto` — the default — prefetches a dynamic route only
+                       * as far as its nearest loading boundary, and every page
+                       * here is dynamic with no boundary anywhere, so it was
+                       * fetching about two hundred bytes of nothing and the
+                       * real page was fetched on the click. That is the wait
+                       * you feel in the rail.
+                       *
+                       * The obvious fix is a `loading.tsx`, and it is the wrong
+                       * one here. A loading boundary answers a click by
+                       * replacing the page with a skeleton — and this app's
+                       * navigations are meant to be one poster moving from a
+                       * tile to the page it opens. A skeleton has no poster in
+                       * it, so there is nothing for the browser to pair the old
+                       * one with, and the morph degrades to a cross-fade. The
+                       * illusion is the point; a spinner in its place is a
+                       * worse page that happens to feel faster.
+                       *
+                       * `true` prefetches the whole route instead, boundary or
+                       * no boundary, and moves it into the client cache's
+                       * `static` bucket — five minutes rather than the zero
+                       * seconds a dynamic route gets. So the page is already
+                       * in hand when you press, the real poster is there to
+                       * morph into, and nothing has to stand in for it.
+                       */
+                      prefetch
                       /* Hover brings the label up to full strength and nothing
                          else. `.glow` already lights the row under the pointer,
                          and a wash laid on top of that light was a second answer

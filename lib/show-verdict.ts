@@ -1,5 +1,4 @@
-import type { LibraryItem } from "./library";
-import type { Show } from "./shows";
+import type { ShelfItem } from "./library";
 
 /**
  * What a whole show amounts to.
@@ -14,8 +13,28 @@ import type { Show } from "./shows";
  * it is evaluated, and the shelf is a client component.
  */
 
+/**
+ * What these readings actually need of a show, rather than which type it is.
+ *
+ * There are two shapes of show now — the whole one the show's own page is
+ * built from, and the trimmed one the shelf is handed (see `ShelfShow` in
+ * lib/shows.ts) — and every function here works on both, because none of them
+ * reads a field the trim drops. Saying that structurally rather than naming
+ * one of the two is what makes it true rather than merely currently true, and
+ * it is the same claim the header makes about the database: this module needs
+ * a season and an episode, not an import.
+ */
+export type ShowLike<E = ShelfItem> = {
+  seasons: {
+    episodes: { item: E }[];
+    /** Counted, never read into — see `showGaps`. */
+    missing: unknown[];
+    total?: number;
+  }[];
+};
+
 /** One episode's file, which is what every reading below is actually of. */
-export const episodesOf = (show: Show): LibraryItem[] =>
+export const episodesOf = <E>(show: ShowLike<E>): E[] =>
   show.seasons.flatMap((season) => season.episodes.map((e) => e.item));
 
 /**
@@ -24,7 +43,7 @@ export const episodesOf = (show: Show): LibraryItem[] =>
  * guesses as absences reports a library as incomplete for the crime of not
  * being identified yet.
  */
-export const showGaps = (show: Show): number =>
+export const showGaps = (show: ShowLike<unknown>): number =>
   show.seasons.reduce(
     (n, season) => n + (season.total === undefined ? 0 : season.missing.length),
     0,
@@ -58,7 +77,9 @@ export const SHOW_VERDICT_ORDER = [
  * outrank "Best available", because a season short of three episodes is not the
  * best available copy of anything, however good the files present are.
  */
-export function showVerdict(show: Show): (typeof SHOW_VERDICT_ORDER)[number] {
+export function showVerdict(
+  show: ShowLike<Pick<ShelfItem, "status" | "disc">>,
+): (typeof SHOW_VERDICT_ORDER)[number] {
   if (showGaps(show) > 0) return "Missing episodes";
 
   const episodes = episodesOf(show);
@@ -84,9 +105,9 @@ export function showVerdict(show: Show): (typeof SHOW_VERDICT_ORDER)[number] {
  * Vision" on a run where one episode is SDR would be a lie, and that one
  * episode is exactly what you are looking for.
  */
-export const shared = (
-  show: Show,
-  of: (episode: LibraryItem) => string | undefined,
+export const shared = <E>(
+  show: ShowLike<E>,
+  of: (episode: E) => string | undefined,
 ): string => {
   const values = new Set(episodesOf(show).map((e) => of(e) ?? "Unknown"));
   return values.size === 1

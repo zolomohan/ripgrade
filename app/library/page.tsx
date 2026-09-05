@@ -2,8 +2,8 @@ import Link from "next/link";
 
 import { getLibraryFolders } from "@/app/actions";
 import { hasJackett } from "@/lib/jackett";
-import { getMovies } from "@/lib/library";
-import { getShows } from "@/lib/shows";
+import { forShelf, getMovies } from "@/lib/library";
+import { forShelfShow, getShows } from "@/lib/shows";
 import { getUpgradeQueue } from "@/lib/upgrade-sweep";
 import { LibraryTabs } from "@/app/library-tabs";
 import { BUTTON } from "@/app/button";
@@ -47,8 +47,12 @@ export default async function Page() {
     <main className="mx-auto flex page-column flex-1 flex-col gap-8 px-6 py-8 sm:px-8">
       {movies.length > 0 || shows.length > 0 ? (
         <LibraryTabs
-          movies={movies}
-          shows={shows}
+          // Trimmed on the way across, and only on the way across: the reads
+          // above want whole files — `getUpgradeQueue` scores against them —
+          // and it is the crossing into the client that is expensive. See
+          // `ShelfItem` in lib/library.ts.
+          movies={movies.map(forShelf)}
+          shows={shows.map(forShelfShow)}
           upgrades={upgrades}
           jackettReady={hasJackett()}
         />

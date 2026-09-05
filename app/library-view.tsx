@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { openIssues, titleKey } from "@/lib/derive";
-import type { LibraryItem } from "@/lib/library";
+import type { ShelfItem } from "@/lib/library";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import { ago, size } from "./format";
 import { useLingering } from "./modal";
@@ -37,7 +37,7 @@ type FilterContext = {
 type Option = {
   key: string;
   label: string;
-  test: (m: LibraryItem, ctx: FilterContext) => boolean;
+  test: (m: ShelfItem, ctx: FilterContext) => boolean;
 };
 
 /**
@@ -203,7 +203,7 @@ const serialiseSelection = (selection: Selection) =>
   [...selection.entries()].map(([k, v]) => (v === "exclude" ? `-${k}` : k));
 
 function matches(
-  movie: LibraryItem,
+  movie: ShelfItem,
   selection: Selection,
   ctx: FilterContext,
 ): boolean {
@@ -234,7 +234,7 @@ function matches(
 const GROUPS: {
   key: string;
   label: string;
-  of: (m: LibraryItem, ctx: FilterContext) => string;
+  of: (m: ShelfItem, ctx: FilterContext) => string;
   /** Fixed order for the buckets; anything unlisted sorts alphabetically after. */
   order?: string[];
 }[] = [
@@ -303,7 +303,7 @@ const GROUPS: {
 const SORTS: {
   key: string;
   label: string;
-  compare: (a: LibraryItem, b: LibraryItem) => number;
+  compare: (a: ShelfItem, b: ShelfItem) => number;
 }[] = [
   {
     key: "worst",
@@ -354,7 +354,7 @@ function Card({
   onRelease,
   index,
 }: {
-  movie: LibraryItem;
+  movie: ShelfItem;
   /**
    * The better copy the sweep found for this film, where there is one.
    *
@@ -441,7 +441,7 @@ function Films({
   upgrades,
   onRelease,
 }: {
-  films: LibraryItem[];
+  films: ShelfItem[];
   upgrades: Map<string, UpgradeQueueItem>;
   onRelease: (item: UpgradeQueueItem) => void;
 }) {
@@ -467,7 +467,7 @@ export function LibraryView({
   tabs,
   action,
 }: {
-  movies: LibraryItem[];
+  movies: ShelfItem[];
   /** The better copies the sweep found, by the path of the film they beat. */
   upgrades: UpgradeQueueItem[];
   /** Whether the "every release" search has anywhere to ask. */
@@ -551,7 +551,7 @@ export function LibraryView({
   // Same grouping key the server uses, so the list and the duplicates section
   // can never disagree about what counts as a duplicate.
   const duplicates = (() => {
-    const groups = new Map<string, LibraryItem[]>();
+    const groups = new Map<string, ShelfItem[]>();
     for (const movie of movies) {
       const key = titleKey(movie.title, movie.year);
       const bucket = groups.get(key);
@@ -602,10 +602,10 @@ export function LibraryView({
 
   // Buckets follow the group's declared order; anything unlisted trails it
   // alphabetically, so a new collection never silently jumps to the top.
-  const buckets: [string, LibraryItem[]][] = (() => {
+  const buckets: [string, ShelfItem[]][] = (() => {
     if (grouping.key === "none") return [];
 
-    const map = new Map<string, LibraryItem[]>();
+    const map = new Map<string, ShelfItem[]>();
     for (const movie of shown) {
       const name = grouping.of(movie, ctx);
       const bucket = map.get(name);
