@@ -13,7 +13,14 @@ import {
 } from "@/app/actions";
 import { Art } from "@/app/art";
 import { ConfirmModal } from "@/app/confirm";
-import { BUTTON, Fact, useDismiss, useOverlay } from "@/app/controls";
+import {
+  BUTTON,
+  Fact,
+  ICONS,
+  MenuAction,
+  useDismiss,
+  useOverlay,
+} from "@/app/controls";
 import {
   errored,
   IDLE_POLL_MS,
@@ -373,14 +380,7 @@ function TransportIcon({ paused }: { paused: boolean }) {
       aria-hidden
       className="h-5 w-5"
     >
-      {paused ? (
-        <path d="M8 5.5v13l11-6.5z" />
-      ) : (
-        <>
-          <path d="M9.5 5.5v13" />
-          <path d="M14.5 5.5v13" />
-        </>
-      )}
+      <path d={paused ? ICONS.play : ICONS.pause} />
     </svg>
   );
 }
@@ -434,9 +434,7 @@ function BinIcon() {
       aria-hidden
       className="h-4 w-4"
     >
-      <path d="M5 7h14" />
-      <path d="M9.5 7V4.8h5V7" />
-      <path d="M6.9 7l.8 11.5a1.7 1.7 0 0 0 1.7 1.6h5.2a1.7 1.7 0 0 0 1.7-1.6L17.1 7" />
+      <path d={ICONS.bin} />
     </svg>
   );
 }
@@ -452,7 +450,7 @@ function CrossIcon() {
       aria-hidden
       className="h-5 w-5"
     >
-      <path d="M6 6l12 12M18 6L6 18" />
+      <path d={ICONS.cross} />
     </svg>
   );
 }
@@ -501,7 +499,7 @@ function RowMenu({
   items,
   busy,
 }: {
-  items: { label: string; onSelect: () => void }[];
+  items: { label: string; icon: string; onSelect: () => void }[];
   busy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -530,17 +528,15 @@ function RowMenu({
           className={`${leaving ? "pop-out" : "row-enter"} overlay-pane absolute top-full right-0 z-30 mt-2 w-56 overflow-hidden py-1`}
         >
           {items.map((item) => (
-            <button
+            <MenuAction
               key={item.label}
-              type="button"
+              icon={item.icon}
+              label={item.label}
               onClick={() => {
                 setOpen(false);
                 item.onSelect();
               }}
-              className="glow flex w-full items-center px-3 py-2 text-left text-sm transition-colors hover:bg-surface-strong"
-            >
-              {item.label}
-            </button>
+            />
           ))}
         </Glass>
       )}
@@ -1670,6 +1666,10 @@ export function DownloadsView({
                         items={[
                           {
                             label: paused ? "Resume" : "Pause",
+                            // The mark the tiles wear for the same act, so the
+                            // one control on this page that undoes itself
+                            // reads the same in both layouts.
+                            icon: paused ? ICONS.play : ICONS.pause,
                             onSelect: () =>
                               control(() =>
                                 paused
@@ -1679,6 +1679,7 @@ export function DownloadsView({
                           },
                           {
                             label: "Cancel this download",
+                            icon: ICONS.cross,
                             onSelect: () =>
                               setConfirming({ kind: "cancel", entry }),
                           },

@@ -349,6 +349,35 @@ export const ICONS = {
    * pointed at the shelf underneath the button.
    */
   scan: "M5 12h14M3 7v-2a2 2 0 0 1 2 -2h2M3 17v2a2 2 0 0 0 2 2h2M17 3h2a2 2 0 0 1 2 2v2M17 21h2a2 2 0 0 0 2 -2v-2",
+
+  /*
+   * And the marks the action menus wear, which are a different kind of icon
+   * from the five above: those name a question a bar asks of a list, these name
+   * a thing that will happen when you let go of the mouse. They are here all
+   * the same, and for the reason this list exists at all — a bin drawn twice is
+   * a bin that comes to be drawn two ways, and the app had reached three
+   * crosses before anybody counted them.
+   */
+
+  /** Rename: the pencil, with the line where the nib is bound to the shaft. */
+  rename: "M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17zM14.5 7.5l3 3",
+  /**
+   * Delete: the bin the transfer tiles already wear, which is where this path
+   * comes from — see `BinIcon` on the downloads page, which now draws it from
+   * here rather than from its own copy.
+   */
+  bin: "M5 7h14M9.5 7V4.8h5V7M6.9 7l.8 11.5a1.7 1.7 0 0 0 1.7 1.6h5.2a1.7 1.7 0 0 0 1.7-1.6L17.1 7",
+  /**
+   * The two faces of the one control that undoes itself, in the shape a media
+   * control has been for fifty years.
+   */
+  pause: "M9.5 5.5v13M14.5 5.5v13",
+  play: "M8 5.5v13l11-6.5z",
+  /**
+   * The app's own cross, at the app's own weight: a cross should be one cross
+   * however many lists draw it. What it means is left to the row around it.
+   */
+  cross: "M6 6l12 12M18 6L6 18",
 };
 
 /**
@@ -582,6 +611,72 @@ export function MenuItem({
           <path d="m4 12.5 5 5 11-11" />
         </svg>
       )}
+    </button>
+  );
+}
+
+/**
+ * One action in a menu: the mark for it, then the word.
+ *
+ * `MenuItem` above is the other kind of row and they are not interchangeable.
+ * That one offers a value out of a few — a sort order, a scope, a setting — and
+ * carries a tick on whichever is in force, because what it is saying is what
+ * the list *is*. This one is a verb: press it and something happens, once, and
+ * there is no state for a tick to report. Renaming a set, throwing it away,
+ * pausing a transfer, cancelling it, opening the artwork editor on one kind of
+ * picture rather than another — all of them are this.
+ *
+ * The mark is the whole of the difference. A menu of verbs is read at the
+ * moment you have decided to act and are looking for the one row that does it,
+ * and a mark is found in a glance where a word has to be read; it is also the
+ * only thing separating "Delete" from "Rename" in the second before you notice
+ * the red. The three menus this replaces had each written the row out
+ * themselves, and only one of them had thought to draw anything.
+ *
+ * At the size of the word beside it and at the app's usual stroke, like the
+ * rail's marks: a mark that outweighs its label is a mark being asked to do
+ * the label's job.
+ *
+ * Danger is a hover, not a state. The red arrives when you are reaching for it;
+ * standing red on a row in a list of rows is a warning about a thing you have
+ * not yet decided to do — the dialog behind it is where the colour belongs
+ * standing. The same rule `BUTTON.danger` keeps.
+ */
+export function MenuAction({
+  icon,
+  label,
+  danger,
+  onClick,
+}: {
+  /** The `d` of a path in a 24×24 box, drawn stroked — as `ICONS` holds them. */
+  icon: string;
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`glow flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+        danger
+          ? "hover:bg-red-500/[0.08] hover:text-red-700 dark:hover:text-red-300"
+          : "hover:bg-surface-strong"
+      }`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="h-3.5 w-3.5 shrink-0 opacity-60"
+      >
+        <path d={icon} />
+      </svg>
+      {label}
     </button>
   );
 }

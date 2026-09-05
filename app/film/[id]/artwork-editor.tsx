@@ -11,7 +11,13 @@ import {
   uploadShowArtwork,
   type ArtworkChoice,
 } from "@/app/actions";
-import { BUTTON, FIELD, useDismiss, useOverlay } from "@/app/controls";
+import {
+  BUTTON,
+  FIELD,
+  MenuAction,
+  useDismiss,
+  useOverlay,
+} from "@/app/controls";
 import { Spinner } from "@/app/spinner";
 import { imageUrl } from "@/lib/image-url";
 import { HERO_BUTTON } from "./hero-button";
@@ -488,29 +494,12 @@ export function ArtworkEditor({
                 fact about the kind, so it lives where the rest of them do. */}
             {(Object.entries(KINDS) as [Tab, (typeof KINDS)[Tab]][]).map(
               ([kind, { label, icon }]) => (
-                <button
+                <MenuAction
                   key={kind}
-                  type="button"
+                  icon={icon}
+                  label={label}
                   onClick={() => openWith(kind)}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-strong"
-                >
-                  {/* At the size of the word beside it and at the app's usual
-                      stroke, like the rail's marks: a mark that outweighs its
-                      label is a mark being asked to do the label's job. */}
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                    className="h-3.5 w-3.5 shrink-0 opacity-60"
-                  >
-                    <path d={icon} />
-                  </svg>
-                  {label}
-                </button>
+                />
               ),
             )}
           </Glass>
