@@ -530,6 +530,35 @@ body {
   }
 }
 
+/*
+ * A panel leaving, which is the other half of `row-enter` above.
+ *
+ * These arrive on that — up four pixels and into full opacity — and until now
+ * left by ceasing to exist, which reads less like closing than like the menu
+ * having never been there at all. This is the same movement run backwards, so
+ * it goes out the way it came in.
+ *
+ * 140ms against the 200 it arrives in. Out is quicker than in, as everywhere
+ * else here: opening is something you asked to watch, shutting is something you
+ * asked to be over. See `useOverlay` in app/controls.tsx, which is what keeps
+ * the panel on screen long enough for this to run.
+ *
+ * `forwards`, because the element is unmounted the instant this ends and the
+ * last frame has to be the one it stays on until then.
+ */
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pop-out {
+    animation: pop-out 140ms ease-in forwards;
+  }
+}
+
 @keyframes row-enter {
   from {
     opacity: 0;
@@ -1828,6 +1857,277 @@ body {
  */
 .glace-glass.modal-pane {
   --g-shadow: 0 24px 60px rgba(0, 0, 0, 0.34), 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+/*
+ * The dashboard's scan, which is a mark until it is a menu — see `ScanFab` in
+ * app/scan-fab.tsx.
+ *
+ * Glacé's `morph` springs width and height, which is the movement itself. The
+ * corner is not in that list — `border-radius` is written inline, the
+ * displacement map being cut to the pane's exact rounded shape — so it is put
+ * on the same clock here rather than snapping at one end or the other.
+ *
+ * All three written out, and that is not tidiness. `transition` is a shorthand:
+ * naming the corner alone here replaces Glacé's declaration rather than adding
+ * to it — this rule is the heavier of the two and the later — and the width and
+ * height it was springing stop being animated at all. The pane simply appeared
+ * at its new size with its corner easing after it, which is precisely the
+ * "there is no animation" it looked like.
+ *
+ * It has very little to do. Shut, the radius is half the box and the box is a
+ * circle; open, it is 26. Two pixels apart, so the corner is not really an
+ * animation at all any more — which is the fix for its looking like a second
+ * one that ran after the first. A radius of 999 is visually the same as any
+ * radius past half the box, so the whole of that journey happened invisibly
+ * until the last few pixels and then arrived all at once, late.
+ *
+ * The shadow is a floating control's: longer than a menu hanging off a bar,
+ * because nothing here is holding it up. It is the only thing in the app that
+ * is over the page and attached to nothing on it.
+ */
+.glace-glass.scan-fab {
+  --g-shadow: 0 12px 34px rgba(0, 0, 0, 0.26), 0 3px 10px rgba(0, 0, 0, 0.14);
+}
+
+/*
+ * Its own spring, and not Glacé's.
+ *
+ * The kit's overshoots by four per cent and reaches its target a little past
+ * the halfway mark, then spends the whole back half creeping the last fraction
+ * of a pixel. That is a fine curve for a toast sliding a few millimetres and
+ * the wrong one for a box that quadruples in width: stretched over 0.55s it
+ * meant the pane visibly stopped at about 290ms and then went on adjusting for
+ * another 260, which is what reads as unnatural — not too slow so much as
+ * finished long before it admits it.
+ *
+ * This one is a damped spring at ζ 0.60, sampled: it overshoots nine and a half
+ * per cent and is at full size by a quarter of the way through, so almost all
+ * of the time is the bounce settling rather than the arrival dragging.
+ *
+ * The overshoot is not chosen for its own sake — it is set by what the corner
+ * below can do. See the note there.
+ */
+:root {
+  --fab-spring: linear(
+    0,
+    0.0689,
+    0.2301,
+    0.4275,
+    0.6221,
+    0.7902,
+    0.9204,
+    1.0108,
+    1.0651,
+    1.0902,
+    1.0942,
+    1.0847,
+    1.068,
+    1.049,
+    1.0311,
+    1.0161,
+    1.0048,
+    0.9972,
+    0.9929,
+    0.9912,
+    0.9912,
+    0.9924,
+    0.994,
+    0.9958,
+    0.9975,
+    0.9988,
+    0.9998
+  );
+}
+
+/*
+ * Out is quicker than in, as everywhere else here: opening is something you
+ * asked to watch and shutting is something you asked to be over. It leaves on
+ * Glacé's own ease-out with no bounce at all — a pane springing past its mark
+ * on the way to not existing is a flourish about nothing.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .glace-glass.scan-fab {
+    transition:
+      width 0.24s var(--glace-spring-out),
+      height 0.24s var(--glace-spring-out),
+      border-radius 0.24s var(--glace-spring-out);
+  }
+
+  .glace-glass.scan-fab[data-open="true"] {
+    transition:
+      width 0.38s var(--fab-spring),
+      height 0.38s var(--fab-spring),
+      border-radius 0.38s var(--fab-spring);
+    animation: fab-corner 0.38s linear;
+  }
+}
+
+/*
+ * The other two edges.
+ *
+ * The pane is pinned to the bottom right of the window, so growing it moves
+ * its top and left edges and nothing else — the spring was bouncing, but only
+ * where there was somewhere to bounce to. The corner it is anchored by cannot
+ * move by getting bigger; it has to be pushed.
+ *
+ * So it is, by exactly as far as the size is overshooting at that instant. The
+ * numbers below are the same spring as `--fab-spring`, read as its distance
+ * past the resting size rather than its progress towards it — which is why the
+ * peak here lands where the width's overshoot peaks, and why the corner pulls a
+ * pixel *inside* itself around 75% while the width is undershooting. All four
+ * edges are then doing one thing at one moment.
+ *
+ * How far is arithmetic rather than taste, and it is what fixes the spring
+ * above at nine and a half per cent. Grow the pane by W past its resting size
+ * and slide it d toward the corner, and the near edges are out by d while the
+ * far ones are out by W − d. Equal on all four sides is W = 2d and nothing
+ * else. The width crosses 272px, so at 9.5% it overshoots 26 and the corner
+ * takes half of that: about 13px on every edge.
+ *
+ * It was 12.5% and a flat 8px, which is 34px on the left against 8 on the
+ * right — one object at the top left and quite another at the bottom right.
+ * The height still comes out a few pixels short of the other three, because it
+ * crosses less ground than the width at the same percentage and there is one
+ * curve for both.
+ *
+ * `translate` rather than `transform`, which `.glace-glass--morph` is already
+ * transitioning for its own purposes — two declarations for one property, one
+ * of them a transition and the other a keyframe, is a fight nobody wins.
+ *
+ * `linear` timing, because the easing is in the stops.
+ */
+@keyframes fab-corner {
+  0.0% {
+    translate: 0px 0px;
+  }
+  5.0% {
+    translate: 0.1px 0.1px;
+  }
+  7.5% {
+    translate: 0.2px 0.2px;
+  }
+  10.0% {
+    translate: 0.3px 0.3px;
+  }
+  12.5% {
+    translate: 0.5px 0.5px;
+  }
+  15.0% {
+    translate: 0.8px 0.8px;
+  }
+  17.5% {
+    translate: 1.1px 1.1px;
+  }
+  20.0% {
+    translate: 1.4px 1.4px;
+  }
+  22.5% {
+    translate: 1.8px 1.8px;
+  }
+  25.0% {
+    translate: 2.3px 2.3px;
+  }
+  27.5% {
+    translate: 2.9px 2.9px;
+  }
+  30.0% {
+    translate: 7.7px 7.7px;
+  }
+  32.5% {
+    translate: 10.8px 10.8px;
+  }
+  35.0% {
+    translate: 12.4px 12.4px;
+  }
+  37.5% {
+    translate: 12.9px 12.9px;
+  }
+  40.0% {
+    translate: 12.5px 12.5px;
+  }
+  42.5% {
+    translate: 11.4px 11.4px;
+  }
+  45.0% {
+    translate: 10px 10px;
+  }
+  47.5% {
+    translate: 8.3px 8.3px;
+  }
+  50.0% {
+    translate: 6.7px 6.7px;
+  }
+  52.5% {
+    translate: 5px 5px;
+  }
+  55.0% {
+    translate: 3.6px 3.6px;
+  }
+  57.5% {
+    translate: 2.3px 2.3px;
+  }
+  60.0% {
+    translate: 1.2px 1.2px;
+  }
+  62.5% {
+    translate: 0.4px 0.4px;
+  }
+  65.0% {
+    translate: -0.3px -0.3px;
+  }
+  67.5% {
+    translate: -0.7px -0.7px;
+  }
+  70.0% {
+    translate: -1px -1px;
+  }
+  72.5% {
+    translate: -1.2px -1.2px;
+  }
+  80.0% {
+    translate: -1.1px -1.1px;
+  }
+  82.5% {
+    translate: -0.9px -0.9px;
+  }
+  85.0% {
+    translate: -0.8px -0.8px;
+  }
+  87.5% {
+    translate: -0.6px -0.6px;
+  }
+  90.0% {
+    translate: -0.5px -0.5px;
+  }
+  92.5% {
+    translate: -0.3px -0.3px;
+  }
+  95.0% {
+    translate: -0.2px -0.2px;
+  }
+  97.5% {
+    translate: -0.1px -0.1px;
+  }
+  100.0% {
+    translate: -0px -0px;
+  }
+}
+
+/*
+ * Asked for none: the pane is the size it is, and the mark and the menu swap
+ * rather than crossfade. `morph`'s own transitions are Glacé's and are turned
+ * off here for the same reason everything else in this file is.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .glace-glass.scan-fab,
+  .glace-glass.scan-fab * {
+    transition: none;
+    /* The corner's bounce as well as the size's. `transition: none` alone left
+       the keyframes running, which is the one part of this that is purely a
+       flourish and so the first thing that should go. */
+    animation: none;
+  }
 }
 
 /*

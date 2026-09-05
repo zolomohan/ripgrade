@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 
 import { ArtworkEditor } from "@/app/film/[id]/artwork-editor";
 import { BackButton } from "@/app/film/[id]/back-button";
 import { MatchReview } from "@/app/film/[id]/match-review";
-import { BUTTON } from "@/app/controls";
+import { BUTTON, useDismiss, useOverlay } from "@/app/controls";
 import { FormatBadges } from "@/app/format-badges";
 import { DiscHeading } from "@/app/disc-heading";
 import { useClosing, useLingering } from "@/app/modal";
@@ -525,22 +525,10 @@ function SeasonUpgrade({
   const shown = useLingering(chosen);
   const wrap = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const away = (event: MouseEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    window.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      window.removeEventListener("keydown", key);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), wrap);
+  // Not `shown`, which this component already spends on the season a dialog
+  // is lingering over — see `useLingering` above.
+  const [menuUp, leaving] = useOverlay(open);
 
   const seasons = show.seasons.filter((season) => season.episodes.length > 0);
   if (seasons.length === 0) return null;
@@ -572,10 +560,10 @@ function SeasonUpgrade({
         </svg>
       </button>
 
-      {open && (
+      {menuUp && (
         <Glass
           radius={14}
-          className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-64 overflow-hidden py-1"
+          className={`${leaving ? "pop-out" : "row-enter"} overlay-pane absolute top-full right-0 z-30 mt-2 w-64 overflow-hidden py-1`}
         >
           {seasons.map((season) => {
             const score = seasonScore(season);

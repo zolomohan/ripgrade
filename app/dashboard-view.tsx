@@ -34,6 +34,7 @@ import {
   scoreTheme,
 } from "./score-circle";
 import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
+import { ScanFab } from "./scan-fab";
 
 /**
  * What to do about the library, on one page.
@@ -98,9 +99,12 @@ type Check = {
 export function DashboardView({
   data,
   greeting,
+  jackettReady,
 }: {
   data: Dashboard;
   greeting: string;
+  /** Two of the four passes go out to the indexers and cannot run without it. */
+  jackettReady: boolean;
 }) {
   const { now, headline, work, recent, system } = data;
   const router = useRouter();
@@ -179,6 +183,12 @@ export function DashboardView({
 
   return (
     <div className="flex flex-col gap-12">
+      {/* Fixed, so it is outside this column and outside the page's own scroll
+          — see `ScanFab`. It is in the dashboard rather than the layout because
+          it belongs to this page: the rail carries what is true from wherever
+          you are standing, and this is a verb. */}
+      <ScanFab jackettReady={jackettReady} />
+
       <Welcome greeting={greeting} />
 
       {/*

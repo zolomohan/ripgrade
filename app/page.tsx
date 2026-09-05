@@ -6,6 +6,7 @@ import { EmptyState } from "./empty-state";
 import { pickGreeting } from "./greeting";
 import { getDashboard } from "@/lib/dashboard";
 import { getLibraryRoots } from "@/lib/roots";
+import { hasJackett } from "@/lib/jackett";
 
 // Every render reads the local database and stats the drive, so there is
 // nothing worth prerendering.
@@ -62,7 +63,11 @@ export default async function Page() {
             : "Point RipGrade at the folder your films live in and it will read every file, score it, and say what is worth replacing."}
         </EmptyState>
       ) : (
-        <DashboardView data={data} greeting={greeting} />
+        <DashboardView
+          data={data}
+          greeting={greeting}
+          jackettReady={hasJackett()}
+        />
       )}
     </main>
   );

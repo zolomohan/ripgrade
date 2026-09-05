@@ -15,6 +15,7 @@ import { NameDialog } from "@/app/collections/name-dialog";
 import { Spinner } from "@/app/spinner";
 import { HERO_BUTTON } from "./hero-button";
 import { Glass } from "@/app/glass";
+import { useDismiss, useOverlay } from "@/app/controls";
 
 /**
  * Filing a film into a set of your own, from the film.
@@ -47,21 +48,8 @@ export function AddToCollection({ film }: { film: CollectionAdd }) {
   const [pending, startTransition] = useTransition();
   const wrap = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: MouseEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    window.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      window.removeEventListener("keydown", key);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), wrap);
+  const [shown, leaving] = useOverlay(open);
 
   /*
    * Re-read every time it opens, not once. Sets are made and filled from three
@@ -187,10 +175,10 @@ export function AddToCollection({ film }: { film: CollectionAdd }) {
           </svg>
         </button>
 
-        {open && (
+        {shown && (
           <Glass
             radius={14}
-            className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 max-h-80 w-60 overflow-y-auto py-1"
+            className={`${leaving ? "pop-out" : "row-enter"} overlay-pane absolute top-full right-0 z-30 mt-2 max-h-80 w-60 overflow-y-auto py-1`}
           >
             {sets === null ? (
               <p className="flex items-center gap-2 px-3 py-2 text-sm opacity-50">

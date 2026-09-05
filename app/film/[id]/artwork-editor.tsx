@@ -11,7 +11,7 @@ import {
   uploadShowArtwork,
   type ArtworkChoice,
 } from "@/app/actions";
-import { BUTTON, FIELD } from "@/app/controls";
+import { BUTTON, FIELD, useDismiss, useOverlay } from "@/app/controls";
 import { Spinner } from "@/app/spinner";
 import { imageUrl } from "@/lib/image-url";
 import { HERO_BUTTON } from "./hero-button";
@@ -178,21 +178,8 @@ export function ArtworkEditor({
     };
   }, [open]);
 
-  useEffect(() => {
-    if (!menu) return;
-    const onDown = (e: MouseEvent) => {
-      if (!trigger.current?.contains(e.target as Node)) setMenu(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenu(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [menu]);
+  useDismiss(menu, () => setMenu(false), trigger);
+  const [shown, leaving] = useOverlay(menu);
 
   // Which kind you want is a decision you have already made by the time you
   // reach for this button, so it is asked first and the modal opens on that
@@ -336,10 +323,10 @@ export function ArtworkEditor({
             that does, and the three items it holds are short enough to fall
             below it without reaching anything. Consistency is the whole of the
             argument: you learn where a menu appears once. */}
-        {menu && (
+        {shown && (
           <Glass
             radius={14}
-            className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-40 overflow-hidden py-1"
+            className={`${leaving ? "pop-out" : "row-enter"} overlay-pane absolute top-full right-0 z-30 mt-2 w-40 overflow-hidden py-1`}
           >
             {/* From `KINDS` rather than from a list of its own. The three
                 labels were written out here as well as up there, which is two

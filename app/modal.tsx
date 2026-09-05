@@ -6,11 +6,29 @@ import { createPortal } from "react-dom";
 import { Glass } from "./glass";
 
 /**
- * The two corners a dialog turns, as the tokens they are in globals.css:
- * `--radius-card` for the fifteen that are cards, `--radius-panel` for the two
- * that are a window onto a list — the search and the collection picker.
+ * The two corners a dialog turns.
+ *
+ * `panel` is `--radius-panel` from globals.css and has to stay that number: it
+ * is the search field's own radius plus the padding it stands in, so the curve
+ * of the window and the curve of the field inside it are one radius seen twice.
+ * Bigger and the panel's corner stops being concentric with the thing it frames,
+ * which is the whole of why the figure is 36 and not a round number.
+ *
+ * `card` was `--radius-card`, and is its own number now. That token is the
+ * shelf's — thirty-six tiles, cards and skeletons wear it — and it was on the
+ * dialogs for no better reason than that a dialog is card-shaped. Its own
+ * comment says as much: the card's radius because a card is a card, not because
+ * fourteen was ever measured against what a dialog holds. A dialog is the
+ * largest surface in the app and the only one that floats clear of everything,
+ * and at 14 it read as a sheet of paper with the corners trimmed. Twenty-four
+ * is enough to be a deliberate shape at that size, and still short of the
+ * panel's, so the roundest dialogs are still the two that have earned it.
+ *
+ * Only the dialogs move. Changing the token instead would have taken every
+ * poster tile and every card on every shelf with it, which is a different
+ * question nobody asked.
  */
-const CORNER = { card: 14, panel: 36 } as const;
+const CORNER = { card: 24, panel: 36 } as const;
 
 /**
  * The shell every dialog in the app is drawn in.

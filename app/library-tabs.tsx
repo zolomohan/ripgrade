@@ -6,7 +6,6 @@ import type { UpgradeQueueItem } from "@/lib/upgrade-sweep";
 import { Switch } from "./controls";
 import { useTabParam } from "./tab-param";
 import { LibraryView } from "./library-view";
-import { LibraryScanButton } from "./library-scan-button";
 import { ShowsView } from "./shows-view";
 
 /**
@@ -60,30 +59,23 @@ export function LibraryTabs({
     <Switch value={tab} onChange={select} options={options} className="-ml-2" />
   );
 
-  /**
-   * The shelf's own refresh, at the end of both shelves' rows: read the
-   * folders — and, in the menu behind it, the passes that ask other people's
-   * machines about what the folders turned out to hold.
+  /*
+   * No Scan at the end of these rows any more.
    *
-   * This page inherited the queue's job when the queue page went: the films
-   * something better has been found for are a section of this shelf now, and a
-   * card here opens a release stamped "Checked 20 h ago", which the sweep will
-   * not look past on its own. That is what the menu's items are for, each one
-   * forced. What it is no longer is one press — a button saying "Scan" that
-   * also spent four hundred searches was doing two things under one word, and
-   * the expensive one was the half nobody had asked for. See
-   * `LibraryScanButton`.
+   * There were three places to press it — here, the dashboard, and Settings —
+   * and this was the one with the strongest claim: the shelf is what a scan
+   * refreshes, and the passes behind it are about the films on it. What it was
+   * not was the place anybody was standing when they wanted one. A scan is
+   * something you ask for on arriving, and arriving is the dashboard: it is the
+   * page the app opens on and the one whose whole subject is the state of the
+   * library rather than its contents. The mark in its corner is the ask now —
+   * see `ScanFab` in app/scan-fab.tsx — and Settings keeps the one for the odd
+   * time you have moved a file by hand.
    *
-   * On both tabs, and deliberately so even though the sweep only searches films
-   * — what the menu starts is not this tab's pass but a pass over everything,
-   * wants included. The same argument that keeps the wishlist's own Scan at the
-   * head of that page rather than on one of its sections.
-   *
-   * Here rather than inside either shelf, for the reason `tabs` is here: it
-   * belongs to the page, and a row split across two components is a row that
-   * cannot be one line.
+   * Which leaves this row as what it reads as: the tabs, and the controls for
+   * arranging what is under them. A verb at the end of it was the only thing
+   * here that did not arrange anything.
    */
-  const action = <LibraryScanButton jackettReady={jackettReady} />;
 
   return tab === "movies" ? (
     <LibraryView
@@ -91,9 +83,8 @@ export function LibraryTabs({
       upgrades={upgrades}
       jackettReady={jackettReady}
       tabs={tabs}
-      action={action}
     />
   ) : (
-    <ShowsView shows={shows} tabs={tabs} action={action} />
+    <ShowsView shows={shows} tabs={tabs} />
   );
 }

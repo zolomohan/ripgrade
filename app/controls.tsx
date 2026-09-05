@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { Glass } from "./glass";
 
@@ -445,22 +453,8 @@ export function Popover({
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-
-    const onDown = (e: MouseEvent) => {
-      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), wrap);
+  const [shown, leaving] = useOverlay(open);
 
   return (
     <div ref={wrap} className="relative flex shrink-0">
@@ -534,10 +528,10 @@ export function Popover({
        * floating clear of the page, so it throws a shorter one than a dialog.
        * See globals.css.
        */}
-      {open && (
+      {shown && (
         <Glass
           radius={14}
-          className={`row-enter overlay-pane absolute top-full ${
+          className={`${leaving ? "pop-out" : "row-enter"} overlay-pane absolute top-full ${
             align === "left" ? "left-0" : "right-0"
           } z-30 mt-2 ${width} overflow-hidden`}
         >
@@ -585,6 +579,154 @@ export function MenuItem({
 }
 
 /**
+ * The three ways of saying "not this" to something opened over the page.
+ *
+ * Eight controls in this app open a panel and then have to decide when to put
+ * it away: the two here, the dashboard's scan, and a menu each on the artwork
+ * editor, the collections picker, a show, a set and a transfer. Every one of
+ * them had written the same effect out — click away, press Escape — and they
+ * had written it slightly differently, which is how the third way came to be
+ * missing from all eight at once.
+ *
+ * Scrolling is that third way, and it is the one nobody thinks to add. A panel
+ * is a question about the thing under it; scroll and the thing under it has
+ * gone somewhere else, and what is left is a menu about nothing, hanging over
+ * whatever happens to be there now. Every kit that gets this right closes on
+ * scroll, and the reason is not fussiness — it is that the alternative is a
+ * control that has quietly stopped referring to anything.
+ *
+ * `capture`, because the thing that scrolled is often a list inside the page
+ * rather than the page itself, and a scroll event does not bubble to the window
+ * from one of those. `passive`, because this never prevents the scroll — the
+ * panel goes away and the page moves, which is what was asked for.
+ *
+ * And a distance rather than an event. A trackpad reports a scroll for the
+ * smallest touch of two fingers, a phone fires one for the rubber band at the
+ * end of a list, and a page that reflows by a pixel behind an open menu has
+ * technically scrolled — closing on the first of those makes a menu that
+ * cannot be held open on a laptop. `SCROLL_SHUT` is about two lines of text:
+ * far enough that nothing but a deliberate move reaches it, near enough that a
+ * deliberate move reaches it at once.
+ *
+ * Measured per scrolling element, because the first event is what sets the mark
+ * — which also means an opening that scrolls the page itself is absorbed rather
+ * than counted, whatever it moves by.
+ *
+ * Held off for a frame after opening, for the same kind of reason at a smaller
+ * size: a panel shown at the foot of the window can shift the page before the
+ * first event has anything to be measured against.
+ *
+ * The reason is handed back because one caller needs it: a panel that has
+ * replaced its own trigger has to put focus back on Escape, and only on
+ * Escape — a pointer that clicked elsewhere has already chosen where to be.
+ */
+/**
+ * How long a panel is kept on screen after it has been shut, so it has time to
+ * leave. Matches `pop-out` in globals.css, and is shorter than the 200ms these
+ * arrive in — out is quicker than in, as everywhere else here.
+ */
+const LEAVE_MS = 140;
+
+/**
+ * A panel's two answers to "should I be drawn": whether at all, and whether on
+ * the way out.
+ *
+ * Every menu in this app was mounted on a boolean and unmounted on the same
+ * one, so it arrived over 200ms and left in no time at all — which reads less
+ * like closing than like the menu having never been there. The state it needs
+ * is the one `useClosing` gives a dialog in app/modal.tsx: keep it rendered a
+ * beat past the decision, and let it animate in that beat.
+ *
+ * Two flags rather than one, because the caller has to know which of the two
+ * it is drawing — `useClosing` can return a single boolean since a dialog's
+ * leaving state is a class on a panel that is always in the markup, and these
+ * are not in the markup at all when they are shut.
+ */
+export function useOverlay(
+  open: boolean,
+): [rendered: boolean, leaving: boolean] {
+  const [leaving, setLeaving] = useState(false);
+  const [was, setWas] = useState(open);
+
+  if (open !== was) {
+    setWas(open);
+    setLeaving(!open);
+  }
+
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = setTimeout(() => setLeaving(false), LEAVE_MS);
+    return () => clearTimeout(timer);
+  }, [leaving]);
+
+  return [open || leaving, leaving];
+}
+
+/** How far the page has to move before an open panel takes it as an answer. */
+const SCROLL_SHUT = 32;
+
+export function useDismiss(
+  open: boolean,
+  close: (why: "away" | "escape" | "scroll") => void,
+  within: React.RefObject<HTMLElement | null>,
+) {
+  /* Kept in a ref so the effect depends on `open` alone. Callers write the
+     handler inline, so it is a new function on every render, and an effect
+     that took it as a dependency would tear its listeners down and put them
+     back up for the length of the panel's life. */
+  const latest = useRef(close);
+  useEffect(() => {
+    latest.current = close;
+  });
+
+  useEffect(() => {
+    if (!open) return;
+
+    const away = (event: MouseEvent) => {
+      if (!within.current?.contains(event.target as Node))
+        latest.current("away");
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") latest.current("escape");
+    };
+    /* Where each scrolling thing stood when it first moved under the panel. A
+       map rather than one number: the page and a list inside it are two things
+       that can scroll, and a run down one says nothing about the other. */
+    const from = new Map<EventTarget, number>();
+
+    const scrolled = (event: Event) => {
+      const target = event.target;
+      if (!target) return;
+      const at =
+        target === document || target === window
+          ? window.scrollY
+          : (target as Element).scrollTop;
+
+      const was = from.get(target);
+      if (was === undefined) from.set(target, at);
+      else if (Math.abs(at - was) >= SCROLL_SHUT) latest.current("scroll");
+    };
+
+    document.addEventListener("mousedown", away);
+    window.addEventListener("keydown", key);
+
+    const settle = requestAnimationFrame(() =>
+      window.addEventListener("scroll", scrolled, {
+        capture: true,
+        passive: true,
+      }),
+    );
+
+    return () => {
+      cancelAnimationFrame(settle);
+      document.removeEventListener("mousedown", away);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("scroll", scrolled, { capture: true });
+    };
+  }, [open, within]);
+}
+
+/**
  * A word that explains itself when you point at it.
  *
  * `HelpTip` below is the other half of this pair and the older one: a `?` you
@@ -609,6 +751,22 @@ export function MenuItem({
  * there. It is a tab stop of its own so that a keyboard can reach what a
  * pointer can, and `aria-describedby` is what ties the two together for a
  * reader that announces neither.
+ *
+ * The bubble is put on the body rather than beside the word, and this is the
+ * one thing about it that is not a matter of taste. It used to hang from the
+ * word on `absolute … z-40`, which works right up until something between it
+ * and the page makes a stacking context — and the panel headings it was
+ * written for do exactly that: `.glow` sets `isolation: isolate` so that its
+ * own `z-index: -1` glow lands behind the row and not behind the page. A
+ * z-index inside a stacking context is only an order within it, so forty
+ * counted for nothing against the next panel down, which simply came later in
+ * the document and painted over the top. The tooltip on every settings panel
+ * was half-swallowed by the heading beneath it.
+ *
+ * There is no z-index that fixes that, and lifting each ancestor that might
+ * trap it is a rule you have to remember at every call site forever. A portal
+ * leaves the question behind: on the body there is nothing above it to be
+ * inside of.
  */
 export function Explained({
   hint,
@@ -617,15 +775,76 @@ export function Explained({
 }: {
   hint: string;
   children: React.ReactNode;
-  /** Where the bubble hangs, for the rows that would push it off the edge. */
+  /** Extra classes for the bubble, for a caller that wants it drawn otherwise. */
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  const word = useRef<HTMLSpanElement>(null);
+  const bubble = useRef<HTMLElement>(null);
   const id = useId();
+
+  /**
+   * Where to put it, in viewport coordinates.
+   *
+   * Under the word and aligned to its left edge, which is where it has always
+   * been — the difference is that the sum is done here rather than by the
+   * layout. Held off both edges of the window, and flipped above the word when
+   * there is no room below it, both of which the old arrangement could only
+   * answer by having the caller pass a class.
+   */
+  const place = useCallback(() => {
+    const anchor = word.current?.getBoundingClientRect();
+    if (!anchor) return;
+
+    const GAP = 8;
+    const EDGE = 8;
+    const WIDTH = 288; // w-72
+    const height = bubble.current?.offsetHeight ?? 0;
+
+    const below = anchor.bottom + GAP;
+    const flip = height > 0 && below + height > window.innerHeight - EDGE;
+
+    setAt({
+      left: Math.min(
+        Math.max(EDGE, anchor.left),
+        Math.max(EDGE, window.innerWidth - WIDTH - EDGE),
+      ),
+      top: flip ? Math.max(EDGE, anchor.top - GAP - height) : below,
+    });
+  }, []);
+
+  /*
+   * Measured before the browser paints, so it is never seen at the position it
+   * has not been given yet. The place from the last time it was open is left
+   * standing rather than cleared on the way out: this runs before paint, so on
+   * the way back in the sum is redone and the stale one never reaches a frame,
+   * where clearing it would cost a hidden frame on every open after the first.
+   *
+   * Re-measured while it is open because a trackpad can scroll the word out
+   * from under a bubble that was placed against it.
+   */
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    place();
+    // Twice: the first pass has nothing on screen to measure, so it cannot
+    // know whether there is room below. The second runs with a bubble to ask.
+    const settle = requestAnimationFrame(place);
+
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      cancelAnimationFrame(settle);
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open, place]);
 
   return (
     <span className="relative inline-flex">
       <span
+        ref={word}
         tabIndex={0}
         aria-describedby={open ? id : undefined}
         onPointerEnter={(event) => {
@@ -644,17 +863,30 @@ export function Explained({
         {children}
       </span>
 
-      {open && (
-        <Glass
-          as="span"
-          id={id}
-          role="tooltip"
-          radius={8}
-          className={`tip-in overlay-pane absolute top-full left-0 z-40 mt-2 block w-72 p-2.5 text-[11px] leading-relaxed font-normal ${className}`}
-        >
-          {hint}
-        </Glass>
-      )}
+      {/* Rendered from the first frame it is open, invisible until it has been
+          placed: it has to be in the document to be measured, and a bubble
+          drawn at nought,nought for one frame is a flicker in the corner of
+          the window. */}
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Glass
+            as="span"
+            ref={bubble}
+            id={id}
+            role="tooltip"
+            radius={8}
+            style={{
+              left: at?.left ?? 0,
+              top: at?.top ?? 0,
+              visibility: at ? "visible" : "hidden",
+            }}
+            className={`tip-in overlay-pane fixed z-50 block w-72 p-2.5 text-[11px] leading-relaxed font-normal ${className}`}
+          >
+            {hint}
+          </Glass>,
+          document.body,
+        )}
     </span>
   );
 }
@@ -665,21 +897,7 @@ export function HelpTip({ text }: { text: string }) {
   const wrap = useRef<HTMLSpanElement>(null);
 
   // A click-pinned tooltip has to be dismissable without going back to it.
-  useEffect(() => {
-    if (!pinned) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrap.current?.contains(e.target as Node)) setPinned(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPinned(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [pinned]);
+  useDismiss(pinned, () => setPinned(false), wrap);
 
   const open = hovered || pinned;
 

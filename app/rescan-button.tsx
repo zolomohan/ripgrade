@@ -34,7 +34,7 @@ import { Spinner } from "@/app/spinner";
  * It had a second mode once, `readDrive`, which read the library folders before
  * asking anything — the library shelf's version of the same press. That shelf
  * has its own control now, because what it needed was not one press with two
- * halves but a press and a menu: see `LibraryScanButton`. Here there is nothing
+ * halves but a press and a menu: see `ScanFab`. Here there is nothing
  * to choose between. A want is by definition not on the drive, so reading four
  * hundred files would tell this page nothing, and the only question it can ask
  * is the one it asks.

@@ -3,13 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import { toast } from "glaceui";
-import {
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-  ViewTransition,
-} from "react";
+import { useRef, useState, useTransition, ViewTransition } from "react";
 
 import {
   deleteCollection,
@@ -22,7 +16,7 @@ import { HERO_BOX_SHORT, HERO_ART, HERO_VEIL } from "@/app/hero-art";
 import { CollectionView } from "@/app/collections/[id]/collection-view";
 import { NameDialog } from "@/app/collections/name-dialog";
 import { ConfirmModal } from "@/app/confirm";
-import { BUTTON } from "@/app/controls";
+import { BUTTON, useDismiss, useOverlay } from "@/app/controls";
 import { EmptyState } from "@/app/empty-state";
 import { BackButton } from "@/app/film/[id]/back-button";
 import { HERO_BUTTON } from "@/app/film/[id]/hero-button";
@@ -68,21 +62,8 @@ function SetMenu({
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: MouseEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    window.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      window.removeEventListener("keydown", key);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), wrap);
+  const [shown, leaving] = useOverlay(open);
 
   const items = [
     { label: "Rename", onSelect: onRename, danger: false },
@@ -111,10 +92,10 @@ function SetMenu({
         </svg>
       </button>
 
-      {open && (
+      {shown && (
         <Glass
           radius={14}
-          className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-44 overflow-hidden py-1"
+          className={`${leaving ? "pop-out" : "row-enter"} overlay-pane absolute top-full right-0 z-30 mt-2 w-44 overflow-hidden py-1`}
         >
           {items.map((item) => (
             <button
