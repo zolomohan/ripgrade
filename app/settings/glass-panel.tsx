@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 
 import type { GlassPoster } from "@/lib/glass";
 import type { GlassTuning as Tuning } from "@/lib/glass";
-import { PRIMARY, Status } from "./parts";
+import { PRIMARY, Value } from "./parts";
 import { SettingDialog } from "./dialog";
 import { GlassTuning } from "./glass-tuning";
 import { resetGlassTuning } from "../actions";
@@ -37,7 +37,9 @@ export function GlassPanel({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <Status on label={summary} />
+      {/* The profile in force. No dot: glass is not connected to anything,
+          and a green mark that is always green reports nothing. */}
+      <Value>{summary}</Value>
 
       <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
         Tune

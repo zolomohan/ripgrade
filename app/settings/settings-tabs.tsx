@@ -76,11 +76,19 @@ export function SettingsTabs({
         </div>
       </div>
 
-      {/* 2rem under the switch, which is what every head on every page in this
-          app stands above what it heads. The first row draws the hairline that
-          parts it from the control above, so the group reads as a list from
-          its first line rather than from its second. */}
-      <div className="mt-8">{current.settings}</div>
+      {/*
+       * 2rem under the switch, which is what every head on every page in this
+       * app stands above what it heads.
+       *
+       * Keyed on the group so React replaces the list rather than reconciling
+       * one set of rows into another — which is what makes the cascade run
+       * again on every press. Without the key the rows are the same elements
+       * with different words in them, and nothing has arrived to animate.
+       * See `.settings-list` in globals.css for the stagger itself.
+       */}
+      <div key={tab} className="settings-list mt-8">
+        {current.settings}
+      </div>
     </>
   );
 }

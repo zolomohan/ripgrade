@@ -15,16 +15,18 @@ import {
   getThumbCache,
   getTmdbStatus,
 } from "../actions";
-import { AudioLanguages } from "./audio-languages";
+import {
+  AudioLanguagePicker,
+  SubtitleLanguagePicker,
+} from "./language-picker";
 import { LibraryFolders } from "./library-folders";
-import { SubtitleLanguages } from "./subtitle-languages";
 import { EnhancementLayer } from "./el-backup";
 import { GlassPanel } from "./glass-panel";
 import { ThemeChoice } from "./theme-choice";
 import { BackdropChoice } from "./backdrop-choice";
 import { ListLayout } from "./list-layout";
 import { Jackett } from "./jackett";
-import { Qbittorrent } from "./qbittorrent";
+import { Qbittorrent, QbStopSeeding } from "./qbittorrent";
 import { QueueDiscOnly, QueueThreshold } from "./queue-threshold";
 import { TempFolder } from "./temp-folder";
 import { Thumbs } from "./thumbs";
@@ -51,6 +53,7 @@ function Setting({
   title,
   blurb,
   hint,
+  status,
   children,
 }: {
   title: string;
@@ -58,10 +61,12 @@ function Setting({
   blurb: string;
   /** The argument for it, on the name — see `Explained` in app/controls.tsx. */
   hint: string;
+  /** Whether it is working, as a dot on the name — see `SettingRow`. */
+  status?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <SettingRow title={title} blurb={blurb} hint={hint}>
+    <SettingRow title={title} blurb={blurb} hint={hint} status={status}>
       {children}
     </SettingRow>
   );
@@ -83,6 +88,31 @@ export default async function SettingsPage() {
   const glass = await getGlassTuning();
   const glassPosters = await getGlassPosters();
   const backdrop = await getBackdrop();
+
+  /*
+   * The languages actually in force, for the count each row shows without
+   * being opened. "Original" and the two subtitle flags count: they are
+   * choices that change what is proposed as much as naming a language does,
+   * and a row that counted only languages would be short by the ones you are
+   * most likely to have set.
+   */
+  const audioKept = [
+    ...audio.available
+      .filter((language) => audio.preference.languages.includes(language.key))
+      .map((language) => language.name),
+    ...(audio.preference.original ? ["Original"] : []),
+  ];
+
+  const subtitleKept = [
+    ...subtitles.available
+      .filter((language) =>
+        subtitles.preference.languages.includes(language.key),
+      )
+      .map((language) => language.name),
+    ...(subtitles.preference.original ? ["Original"] : []),
+    ...(subtitles.preference.forced ? ["Forced"] : []),
+    ...(subtitles.preference.sdh ? ["SDH"] : []),
+  ];
 
 
 
@@ -162,6 +192,7 @@ export default async function SettingsPage() {
       <>
         <Setting
           title="Library folders"
+          status={roots.length > 0}
           blurb="The folders a scan walks. Everything the app knows comes from these."
           hint="Everything the app knows comes from scanning these. Add as many as the library is spread across — one scan walks all of them, and one runs every time the app starts."
         >
@@ -170,6 +201,7 @@ export default async function SettingsPage() {
 
         <Setting
           title="TMDb"
+          status={tmdb.configured}
           blurb="Supplies every title, poster and backdrop. Without it, films stay filenames."
           hint="TMDb supplies every title, poster, backdrop and collection in the app. Without it a scan still reads your files, but they stay filenames."
         >
@@ -213,9 +245,10 @@ export default async function SettingsPage() {
           blurb="Which languages are worth the space they take."
           hint="Which languages are worth the space they take. On a remux the audio is routinely half the file, and a disc carries every language it was pressed with — so everything you do not keep is what the Jobs page's Strip Tracks tab offers to remove, one film at a time, original kept beside it."
         >
-          <AudioLanguages
+          <AudioLanguagePicker
             preference={audio.preference}
             available={audio.available}
+            kept={audioKept}
           />
         </Setting>
 
@@ -224,9 +257,10 @@ export default async function SettingsPage() {
           blurb="Which text tracks are worth keeping in the menu."
           hint="Which text tracks are worth keeping in the menu. A disc carries a set for every market it was pressed for, and they ride out of the file in the same remux the audio does — so what you do not keep here is offered for removal on the same row, at no extra pass over the film."
         >
-          <SubtitleLanguages
+          <SubtitleLanguagePicker
             preference={subtitles.preference}
             available={subtitles.available}
+            kept={subtitleKept}
           />
         </Setting>
       </>
@@ -297,6 +331,7 @@ export default async function SettingsPage() {
             qBittorrent is handed the answer. */}
         <Setting
           title="Jackett"
+          status={jackett.configured}
           blurb="The indexer proxy every search goes through."
           hint="Jackett holds your indexer logins and exposes them as one feed, so the app talks to it and never to a tracker. Nothing is downloaded here — results are names, sizes and links."
         >
@@ -310,6 +345,7 @@ export default async function SettingsPage() {
 
         <Setting
           title="qBittorrent"
+          status={qb.configured}
           blurb="The client a magnet is handed to, with progress on the Downloads page."
           hint="Connect qBittorrent and every download button hands the release to it directly, with progress shown on the Downloads page. Without it, magnets open in whatever the system has registered."
         >
@@ -317,9 +353,21 @@ export default async function SettingsPage() {
             configured={qb.configured}
             url={qb.url}
             managed={qb.managed}
-            stopSeeding={qb.stopSeeding}
-          />
+            />
         </Setting>
+
+        {/* Only where there is a client to seed from. Without one the toggle
+            governs nothing, and a setting that cannot apply is a row asking a
+            question whose answer does not matter yet. */}
+        {qb.configured && (
+          <Setting
+            title="Stop seeding once a download finishes"
+            blurb="Off if your trackers count ratio — a stopped torrent earns none."
+            hint="qBittorrent keeps seeding after a download completes unless it is told otherwise. Which is the polite default and the wrong one if the drive is filling, since a finished torrent still holds its files where it put them."
+          >
+            <QbStopSeeding stopSeeding={qb.stopSeeding} />
+          </Setting>
+        )}
 
         <Setting
           title="Queue threshold"

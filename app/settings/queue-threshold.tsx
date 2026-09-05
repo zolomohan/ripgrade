@@ -3,7 +3,7 @@
 import { useState, useTransition, type CSSProperties } from "react";
 
 import { setQueueRules } from "../actions";
-import { Toggle } from "./parts";
+import { Toggle, Value } from "./parts";
 
 /**
  * The bar a find has to clear to be worth listing.
@@ -19,11 +19,7 @@ import { Toggle } from "./parts";
  * the searches stay paid for and dropping the bar brings everything straight
  * back — which is what makes it safe to set it high and find out.
  */
-export function QueueThreshold({
-  threshold,
-}: {
-  threshold: number;
-}) {
+export function QueueThreshold({ threshold }: { threshold: number }) {
   // Held locally so the number under the thumb keeps up with the drag; the
   // server only hears about it once the thumb is let go.
   const [value, setValue] = useState(threshold);
@@ -35,50 +31,45 @@ export function QueueThreshold({
   };
 
   return (
-    <div className="flex w-full flex-col gap-2.5">
-        <div className="flex items-baseline justify-between gap-3">
-          <p className="text-sm">Minimum predicted score</p>
-          <span className="font-score text-sm font-semibold tabular-nums opacity-70">
-            {value === 0 ? "Off" : value}
-          </span>
-        </div>
+    /*
+     * The track and its reading on one line.
+     *
+     * The number had a heading over it — "Minimum predicted score" — which is
+     * the setting's own name said a second time, in the column where the
+     * answer goes. What is left is the control and what it currently says,
+     * which is the shape every other row on this page has.
+     */
+    <div className="flex w-full max-w-64 items-center gap-3">
+      {/* A range input rather than a row of buttons: the scale is the
+          hundred-point one every score in the app is on, and picking a point
+          on it is what this is. Styled in globals.css — see `.slider`. */}
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={value}
+        aria-label="Queue threshold"
+        aria-valuetext={
+          value === 0 ? "Off, everything the sweep finds" : `${value} of 100`
+        }
+        onChange={(e) => setValue(Number(e.target.value))}
+        // No commit-on-release event exists for a range, so all three ways of
+        // letting go stand in for one: the mouse, the keyboard, and leaving.
+        onPointerUp={(e) => commit(Number(e.currentTarget.value))}
+        onKeyUp={(e) => commit(Number(e.currentTarget.value))}
+        onBlur={(e) => commit(Number(e.target.value))}
+        className="slider min-w-0 flex-1"
+        // The thumb travels between its own two edges, not the full width, so
+        // the fill is measured the same way or it runs ahead at both ends.
+        style={
+          {
+            "--fill": `calc(0.5rem + (100% - 1rem) * ${value / 100})`,
+          } as CSSProperties
+        }
+      />
 
-        {/* A range input rather than a row of buttons: the scale is the
-            hundred-point one every score in the app is on, and picking a point
-            on it is what this is. Styled in globals.css — see `.slider`. */}
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={value}
-          aria-label="Queue threshold"
-          aria-valuetext={
-            value === 0 ? "Off, everything the sweep finds" : `${value} of 100`
-          }
-          onChange={(e) => setValue(Number(e.target.value))}
-          // No commit-on-release event exists for a range, so all three ways of
-          // letting go stand in for one: the mouse, the keyboard, and leaving.
-          onPointerUp={(e) => commit(Number(e.currentTarget.value))}
-          onKeyUp={(e) => commit(Number(e.currentTarget.value))}
-          onBlur={(e) => commit(Number(e.target.value))}
-          className="slider"
-          // The thumb travels between its own two edges, not the full width, so
-          // the fill is measured the same way or it runs ahead at both ends.
-          style={
-            {
-              "--fill": `calc(0.5rem + (100% - 1rem) * ${value / 100})`,
-            } as CSSProperties
-          }
-        />
-
-        {/* Only the off case says anything. The other restated the number
-            above it in a sentence, which is the slider explaining itself. */}
-        {value === 0 && (
-          <p className="text-[11px] opacity-45">
-            Every find the last sweep turned up reaches the queue.
-          </p>
-        )}
+      <Value>{value === 0 ? "Off" : `${value} of 100`}</Value>
     </div>
   );
 }

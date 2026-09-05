@@ -3,11 +3,11 @@
 import { useState, useTransition } from "react";
 
 import { disconnectTmdb, saveTmdbToken } from "../actions";
-import { FIELD } from "../controls";
+import { ICONS, FIELD } from "../controls";
 import { Spinner } from "../spinner";
 import { stagger } from "../stagger";
 import { SettingDialog } from "./dialog";
-import { Failure, Field, PRIMARY, QUIET, Status } from "./parts";
+import { IconButton, Failure, Field, PRIMARY } from "./parts";
 
 /**
  * Connecting TMDb.
@@ -52,28 +52,22 @@ export function Tmdb({ configured }: { configured: boolean }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <Status
-        on={configured}
-        label={configured ? "Connected" : "Not connected"}
-      />
+    <div className="flex flex-wrap items-center justify-end gap-3">
+      {/* No word for the state: the dot beside this setting's name carries it
+          now, and "Connected" on three rows in a column said the same nothing
+          three times. See `status` on `SettingRow`. */}
+      {configured && (
+        <IconButton
+          icon={ICONS.cross}
+          label="Disconnect from TMDb"
+          disabled={pending}
+          onClick={() => startTransition(async () => disconnectTmdb())}
+        />
+      )}
 
-      <div className="flex shrink-0 items-center gap-3">
-        {configured && (
-          <button
-            type="button"
-            onClick={() => startTransition(async () => disconnectTmdb())}
-            disabled={pending}
-            className={QUIET}
-          >
-            Disconnect
-          </button>
-        )}
-
-        <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
-          {configured ? "Replace token" : "Connect"}
-        </button>
-      </div>
+      <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
+        {configured ? "Replace" : "Connect"}
+      </button>
 
       <SettingDialog
         open={open}

@@ -7,7 +7,7 @@ import { FIELD, ICONS } from "../controls";
 import { Spinner } from "../spinner";
 import { stagger } from "../stagger";
 import { SettingDialog } from "./dialog";
-import { Failure, Field, IconButton, PRIMARY, Status } from "./parts";
+import { Failure, Field, IconButton, PRIMARY } from "./parts";
 
 /**
  * Connecting Jackett.
@@ -84,16 +84,6 @@ export function Jackett({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-end gap-3">
-        {/* Connected, and nothing else. The address was under it and the two
-            environment variables were named under that — three facts about a
-            service whose row exists to answer one question, and the two extra
-            were only ever true for whoever had already gone looking. The
-            address is in the dialog the button opens, which is where you go
-            when you want to know it. */}
-        <Status
-          on={configured}
-          label={configured ? "Connected" : "Not connected"}
-        />
 
         {stored && (
           <IconButton

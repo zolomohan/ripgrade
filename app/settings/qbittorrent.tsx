@@ -12,8 +12,6 @@ import {
   Field,
   IconButton,
   PRIMARY,
-  Row,
-  Status,
   Toggle,
 } from "./parts";
 
@@ -35,12 +33,10 @@ export function Qbittorrent({
   configured,
   url,
   managed,
-  stopSeeding,
 }: {
   configured: boolean;
   url?: string;
   managed: boolean;
-  stopSeeding: boolean;
 }) {
   const fallbackUrl = url ?? "http://localhost:8080";
 
@@ -74,46 +70,17 @@ export function Qbittorrent({
     });
   }
 
-  /** What to do once a download lands — the one choice a connection carries. */
-  const seeding = configured && (
-    <Row
-      title="Stop seeding once a download finishes"
-      hint="Off if your trackers count ratio — a stopped torrent earns none."
-    >
-      <Toggle
-        on={stopSeeding}
-        label="Stop seeding once a download finishes"
-        disabled={pending}
-        onChange={() =>
-          startTransition(async () => setQbStopSeeding(!stopSeeding))
-        }
-      />
-    </Row>
-  );
-
   if (managed) {
     return (
-      <div className="flex flex-col gap-4">
-        {/* Connected, and nothing else — the address and the variable that
-            set it were two facts about a service whose row answers one
-            question. There is no button here because there is nothing this
-            page could change. */}
-        <div className="flex justify-end">
-          <Status on label="Connected" />
-        </div>
-        {seeding}
-      </div>
+      // Set by the environment: there is nothing this page could change, and
+      // the dot beside the name already says it is answering.
+      <p className="text-xs opacity-45">Set outside the app</p>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <Status
-          on={configured}
-          label={configured ? "Connected" : "Not connected"}
-        />
-
         {configured && (
           <IconButton
             icon={ICONS.cross}
@@ -127,8 +94,6 @@ export function Qbittorrent({
           {configured ? "Change" : "Connect"}
         </button>
       </div>
-
-      {seeding}
 
       <SettingDialog
         open={open}
@@ -207,5 +172,29 @@ export function Qbittorrent({
         </form>
       </SettingDialog>
     </div>
+  );
+}
+
+/**
+ * What to do once a download lands.
+ *
+ * Its own setting rather than a row folded into the connection above it. It
+ * lived there because it is only answerable when qBittorrent is connected,
+ * which is a fact about when the control applies and not about where it
+ * belongs — and a toggle nested inside another setting is one you reach by
+ * having already gone looking for something else.
+ */
+export function QbStopSeeding({ stopSeeding }: { stopSeeding: boolean }) {
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <Toggle
+      on={stopSeeding}
+      label="Stop seeding once a download finishes"
+      disabled={pending}
+      onChange={() =>
+        startTransition(async () => setQbStopSeeding(!stopSeeding))
+      }
+    />
   );
 }

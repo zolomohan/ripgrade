@@ -29,11 +29,38 @@ import { stagger } from "../stagger";
  * beside their label while they wait.
  */
 export const PRIMARY =
-  "inline-flex h-8 shrink-0 items-center justify-center gap-2 rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity duration-150 hover:opacity-90 disabled:opacity-40";
+  // `min-w-32`: every row on the settings page ends with one of these, and
+  // buttons of eight different widths down a column make the right-hand edge a
+  // ragged line rather than an edge. A floor rather than a fixed width, so a
+  // label that genuinely needs more room still gets it — the labels were
+  // shortened instead where they were long out of habit.
+  "inline-flex h-8 min-w-32 shrink-0 items-center justify-center gap-2 rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity duration-150 hover:opacity-90 disabled:opacity-40";
 
 /** Everything else you can do here — present, but never the loudest thing. */
 export const QUIET =
   "inline-flex shrink-0 items-center gap-1.5 text-xs opacity-50 transition-opacity hover:opacity-100 disabled:opacity-30";
+
+/**
+ * What a setting is currently set to, in the column the control lives in.
+ *
+ * One component so there is one font. These were written a row at a time and
+ * drifted the way a rule kept in five places does: the scratch space in mono
+ * because it is a path, the folder count and the glass profile in the body
+ * face because they are words, the languages somewhere between. Read down the
+ * column that was four different sizes and weights, and the eye stops at every
+ * one of them.
+ *
+ * Mono, at the small size, because the widest of these is a path and a path is
+ * the case that has to survive: it is a machine string, it wants the tabular
+ * figures, and it is the one value here you might read a character at a time.
+ * A count set in the same face beside it costs nothing and buys a column with
+ * a single texture.
+ */
+export function Value({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="min-w-0 truncate font-mono text-xs opacity-60">{children}</p>
+  );
+}
 
 /**
  * The quiet action beside the loud one, as a mark rather than a word.
@@ -207,6 +234,7 @@ export function SettingRow({
   title,
   blurb,
   hint,
+  status,
   children,
 }: {
   title: string;
@@ -214,15 +242,48 @@ export function SettingRow({
   blurb: string;
   /** The long form, behind the dotted underline on the title. */
   hint?: string;
+  /**
+   * Whether the thing this row configures is working, for the rows where that
+   * is a question — a service answering, a folder chosen.
+   *
+   * A dot on the name, where it used to be a dot and the word "Connected" in
+   * the column the control lives in. Two problems with that: the word was the
+   * same word on three rows, so a column of them said nothing while taking the
+   * width of a button; and it put the state at the far end of the row from the
+   * name it was the state of. On the title it is read with the thing it
+   * describes, and a page of these can be scanned for the one that has gone
+   * out without reading a word.
+   *
+   * `undefined` for the rows that have no such state — a theme is not
+   * connected to anything — and those draw no dot at all rather than a grey
+   * one, which would read as off.
+   */
+  status?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div
-      className="grid gap-x-8 gap-y-3 border-t border-line py-5 sm:grid-cols-[minmax(0,7fr)_minmax(0,9fr)] sm:items-start"
+      className="setting-row row-enter grid gap-x-8 gap-y-3 py-5 sm:grid-cols-[minmax(0,7fr)_minmax(0,9fr)] sm:items-start"
     >
       <div className="min-w-0">
-        <p className="text-sm font-medium">
+        <p className="flex items-center gap-2 text-sm font-medium">
+          {status !== undefined && (
+            <span
+              aria-hidden
+              // Bigger than the one it replaces, because it is now the whole
+              // of the report rather than a mark in front of a word.
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                status ? "bg-emerald-500" : "bg-foreground/25"
+              }`}
+            />
+          )}
           {hint ? <Explained hint={hint}>{title}</Explained> : title}
+          {/* Said in words for anyone who cannot see the colour. */}
+          {status !== undefined && (
+            <span className="sr-only">
+              {status ? " — connected" : " — not connected"}
+            </span>
+          )}
         </p>
         <p className="mt-1 text-xs leading-relaxed opacity-50">{blurb}</p>
       </div>

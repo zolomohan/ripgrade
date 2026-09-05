@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { FolderSection } from "../folder-section";
 import { SettingDialog } from "./dialog";
-import { PRIMARY, Status } from "./parts";
+import { PRIMARY, Value } from "./parts";
 
 /**
  * The folders a scan walks, as a row that opens onto the list.
@@ -39,18 +39,17 @@ export function LibraryFolders({
           library folder, run together — which is a machine string in a row
           whose left-hand side is already a sentence, and it grew a line every
           time a folder was added. They are in the dialog, which is where you
-          go when the question is which folders rather than how many. */}
-      <Status
-        on={roots.length > 0}
-        label={
-          roots.length
-            ? `${roots.length} folder${roots.length === 1 ? "" : "s"}`
-            : "None chosen"
-        }
-      />
+          go when the question is which folders rather than how many. The dot
+          that stood in front of this is on the setting's name now. */}
+      <Value>
+        {roots.length
+          ? `${roots.length} folder${roots.length === 1 ? "" : "s"}`
+          : "None chosen"}
+      </Value>
+
 
       <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
-        {roots.length ? "Manage" : "Add a folder"}
+        {roots.length ? "Manage" : "Add"}
       </button>
 
       <SettingDialog

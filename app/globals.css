@@ -2174,6 +2174,19 @@ body {
 
 [data-glace-toaster] [data-glace-toast] {
   pointer-events: auto;
+
+  /*
+   * A rounder corner and room inside it.
+   *
+   * Glacé's own are drawn for a toast that is a line of status; these carry a
+   * sentence — a scan's summary, why a conversion stopped — and a sentence set
+   * against the curve of a tight corner reads as text that is falling out of
+   * the pane. The radius is the one every floating surface in this app uses,
+   * and the padding is what keeps the first and last words off the rim now
+   * that the rim is a real curve rather than a chamfer.
+   */
+  border-radius: 1.125rem;
+  padding: 0.875rem 1.125rem;
 }
 
 /*
@@ -3109,6 +3122,88 @@ html {
   width: 1px;
   background: linear-gradient(
     to bottom,
+    transparent,
+    var(--line-strong),
+    transparent
+  );
+}
+
+/*
+ * A settings row, parted from the one above it the way this app parts anything
+ * from anything: a hairline that is weighted in the middle and gone at both
+ * ends. It was a `border-t` — a rule drawn the full width at full strength,
+ * which is the one join the rest of the app never makes, and the reason a
+ * column of settings read as a table dropped into a page of soft edges.
+ *
+ * On the following sibling, so the first row of a group has nothing above it
+ * and the switch it sits under is not underlined twice.
+ */
+.setting-row {
+  position: relative;
+}
+
+/*
+ * The rows arrive one after another when a group is chosen.
+ *
+ * `.row-enter` is on the row and reads `--i` as its place in the queue, which
+ * everywhere else in the app is set by `stagger()` at the call site. It cannot
+ * be here: the page hands the tabs a `<Library />` rather than a list, so no
+ * component sees an index. Counted in CSS instead, which the rows being direct
+ * children of the list makes exact.
+ *
+ * Nine, because the longest group has five and a fragment may grow. Past it
+ * the delay simply stops increasing, which is what `.row-enter` already does
+ * at twelve.
+ */
+.settings-list > .setting-row:nth-child(1) {
+  --i: 0;
+}
+.settings-list > .setting-row:nth-child(2) {
+  --i: 1;
+}
+.settings-list > .setting-row:nth-child(3) {
+  --i: 2;
+}
+.settings-list > .setting-row:nth-child(4) {
+  --i: 3;
+}
+.settings-list > .setting-row:nth-child(5) {
+  --i: 4;
+}
+.settings-list > .setting-row:nth-child(6) {
+  --i: 5;
+}
+.settings-list > .setting-row:nth-child(7) {
+  --i: 6;
+}
+.settings-list > .setting-row:nth-child(8) {
+  --i: 7;
+}
+.settings-list > .setting-row:nth-child(n + 9) {
+  --i: 8;
+}
+
+/*
+ * Absolutely positioned, and that is the whole of what took two goes to get
+ * right. A row is a grid, and a pseudo-element on a grid container is a grid
+ * item: laid out in flow it took the first cell, put the name in the second
+ * and pushed the control onto a row of its own at the left margin. The rule
+ * this copies — `.ruled` below — never met the problem because the things it
+ * parts are block containers.
+ *
+ * Out of flow it is not a grid item at all, and `top: 0` puts it exactly where
+ * a `border-top` would have been: the top edge of the padding box, above the
+ * row's own breathing room rather than inside it.
+ */
+.setting-row + .setting-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(
+    to right,
     transparent,
     var(--line-strong),
     transparent

@@ -9,7 +9,7 @@ import { clearThumbs, rebuildThumbs } from "../actions";
 import { ICONS } from "../controls";
 import { useJobs } from "../jobs-provider";
 import { Spinner } from "../spinner";
-import { IconButton, PRIMARY } from "./parts";
+import { IconButton, PRIMARY, Value } from "./parts";
 import { size } from "@/app/format";
 
 /**
@@ -98,14 +98,12 @@ export function Thumbs({ files, bytes }: { files: number; bytes: number }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="min-w-0">
-        <p className="text-sm">
-          {files
-            ? `${files.toLocaleString("en-GB")} thumbnails · ${size(bytes)}`
-            : "Nothing cached yet — thumbnails appear as shelves are browsed"}
-        </p>
-      </div>
+    <div className="flex flex-wrap items-center justify-end gap-3">
+      <Value>
+        {files
+          ? `${files.toLocaleString("en-GB")} thumbnails · ${size(bytes)}`
+          : "Nothing cached yet"}
+      </Value>
 
       <div className="flex shrink-0 items-center gap-3">
         {files > 0 && (

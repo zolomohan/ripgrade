@@ -7,7 +7,7 @@ import { ICONS } from "../controls";
 import { FolderPicker } from "../folder-picker";
 import type { DirListing } from "@/lib/browse";
 import { SettingDialog } from "./dialog";
-import { IconButton, PRIMARY, Status } from "./parts";
+import { IconButton, PRIMARY, Value } from "./parts";
 
 /**
  * Where dovi_convert writes its working video file.
@@ -46,13 +46,12 @@ export function TempFolder({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <Status
-        on={Boolean(current)}
-        label={
-          current ? "Working files go to" : "Working files stay beside the film"
-        }
-        detail={current}
-      />
+      {/* The folder, and nothing in front of it. "Working files go to" was
+          the row's own description said again in the column where the answer
+          goes, and the dot beside it was reporting that a path had been set —
+          which the path being there already reports. */}
+      <Value>{current ?? "Beside the film"}</Value>
+
 
       <div className="flex shrink-0 items-center gap-3">
         {current && (
@@ -64,7 +63,7 @@ export function TempFolder({
           />
         )}
         <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
-          {current ? "Change" : "Choose a folder"}
+          {current ? "Change" : "Choose"}
         </button>
       </div>
 
