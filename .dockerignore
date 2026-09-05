@@ -10,6 +10,11 @@ build
 # the image — baking one in would ship somebody else's drive.
 data
 
+# And the note saying where they were moved to, which names a path on the host.
+# Inside the image RIPGRADE_DATA_DIR decides and this would be ignored anyway;
+# it is kept out so there is nothing to be confused by.
+.ripgrade-data-dir
+
 .git
 .gitignore
 .env*

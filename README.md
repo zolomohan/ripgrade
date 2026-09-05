@@ -531,8 +531,28 @@ Everything the app stores lives in `data/`, which is git-ignored:
 data/
 ├── medlib.db      # SQLite — probes, matches, TMDb records, disc lookups, settings
 ├── medlib.db-wal  # WAL, so a long scan can write while pages read
+├── collections/   # artwork for sets of your own
 └── thumbs/        # sharp-generated poster cache, three widths
 ```
+
+### Putting it somewhere else
+
+**Settings → Files → Data folder.** Pick a folder, and the store is copied there; restart and the app
+reads it from its new home. Nothing is deleted — the old copy stays where it was, for you to remove
+once the library has come back up.
+
+**Worth doing if you run from source.** `next dev` watches the project folder and Turbopack offers no
+way to exclude a path from that — `watchOptions` is a poll interval and nothing more. So the
+write-ahead log, rewritten continuously for the length of a scan, and every thumbnail generated while
+you browse, arrive as change events on the dev server's own file watcher. A server left running
+through an afternoon of scanning pays for that in memory, and does not give it back.
+
+The choice is written to `.ripgrade-data-dir`, one line holding one absolute path, git-ignored. It
+cannot be a row in the settings table for the obvious reason: that table is inside the database whose
+location it would be naming.
+
+`RIPGRADE_DATA_DIR` overrides it where it is set, and Docker sets it — see below. The Settings row
+says so and stops offering to move anything.
 
 **The database is a cache, not a source of truth.** Almost everything in it is derived from files on
 disk, so if the schema ever needs to change the intended fix is to delete `data/medlib.db` and

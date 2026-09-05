@@ -4,6 +4,8 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
+import { DATA_DIR } from "./data-dir";
+
 /**
  * The database is a cache, not a source of truth — everything in it is derived
  * from files on disk. If the schema needs to change, delete `data/medlib.db`
@@ -372,7 +374,7 @@ CREATE TABLE IF NOT EXISTS job_runs (
 CREATE INDEX IF NOT EXISTS job_runs_finished ON job_runs (finished_at DESC);
 `;
 
-const DB_PATH = path.join(process.cwd(), "data", "medlib.db");
+const DB_PATH = path.join(DATA_DIR, "medlib.db");
 
 function open(): Database.Database {
   mkdirSync(path.dirname(DB_PATH), { recursive: true });

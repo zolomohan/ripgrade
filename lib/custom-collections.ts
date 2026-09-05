@@ -2,6 +2,7 @@ import "server-only";
 
 import path from "node:path";
 
+import { DATA_DIR } from "./data-dir";
 import { db } from "./db";
 import type { CollectionFilm, CollectionSet } from "./collections";
 import type { LibraryItem } from "./library";
@@ -42,11 +43,11 @@ export type CustomSet = CollectionSet & {
  *
  * Beside the database rather than beside the films: a set of your own spans
  * drives, or names films that are on none of them, so there is no folder on the
- * library's side of the app that it belongs in. `data/` is this app's own
+ * library's side of the app that it belongs in. `DATA_DIR` is this app's own
  * store — the one directory a Docker install already keeps.
  */
 export const collectionDir = (id: number) =>
-  path.join(process.cwd(), "data", "collections", String(id));
+  path.join(DATA_DIR, "collections", String(id));
 
 type SetRow = { id: number; name: string; created_at: number };
 

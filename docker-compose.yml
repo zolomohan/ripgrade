@@ -43,7 +43,7 @@ services:
   # JSON files holding the whole indexer setup, and patching those with a regex
   # is how you lose them. See docker/jackett-init.mjs.
   jackett-init:
-    image: node:22-bookworm-slim
+    image: node:24-trixie-slim
     # Root to write into a config directory it does not own. On a bind mount
     # from macOS the chown afterwards is a no-op, and the script treats it as
     # one rather than failing.
@@ -102,10 +102,21 @@ services:
       - /Volumes:/Volumes
       # Writable: dovi_convert leaves the original beside its result, and the
       # audio strip writes a new MKV next to the file it read.
-      - ripgrade-data:/app/data
+      #
+      # The same variable as the environment below, so the volume and the app
+      # cannot end up pointing at different directories — the one way to make a
+      # container that boots clean and reports an empty library.
+      - ripgrade-data:${RIPGRADE_DATA_DIR:-/app/data}
     environment:
       TZ: ${TZ:-Europe/London}
       RIPGRADE_BROWSE_ROOT: ${RIPGRADE_BROWSE_ROOT:-/Volumes}
+      # Where the database, the thumbnails and the artwork for your own sets
+      # live. Elsewhere this is chosen on the Settings page; set here it wins
+      # over that, because a path picked on somebody's Mac names nothing inside
+      # this image. Nothing here needs it moved anyway — a container has no file
+      # watcher to keep out of, which is the reason it is a setting at all. See
+      # lib/data-dir.ts.
+      RIPGRADE_DATA_DIR: ${RIPGRADE_DATA_DIR:-/app/data}
       # The other half of the arrangement: the same key jackett-init wrote into
       # Jackett's config, and the address Jackett answers on. Set both and the
       # integration is configured before the first page loads; set neither and

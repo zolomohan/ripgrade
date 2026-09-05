@@ -27,6 +27,10 @@
 # local scan database (regenerable — rebuilt by rescanning)
 /data/
 
+# where that store actually lives, if it was moved in Settings. One line, one
+# absolute path, true only of the machine that wrote it.
+/.ripgrade-data-dir
+
 # working notes and specs
 /docs/
 

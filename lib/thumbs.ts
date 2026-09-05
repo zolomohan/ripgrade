@@ -7,6 +7,7 @@ import path from "node:path";
 
 import sharp from "sharp";
 
+import { DATA_DIR } from "./data-dir";
 import { db } from "./db";
 import { notifyJobs } from "./job-events";
 import { ended, recordRun } from "./job-history";
@@ -54,7 +55,7 @@ sharp.cache(false);
  */
 export const THUMB_WIDTHS = new Set([160, 640, 1280]);
 
-const CACHE_DIR = path.join(process.cwd(), "data", "thumbs");
+const CACHE_DIR = path.join(DATA_DIR, "thumbs");
 mkdirSync(CACHE_DIR, { recursive: true });
 
 const hashOf = (filePath: string) =>

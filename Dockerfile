@@ -12,7 +12,19 @@
 # Build
 # ---------------------------------------------------------------------------
 
-FROM node:22-bookworm-slim AS builder
+# Node 24 on Debian 13. Both halves are the current release rather than the
+# previous one: Node 22 left active support and 24 is the line getting the
+# fixes, and it is also the version this is developed against, which is one
+# fewer difference between the container and the machine it was written on.
+#
+# Trixie moves the four tools underneath as well, and for this app they are the
+# point of the upgrade rather than a side effect — ffmpeg 5.1 to 7.1, MediaInfo
+# 22 to 24, mkvtoolnix 70 to 88. Every one of those reads Dolby Vision better
+# than the version bookworm froze in 2023, which is most of what this image is
+# for. It is also the reason to look twice after building: a scan re-probes
+# with a MediaInfo two years newer, and a film it used to describe one way it
+# may now describe another — better, but differently.
+FROM node:24-trixie-slim AS builder
 
 # better-sqlite3 and sharp both publish prebuilds for linux/amd64 and
 # linux/arm64, but a toolchain has to be present for the release that doesn't.
@@ -39,11 +51,15 @@ RUN npm prune --omit=dev
 # Runtime
 # ---------------------------------------------------------------------------
 
-FROM node:22-bookworm-slim AS runner
+FROM node:24-trixie-slim AS runner
 
 # Set by BuildKit to the architecture being built for. Used to pick dovi_tool's
 # binary, which is the only dependency here that is not a Debian package.
 ARG TARGETARCH
+# Both pinned, and both currently the newest release there is. Pinned rather
+# than tracking latest because these two decide what a converted file is: a
+# build that quietly picked up a new dovi_tool would change the output of a job
+# somebody had already run once and compared.
 ARG DOVI_TOOL_VERSION=2.3.3
 ARG DOVI_CONVERT_VERSION=8.2.0
 
@@ -119,10 +135,20 @@ ENV LANG=C.UTF-8 \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
-    HOSTNAME=0.0.0.0
+    HOSTNAME=0.0.0.0 \
+    RIPGRADE_DATA_DIR=/app/data
 
-# The scan database and the thumbnail cache. Regenerable, but a rescan of a
-# full drive is an hour, so this wants to outlive the container.
+# The scan database, the thumbnail cache, and the artwork for sets of your own.
+# Regenerable, but a rescan of a full drive is an hour, so this wants to outlive
+# the container.
+#
+# `/app/data` is the app's default anyway — `RIPGRADE_DATA_DIR` above is set to
+# say so rather than to change it. The path is a setting now, chosen on the
+# Settings page and written beside the project, and a path chosen on somebody's
+# Mac names nothing in here. The variable is what makes the image ignore it, and
+# an image whose volume and whose app disagreed about where the database lives
+# is a container that comes up reporting an empty library. Overriding it at
+# runtime means moving the mount with it; compose drives both from one variable.
 VOLUME ["/app/data"]
 
 EXPOSE 3000

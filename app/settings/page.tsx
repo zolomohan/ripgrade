@@ -2,6 +2,7 @@ import {
   getAudioLanguages,
   getSubtitleLanguages,
   getConvertTempDir,
+  getDataLocation,
   getKeepEnhancementLayer,
   getGlassPosters,
   getTheme,
@@ -15,6 +16,7 @@ import {
   getTmdbStatus,
 } from "../actions";
 import { AudioLanguages } from "./audio-languages";
+import { DataFolder } from "./data-folder";
 import { SubtitleLanguages } from "./subtitle-languages";
 import { EnhancementLayer } from "./el-backup";
 import { GlassTuning } from "./glass-tuning";
@@ -89,6 +91,7 @@ export default async function SettingsPage() {
   const qb = await getQbStatus();
   const tmdb = await getTmdbStatus();
   const thumbs = await getThumbCache();
+  const dataLocation = await getDataLocation();
   const queue = await getQueueRules();
   const audio = await getAudioLanguages();
   const subtitles = await getSubtitleLanguages();
@@ -226,6 +229,14 @@ export default async function SettingsPage() {
           hint="Downscaled copies of your artwork, kept on this machine so shelves load fast and still show with the drive unplugged. It fills itself as you browse; rebuild before taking the drive away, clear to reclaim the space."
         >
           <Thumbs files={thumbs.files} bytes={thumbs.bytes} />
+        </Setting>
+
+        <Setting
+          title="Data folder"
+          summary={dataLocation.path}
+          hint="The database, the thumbnail cache and the artwork for sets of your own — everything the app makes for itself, and none of your films. Worth moving out of the project if you run from source: `next dev` watches the project folder and cannot be told not to, so a scan's write-ahead log becomes thousands of change events for the dev server to handle. The store is copied, not moved, and read from its new home after a restart."
+        >
+          <DataFolder location={dataLocation} />
         </Setting>
       </>
     );
