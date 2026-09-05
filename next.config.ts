@@ -3,6 +3,30 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     /*
+     * Turbopack's compilation cache, kept in memory rather than on disk.
+     *
+     * On by default in dev — and off by default for a build, which is the hint.
+     * It is an incremental bundler's working state written down: every module
+     * compiled, every dependency edge, every intermediate result, in a
+     * log-structured store under `.next/dev/cache` so that a restart can skip
+     * work it has already done.
+     *
+     * Appending is the part it is good at. Reclaiming is the part it is not:
+     * this store reached a hundred gigabytes — 2,594 tables, growing since
+     * August — which is a tenth of the disk, and the dev server maps the whole
+     * thing at startup. That is where seven gigabytes of a freshly started
+     * server came from, before it had served a single request, and why each
+     * flush took longer than the one before it: thirty seconds to write into a
+     * store that never got smaller.
+     *
+     * What turning it off costs is the first compile of each route after a
+     * restart, which is seconds. What it buys is a dev server that starts at
+     * its own size. Recompiles while the server runs are untouched — that
+     * incrementality is in memory and is not this.
+     */
+    turbopackFileSystemCacheForDev: false,
+
+    /*
      * How long the client keeps a page it has already been given.
      *
      * Stated rather than inherited, because the default moved under this app
