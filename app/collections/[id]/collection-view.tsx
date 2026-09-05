@@ -373,7 +373,13 @@ export function CollectionView({
           heading explaining that there is nothing to head. */}
       {set.owned.length > 0 && (
         <section className="flex flex-col gap-7">
-          <Heading label="In the library" />
+          {/* Only where there is a second shelf under it to be told apart
+              from. A set you hold every film of is one shelf, and a heading
+              over the only thing on the page is a label naming what you are
+              already looking at — "In the library", on a page that is the
+              library. It comes back the moment something is missing, because
+              then it is doing the one job a heading does. */}
+          {missing.length > 0 && <Heading label="In the library" />}
           <div className={GRID}>
             {set.owned.map((film, i) => (
               <Held
