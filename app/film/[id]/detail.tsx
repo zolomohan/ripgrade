@@ -458,6 +458,26 @@ export async function DetailPage({
         <ScoreWhyTrigger
           subject={{
             title: movie.tmdb?.title ?? movie.fileName,
+            // The film itself, so the dialog opens on the poster you pressed
+            // rather than on the word "Score" — see `TaskHead`.
+            film: {
+              path: movie.path,
+              poster: movie.poster,
+              posterRemote: movie.art.poster,
+              artAt: movie.artAt,
+              title: movie.tmdb?.title ?? movie.fileName,
+              year: movie.tmdb?.year ?? movie.year,
+              // The same "S01E02" the head of this page prints, so the
+              // dialog's muted line names the episode rather than a year a
+              // show's files all share.
+              episode: tv
+                ? `S${String(tv.season.number).padStart(2, "0")}E${String(
+                    tv.episode.number,
+                  ).padStart(2, "0")}${
+                    tv.episode.title ? ` · ${tv.episode.title}` : ""
+                  }`
+                : undefined,
+            },
             scores: movie.scores,
             breakdown,
           }}

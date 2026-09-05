@@ -52,9 +52,16 @@ export function DoviDetails({
       open={open}
       onClose={onClose}
       label={`${task.title} — what converting it would do`}
-      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto p-6"
+      /*
+       * The panel holds still and its contents scroll inside it — see the same
+       * arrangement in app/score-why.tsx. Scrolling the panel itself puts a
+       * square scrollbar track against a rounded glass edge, where it stands
+       * outside the curve at both ends and reads as a faint border down one
+       * side of the dialog.
+       */
+      panelClassName="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden"
     >
-      <>
+      <div className="shrink-0 px-6 pt-6">
         {/* The same head the track picker wears, and for the same reason: both
             are one job asked about one file, opened off the same page, and the
             first thing either has to settle is which file.
@@ -73,7 +80,9 @@ export function DoviDetails({
             drawn under them was the dialog stating twice that this part is not
             the rest. */}
         <TaskHead film={task} href={href} onClose={onClose} />
+      </div>
 
+      <div className="flex min-w-0 flex-col gap-4 overflow-y-auto px-6 pb-6">
         <dl className="overflow-hidden rounded-control border border-line">
           <Fact label="File" value={task.fileName} mono />
           <Fact label="Size" value={size} />
@@ -134,7 +143,7 @@ export function DoviDetails({
         >
           {checkFirst ? "Check" : "Convert"}
         </button>
-      </>
+      </div>
     </Modal>
   );
 }

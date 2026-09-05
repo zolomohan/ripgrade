@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { CloseButton, Modal } from "@/app/modal";
+import { TaskHead, type HeadFilm } from "@/app/jobs/task-head";
 import {
   RULE,
   ScoreHero,
   ScoreReading,
+  ScoreSource,
   ScoreViewSwitch,
   scoreViews,
   type ScoreViewId,
@@ -149,6 +151,7 @@ function WhyShell({
   onClose,
   label,
   ring,
+  film,
   children,
   footer,
   scores,
@@ -160,6 +163,14 @@ function WhyShell({
   label: string;
   /** The verdict colour of the ring you pressed, carried onto the hero's. */
   ring?: string;
+  /**
+   * The film this is a reading of, for the head.
+   *
+   * Optional because a predicted score is read off a release name and has no
+   * film behind it — nothing in the library, sometimes nothing anywhere. That
+   * dialog keeps the plain title it always had.
+   */
+  film?: HeadFilm;
   /** Whatever the subject has to say for itself, above the working. */
   children?: React.ReactNode;
   /**
@@ -196,17 +207,54 @@ function WhyShell({
       open={open}
       onClose={onClose}
       label={label}
-      panelClassName="flex max-h-[85vh] w-full max-w-xl flex-col gap-5 overflow-y-auto p-6"
+      /*
+       * The panel holds still and the working scrolls inside it.
+       *
+       * It was the panel itself that scrolled, which put the scrollbar hard
+       * against a rounded glass edge: the track is square and the corner is
+       * not, so at the top and bottom right the bar stood outside the curve
+       * and read as a faint border with a radius, drawn on two sides of the
+       * dialog. Nothing was bordered — it was the scrollbar leaving the pane.
+       *
+       * `overflow-hidden` on the panel so the curve clips, and the scrolling
+       * moved to the body below, which is square and inset. The head stays
+       * still while the numbers move under it, which is what it is for.
+       */
+      panelClassName="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden"
     >
-      <>
-        <header className="flex items-center gap-3">
-          <h2 className="min-w-0 flex-1 truncate text-base font-semibold">
-            Score
-          </h2>
-          {vsDisc && <ScoreViewSwitch value={view.id} onChange={setShowing} />}
-          <CloseButton onClick={onClose} />
-        </header>
+      <div className="shrink-0 px-6 pt-6">
+        {/* The same head the conversion dialog and the track picker wear.
+            All three are one question asked about one file, opened off the
+            same picture, and the first thing each has to settle is which file
+            — which a word reading "Score" never did. See `TaskHead`.
 
+            The reading rides beside the close, because it is the one control
+            the whole panel answers to: change it and every number below means
+            something else. */}
+        {film ? (
+          <TaskHead
+            film={film}
+            onClose={onClose}
+            action={
+              vsDisc && (
+                <ScoreViewSwitch value={view.id} onChange={setShowing} />
+              )
+            }
+          />
+        ) : (
+          <header className="flex items-center gap-3">
+            <h2 className="min-w-0 flex-1 truncate text-base font-semibold">
+              Score
+            </h2>
+            {vsDisc && (
+              <ScoreViewSwitch value={view.id} onChange={setShowing} />
+            )}
+            <CloseButton onClick={onClose} />
+          </header>
+        )}
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-5 overflow-y-auto px-6 pb-6">
         {/*
          * The floor the title stands on.
          *
@@ -239,15 +287,20 @@ function WhyShell({
           tabbed={Boolean(vsDisc)}
         />
 
-        {footer && (
-          <footer className="flex flex-col gap-3">
-            <div aria-hidden className={RULE} />
+        {/* The foot of the dialog: what this was read from, where there is
+            such a thing, and where the numbers themselves come from.
+            Always drawn, because the second half always applies — a reading
+            with no release name behind it still has a rubric behind it. */}
+        <footer className="flex flex-col gap-3">
+          <div aria-hidden className={RULE} />
+          {footer && (
             <p className="font-mono text-[11px] break-all opacity-45">
               {footer}
             </p>
-          </footer>
-        )}
-      </>
+          )}
+          <ScoreSource />
+        </footer>
+      </div>
     </Modal>
   );
 }
@@ -409,6 +462,11 @@ export function PredictedScoreDial({
 export type MeasuredScore = {
   /** What this copy is of, for the dialog to name itself after. */
   title: string;
+  /**
+   * The file itself, where the caller has it — a poster and a year for the
+   * head, so the dialog opens on the same picture you pressed. See `TaskHead`.
+   */
+  film?: HeadFilm;
   scores: { video: number; audio: number; release: number; overall: number };
   breakdown: Breakdown;
 };
@@ -424,7 +482,7 @@ function MeasuredWhyModal({
   subject: MeasuredScore;
   ring?: string;
 }) {
-  const { title, scores, breakdown } = subject;
+  const { title, film, scores, breakdown } = subject;
 
   return (
     <WhyShell
@@ -432,6 +490,7 @@ function MeasuredWhyModal({
       onClose={onClose}
       label={`Why ${title} scores ${scores.overall}`}
       ring={ring}
+      film={film}
       scores={scores}
       breakdown={breakdown}
     />

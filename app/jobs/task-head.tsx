@@ -46,6 +46,7 @@ export function TaskHead({
   href,
   onClose,
   closeDisabled,
+  action,
 }: {
   film: HeadFilm;
   /**
@@ -65,6 +66,13 @@ export function TaskHead({
   onClose: () => void;
   /** Set while something is running that a stray dismissal must not interrupt. */
   closeDisabled?: boolean;
+  /**
+   * What belongs beside the close, for a dialog whose whole contents answer to
+   * one control — the score's reading, which decides what every number under
+   * it means. Left of the close, because the close is the last thing on the
+   * line everywhere in this app.
+   */
+  action?: React.ReactNode;
 }) {
   // No transition name on the poster: the row this was opened from is still
   // mounted behind the dialog, and two posters of one film claiming one name
@@ -98,7 +106,10 @@ export function TaskHead({
         <div className="flex min-w-0 items-center gap-3">{identity}</div>
       )}
 
-      <CloseButton onClick={onClose} disabled={closeDisabled} />
+      <div className="flex shrink-0 items-center gap-3">
+        {action}
+        <CloseButton onClick={onClose} disabled={closeDisabled} />
+      </div>
     </div>
   );
 }

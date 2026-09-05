@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { Switch } from "@/app/controls";
+import { Choice } from "@/app/controls";
 import { ScoreRing, SubScore } from "@/app/score-card";
 import { STATUS_THEME } from "@/app/score-circle";
 import {
@@ -194,11 +194,17 @@ function Component({
         ))}
       </div>
 
-      {/* On its own quiet surface, so the section ends with a verdict rather
-          than trailing off — how many points are missing, and the way to each
-          of them. */}
+      {/* How many points are missing, and the way to each of them.
+       *
+       * On the page rather than on a surface of its own. It was a filled card
+       * with rounded corners, meant to end the section with a verdict — and in
+       * a dialog this dark the fill is nearly the dialog's own, so what you
+       * actually saw was a faint radius down the right side and along the
+       * bottom, where the box stood proud of the text. A frame that is only
+       * visible on two of its four edges is not framing anything.
+       */}
       {notes.length > 0 && (
-        <div className="mt-3 rounded-card bg-surface px-4 py-3 text-xs">
+        <div className="mt-3 text-xs">
           {lost > 0 && (
             <p className="flex items-baseline justify-between gap-4">
               <span className="tracking-wide uppercase opacity-45">
@@ -433,15 +439,28 @@ export function ScoreReading({
 
         {note && <p className="mt-3 text-xs opacity-50">{note}</p>}
       </section>
-
-      <p className="text-xs opacity-50">
-        Every threshold is on{" "}
-        <Link href="/how-it-works" className="underline underline-offset-4">
-          How it works
-        </Link>
-        .
-      </p>
     </div>
+  );
+}
+
+/**
+ * Where the numbers come from, said once at the foot of the dialog.
+ *
+ * It sat at the end of the reading, which made it the last item in a list of
+ * scored lines — a sentence about the whole rubric filed as though it were
+ * another dimension of it, and one that moved up and down the panel depending
+ * on how many lines the file happened to have. A pointer away from a dialog
+ * belongs where a dialog ends.
+ */
+export function ScoreSource() {
+  return (
+    <p className="text-xs opacity-50">
+      Every threshold is on{" "}
+      <Link href="/how-it-works" className="underline underline-offset-4">
+        How it works
+      </Link>
+      .
+    </p>
   );
 }
 
@@ -528,14 +547,21 @@ export function ScoreViewSwitch({
      which made the switch a third place the numbers are printed — after the
      ring beside it and the sign-off at the foot of whichever reading is open —
      and a figure on an unselected tab reads as a tally of what is behind it
-     rather than as the score itself. */
+     rather than as the score itself.
+
+     A menu rather than the segmented switch it was. Both readings on screen at
+     once put two words of equal weight at the head of a dialog whose subject is
+     one of them, and read as two tabs of content rather than as one control
+     with a setting. See `Choice` in app/controls.tsx, which is what every other
+     named choice in the app is set with now. */
   return (
-    <Switch
+    <Choice<ScoreViewId>
       value={value}
-      onChange={(key) => onChange(key as ScoreViewId)}
+      label="Score reading"
+      onChange={onChange}
       options={[
-        { key: "disc", label: "vs disc" },
-        { key: "rubric", label: "Absolute" },
+        { value: "disc", label: "vs disc" },
+        { value: "rubric", label: "Absolute" },
       ]}
     />
   );
