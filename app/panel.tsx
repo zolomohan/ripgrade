@@ -18,12 +18,23 @@ import { Explained } from "./controls";
  */
 export function Panel({
   title,
+  as: Heading = "h2",
   hint,
   summary,
   open = false,
   children,
 }: {
   title: string;
+  /**
+   * Which heading this is, for a panel that sits under one.
+   *
+   * `h2` everywhere it was written for — a film's evidence stands directly
+   * under the film's own name. Settings nests them a level deeper, under the
+   * heading that names the group, and two `h2`s in that arrangement describe a
+   * flat list of nineteen things rather than four groups of settings. It is
+   * the one fact about a panel that only its surroundings know.
+   */
+  as?: "h2" | "h3";
   /**
    * Why you would touch this, under the word that names it.
    *
@@ -44,14 +55,14 @@ export function Panel({
             else in this app. It was small tracked upper case for a long time,
             which reads as a label on a form field — and a panel is not a field:
             it is a section of the page, holding as much as any shelf does. */}
-        <h2 className="shrink-0 font-display text-lg font-semibold tracking-tight">
+        <Heading className="shrink-0 font-display text-lg font-semibold tracking-tight">
           {/* The tooltip wraps the word and not the heading, so what is
               underlined is the title itself rather than the whole of the row
               it stands at the left of. Clicking it is not intercepted: a title
               is the biggest target on a shut panel and it has to go on being
               the way in. */}
           {hint ? <Explained hint={hint}>{title}</Explained> : title}
-        </h2>
+        </Heading>
 
         {/* Pushed to the chevron and truncated rather than wrapped: a summary
             that grows to two lines is no longer a summary. */}

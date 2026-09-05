@@ -32,8 +32,8 @@ import { QueueThreshold } from "./queue-threshold";
 import { TempFolder } from "./temp-folder";
 import { Thumbs } from "./thumbs";
 import { Panel } from "../panel";
+import { SectionHeading } from "../section-heading";
 import { Row } from "./parts";
-import { SettingsTabs } from "./settings-tabs";
 import { Tmdb } from "./tmdb";
 import { DEFAULT_ROOT } from "@/lib/browse";
 import { glassSummary } from "@/lib/glass";
@@ -77,7 +77,8 @@ function Setting({
   children: React.ReactNode;
 }) {
   return (
-    <Panel title={title} hint={hint} summary={summary}>
+    // A step down from the group heading it sits under — see `as` on Panel.
+    <Panel title={title} as="h3" hint={hint} summary={summary}>
       <div className="flex flex-col gap-5">{children}</div>
     </Panel>
   );
@@ -126,65 +127,88 @@ export default async function SettingsPage() {
   ];
 
   /*
-   * In the order you meet them: where the films are, what they are called and
-   * what they look like, and then how new ones are found and fetched.
+   * In the order you meet them: where the films are, what is done to them, and
+   * then how new ones are found and fetched — with how any of it is drawn last,
+   * being the only group here about the app rather than about the library.
    *
-   * Three tabs along the same line — the library, the work done to it, and
-   * where more of it comes from — because that order is three subjects and not
-   * nine settings. See ./settings-tabs.tsx. Within a tab the panels keep the
-   * order they had in the single column, which was already this order read
-   * three settings at a time.
+   * One column, parted by the heading every other long page in this app is
+   * parted by. It was three tabs, and then a menu, and both were the same
+   * mistake made twice: a control invented for this page to answer a question
+   * — "where is the qBittorrent setting" — that scrolling already answers
+   * everywhere else. The downloads log has "Downloading" and "History", the
+   * jobs page names each queue, the wishlist parts what it found from what it
+   * did not; none of them make you choose a section before you can see one.
+   * A switcher also hid three quarters of the page from find-in-page, which is
+   * how somebody who knows the name of the thing they want actually looks.
+   *
+   * The panels stay shut. That is the other half of the length problem and the
+   * half worth keeping: fourteen names with what each is set to beside them is
+   * a page you can read down, and the controls are one press away rather than
+   * one press and a guess about which tab they were filed under.
    */
   return (
-    <main className="reading-column mx-auto flex flex-col px-6 py-8 sm:px-8">
-      <SettingsTabs
-        groups={[
-          {
-            key: "library",
-            label: "Library",
-            settings: <Library />,
-          },
-          {
-            key: "jobs",
-            // Named for the page that runs the work these settings govern: a
-            // conversion's scratch disk, what it keeps of the original, and
-            // which audio is worth the space. Every one of them is answered on
-            // the Jobs page, one film at a time.
-            label: "Jobs",
-            settings: <Jobs />,
-          },
-          {
-            key: "downloads",
-            // The app's own word for what all three of these are about, and a
-            // noun like the two before it — "Fetching" named the act rather
-            // than the subject, and read as the odd word on the line.
-            //
-            // Not "Queue": that is one of the two lists these settings feed,
-            // and the wishlist is the other. Both arrive the same way, through
-            // the same two services, judged by the same bar.
-            label: "Downloads",
-            settings: <Downloads />,
-          },
-          {
-            key: "themes",
-            // Last, and the only tab here about the app rather than about the
-            // library: the three before it answer what you have, what is done
-            // to it and where more comes from, and this one answers how any of
-            // it is drawn. A preference rather than a configuration — nothing
-            // in here changes what the app does, only what you see it as.
-            label: "Themes",
-            settings: <Themes />,
-          },
-        ]}
-      />
+    <main className="reading-column mx-auto flex flex-col gap-10 px-6 py-8 sm:px-8">
+      <Group label="Library">
+        <Library />
+      </Group>
+
+      {/* Named for the page that runs the work these govern: a conversion's
+          scratch disk, what it keeps of the original, and which audio is worth
+          the space. Every one is answered on the Jobs page, one film at a
+          time. */}
+      <Group label="Jobs">
+        <Jobs />
+      </Group>
+
+      {/* The app's own word for what all three are about, and a noun like the
+          two before it — "Fetching" named the act rather than the subject.
+          Not "Queue": that is one of the two lists these feed, and the
+          wishlist is the other. */}
+      <Group label="Downloads">
+        <Downloads />
+      </Group>
+
+      {/* Last, and the only group about the app rather than about the library.
+          A preference rather than a configuration: nothing in here changes
+          what the app does, only what you see it as. */}
+      <Group label="Themes">
+        <Themes />
+      </Group>
     </main>
   );
 
+  /**
+   * A group of settings under the app's own section heading.
+   *
+   * `SectionHeading` rather than anything of this page's own — it is what the
+   * downloads log, the jobs page and the wishlist part their sections with,
+   * and a settings page that drew its own would be the fourth opinion about a
+   * thing the app has one opinion about.
+   *
+   * The gap under the heading is smaller than the gap between groups, so a
+   * heading reads as belonging to what follows it rather than floating between
+   * two blocks. The panels inside rule themselves apart — see `.ruled`.
+   */
+  function Group({
+    label,
+    children,
+  }: {
+    label: string;
+    children: React.ReactNode;
+  }) {
+    return (
+      <section className="flex flex-col gap-1">
+        <SectionHeading label={label} />
+        <div>{children}</div>
+      </section>
+    );
+  }
+
   /*
-   * The three tabs' panels, as functions closed over what the page has already
-   * awaited. Written inline rather than as components of their own: they take
-   * no arguments and are used once each, and lifting them out would mean
-   * threading nine values through three prop lists to say nothing new.
+   * The four groups' panels, as functions closed over what the page has
+   * already awaited. Written inline rather than as components of their own:
+   * they take no arguments and are used once each, and lifting them out would
+   * mean threading a dozen values through four prop lists to say nothing new.
    */
 
   /** What the app knows about, and what it knows about it. */
