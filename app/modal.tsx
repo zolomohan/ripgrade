@@ -94,6 +94,53 @@ export function useLingering<T>(value: T | null): T | null {
 }
 
 /**
+ * How many dialogs are currently holding the page still.
+ *
+ * Each one used to save `body.style.overflow` on the way in and put it back on
+ * the way out, which is right for one dialog and wrong the moment two are
+ * open. Dialogs do nest here: the release search is a dialog, and the magnet
+ * it hands you opens another on top of it.
+ *
+ * The inner one then saved "hidden" as the value to restore, because that is
+ * what the outer one had already set. Close them in the order the wishlist
+ * actually closes them — the search goes the moment the send succeeds, the
+ * magnet dialog a beat later — and the last cleanup to run puts "hidden" back
+ * on a page with no dialog left to justify it. The wishlist could not be
+ * scrolled again until it was reloaded.
+ *
+ * A count fixes the ordering by not caring about it: the first dialog in takes
+ * the note of what the page was, the last one out puts it back, and which
+ * dialog either of those is does not matter.
+ */
+let holding = 0;
+
+/** What the page was before any dialog touched it. */
+let heldFrom: string | null = null;
+
+function holdScroll(): () => void {
+  if (holding === 0) {
+    heldFrom = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  }
+  holding += 1;
+
+  // Guarded against running twice: React calls an effect's cleanup on unmount
+  // and again before every re-run, and in development it mounts, unmounts and
+  // remounts once on purpose. A release that fired twice would take the count
+  // below zero and leave the next dialog unable to lock at all.
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holding -= 1;
+    if (holding === 0) {
+      document.body.style.overflow = heldFrom ?? "";
+      heldFrom = null;
+    }
+  };
+}
+
+/**
  * The way out, in the corner every dialog keeps it in.
  *
  * Escape and a click outside both dismiss, but neither is visible, and on a
@@ -194,14 +241,12 @@ export function Modal({
    * The page behind stops scrolling while a dialog is up. Without it a trackpad
    * flick over the backdrop scrolls the library underneath, and closing leaves
    * you somewhere you never chose to be.
+   *
+   * Counted rather than saved and restored per dialog — see `holdScroll`.
    */
   useEffect(() => {
     if (!rendered) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    return holdScroll();
   }, [rendered]);
 
   if (!rendered || !target) return null;
@@ -237,7 +282,13 @@ export function Modal({
    */
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      /* The gutter a panel is never allowed to fill, and on a phone under
+         `viewport-fit: cover` it has hardware in it: a tall dialog — the track
+         picker asks for 90dvh — reaches into the status bar and the home
+         indicator now that the window includes them. `max` rather than a sum,
+         because the inset is already generous where there is one and 1.5rem is
+         only the floor for where there is not. */
+      className="fixed inset-0 z-50 flex items-center justify-center px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]"
       onClick={() => dismissible && onClose()}
     >
       <div

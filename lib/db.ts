@@ -376,6 +376,23 @@ CREATE INDEX IF NOT EXISTS job_runs_finished ON job_runs (finished_at DESC);
 
 const DB_PATH = path.join(DATA_DIR, "medlib.db");
 
+/**
+ * Whether this process is `next build` rather than the app.
+ *
+ * A build imports every module to collect its routes, and importing this one
+ * opens the database and brings its schema up to date. That is exactly wrong
+ * twice over: a build should not be touching a runtime database at all, and it
+ * does it from several worker processes at once — which is where
+ * `SQLITE_BUSY: database is locked` came from, three times, dressed up as a
+ * broken migration. A busy timeout was the obvious answer and not the right
+ * one: it makes writers queue, and the fix is that there should be no writers.
+ *
+ * The migrations below are skipped in that phase. Nothing is lost — the server
+ * runs this module again on the way up, when it is one process and the
+ * database is the one it will actually serve from.
+ */
+const BUILDING = process.env.NEXT_PHASE === "phase-production-build";
+
 function open(): Database.Database {
   mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
@@ -432,188 +449,195 @@ export const db = globalForDb.medlibDb ?? open();
  * Before the schema below, or the CREATE would find the old table still there
  * and leave it alone.
  */
-const jobRunColumns = (
-  db.prepare("PRAGMA table_info(job_runs)").all() as { name: string }[]
-).map((column) => column.name);
-
-if (jobRunColumns.length > 0 && !jobRunColumns.includes("title")) {
-  db.exec("DROP TABLE job_runs");
-}
-
-/**
- * Two changes to a log that already exists, both guarded on the same thing:
- * `title` means the table is there *and* is this shape. Not on the table's mere
- * existence — the branch above may have just dropped it — and not on the
- * columns being empty, which is also what a database with no log at all looks
- * like. Either way the schema below creates it correct and these do not run.
- *
- * The sweep's rows go: nothing writes them any more and the Jobs page no longer
- * reads them, but the log is capped at its newest rows, so leaving them would
- * let a hundred boots' worth of "12 upgrades · 418 checked" go on evicting the
- * conversions the page exists to show.
- *
- * The command a run was, and the tracks a removal took, are added in place
- * rather than waiting for a fresh table, the same way the artwork columns below
- * are: the rows already there are worth more than the columns are, and they
- * simply read null.
+/*
+ * Everything below brings an existing database up to the shape this build
+ * expects, and every statement in it writes. Skipped during `next build` — see
+ * `BUILDING`.
  */
-if (jobRunColumns.includes("title")) {
-  db.exec("DELETE FROM job_runs WHERE kind = 'sweep'");
+if (!BUILDING) {
+  const jobRunColumns = (
+    db.prepare("PRAGMA table_info(job_runs)").all() as { name: string }[]
+  ).map((column) => column.name);
 
-  if (!jobRunColumns.includes("command")) {
-    db.exec("ALTER TABLE job_runs ADD COLUMN command TEXT");
+  if (jobRunColumns.length > 0 && !jobRunColumns.includes("title")) {
+    db.exec("DROP TABLE job_runs");
   }
 
-  if (!jobRunColumns.includes("removed_tracks")) {
-    db.exec("ALTER TABLE job_runs ADD COLUMN removed_tracks TEXT");
+  /**
+   * Two changes to a log that already exists, both guarded on the same thing:
+   * `title` means the table is there *and* is this shape. Not on the table's mere
+   * existence — the branch above may have just dropped it — and not on the
+   * columns being empty, which is also what a database with no log at all looks
+   * like. Either way the schema below creates it correct and these do not run.
+   *
+   * The sweep's rows go: nothing writes them any more and the Jobs page no longer
+   * reads them, but the log is capped at its newest rows, so leaving them would
+   * let a hundred boots' worth of "12 upgrades · 418 checked" go on evicting the
+   * conversions the page exists to show.
+   *
+   * The command a run was, and the tracks a removal took, are added in place
+   * rather than waiting for a fresh table, the same way the artwork columns below
+   * are: the rows already there are worth more than the columns are, and they
+   * simply read null.
+   */
+  if (jobRunColumns.includes("title")) {
+    db.exec("DELETE FROM job_runs WHERE kind = 'sweep'");
+
+    if (!jobRunColumns.includes("command")) {
+      db.exec("ALTER TABLE job_runs ADD COLUMN command TEXT");
+    }
+
+    if (!jobRunColumns.includes("removed_tracks")) {
+      db.exec("ALTER TABLE job_runs ADD COLUMN removed_tracks TEXT");
+    }
   }
-}
 
-// Applied on every module evaluation, not just on first open. Every statement
-// is CREATE TABLE IF NOT EXISTS, so it is idempotent — and it means a new table
-// reaches the cached dev connection without needing a server restart.
-db.exec(SCHEMA);
+  // Applied on every module evaluation, not just on first open. Every statement
+  // is CREATE TABLE IF NOT EXISTS, so it is idempotent — and it means a new table
+  // reaches the cached dev connection without needing a server restart.
+  db.exec(SCHEMA);
 
-/**
- * The one exception to "delete the database and rescan".
- *
- * `artwork` gained a `logo` column, and CREATE TABLE IF NOT EXISTS cannot add
- * one to a table that already exists. The contents are a directory listing and
- * would cost nothing to rebuild — but the same file also holds the probe cache,
- * which would cost a full re-read of the drive, so the column is added in place
- * instead. Adding it is idempotent: it happens once and is a no-op after.
- */
-const artworkColumns = (
-  db.prepare("PRAGMA table_info(artwork)").all() as { name: string }[]
-).map((c) => c.name);
+  /**
+   * The one exception to "delete the database and rescan".
+   *
+   * `artwork` gained a `logo` column, and CREATE TABLE IF NOT EXISTS cannot add
+   * one to a table that already exists. The contents are a directory listing and
+   * would cost nothing to rebuild — but the same file also holds the probe cache,
+   * which would cost a full re-read of the drive, so the column is added in place
+   * instead. Adding it is idempotent: it happens once and is a no-op after.
+   */
+  const artworkColumns = (
+    db.prepare("PRAGMA table_info(artwork)").all() as { name: string }[]
+  ).map((c) => c.name);
 
-if (!artworkColumns.includes("logo")) {
-  db.exec("ALTER TABLE artwork ADD COLUMN logo TEXT");
-}
+  if (!artworkColumns.includes("logo")) {
+    db.exec("ALTER TABLE artwork ADD COLUMN logo TEXT");
+  }
 
-if (!artworkColumns.includes("poster_src")) {
-  db.exec("ALTER TABLE artwork ADD COLUMN poster_src TEXT");
-  db.exec("ALTER TABLE artwork ADD COLUMN fanart_src TEXT");
-  db.exec("ALTER TABLE artwork ADD COLUMN logo_src TEXT");
-}
+  if (!artworkColumns.includes("poster_src")) {
+    db.exec("ALTER TABLE artwork ADD COLUMN poster_src TEXT");
+    db.exec("ALTER TABLE artwork ADD COLUMN fanart_src TEXT");
+    db.exec("ALTER TABLE artwork ADD COLUMN logo_src TEXT");
+  }
 
-// Same story for the download log's film identity, added after the table.
-const downloadColumns = (
-  db.prepare("PRAGMA table_info(downloads)").all() as { name: string }[]
-).map((c) => c.name);
+  // Same story for the download log's film identity, added after the table.
+  const downloadColumns = (
+    db.prepare("PRAGMA table_info(downloads)").all() as { name: string }[]
+  ).map((c) => c.name);
 
-if (downloadColumns.length > 0 && !downloadColumns.includes("film_title")) {
-  db.exec("ALTER TABLE downloads ADD COLUMN film_title TEXT");
-  db.exec("ALTER TABLE downloads ADD COLUMN poster_path TEXT");
-}
+  if (downloadColumns.length > 0 && !downloadColumns.includes("film_title")) {
+    db.exec("ALTER TABLE downloads ADD COLUMN film_title TEXT");
+    db.exec("ALTER TABLE downloads ADD COLUMN poster_path TEXT");
+  }
 
-// And for which list the send came from, added later still. Everything already
-// logged stays NULL — the fact was never recorded, and guessing it into the
-// table would make a guess indistinguishable from a send that said so.
-if (downloadColumns.length > 0 && !downloadColumns.includes("source")) {
-  db.exec("ALTER TABLE downloads ADD COLUMN source TEXT");
-}
+  // And for which list the send came from, added later still. Everything already
+  // logged stays NULL — the fact was never recorded, and guessing it into the
+  // table would make a guess indistinguishable from a send that said so.
+  if (downloadColumns.length > 0 && !downloadColumns.includes("source")) {
+    db.exec("ALTER TABLE downloads ADD COLUMN source TEXT");
+  }
 
-// The size and the magnet, added last of all. Both start NULL on every row
-// already logged and fill themselves in from here: the size on the next read
-// that finds the torrent still in the client, the magnet on the next send. A
-// row whose torrent has already left qBittorrent will never get a size, which
-// is why the caption treats it as a fact that may simply be absent.
-if (downloadColumns.length > 0 && !downloadColumns.includes("size_bytes")) {
-  db.exec("ALTER TABLE downloads ADD COLUMN size_bytes INTEGER");
-}
+  // The size and the magnet, added last of all. Both start NULL on every row
+  // already logged and fill themselves in from here: the size on the next read
+  // that finds the torrent still in the client, the magnet on the next send. A
+  // row whose torrent has already left qBittorrent will never get a size, which
+  // is why the caption treats it as a fact that may simply be absent.
+  if (downloadColumns.length > 0 && !downloadColumns.includes("size_bytes")) {
+    db.exec("ALTER TABLE downloads ADD COLUMN size_bytes INTEGER");
+  }
 
-if (downloadColumns.length > 0 && !downloadColumns.includes("magnet")) {
-  db.exec("ALTER TABLE downloads ADD COLUMN magnet TEXT");
-}
+  if (downloadColumns.length > 0 && !downloadColumns.includes("magnet")) {
+    db.exec("ALTER TABLE downloads ADD COLUMN magnet TEXT");
+  }
 
-/**
- * The same, for the extended-cut answer. `triage` is the one table that holds
- * decisions rather than derivations — nothing on disk could rebuild it — so the
- * column is added in place rather than waiting for a rescan that would never
- * bring it back.
- */
-const triageColumns = (
-  db.prepare("PRAGMA table_info(triage)").all() as { name: string }[]
-).map((c) => c.name);
+  /**
+   * The same, for the extended-cut answer. `triage` is the one table that holds
+   * decisions rather than derivations — nothing on disk could rebuild it — so the
+   * column is added in place rather than waiting for a rescan that would never
+   * bring it back.
+   */
+  const triageColumns = (
+    db.prepare("PRAGMA table_info(triage)").all() as { name: string }[]
+  ).map((c) => c.name);
 
-if (!triageColumns.includes("extended_cut")) {
-  db.exec("ALTER TABLE triage ADD COLUMN extended_cut INTEGER");
-}
+  if (!triageColumns.includes("extended_cut")) {
+    db.exec("ALTER TABLE triage ADD COLUMN extended_cut INTEGER");
+  }
 
-/**
- * The same exception, for the same reason. The wishlist is not derived from
- * anything — it is a list you wrote — so it cannot be rebuilt by rescanning,
- * which makes adding the columns in place the only option rather than the
- * convenient one.
- */
-const wishlistColumns = (
-  db.prepare("PRAGMA table_info(wishlist)").all() as { name: string }[]
-).map((c) => c.name);
+  /**
+   * The same exception, for the same reason. The wishlist is not derived from
+   * anything — it is a list you wrote — so it cannot be rebuilt by rescanning,
+   * which makes adding the columns in place the only option rather than the
+   * convenient one.
+   */
+  const wishlistColumns = (
+    db.prepare("PRAGMA table_info(wishlist)").all() as { name: string }[]
+  ).map((c) => c.name);
 
-if (!wishlistColumns.includes("collection_id")) {
-  db.exec("ALTER TABLE wishlist ADD COLUMN collection_id INTEGER");
-  db.exec("ALTER TABLE wishlist ADD COLUMN collection_name TEXT");
-  db.exec(
-    "ALTER TABLE wishlist ADD COLUMN collection_checked INTEGER NOT NULL DEFAULT 0",
-  );
-}
+  if (!wishlistColumns.includes("collection_id")) {
+    db.exec("ALTER TABLE wishlist ADD COLUMN collection_id INTEGER");
+    db.exec("ALTER TABLE wishlist ADD COLUMN collection_name TEXT");
+    db.exec(
+      "ALTER TABLE wishlist ADD COLUMN collection_checked INTEGER NOT NULL DEFAULT 0",
+    );
+  }
 
-/**
- * The list grew a second kind of thing on it, which the key had to grow with:
- * `tmdb_id` alone was the primary key, and a series shares its numbering with
- * some unrelated film. A column cannot be added to a primary key in place, so
- * the table is rebuilt — everything already on the list is a film, which is
- * what the copy across says.
- */
-if (!wishlistColumns.includes("kind")) {
-  // One transaction: a list half copied and then abandoned by a crash would be
-  // a list you wrote, half gone, with nothing to rebuild it from.
-  db.transaction(() => {
-    db.exec(`
-      DROP TABLE IF EXISTS wishlist_rekeyed;
+  /**
+   * The list grew a second kind of thing on it, which the key had to grow with:
+   * `tmdb_id` alone was the primary key, and a series shares its numbering with
+   * some unrelated film. A column cannot be added to a primary key in place, so
+   * the table is rebuilt — everything already on the list is a film, which is
+   * what the copy across says.
+   */
+  if (!wishlistColumns.includes("kind")) {
+    // One transaction: a list half copied and then abandoned by a crash would be
+    // a list you wrote, half gone, with nothing to rebuild it from.
+    db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS wishlist_rekeyed;
 
-      CREATE TABLE wishlist_rekeyed (
-        tmdb_id     INTEGER NOT NULL,
-        kind        TEXT NOT NULL DEFAULT 'movie',
-        added_at    INTEGER NOT NULL,
-        title       TEXT NOT NULL,
-        year        INTEGER,
-        poster_path TEXT,
-        overview    TEXT,
-        collection_id      INTEGER,
-        collection_name    TEXT,
-        collection_checked INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (tmdb_id, kind)
-      );
+        CREATE TABLE wishlist_rekeyed (
+          tmdb_id     INTEGER NOT NULL,
+          kind        TEXT NOT NULL DEFAULT 'movie',
+          added_at    INTEGER NOT NULL,
+          title       TEXT NOT NULL,
+          year        INTEGER,
+          poster_path TEXT,
+          overview    TEXT,
+          collection_id      INTEGER,
+          collection_name    TEXT,
+          collection_checked INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (tmdb_id, kind)
+        );
 
-      INSERT INTO wishlist_rekeyed
-        (tmdb_id, kind, added_at, title, year, poster_path, overview,
-         collection_id, collection_name, collection_checked)
-      SELECT tmdb_id, 'movie', added_at, title, year, poster_path, overview,
-             collection_id, collection_name, collection_checked
-        FROM wishlist;
+        INSERT INTO wishlist_rekeyed
+          (tmdb_id, kind, added_at, title, year, poster_path, overview,
+           collection_id, collection_name, collection_checked)
+        SELECT tmdb_id, 'movie', added_at, title, year, poster_path, overview,
+               collection_id, collection_name, collection_checked
+          FROM wishlist;
 
-      DROP TABLE wishlist;
-      ALTER TABLE wishlist_rekeyed RENAME TO wishlist;
-    `);
-  })();
-}
+        DROP TABLE wishlist;
+        ALTER TABLE wishlist_rekeyed RENAME TO wishlist;
+      `);
+    })();
+  }
 
-/**
- * The single library folder became a list. Moved rather than mirrored: leaving
- * the old key behind would mean two places claiming to say where the library
- * is, and the one that lost would be the one still being read somewhere.
- */
-const oldRoot = db
-  .prepare("SELECT value FROM settings WHERE key = 'libraryRoot'")
-  .get() as { value: string } | undefined;
+  /**
+   * The single library folder became a list. Moved rather than mirrored: leaving
+   * the old key behind would mean two places claiming to say where the library
+   * is, and the one that lost would be the one still being read somewhere.
+   */
+  const oldRoot = db
+    .prepare("SELECT value FROM settings WHERE key = 'libraryRoot'")
+    .get() as { value: string } | undefined;
 
-if (oldRoot) {
-  db.prepare(
-    "INSERT INTO library_roots (path, added_at) VALUES (?, ?) ON CONFLICT(path) DO NOTHING",
-  ).run(oldRoot.value, Date.now());
-  db.prepare("DELETE FROM settings WHERE key = 'libraryRoot'").run();
+  if (oldRoot) {
+    db.prepare(
+      "INSERT INTO library_roots (path, added_at) VALUES (?, ?) ON CONFLICT(path) DO NOTHING",
+    ).run(oldRoot.value, Date.now());
+    db.prepare("DELETE FROM settings WHERE key = 'libraryRoot'").run();
+  }
 }
 
 if (process.env.NODE_ENV !== "production") globalForDb.medlibDb = db;
