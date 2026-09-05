@@ -257,6 +257,27 @@ export function ArtworkEditor({
   const picker = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
+  /**
+   * A save, seen, and then the dialog leaves.
+   *
+   * Picking artwork is a one-shot errand: you came for a poster, the tile you
+   * clicked has gone green, and the thing you actually want to look at is the
+   * page underneath wearing it. Closing by hand after that is a step whose only
+   * outcome is the one that was going to happen anyway.
+   *
+   * The pause is what makes it an answer rather than a disappearance. The tick
+   * lands on the tile you clicked — or on the Upload button, for an image of
+   * your own — and it has to be on screen long enough to be read as "that one,
+   * saved" before the dialog takes it away.
+   *
+   * Not on a failure: an error is a reason to still be here.
+   */
+  useEffect(() => {
+    if (!saved) return;
+    const timer = setTimeout(() => setOpen(false), 800);
+    return () => clearTimeout(timer);
+  }, [saved]);
+
   // Escape closes the modal, as expected of a dialog.
   useEffect(() => {
     if (!open) return;
