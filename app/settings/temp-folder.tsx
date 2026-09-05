@@ -72,7 +72,7 @@ export function TempFolder({
       <SettingDialog
         open={open}
         onClose={() => setOpen(false)}
-        wide
+        size="wide"
         title={current ? "Change the scratch space" : "Choose a scratch folder"}
         lede="The working file is written here while a conversion runs. The film itself still lands beside the original."
       >

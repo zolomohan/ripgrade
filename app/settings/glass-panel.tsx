@@ -45,7 +45,7 @@ export function GlassPanel({
       <SettingDialog
         open={open}
         onClose={() => setOpen(false)}
-        wide
+        size="bench"
         title="Glass"
         lede="The material every surface standing in front of the page is made of. Carry the pane across the shelf to find an edge worth watching, drag its corner to see the same numbers at another size, and double-click it to put it back."
       >

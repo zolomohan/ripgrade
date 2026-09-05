@@ -2,14 +2,14 @@
 
 import { useTransition } from "react";
 
-import { Switch } from "@/app/controls";
+import { Choice } from "./parts";
 import type { Theme } from "@/lib/theme";
 import { setTheme } from "../actions";
 
 /**
  * Light, dark, or the machine's answer.
  *
- * A switch rather than the toggles most of this page uses, for the reason
+ * A menu rather than the toggles most of this page uses, for the reason
  * `ListLayout` gives beside it: a toggle is on and off, and these are three
  * named states of which none is the absence of the others. System least of all
  * — it is not "unset", it is the answer that defers, and it sits last because
@@ -25,24 +25,19 @@ export function ThemeChoice({ theme }: { theme: Theme }) {
   const [pending, startTransition] = useTransition();
 
   return (
-    <div
-      // Dimmed rather than disabled, as the layout switch beside it is: a
-      // `Switch` has no disabled state, and the write is one row and a repaint
-      // of the page it is standing on. A second press before the first lands
-      // should at least look like one.
-      className={pending ? "opacity-60 transition-opacity" : undefined}
-    >
-      <Switch
-        value={theme}
-        onChange={(next) =>
-          startTransition(async () => setTheme(next as Theme))
-        }
-        options={[
-          { key: "light", label: "Light" },
-          { key: "dark", label: "Dark" },
-          { key: "system", label: "System" },
-        ]}
-      />
-    </div>
+    <Choice<Theme>
+      value={theme}
+      label="Theme"
+      // Dimmed rather than dead while the write is in flight: it is one row
+      // and a repaint of the page it is standing on, and a control that went
+      // grey for that would flicker on every press.
+      disabled={pending}
+      options={[
+        { value: "light", label: "Light" },
+        { value: "dark", label: "Dark" },
+        { value: "system", label: "System" },
+      ]}
+      onChange={(next) => startTransition(async () => setTheme(next))}
+    />
   );
 }

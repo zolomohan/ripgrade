@@ -23,7 +23,7 @@ export function SettingDialog({
   title,
   lede,
   busy,
-  wide,
+  size = "default",
   children,
 }: {
   open: boolean;
@@ -33,8 +33,16 @@ export function SettingDialog({
   lede: string;
   /** Set while a check is running, so a stray Escape cannot abandon it. */
   busy?: boolean;
-  /** For the folder tree, which needs the width more than a pair of fields do. */
-  wide?: boolean;
+  /**
+   * How much room the thing inside actually needs.
+   *
+   * `default` is a pair of fields. `wide` is the folder tree, which needs the
+   * width more than a pair of fields do. `bench` is the glass tuner, which is
+   * not a form at all — a shelf of posters with a pane carried across it, and
+   * seven sliders beside that. Judging a material through a letterbox is how
+   * you end up with a rail nobody can read, so it gets the window.
+   */
+  size?: "default" | "wide" | "bench";
   children: React.ReactNode;
 }) {
   return (
@@ -43,9 +51,11 @@ export function SettingDialog({
       onClose={onClose}
       label={title}
       dismissible={!busy}
-      panelClassName={`flex max-h-[min(85vh,44rem)] w-full ${
-        wide ? "max-w-2xl" : "max-w-lg"
-      } flex-col overflow-hidden`}
+      panelClassName={`flex w-full flex-col overflow-hidden ${
+        size === "bench"
+          ? "max-h-[min(92vh,58rem)] max-w-6xl"
+          : `max-h-[min(85vh,44rem)] ${size === "wide" ? "max-w-2xl" : "max-w-lg"}`
+      }`}
     >
       <header className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6 pb-4">
         <div className="min-w-0">

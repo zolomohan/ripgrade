@@ -18,7 +18,7 @@
  * direction that crossing works in.
  */
 
-import { Explained } from "../controls";
+import { Explained, FIELD } from "../controls";
 import { stagger } from "../stagger";
 
 /**
@@ -166,7 +166,7 @@ export function SettingRow({
 }) {
   return (
     <div
-      className="grid gap-x-8 gap-y-3 border-t border-line py-5 sm:grid-cols-[minmax(0,7fr)_minmax(0,9fr)] sm:items-center"
+      className="grid gap-x-8 gap-y-3 border-t border-line py-5 sm:grid-cols-[minmax(0,7fr)_minmax(0,9fr)] sm:items-start"
     >
       <div className="min-w-0">
         <p className="text-sm font-medium">
@@ -177,8 +177,72 @@ export function SettingRow({
 
       {/* The controls keep their own arrangement — most are a reading of the
           current state and a button, laid out exactly this way already — and
-          only have to sit inside a column that ends where the page does. */}
+          only have to sit inside a column that ends where the page does.
+          Both columns start at the top: centred, a name sat halfway down
+          beside a tall control, and a column of rows drawn that way has no
+          line for the eye to run along. */}
       <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * One value out of a few, as the menu this app already picks values with.
+ *
+ * These were segmented switches — every option on screen, the chosen one lit.
+ * That control earns its place at the head of a page, where the choices are
+ * the page's own divisions and seeing all of them is the point. In a settings
+ * row it is the wrong shape twice over: it puts three or four words where the
+ * row beside it puts one, so the right-hand column never lines up, and it
+ * states the alternatives with the same weight as the answer. What a settings
+ * row wants to say is what the setting is, and a switch says what it could be.
+ *
+ * A native `<select>` in the app's own pill — `FIELD.select`, with the chevron
+ * the release list and the artwork chooser draw beside theirs, since every
+ * engine's own arrow is a different shape and none of them a pill. Native
+ * because a menu that a keyboard, a screen reader and a phone all already know
+ * how to open is not worth rebuilding.
+ */
+export function Choice<T extends string>({
+  value,
+  options,
+  label,
+  disabled,
+  onChange,
+}: {
+  value: T;
+  options: readonly { value: T; label: string }[];
+  /** What is being chosen, for the readers that do not see the row's name. */
+  label: string;
+  disabled?: boolean;
+  onChange: (next: T) => void;
+}) {
+  return (
+    <div className="relative inline-flex">
+      <select
+        value={value}
+        aria-label={label}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value as T)}
+        className={`${FIELD.select} disabled:opacity-50`}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 opacity-40"
+      >
+        <path d="m6 9 6 6 6-6" />
+      </svg>
     </div>
   );
 }

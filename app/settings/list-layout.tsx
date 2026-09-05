@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 
-import { Switch } from "@/app/controls";
+import { Choice } from "./parts";
 import type { Layout } from "@/lib/layout";
 import { setListLayout } from "../actions";
 
@@ -20,32 +20,26 @@ import { setListLayout } from "../actions";
  * about a particular list; how you would rather read a list is a fact about
  * you, and a preference asked once per page is a preference nobody sets.
  *
- * A switch rather than the toggle the rest of this page uses: those are on and
+ * A menu rather than the toggle the rest of this page uses: those are on and
  * off, and this is two named states of which neither is the absence of the
- * other. The same control the tabs above it are drawn with, which is what the
- * app already spends on a choice between two words.
+ * other. See `Choice` in ./parts.tsx for why it is not the switch it was.
  */
 export function ListLayout({ layout }: { layout: Layout }) {
   const [pending, startTransition] = useTransition();
 
   return (
-    <div
-      // Pending rather than disabled: a `Switch` has no disabled state and a
-      // dead control would be the wrong answer anyway — the write is one row
-      // and the page it redraws is this one. Dimmed while it is in flight, so
-      // a second press before the first has landed at least looks like one.
-      className={pending ? "opacity-60 transition-opacity" : undefined}
-    >
-      <Switch
-        value={layout}
-        onChange={(next) =>
-          startTransition(async () => setListLayout(next as Layout))
-        }
-        options={[
-          { key: "grid", label: "Posters" },
-          { key: "rows", label: "Rows" },
-        ]}
-      />
-    </div>
+    <Choice<Layout>
+      value={layout}
+      label="List layout"
+      // Dimmed rather than dead while the write is in flight: it is one row
+      // and a repaint of the page it is standing on, and a control that went
+      // grey for that would flicker on every press.
+      disabled={pending}
+      options={[
+        { value: "grid", label: "Posters" },
+        { value: "rows", label: "Rows" },
+      ]}
+      onChange={(next) => startTransition(async () => setListLayout(next))}
+    />
   );
 }

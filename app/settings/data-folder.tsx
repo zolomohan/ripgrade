@@ -90,7 +90,7 @@ export function DataFolder({ location }: { location: DataLocation }) {
       <SettingDialog
         open={open}
         onClose={() => setOpen(false)}
-        wide
+        size="wide"
         title="Move the data folder"
         lede="The database, the thumbnail cache and the artwork for your own sets. Copied there now; read from there after a restart. Nothing is deleted."
       >
