@@ -3,11 +3,11 @@
 import { useState, useTransition } from "react";
 
 import { disconnectJackett, saveJackett } from "../actions";
-import { FIELD } from "../controls";
+import { FIELD, ICONS } from "../controls";
 import { Spinner } from "../spinner";
 import { stagger } from "../stagger";
 import { SettingDialog } from "./dialog";
-import { Failure, Field, Note, PRIMARY, QUIET, Status } from "./parts";
+import { Failure, Field, IconButton, PRIMARY, Status } from "./parts";
 
 /**
  * Connecting Jackett.
@@ -83,50 +83,31 @@ export function Jackett({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {/* Connected, and nothing else. The address was under it and the two
+            environment variables were named under that — three facts about a
+            service whose row exists to answer one question, and the two extra
+            were only ever true for whoever had already gone looking. The
+            address is in the dialog the button opens, which is where you go
+            when you want to know it. */}
         <Status
           on={configured}
-          label={
-            fromEnv
-              ? "Set by the environment"
-              : configured
-                ? "Connected"
-                : "Not connected"
-          }
-          detail={configured ? url : undefined}
+          label={configured ? "Connected" : "Not connected"}
         />
 
-        <div className="flex shrink-0 items-center gap-3">
-          {stored && (
-            <button
-              type="button"
-              onClick={() => startTransition(async () => disconnectJackett())}
-              disabled={pending}
-              className={QUIET}
-            >
-              {env ? "Use the environment" : "Disconnect"}
-            </button>
-          )}
+        {stored && (
+          <IconButton
+            icon={ICONS.cross}
+            label={env ? "Use the environment" : "Disconnect"}
+            disabled={pending}
+            onClick={() => startTransition(async () => disconnectJackett())}
+          />
+        )}
 
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className={PRIMARY}
-          >
-            {configured ? "Change" : "Connect"}
-          </button>
-        </div>
+        <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
+          {configured ? "Change" : "Connect"}
+        </button>
       </div>
-
-      {/* Only while the environment is the thing answering searches. Once you
-          have saved over it there is nothing to explain: the status says
-          Connected, and the button beside it says what going back would do. */}
-      {fromEnv && (
-        <Note>
-          JACKETT_URL and JACKETT_API_KEY are set. Anything saved here is used
-          instead of them.
-        </Note>
-      )}
 
       <SettingDialog
         open={open}

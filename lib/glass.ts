@@ -111,10 +111,15 @@ export const GLASS_DEFAULTS: GlassTuning = {
   refract: 5,
   bezel: 0.05,
   profile: "bevel",
-  aberration: 2,
-  blur: 8,
+  // Three of these were moved by hand and then kept, which is the only
+  // evidence a default of this kind can have: a material is judged by living
+  // with it. More split at the rim than the cautious 2, less frosting than the
+  // 8 that was hiding what the lens does, and a touch more of the page coming
+  // through than 64 let past.
+  aberration: 8,
+  blur: 5,
   saturation: 150,
-  opacity: 64,
+  opacity: 74,
   sheen: false,
 };
 

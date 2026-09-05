@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 
-import { Choice } from "./parts";
+import { Choice } from "../controls";
 import type { Theme } from "@/lib/theme";
 import { setTheme } from "../actions";
 

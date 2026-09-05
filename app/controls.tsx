@@ -830,6 +830,77 @@ export function useDismiss(
 }
 
 /**
+ * One value out of a few, as the menu this app already picks values with.
+ *
+ * These were segmented switches — every option on screen, the chosen one lit.
+ * That control earns its place at the head of a page, where the choices are
+ * the page's own divisions and seeing all of them is the point. In a settings
+ * row it is wrong twice over: it puts three or four words where the row beside
+ * it puts one, so the right-hand column never lines up, and it states the
+ * alternatives with the same weight as the answer. A settings row is there to
+ * say what the setting is; a switch says what it could be.
+ *
+ * `Popover` and `MenuItem` above, which is what every other menu in this app is made
+ * of — the sort and grouping menus on a shelf, the scope on the search page.
+ * It was briefly a native `<select>` on the reasoning that a menu a keyboard
+ * and a phone already know how to open is not worth rebuilding, and that is
+ * true and beside the point: this app draws its own menus, and one row of one
+ * page rendering the platform's instead is the seam you notice.
+ *
+ * The trigger takes a border here, which is the one thing it does not have in
+ * a bar. A bar draws one frame around all of its controls and rules them
+ * apart; a settings row has no frame, so the control has to be its own edge or
+ * it reads as a word floating at the end of a line.
+ */
+export function Choice<T extends string>({
+  value,
+  options,
+  label,
+  disabled,
+  onChange,
+}: {
+  value: T;
+  options: readonly { value: T; label: string }[];
+  /** What is being chosen, for the readers that do not see the row's name. */
+  label: string;
+  disabled?: boolean;
+  onChange: (next: T) => void;
+}) {
+  const current = options.find((option) => option.value === value);
+
+  return (
+    <div className={disabled ? "pointer-events-none opacity-50" : undefined}>
+      <Popover
+        label={label}
+        // The value is the whole of what the trigger says — see `icon`.
+        value={current?.label ?? value}
+        caret
+        align="right"
+        width="w-44"
+        buttonClassName="h-9 rounded-full border border-line"
+      >
+        {(close) => (
+          <div className="py-1">
+            {options.map((option) => (
+              <MenuItem
+                key={option.value}
+                active={option.value === value}
+                onClick={() => {
+                  onChange(option.value);
+                  close();
+                }}
+              >
+                {option.label}
+              </MenuItem>
+            ))}
+          </div>
+        )}
+      </Popover>
+    </div>
+  );
+}
+
+/**
  * A word that explains itself when you point at it.
  *
  * `HelpTip` below is the other half of this pair and the older one: a `?` you

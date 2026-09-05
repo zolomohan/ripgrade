@@ -3,16 +3,15 @@
 import { useState, useTransition } from "react";
 
 import { disconnectQb, saveQb, setQbStopSeeding } from "../actions";
-import { FIELD } from "../controls";
+import { ICONS, FIELD } from "../controls";
 import { Spinner } from "../spinner";
 import { stagger } from "../stagger";
 import { SettingDialog } from "./dialog";
 import {
   Failure,
   Field,
-  Note,
+  IconButton,
   PRIMARY,
-  QUIET,
   Row,
   Status,
   Toggle,
@@ -95,8 +94,13 @@ export function Qbittorrent({
   if (managed) {
     return (
       <div className="flex flex-col gap-4">
-        <Status on label="Set by the environment" detail={url} />
-        <Note>QBITTORRENT_URL is set, so this cannot be changed here.</Note>
+        {/* Connected, and nothing else — the address and the variable that
+            set it were two facts about a service whose row answers one
+            question. There is no button here because there is nothing this
+            page could change. */}
+        <div className="flex justify-end">
+          <Status on label="Connected" />
+        </div>
         {seeding}
       </div>
     );
@@ -104,33 +108,24 @@ export function Qbittorrent({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Status
           on={configured}
           label={configured ? "Connected" : "Not connected"}
-          detail={configured ? url : undefined}
         />
 
-        <div className="flex shrink-0 items-center gap-3">
-          {configured && (
-            <button
-              type="button"
-              onClick={() => startTransition(async () => disconnectQb())}
-              disabled={pending}
-              className={QUIET}
-            >
-              Disconnect
-            </button>
-          )}
+        {configured && (
+          <IconButton
+            icon={ICONS.cross}
+            label="Disconnect"
+            disabled={pending}
+            onClick={() => startTransition(async () => disconnectQb())}
+          />
+        )}
 
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className={PRIMARY}
-          >
-            {configured ? "Change" : "Connect"}
-          </button>
-        </div>
+        <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
+          {configured ? "Change" : "Connect"}
+        </button>
       </div>
 
       {seeding}

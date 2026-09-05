@@ -13,7 +13,7 @@ import {
 } from "@/app/actions";
 import {
   BUTTON,
-  FIELD,
+  Choice,
   MenuAction,
   useDismiss,
   useOverlay,
@@ -154,46 +154,6 @@ const named = (() => {
   };
 })();
 
-/**
- * A select wearing the chevron this app draws over the platform's. There are
- * two of them in the header now — the order and the language — and the arrow
- * is the same eight lines both times.
- */
-function Select({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="relative">
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={FIELD.select}
-      >
-        {children}
-      </select>
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 opacity-40"
-      >
-        <path d="m6 9 6 6 6-6" />
-      </svg>
-    </div>
-  );
-}
 
 /**
  * Stands where a TMDb file path stands in `saving` and `saved`, for the one
@@ -534,32 +494,33 @@ export function ArtworkEditor({
           <div className="flex shrink-0 flex-wrap items-center gap-3 px-5 pt-5 pb-4">
             <h2 className="text-lg font-semibold">{KINDS[tab].label}</h2>
 
-            <Select
+            <Choice<Sort>
               label="Order"
               value={sort}
-              onChange={(value) => setSort(value as Sort)}
-            >
-              <option value="largest">Largest dimensions</option>
-              <option value="default">TMDb order</option>
-            </Select>
+              onChange={setSort}
+              options={[
+                { value: "largest", label: "Largest dimensions" },
+                { value: "default", label: "TMDb order" },
+              ]}
+            />
 
             {/* Only once there is a choice to make. One language is every film
                 with a single set of artwork, and a menu whose only entry is the
                 thing already on screen is a control that has never done
                 anything. */}
             {languages.size > 1 && (
-              <Select
+              <Choice
                 label="Language"
                 value={inLanguage}
                 onChange={setLanguage}
-              >
-                <option value="all">All languages ({listed.length})</option>
-                {[...languages].map(([code, count]) => (
-                  <option key={code} value={code}>
-                    {code === TEXTLESS ? "Textless" : named(code)} ({count})
-                  </option>
-                ))}
-              </Select>
+                options={[
+                  { value: "all", label: `All languages (${listed.length})` },
+                  ...[...languages].map(([code, count]) => ({
+                    value: code,
+                    label: `${code === TEXTLESS ? "Textless" : named(code)} (${count})`,
+                  })),
+                ]}
+              />
             )}
 
             <div className="ml-auto flex items-center gap-3">

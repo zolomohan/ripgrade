@@ -6,9 +6,10 @@ import { useEffect, useTransition } from "react";
 import { toast } from "glaceui";
 
 import { clearThumbs, rebuildThumbs } from "../actions";
+import { ICONS } from "../controls";
 import { useJobs } from "../jobs-provider";
 import { Spinner } from "../spinner";
-import { PRIMARY, QUIET } from "./parts";
+import { IconButton, PRIMARY } from "./parts";
 import { size } from "@/app/format";
 
 /**
@@ -108,16 +109,14 @@ export function Thumbs({ files, bytes }: { files: number; bytes: number }) {
 
       <div className="flex shrink-0 items-center gap-3">
         {files > 0 && (
-          <button
-            type="button"
-            onClick={clear}
+          <IconButton
+            icon={ICONS.bin}
+            label="Clear the thumbnail cache"
             // Deleting the directory a running rebuild is filling would leave
             // it writing thumbs nobody asked for any more.
             disabled={pending || rebuilding}
-            className={QUIET}
-          >
-            Clear
-          </button>
+            onClick={clear}
+          />
         )}
         <button
           type="button"

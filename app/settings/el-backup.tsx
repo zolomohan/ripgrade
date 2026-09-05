@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 
 import { setKeepEnhancementLayer } from "../actions";
-import { Status, Toggle } from "./parts";
+import { Toggle } from "./parts";
 
 /**
  * Whether a conversion keeps what it discards.
@@ -25,16 +25,11 @@ export function EnhancementLayer({ keeping }: { keeping: boolean }) {
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <Status
-        on={keeping}
-        label={
-          keeping
-            ? "Kept beside the film, as a .dovi archive"
-            : "Discarded with the conversion"
-        }
-      />
-
+    // The toggle alone. The line beside it read "Kept beside the film, as a
+    // .dovi archive" — which is the setting's own description said a second
+    // time, in the column where the answer goes, next to a control whose
+    // position already is the answer.
+    <>
       <Toggle
         on={keeping}
         label="Keep the enhancement layer"
@@ -43,6 +38,6 @@ export function EnhancementLayer({ keeping }: { keeping: boolean }) {
           startTransition(async () => setKeepEnhancementLayer(!keeping))
         }
       />
-    </div>
+    </>
   );
 }

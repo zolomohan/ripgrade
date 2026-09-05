@@ -24,6 +24,7 @@ export function SettingDialog({
   lede,
   busy,
   size = "default",
+  action,
   children,
 }: {
   open: boolean;
@@ -43,6 +44,15 @@ export function SettingDialog({
    * you end up with a rail nobody can read, so it gets the window.
    */
   size?: "default" | "wide" | "bench";
+  /**
+   * What belongs at the top right, beside the close.
+   *
+   * For the one thing a dialog can do to the whole of itself rather than to a
+   * field in it — the tuner's reset, which used to sit at the foot of a column
+   * of sliders, where it was the last thing on a scroll and read as the end of
+   * the list rather than as something that undoes all of it.
+   */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -62,7 +72,10 @@ export function SettingDialog({
           <h2 className="text-lg font-semibold">{title}</h2>
           <p className="mt-1 text-sm opacity-60">{lede}</p>
         </div>
-        <CloseButton onClick={onClose} disabled={busy} />
+        <div className="flex shrink-0 items-center gap-2">
+          {action}
+          <CloseButton onClick={onClose} disabled={busy} />
+        </div>
       </header>
 
       {/* The floor the title stands on, the same one a section heading gets:

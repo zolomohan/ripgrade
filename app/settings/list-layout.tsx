@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 
-import { Choice } from "./parts";
+import { Choice } from "../controls";
 import type { Layout } from "@/lib/layout";
 import { setListLayout } from "../actions";
 

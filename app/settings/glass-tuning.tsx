@@ -9,8 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-import { BUTTON } from "@/app/button";
-import { Explained, FIELD } from "@/app/controls";
+import { Choice, Explained } from "@/app/controls";
 import { Art } from "@/app/art";
 import { Glass } from "@/app/glass";
 import {
@@ -20,7 +19,7 @@ import {
   type GlassProfile,
   type GlassTuning,
 } from "@/lib/glass";
-import { resetGlassTuning, setGlassTuning } from "../actions";
+import { setGlassTuning } from "../actions";
 import { Toggle } from "./parts";
 
 /**
@@ -144,7 +143,7 @@ function useSettled({ refract, bezel, profile, aberration }: GlassTuning) {
  */
 type Box = { x: number | null; y: number | null; w: number; h: number | null };
 
-const CENTRED: Box = { x: null, y: null, w: 256, h: null };
+const CENTRED: Box = { x: null, y: null, w: 380, h: null };
 
 /** Small enough to be a chip, and not so small the lens has nothing to bend. */
 const LEAST = { w: 120, h: 72 };
@@ -550,50 +549,28 @@ export function GlassTuning({
           {/*
            * A dropdown, where the six above it are sliders and this was a
            * segmented switch. The switch is the app's control for a choice
-           * between two or three words and it is the right one at the top of a
-           * page — but this column is a third of the panel, and three words
-           * laid along a track in it had to be scrolled sideways to be read.
-           * A field that names the one in force and opens the other two is
-           * what the width allows, and it is the shape every other named
-           * choice in this app is set in. See `FIELD.select`.
+           * between two or three words and it is right at the top of a page —
+           * but this column is a third of the panel, and three words laid
+           * along a track in it had to be scrolled sideways to be read.
+           *
+           * `Choice` rather than a field of its own, which is what this was:
+           * the settings page picks every named value with that menu now, and
+           * the tuner is a settings panel that happens to be large.
            */}
-          <div className="relative shrink-0">
-            <select
-              value={shown.profile}
-              aria-label="Edge profile"
-              onChange={(event) =>
-                startTransition(async () =>
-                  setGlassTuning({
-                    profile: event.target.value as GlassProfile,
-                  }),
-                )
-              }
-              className={FIELD.select}
-            >
-              {GLASS_PROFILES.map(({ key, label }) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-
-            {/* Every engine draws its own chevron and none of them a pill, so
-                `FIELD.select` drops the platform's and leaves the room this
-                fills — the same mark, in the same place, as the sort field on
-                the release search. */}
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 opacity-40"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </div>
+          <Choice<GlassProfile>
+            value={shown.profile}
+            label="Edge profile"
+            disabled={pending}
+            // `GLASS_PROFILES` names them `key`; `Choice` takes `value`,
+            // because it is a menu of values rather than a keyed list.
+            options={GLASS_PROFILES.map(({ key, label }) => ({
+              value: key,
+              label,
+            }))}
+            onChange={(next) =>
+              startTransition(async () => setGlassTuning({ profile: next }))
+            }
+          />
         </div>
 
         {/* A rule and a button under it. The heading it had said in four words
@@ -629,22 +606,6 @@ export function GlassTuning({
           />
         </div>
 
-        <div aria-hidden className="rule-head" />
-
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => startTransition(async () => resetGlassTuning())}
-            // On the button rather than in an `Explained`, which is a second
-            // tab stop and a dotted underline — both wrong inside a control
-            // that already says what it does.
-            title="All of them at once, as the app ships them: a 5px lens on a bevelled 5% rim, blurred eight, saturated to 150%, a little under two thirds of the page behind it, and no sheen."
-            className={`${BUTTON.secondary} self-start`}
-          >
-            Reset
-          </button>
-        </div>
       </div>
     </div>
   );

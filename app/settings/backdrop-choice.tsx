@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 
-import { Choice } from "./parts";
+import { Choice } from "../controls";
 import type { Backdrop } from "@/lib/backdrop";
 import { setBackdrop } from "../actions";
 

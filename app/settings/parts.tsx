@@ -18,7 +18,7 @@
  * direction that crossing works in.
  */
 
-import { Explained, MenuItem, Popover } from "../controls";
+import { Explained } from "../controls";
 import { stagger } from "../stagger";
 
 /**
@@ -34,6 +34,58 @@ export const PRIMARY =
 /** Everything else you can do here — present, but never the loudest thing. */
 export const QUIET =
   "inline-flex shrink-0 items-center gap-1.5 text-xs opacity-50 transition-opacity hover:opacity-100 disabled:opacity-30";
+
+/**
+ * The quiet action beside the loud one, as a mark rather than a word.
+ *
+ * Clear, Disconnect, Use the environment — every one of these is the way back
+ * from a thing you have set up, and every one of them was a word sitting to
+ * the left of the button you actually came for. Two words of equal weight in a
+ * row whose whole job is to be skimmed, and the destructive one read first.
+ *
+ * A mark is the right size for it: recognisable at the end of a row, no wider
+ * than the button it stands beside, and named for anyone who cannot see it.
+ * The same circle-and-glyph the dialog's close is drawn as — see `CloseButton`
+ * in app/modal.tsx — because it is the same gesture, at the same weight, and
+ * the app should only own one of these.
+ */
+export function IconButton({
+  icon,
+  label,
+  disabled,
+  onClick,
+}: {
+  /** A path from `ICONS` in app/controls.tsx. */
+  icon: string;
+  /** What it does, said in words — the tooltip and the accessible name. */
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line opacity-50 transition-opacity hover:opacity-100 disabled:opacity-20"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="h-4 w-4"
+      >
+        <path d={icon} />
+      </svg>
+    </button>
+  );
+}
 
 /**
  * Whether a thing is on, as a dot and a word.
@@ -193,77 +245,6 @@ export function SettingRow({
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
         {children}
       </div>
-    </div>
-  );
-}
-
-/**
- * One value out of a few, as the menu this app already picks values with.
- *
- * These were segmented switches — every option on screen, the chosen one lit.
- * That control earns its place at the head of a page, where the choices are
- * the page's own divisions and seeing all of them is the point. In a settings
- * row it is wrong twice over: it puts three or four words where the row beside
- * it puts one, so the right-hand column never lines up, and it states the
- * alternatives with the same weight as the answer. A settings row is there to
- * say what the setting is; a switch says what it could be.
- *
- * `Popover` and `MenuItem`, which is what every other menu in this app is made
- * of — the sort and grouping menus on a shelf, the scope on the search page.
- * It was briefly a native `<select>` on the reasoning that a menu a keyboard
- * and a phone already know how to open is not worth rebuilding, and that is
- * true and beside the point: this app draws its own menus, and one row of one
- * page rendering the platform's instead is the seam you notice.
- *
- * The trigger takes a border here, which is the one thing it does not have in
- * a bar. A bar draws one frame around all of its controls and rules them
- * apart; a settings row has no frame, so the control has to be its own edge or
- * it reads as a word floating at the end of a line.
- */
-export function Choice<T extends string>({
-  value,
-  options,
-  label,
-  disabled,
-  onChange,
-}: {
-  value: T;
-  options: readonly { value: T; label: string }[];
-  /** What is being chosen, for the readers that do not see the row's name. */
-  label: string;
-  disabled?: boolean;
-  onChange: (next: T) => void;
-}) {
-  const current = options.find((option) => option.value === value);
-
-  return (
-    <div className={disabled ? "pointer-events-none opacity-50" : undefined}>
-      <Popover
-        label={label}
-        // The value is the whole of what the trigger says — see `icon`.
-        value={current?.label ?? value}
-        caret
-        align="right"
-        width="w-44"
-        buttonClassName="h-9 rounded-full border border-line"
-      >
-        {(close) => (
-          <div className="py-1">
-            {options.map((option) => (
-              <MenuItem
-                key={option.value}
-                active={option.value === value}
-                onClick={() => {
-                  onChange(option.value);
-                  close();
-                }}
-              >
-                {option.label}
-              </MenuItem>
-            ))}
-          </div>
-        )}
-      </Popover>
     </div>
   );
 }

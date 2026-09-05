@@ -3,7 +3,7 @@
 import { useState, useTransition, type CSSProperties } from "react";
 
 import { setQueueRules } from "../actions";
-import { Row, Toggle } from "./parts";
+import { Toggle } from "./parts";
 
 /**
  * The bar a find has to clear to be worth listing.
@@ -21,15 +21,13 @@ import { Row, Toggle } from "./parts";
  */
 export function QueueThreshold({
   threshold,
-  discOnly,
 }: {
   threshold: number;
-  discOnly: boolean;
 }) {
   // Held locally so the number under the thumb keeps up with the drag; the
   // server only hears about it once the thumb is let go.
   const [value, setValue] = useState(threshold);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const commit = (next: number) => {
     if (next === threshold) return;
@@ -37,8 +35,7 @@ export function QueueThreshold({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2.5">
+    <div className="flex w-full flex-col gap-2.5">
         <div className="flex items-baseline justify-between gap-3">
           <p className="text-sm">Minimum predicted score</p>
           <span className="font-score text-sm font-semibold tabular-nums opacity-70">
@@ -75,26 +72,37 @@ export function QueueThreshold({
           }
         />
 
-        <p className="text-[11px] opacity-45">
-          {value === 0
-            ? "Every find the last sweep turned up reaches the queue."
-            : `Only releases predicted at ${value} or better reach the queue. Anything short of it stays found — lowering this brings it back without another search.`}
-        </p>
-      </div>
-
-      <Row
-        title="Only films scored against a disc"
-        hint="A film with no disc release found is scored on the rubric alone, so its number answers a different question than the rest of the list. Asked of the disc you have linked today, not of the disc the last sweep happened to know about — link one and the film returns. A release that already scores 100 stays either way: nothing can beat it, so there is nothing a disc would settle."
-      >
-        <Toggle
-          on={discOnly}
-          label="Only films scored against a disc"
-          disabled={pending}
-          onChange={() =>
-            startTransition(async () => setQueueRules({ discOnly: !discOnly }))
-          }
-        />
-      </Row>
+        {/* Only the off case says anything. The other restated the number
+            above it in a sentence, which is the slider explaining itself. */}
+        {value === 0 && (
+          <p className="text-[11px] opacity-45">
+            Every find the last sweep turned up reaches the queue.
+          </p>
+        )}
     </div>
+  );
+}
+
+/**
+ * Whether a film with no disc behind it may reach the queue at all.
+ *
+ * Its own setting rather than a row under the threshold. It was filed there
+ * because both are the queue's admissions policy, and that is a fact about the
+ * code rather than about the page: one is a number you drag and the other is a
+ * yes or no, and a row nested inside another setting is a control you find by
+ * having already found something else.
+ */
+export function QueueDiscOnly({ discOnly }: { discOnly: boolean }) {
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <Toggle
+      on={discOnly}
+      label="Only films scored against a disc"
+      disabled={pending}
+      onChange={() =>
+        startTransition(async () => setQueueRules({ discOnly: !discOnly }))
+      }
+    />
   );
 }

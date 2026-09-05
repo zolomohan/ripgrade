@@ -3,10 +3,11 @@
 import { useEffect, useState, useTransition } from "react";
 
 import { browse, clearConvertTempDir, setConvertTempDir } from "../actions";
+import { ICONS } from "../controls";
 import { FolderPicker } from "../folder-picker";
 import type { DirListing } from "@/lib/browse";
 import { SettingDialog } from "./dialog";
-import { PRIMARY, QUIET, Status } from "./parts";
+import { IconButton, PRIMARY, Status } from "./parts";
 
 /**
  * Where dovi_convert writes its working video file.
@@ -55,14 +56,12 @@ export function TempFolder({
 
       <div className="flex shrink-0 items-center gap-3">
         {current && (
-          <button
-            type="button"
-            onClick={() => startTransition(async () => clearConvertTempDir())}
+          <IconButton
+            icon={ICONS.cross}
+            label="Write beside the film instead"
             disabled={pending}
-            className={QUIET}
-          >
-            Clear
-          </button>
+            onClick={() => startTransition(async () => clearConvertTempDir())}
+          />
         )}
         <button type="button" onClick={() => setOpen(true)} className={PRIMARY}>
           {current ? "Change" : "Choose a folder"}

@@ -11,7 +11,7 @@ import {
   findReleasesForShow,
   type UpgradeResponse,
 } from "@/app/actions";
-import { BUTTON, FIELD } from "@/app/controls";
+import { BUTTON, Choice, FIELD } from "@/app/controls";
 import { qualityLabel } from "@/lib/disc-entry";
 import { ago } from "@/app/format";
 import { MagnetAction } from "@/app/magnet-action";
@@ -573,28 +573,15 @@ export function ReleaseSearchModal({
 
         {configured && (
           <div className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-2.5">
-            <div className="relative">
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as Sort)}
-                aria-label="Sort releases"
-                className={FIELD.select}
-              >
-                <option value="score">Best score</option>
-                <option value="seeders">Most seeders</option>
-              </select>
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 opacity-40"
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </div>
+            <Choice<Sort>
+              label="Sort releases"
+              value={sort}
+              onChange={setSort}
+              options={[
+                { value: "score", label: "Best score" },
+                { value: "seeders", label: "Most seeders" },
+              ]}
+            />
 
             <div className="flex-1" />
 

@@ -25,7 +25,7 @@ import { BackdropChoice } from "./backdrop-choice";
 import { ListLayout } from "./list-layout";
 import { Jackett } from "./jackett";
 import { Qbittorrent } from "./qbittorrent";
-import { QueueThreshold } from "./queue-threshold";
+import { QueueDiscOnly, QueueThreshold } from "./queue-threshold";
 import { TempFolder } from "./temp-folder";
 import { Thumbs } from "./thumbs";
 import { SettingsTabs } from "./settings-tabs";
@@ -326,10 +326,15 @@ export default async function SettingsPage() {
           blurb="The score at which a film is worth finding a better copy of."
           hint="The sweep stores the best release it can find for every film, however slight. This is how good that has to be before the queue bothers you with it — nothing is thrown away, so lowering it brings the rest back."
         >
-          <QueueThreshold
-            threshold={queue.threshold}
-            discOnly={queue.discOnly}
-          />
+          <QueueThreshold threshold={queue.threshold} />
+        </Setting>
+
+        <Setting
+          title="Only films scored against a disc"
+          blurb="Whether a film with nothing to be measured against can reach the queue."
+          hint="A film with no disc release found is scored on the rubric alone, so its number answers a different question than the rest of the list. Asked of the disc you have linked today, not of the disc the last sweep happened to know about — link one and the film returns. A release that already scores 100 stays either way: nothing can beat it, so there is nothing a disc would settle."
+        >
+          <QueueDiscOnly discOnly={queue.discOnly} />
         </Setting>
       </>
     );
