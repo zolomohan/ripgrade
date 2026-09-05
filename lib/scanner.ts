@@ -3,7 +3,7 @@ import "server-only";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { findArtwork, type Artwork } from "./artwork";
+import { artworkStamp, findArtwork, type Artwork } from "./artwork";
 import { downloadMissingArtwork } from "./auto-artwork";
 import { db } from "./db";
 import { driveName, volumeOf } from "./drive";
@@ -455,21 +455,32 @@ async function indexArtwork(files: FoundFile[]) {
       found_at = excluded.found_at
   `);
 
+  /*
+   * The stamp comes off the files rather than the clock — see `artworkStamp`.
+   * Read here, with the folder, because this is the pass that is already on
+   * the drive; the alternative was every scan silently invalidating every
+   * thumbnail the app had ever made.
+   */
   const found = await Promise.all(
-    dirs.map(async (dir) => ({ dir, ...(await findArtwork(dir)) })),
+    dirs.map(async (dir) => {
+      const art = await findArtwork(dir);
+      return { dir, ...art, stamp: await artworkStamp(art) };
+    }),
   );
 
-  const write = db.transaction((rows: (Artwork & { dir: string })[]) => {
-    for (const row of rows) {
-      upsert.run({
-        dir: row.dir,
-        poster: row.poster ?? null,
-        fanart: row.fanart ?? null,
-        logo: row.logo ?? null,
-        found_at: Date.now(),
-      });
-    }
-  });
+  const write = db.transaction(
+    (rows: (Artwork & { dir: string; stamp: number })[]) => {
+      for (const row of rows) {
+        upsert.run({
+          dir: row.dir,
+          poster: row.poster ?? null,
+          fanart: row.fanart ?? null,
+          logo: row.logo ?? null,
+          found_at: row.stamp,
+        });
+      }
+    },
+  );
 
   write(found);
   return found.filter((f) => f.poster || f.fanart).length;

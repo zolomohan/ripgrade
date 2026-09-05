@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readdir, writeFile } from "node:fs/promises";
+import { readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import sharp from "sharp";
@@ -103,6 +103,39 @@ export async function findArtwork(dir: string): Promise<Artwork> {
   };
 }
 
+/**
+ * When a folder's artwork last changed, as `found_at` records it.
+ *
+ * The newest mtime among the files, and deliberately not `Date.now()`. It was
+ * the clock, which made the column mean "when we last looked" — fine while
+ * nothing depended on it, and wrong the moment something did. Two things do:
+ * the browser is told its copy is stale by this number, and the thumbnail
+ * cache names its files after it. Stamped from the clock, every scan gave
+ * every folder a new number, and every scan therefore threw away every
+ * thumbnail in the cache — including the ones a rebuild had just spent an hour
+ * making. Nothing had changed; the app had merely looked again.
+ *
+ * Read off the files, it moves when the artwork moves and holds still when it
+ * does not, which is what both readers were asking for all along. The stats
+ * cost three per folder, paid during a scan that is already walking the drive
+ * rather than by a page that is trying to draw.
+ *
+ * Zero when there is no artwork at all — nothing to version, and nothing that
+ * will ever ask.
+ */
+export async function artworkStamp(art: Artwork): Promise<number> {
+  const times = await Promise.all(
+    [art.poster, art.fanart, art.logo].filter(Boolean).map(async (file) => {
+      try {
+        return Math.floor((await stat(file as string)).mtimeMs);
+      } catch {
+        return 0;
+      }
+    }),
+  );
+  return times.length ? Math.max(...times) : 0;
+}
+
 /** Refreshes one folder's row after artwork is added or replaced. */
 export async function reindexDir(dir: string): Promise<Artwork> {
   const art = await findArtwork(dir);
@@ -121,7 +154,7 @@ export async function reindexDir(dir: string): Promise<Artwork> {
     art.poster ?? null,
     art.fanart ?? null,
     art.logo ?? null,
-    Date.now(),
+    await artworkStamp(art),
   );
 
   return art;
