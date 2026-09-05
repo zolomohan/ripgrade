@@ -2,6 +2,7 @@ import "server-only";
 
 import { fetchAndCache } from "./enrich";
 import {
+  englishFirst,
   getImages,
   getSeason,
   getTvImages,
@@ -76,17 +77,25 @@ export type DiscoverEpisode = {
  * wants: the title treatment is drawn over it separately.
  */
 const backdropOf = (list?: TmdbImage[]) =>
-  (list?.find((image) => image.iso_639_1 === null) ?? list?.[0])?.file_path;
+  (
+    list?.find((image) => image.iso_639_1 === null) ??
+    englishFirst(list ?? [])[0]
+  )?.file_path;
 
 /**
  * Raster before vector: an SVG logo is fine in an `<img>`, but only the
  * `original` bucket serves one, and the raster versions are the ones every
  * other logo in the app is drawn from.
  */
-const logoOf = (list?: TmdbImage[]) =>
-  (
-    list?.find((image) => !image.file_path.endsWith(".svg")) ?? list?.[0]
+const logoOf = (list?: TmdbImage[]) => {
+  // English first, because these lists now hold every language TMDb has and a
+  // hero drawn with a Korean title treatment over an English page is a worse
+  // answer than the wordmark you expected.
+  const ordered = englishFirst(list ?? []);
+  return (
+    ordered.find((image) => !image.file_path.endsWith(".svg")) ?? ordered[0]
   )?.file_path;
+};
 
 const yearOf = (date?: string) =>
   date ? Number(date.slice(0, 4)) || undefined : undefined;

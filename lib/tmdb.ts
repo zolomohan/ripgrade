@@ -248,7 +248,7 @@ export function getTvImages(id: number): Promise<{
   backdrops: TmdbImage[];
   logos: TmdbImage[];
 }> {
-  return api(`/tv/${id}/images`, { include_image_language: "en,null" });
+  return api(`/tv/${id}/images`);
 }
 
 export type TmdbImage = {
@@ -261,15 +261,44 @@ export type TmdbImage = {
 };
 
 /**
- * All artwork for a film. `include_image_language=null` keeps the textless
- * versions, which are usually the better backdrops.
+ * All artwork for a film — every language TMDb holds, which is what its own
+ * site shows.
+ *
+ * This used to ask for `include_image_language=en,null`, on the reasoning that
+ * English and textless are what you want. They usually are, and that is a
+ * matter of ordering rather than of existence: filtering here meant a film with
+ * forty posters offered four, and the one you were looking for — the Japanese
+ * theatrical, the Polish one-sheet, the textless variant TMDb happens to file
+ * under a language — could not be reached from this app at all. The preference
+ * survives as `englishFirst` below, applied where something is being chosen
+ * rather than shown.
  */
 export function getImages(id: number): Promise<{
   posters: TmdbImage[];
   backdrops: TmdbImage[];
   logos: TmdbImage[];
 }> {
-  return api(`/movie/${id}/images`, { include_image_language: "en,null" });
+  return api(`/movie/${id}/images`);
+}
+
+/**
+ * The same list, with what the filter used to leave at the front: textless and
+ * English first, everything else behind, each half in the order TMDb gave —
+ * which is by vote.
+ *
+ * Wherever the app picks artwork on your behalf, this is the preference doing
+ * the picking. Its top is the image the filtered request would have handed
+ * over, so nothing chosen automatically changes; what changes is that the rest
+ * of the world is now below it instead of missing.
+ */
+export function englishFirst(images: TmdbImage[]): TmdbImage[] {
+  const preferred = (image: TmdbImage) =>
+    image.iso_639_1 === null || image.iso_639_1 === "en";
+
+  return [
+    ...images.filter(preferred),
+    ...images.filter((image) => !preferred(image)),
+  ];
 }
 
 /** TMDb file paths are always /<hash>.<ext> — anything else is not ours. */

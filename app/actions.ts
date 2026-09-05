@@ -199,6 +199,7 @@ import {
 } from "@/lib/tv-disc";
 import { enrichShow, setManualShowMatch } from "@/lib/tv";
 import {
+  englishFirst,
   getImages,
   clearTmdbToken,
   getMovie as getTmdbMovie,
@@ -2063,6 +2064,20 @@ export type ArtworkChoice = {
   vote: number;
 };
 
+/**
+ * Every image TMDb holds for a title, in every language, uncut.
+ *
+ * Two things used to stand between this and what TMDb's own page shows: the
+ * request asked for English and textless only, and this took the first
+ * twenty-four of what came back. Both were reasonable defaults for a dialog
+ * that picks one poster, and both were wrong for the case that sends you to it
+ * — the film whose good artwork is the twenty-ninth entry, or is in the
+ * language the film was made in. The dialog sorts and filters what it is given;
+ * it cannot show what it never received.
+ *
+ * `englishFirst` keeps the front of each list where it was, so the tiles you
+ * used to see are still the tiles you see first.
+ */
 export async function listArtwork(
   tmdbId: number,
   media: "movie" | "tv" = "movie",
@@ -2075,7 +2090,7 @@ export async function listArtwork(
     ? getTvImages(tmdbId)
     : getImages(tmdbId));
   const map = (list: TmdbImage[]) =>
-    list.slice(0, 24).map((i) => ({
+    englishFirst(list).map((i) => ({
       filePath: i.file_path,
       width: i.width,
       height: i.height,

@@ -32,9 +32,33 @@ const KINDS: Record<
   {
     label: string;
     file: string;
+    /**
+     * How many across, at every width the app has a name for.
+     *
+     * The dialog is the width of the screen now, so these are the screen's own
+     * steps — `wide`, `ultra`, `cinema` from globals.css, the three the shelves
+     * widen at — rather than the two guesses that were enough while it was
+     * capped at 64rem.
+     *
+     * A column fewer than the shelf takes at the same step, and deliberately:
+     * `POSTER_GRID` is five across a page column that stops at 72rem, and this
+     * is four across a dialog that does not stop. A shelf is being scanned and
+     * a tile only has to be recognised; here the tile is the decision — you are
+     * judging a crop and reading the small print on a one-sheet — and that is
+     * worth the width it costs.
+     */
     grid: string;
     shape: string;
     count: number;
+    /**
+     * The TMDb bucket the tiles are drawn from. It follows the grid: a poster
+     * laid out at 250 points is sampled at 500 by any screen worth owning, and
+     * `w185` in a cell that size is a picture of a picture. Not the largest
+     * either — these grids run to a couple of hundred images, and a backdrop
+     * asked for at `w1280` is four times the file to answer a question you
+     * settle at a glance.
+     */
+    bucket: string;
     /**
      * The mark beside the word in the menu that picks between these.
      *
@@ -56,33 +80,114 @@ const KINDS: Record<
   poster: {
     label: "Poster",
     file: "poster.jpeg",
-    grid: "grid-cols-3 sm:grid-cols-6",
+    grid:
+      "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 " +
+      "wide:grid-cols-6 ultra:grid-cols-7 cinema:grid-cols-8",
     shape: "aspect-[2/3]",
-    count: 12,
+    count: 18,
+    bucket: "w500",
     // 12 × 18 on the grid, which is 2:3 exactly.
     icon: "M6 3h12v18H6z",
   },
   fanart: {
     label: "Backdrop",
     file: "fanart.jpeg",
-    grid: "grid-cols-2 sm:grid-cols-3",
+    grid: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 ultra:grid-cols-4",
     shape: "aspect-video",
-    count: 6,
+    count: 9,
+    bucket: "w780",
     // 18 × 10, near enough 16:9 at this size.
     icon: "M3 7h18v10H3z",
   },
   logo: {
     label: "Logo",
     file: "logo.png",
-    grid: "grid-cols-2 sm:grid-cols-4",
-    shape: "h-24",
-    count: 8,
+    grid:
+      "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 " +
+      "wide:grid-cols-5 ultra:grid-cols-6",
+    shape: "h-32",
+    count: 16,
+    bucket: "w500",
     // A letter on a baseline — the type mark, and the only one of the three
     // with no box round it.
     icon: "M4 7V5h16v2M12 5v14M9.5 19h5",
   },
 };
 type Sort = "default" | "largest";
+
+/**
+ * What stands for "no language at all" in the filter. A textless image reports
+ * `null`, which cannot be the value of an `<option>`, and every real code is
+ * two letters — so this cannot collide with one.
+ */
+const TEXTLESS = "none";
+
+/**
+ * A language code as a word. `Intl.DisplayNames` is how the browser already
+ * names languages to itself, so "ja" comes out as Japanese in English and as
+ * 日本語 to somebody reading the app in Japanese — a table written here could
+ * only ever have done the first, for the handful of codes somebody remembered.
+ *
+ * It throws on anything that is not a language tag, and TMDb does file the odd
+ * oddity, so the code itself is the fallback.
+ */
+const named = (() => {
+  let names: Intl.DisplayNames | undefined;
+  try {
+    names = new Intl.DisplayNames(undefined, { type: "language" });
+  } catch {
+    names = undefined;
+  }
+
+  return (code: string) => {
+    try {
+      return names?.of(code) ?? code.toUpperCase();
+    } catch {
+      return code.toUpperCase();
+    }
+  };
+})();
+
+/**
+ * A select wearing the chevron this app draws over the platform's. There are
+ * two of them in the header now — the order and the language — and the arrow
+ * is the same eight lines both times.
+ */
+function Select({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={FIELD.select}
+      >
+        {children}
+      </select>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 opacity-40"
+      >
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    </div>
+  );
+}
 
 /**
  * Stands where a TMDb file path stands in `saving` and `saved`, for the one
@@ -123,6 +228,13 @@ export function ArtworkEditor({
   // Biggest first by default — the highest-resolution artwork is almost always
   // what you want to save.
   const [sort, setSort] = useState<Sort>("largest");
+  /**
+   * Which language the grid is cut down to, or `all`. Kept across a change of
+   * kind rather than reset with it: a film whose posters you are reading in
+   * French has backdrops you want in French too, and `shown` below quietly
+   * ignores a language the new kind does not have.
+   */
+  const [language, setLanguage] = useState<string>("all");
   const [images, setImages] = useState<{
     posters: ArtworkChoice[];
     backdrops: ArtworkChoice[];
@@ -276,10 +388,31 @@ export function ArtworkEditor({
         : images.logos
     : [];
 
+  /**
+   * The languages this kind actually has, in the order the tiles arrive in —
+   * which is English and textless first, then whatever TMDb holds. Counted, so
+   * the menu says how much is behind each word before you pick it, and so the
+   * total on the first row says how much there is at all.
+   */
+  const languages = listed.reduce((tally, choice) => {
+    const key = choice.language ?? TEXTLESS;
+    return tally.set(key, (tally.get(key) ?? 0) + 1);
+  }, new Map<string, number>());
+
+  // A filter the current kind cannot honour is not an empty grid: switching to
+  // logos with "French" held would otherwise show nothing and look broken,
+  // when the truthful answer is that there are no French logos to hide behind.
+  const inLanguage = languages.has(language) ? language : "all";
+
+  const filtered =
+    inLanguage === "all"
+      ? listed
+      : listed.filter((choice) => (choice.language ?? TEXTLESS) === inLanguage);
+
   const choices =
     sort === "largest"
-      ? [...listed].sort((a, b) => b.width * b.height - a.width * a.height)
-      : listed;
+      ? [...filtered].sort((a, b) => b.width * b.height - a.width * a.height)
+      : filtered;
 
   return (
     <>
@@ -363,45 +496,61 @@ export function ArtworkEditor({
         )}
       </div>
 
-      {/* A fixed height rather than one that follows the contents: the grid
-          runs from four images to twenty-four, and a dialog that resizes with
-          it moves the close button and the sort control every time you switch
-          kind. The images scroll inside instead. */}
+      {/* The screen, less the frame's own inch of margin.
+
+          A fixed size rather than one that follows the contents: the grid runs
+          from four images to a couple of hundred, and a dialog that resizes
+          with it moves the close button and the sort control every time you
+          switch kind. The images scroll inside instead.
+
+          It was 80vh by 64rem, which was a dialog sized for the twenty-four
+          tiles it used to be given. Now that it is given everything TMDb has,
+          the width is what turns that from a long scroll into a wall you can
+          read — and the tiles grow with it, because the grid adds columns at
+          the screen's own steps rather than stretching the ones it has.
+
+          `h-full` is exact: the frame is `inset-0` with `p-6`, so its content
+          box is already the screen minus that margin, and a percentage height
+          resolves against it. No `max-w`, for the same reason the shelves have
+          none — a wall of posters is the one thing in this app that genuinely
+          spends a 32-inch display. */}
       <Modal
         open={open}
         onClose={() => setOpen(false)}
         label={`Choose ${KINDS[tab].label.toLowerCase()}`}
-        panelClassName="flex h-[min(80vh,44rem)] w-full max-w-5xl flex-col"
+        panelClassName="flex h-full w-full flex-col"
       >
         <>
           <div className="flex shrink-0 flex-wrap items-center gap-3 px-5 pt-5 pb-4">
             <h2 className="text-lg font-semibold">{KINDS[tab].label}</h2>
 
-            <div className="relative">
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as Sort)}
-                className={FIELD.select}
-              >
-                <option value="largest">Largest dimensions</option>
-                <option value="default">TMDb order</option>
-              </select>
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="pointer-events-none absolute top-1/2 right-2.5 h-3 w-3 -translate-y-1/2 opacity-40"
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </div>
+            <Select
+              label="Order"
+              value={sort}
+              onChange={(value) => setSort(value as Sort)}
+            >
+              <option value="largest">Largest dimensions</option>
+              <option value="default">TMDb order</option>
+            </Select>
 
-            <span className="text-xs opacity-40">
-              saves as {KINDS[tab].file}
-            </span>
+            {/* Only once there is a choice to make. One language is every film
+                with a single set of artwork, and a menu whose only entry is the
+                thing already on screen is a control that has never done
+                anything. */}
+            {languages.size > 1 && (
+              <Select
+                label="Language"
+                value={inLanguage}
+                onChange={setLanguage}
+              >
+                <option value="all">All languages ({listed.length})</option>
+                {[...languages].map(([code, count]) => (
+                  <option key={code} value={code}>
+                    {code === TEXTLESS ? "Textless" : named(code)} ({count})
+                  </option>
+                ))}
+              </Select>
+            )}
 
             <div className="ml-auto flex items-center gap-3">
               {/* Sits in the header rather than among the tiles: TMDb having
@@ -534,10 +683,7 @@ export function ArtworkEditor({
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={imageUrl(
-                          choice.filePath,
-                          tab === "poster" ? "w185" : "w300",
-                        )}
+                        src={imageUrl(choice.filePath, KINDS[tab].bucket)}
                         alt=""
                         loading="lazy"
                         className={
@@ -546,9 +692,17 @@ export function ArtworkEditor({
                             : "h-full w-full object-cover"
                         }
                       />
+                      {/* Size, and language when it is worth saying. English
+                          is not: it is most of the grid, and a label on nearly
+                          every tile is one nobody reads. Textless and "this one
+                          is Italian" are both the answer to the same question,
+                          which is why you would be looking down here at all. */}
                       <span className="absolute inset-x-0 bottom-0 bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
                         {choice.width}×{choice.height}
-                        {!choice.language && " · textless"}
+                        {choice.language === null
+                          ? " · textless"
+                          : choice.language !== "en" &&
+                            ` · ${choice.language.toUpperCase()}`}
                       </span>
 
                       {/* The tile you clicked says what it is doing, so the
@@ -595,12 +749,6 @@ export function ArtworkEditor({
               </div>
             )}
           </div>
-
-          <p className="shrink-0 border-t border-line px-5 py-3 text-xs opacity-45">
-            The full-resolution image is written into the film&rsquo;s own
-            folder. Any existing file of the same name is replaced. Drop a file
-            here, or use Upload, to save one of your own instead.
-          </p>
         </>
       </Modal>
     </>

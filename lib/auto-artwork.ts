@@ -11,7 +11,12 @@ import {
 import { imageUrl } from "./image-url";
 import { getMovies } from "./library";
 import { getShows } from "./shows";
-import { getImages, getTvImages, type TmdbImage } from "./tmdb";
+import {
+  englishFirst,
+  getImages,
+  getTvImages,
+  type TmdbImage,
+} from "./tmdb";
 
 type Kind = keyof typeof SAVED_NAMES;
 
@@ -37,10 +42,16 @@ export type AutoArtworkProgress = {
 /**
  * TMDb sorts each list by vote, so the first entry is its best one. Logos can
  * be SVGs, which cannot be saved into the raster file the library expects.
+ *
+ * The lists now arrive carrying every language, so `englishFirst` runs before
+ * the pick: a pass that fills gaps unattended should not hang a Turkish poster
+ * on a film because it out-voted the English one, and the same call still hands
+ * back TMDb's own best when English and textless are all there is.
  */
 const firstUsable = (list: TmdbImage[] | undefined, kind: Kind) =>
-  (list ?? []).find((i) => kind !== "logo" || !i.file_path.endsWith(".svg"))
-    ?.file_path;
+  englishFirst(list ?? []).find(
+    (i) => kind !== "logo" || !i.file_path.endsWith(".svg"),
+  )?.file_path;
 
 /**
  * Fills the artwork gaps a scan turned up: every matched film or show still
