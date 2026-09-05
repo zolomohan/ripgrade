@@ -128,6 +128,62 @@ export function Failure({ children }: { children: React.ReactNode }) {
 }
 
 /**
+ * One setting: what it is and why, on the left; the control, on the right.
+ *
+ * The shape every settings screen worth using has, and the one this page kept
+ * not having. It was nine panels in a column, then three tabs of panels, then
+ * a menu of them, then four headings above them — four goes at the same
+ * question, and every one of them answered "how do I find a setting" while
+ * leaving the setting itself as a drawer with a word on it. A drawer is the
+ * wrong container for a control. It hides what the control is set to behind
+ * the one thing you have to do to find out, and a page of fourteen of them is
+ * a page with nothing on it.
+ *
+ * So the setting is open, always, and it is two columns. On the left its name
+ * and a line saying what it does, which is what makes a page of these
+ * skimmable — the eye runs down the names and stops at the one it wants. On
+ * the right the control, at the right-hand edge where the eye goes back to
+ * when it has found its row. Between them a hairline, which is the whole of
+ * the separation and the reason the eye can tell one row from the next.
+ *
+ * The long argument for a setting is still there and is still a tooltip: these
+ * run to four hundred characters and belong to whoever wants them, not to
+ * everyone scrolling past. `blurb` is the line that is always on, and it is
+ * one line by construction — see the copy on the page itself.
+ */
+export function SettingRow({
+  title,
+  blurb,
+  hint,
+  children,
+}: {
+  title: string;
+  /** The line that is always shown. One sentence, no more. */
+  blurb: string;
+  /** The long form, behind the dotted underline on the title. */
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="grid gap-x-8 gap-y-3 border-t border-line py-5 sm:grid-cols-[minmax(0,7fr)_minmax(0,9fr)] sm:items-center"
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-medium">
+          {hint ? <Explained hint={hint}>{title}</Explained> : title}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed opacity-50">{blurb}</p>
+      </div>
+
+      {/* The controls keep their own arrangement — most are a reading of the
+          current state and a button, laid out exactly this way already — and
+          only have to sit inside a column that ends where the page does. */}
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/**
  * A row within a setting: what it is on the left, the control on the right.
  *
  * Parted from what precedes it by a hairline rather than by a border round
