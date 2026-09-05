@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 
-import { Switch } from "@/app/controls";
+import { ICONS, MenuItem, Popover } from "@/app/controls";
 
 /**
  * Which settings you are looking at.
@@ -21,6 +21,15 @@ import { Switch } from "@/app/controls";
  * only decides which set is on screen. In the URL under `t`, like every other
  * tab in this app, so a link can point at a tab and coming back from a folder
  * picker returns to the one you were on.
+ *
+ * A menu rather than a segmented switch. The switch put every group on screen
+ * at once, which is the argument for one — and the argument against it here is
+ * what that costs: a row of words as wide as the longest three of them, sitting
+ * above a page whose whole content is one of the three. It also had to scroll
+ * sideways on a narrow window, which is a control the page can hide part of.
+ * A menu is the width of the group you are in, says which that is, and the
+ * other two are one press away rather than zero — the right trade for a
+ * page you come to having already decided what you are changing.
  */
 export function SettingsTabs({
   groups,
@@ -48,22 +57,41 @@ export function SettingsTabs({
   return (
     <>
       {/* 2rem below it, which is what every head on every page in this app
-          stands above what it heads — a panel beginning any closer would read
-          as a fourth segment of the switch. This was 5, the listing bar was 8
-          on top of a column gap, and the shelves were 6: three answers to the
-          same question, one per page somebody happened to be looking at.
-
-          The scroll container takes the `-ml-2` rather than the switch, which
-          is the one place it cannot go — a child hanging off the left edge of
-          something that scrolls is clipped with no way to scroll back to it. */}
-      <div className="no-scrollbar mb-8 -mr-1 -ml-2 flex min-w-0 max-w-full overflow-x-auto px-1">
-        <Switch
-          value={tab}
-          onChange={select}
-          // No counts. A settings tab holds however many panels it holds, and
-          // "3" over a word is a number nobody came here to read.
-          options={groups.map(({ key, label }) => ({ key, label }))}
-        />
+          stands above what it heads. This was 5, the listing bar was 8 on top
+          of a column gap, and the shelves were 6: three answers to the same
+          question, one per page somebody happened to be looking at. */}
+      <div className="mb-8 flex">
+        <Popover
+          icon={ICONS.filter}
+          label="Showing"
+          // The group you are in, on the trigger — a menu that named only
+          // itself would make you open it to find out where you were.
+          value={current.label}
+          // The chevron, for the reason `Popover` gives: the value here is a
+          // word, and a word beside an icon reads as a label on a field until
+          // something says it can be changed.
+          caret
+          align="left"
+          width="w-56"
+          buttonClassName="rounded-full"
+        >
+          {(close) => (
+            <div className="py-1">
+              {groups.map((group) => (
+                <MenuItem
+                  key={group.key}
+                  active={group.key === current.key}
+                  onClick={() => {
+                    select(group.key);
+                    close();
+                  }}
+                >
+                  {group.label}
+                </MenuItem>
+              ))}
+            </div>
+          )}
+        </Popover>
       </div>
 
       {current.settings}
