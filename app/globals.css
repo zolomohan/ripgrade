@@ -1813,6 +1813,35 @@ body {
 }
 
 /*
+ * The empty toaster stops catching clicks.
+ *
+ * Glacé's toaster is a fixed box at `z-index: 99999` holding a list 356px wide,
+ * and that list keeps a default height when it holds nothing at all — so an app
+ * with no toast on screen still has an invisible rectangle nailed over its top
+ * right corner, above everything, swallowing every click that lands there.
+ *
+ * It went unnoticed for as long as that corner was empty, which app/toast.tsx
+ * chose it for. The artwork dialog is the width of the screen now, and its
+ * Upload and its close button sit exactly there: both were dead, with nothing
+ * on screen to explain why.
+ *
+ * The whole fixed box ignores the pointer and the toasts take it back — the
+ * `<section>` and not just the `<ol>` inside it, because `pointer-events`
+ * inherits and the section is the thing with the corner nailed down.
+ *
+ * Hover still reaches the stack: a `mouseenter` on a toast bubbles to the list
+ * that expands it. What is lost is only hovering the gap around a toast, which
+ * was never a gesture anybody made on purpose.
+ */
+[data-glace-toaster] {
+  pointer-events: none;
+}
+
+[data-glace-toaster] [data-glace-toast] {
+  pointer-events: auto;
+}
+
+/*
  * A menu, a tooltip, a receipt — anything that opens off a control and hangs
  * over the page with nothing between the two.
  *
