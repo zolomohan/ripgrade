@@ -13,8 +13,9 @@ import {
 } from "@/app/actions";
 import { Art } from "@/app/art";
 import { ConfirmModal } from "@/app/confirm";
-import { BUTTON, Fact } from "@/app/controls";
+import { BUTTON, Fact, useDismiss, useOverlay } from "@/app/controls";
 import {
+  errored,
   IDLE_POLL_MS,
   inFlight,
   PAUSED_STATES,
@@ -161,10 +162,27 @@ const BY_OUTCOME: GroupOption<DownloadEntry> = {
    */
   key: "outcome",
   label: "Outcome",
-  of: (entry) => (entry.completedAt ? "Completed" : "Cancelled"),
-  // Completed first: it is the larger half of any working setup and the one you
-  // came to check. A cancelled fetch is a thing you go looking for.
-  order: ["Completed", "Cancelled"],
+  /*
+   * Three buckets rather than two, because "did it finish" has a third answer
+   * the log used to round down to No.
+   *
+   * A fetch qBittorrent is still holding in an error state never finished and
+   * was never cancelled: it broke — a disk that filled overnight is the usual
+   * one — and it is the one thing on this page with work outstanding. Filed
+   * under Cancelled it read as something you had decided against, which is why
+   * a download stopped by a full drive could sit there for a day looking
+   * settled. See `errored`.
+   */
+  of: (entry) =>
+    entry.completedAt ? "Completed" : errored(entry) ? "Errored" : "Cancelled",
+  /*
+   * Errored first, and first on the page whenever nothing is downloading: it
+   * is the only bucket here that is waiting on you, and a section you have to
+   * scroll past two hundred finished fetches to find is a section nobody reads.
+   * Completed then Cancelled after it, as before — the larger half of any
+   * working setup, and then the one you go looking for.
+   */
+  order: ["Errored", "Completed", "Cancelled"],
 };
 
 const eta = (sec?: number) => {
@@ -489,21 +507,8 @@ function RowMenu({
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const away = (event: MouseEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", away);
-    window.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      window.removeEventListener("keydown", key);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), wrap);
+  const [shown, leaving] = useOverlay(open);
 
   return (
     <div ref={wrap} className="relative shrink-0">
@@ -519,10 +524,10 @@ function RowMenu({
         {busy ? <Spinner className="h-3.5 w-3.5" /> : <MoreIcon />}
       </button>
 
-      {open && (
+      {shown && (
         <Glass
           radius={14}
-          className="row-enter overlay-pane absolute top-full right-0 z-30 mt-2 w-56 overflow-hidden py-1"
+          className={`${leaving ? "pop-out" : "row-enter"} overlay-pane absolute top-full right-0 z-30 mt-2 w-56 overflow-hidden py-1`}
         >
           {items.map((item) => (
             <button
@@ -882,6 +887,7 @@ function HistoryTile({
   onClear,
   onStopSeeding,
   onRetry,
+  onResume,
   onOpen,
 }: {
   entry: DownloadEntry;
@@ -915,11 +921,20 @@ function HistoryTile({
    * whose link was never recorded. See `DownloadEntry.magnet`.
    */
   onRetry?: () => void;
+  /**
+   * And starting a broken one again, where the client still holds it.
+   *
+   * Its own control rather than a second Retry: nothing was thrown away when a
+   * fetch stopped on a fault, so what is wanted is the torrent carrying on from
+   * the part of the file already on the drive. See `errored`.
+   */
+  onResume?: () => void;
   /** The whole record, which is more than a tile can hold. */
   onOpen: () => void;
 }) {
   const d = entry.live;
   const seeding = d && SEEDING_STATES.has(d.state);
+  const fault = d && errored(entry) ? d : undefined;
 
   return (
     <PosterTile
@@ -985,12 +1000,22 @@ function HistoryTile({
        * press a finished row.
        */
       note={
-        seeding && (
-          <span
-            className={`${TILE_PLATE} text-emerald-600 dark:text-emerald-400`}
-          >
-            seeding
+        fault ? (
+          /* Ahead of the seeding plate rather than beside it — the two cannot
+             both be true, and this is the one a grid should be readable by from
+             across the page. A poster has room for the fault or for how far it
+             got, and the fault is the half that says why the tile is here. */
+          <span className={`${TILE_PLATE} text-red-600 dark:text-red-400`}>
+            {STATE_LABEL[fault.state] ?? fault.state}
           </span>
+        ) : (
+          seeding && (
+            <span
+              className={`${TILE_PLATE} text-emerald-600 dark:text-emerald-400`}
+            >
+              seeding
+            </span>
+          )
         )
       }
       /*
@@ -1027,6 +1052,16 @@ function HistoryTile({
             className={TILE_MARK}
           >
             <TransportIcon paused={false} />
+          </button>
+        ) : onResume ? (
+          <button
+            type="button"
+            onClick={onResume}
+            aria-label={`Resume ${entry.filmTitle ?? entry.title}`}
+            title="Resume"
+            className={TILE_MARK}
+          >
+            <TransportIcon paused />
           </button>
         ) : (
           onRetry && (
@@ -1079,6 +1114,7 @@ function DownloadDetails({
   onClear,
   onStopSeeding,
   onRetry,
+  onResume,
   asking,
 }: {
   entry: DownloadEntry;
@@ -1088,11 +1124,14 @@ function DownloadDetails({
   onStopSeeding?: () => void;
   /** Sending it again — see `retryable`. Absent on anything that landed. */
   onRetry?: () => void;
+  /** Starting a broken one again — see `errored`. */
+  onResume?: () => void;
   /** A question is up over this dialog, so it must not answer Escape itself. */
   asking?: boolean;
 }) {
   const d = entry.live;
   const film = entry.filmTitle ?? entry.title;
+  const fault = d && errored(entry) ? d : undefined;
   // Only where the library still holds it — the poster of a want has no page
   // of its own to open, and `filmPath` is the read that says which this is.
   const href = entry.filmPath ? `/film/${movieId(entry.filmPath)}` : undefined;
@@ -1127,6 +1166,22 @@ function DownloadDetails({
           href={href}
           onClose={onClose}
         />
+
+        {/* Why this record is open, on the one kind of row that has a reason.
+            qBittorrent reports that a torrent has stopped and does not report
+            what stopped it — there is no field for it in the API this app
+            reads — so this says the two things that are actually known: that
+            nothing is arriving, and what usually causes that. It is the one
+            place on the page with room to say it. */}
+        {fault && (
+          <p className="rounded-control border border-red-500/40 bg-red-500/[0.06] px-3 py-2.5 text-xs leading-relaxed opacity-80">
+            qBittorrent stopped this fetch and it is not going to start again on
+            its own. Almost always the drive it writes to filled up, or the part
+            of the file already downloaded was moved or deleted. Make room, or
+            put the files back, and Resume — what has already arrived is kept
+            and the transfer carries on from it.
+          </p>
+        )}
 
         {/* Everything the log holds, in the one ruled block this app sets a
             table of facts in. `Fact` draws nothing for a value it does not
@@ -1182,14 +1237,14 @@ function DownloadDetails({
             facts by one measure and the decision should be parted from them by
             the same. Anything less and the button reads as the last row of the
             table above it. */}
-        {(onStopSeeding || onRetry || onClear) && (
+        {(onStopSeeding || onResume || onRetry || onClear) && (
           <div className="mt-3 flex flex-col gap-2">
             {/* What else can be done to this fetch, where there is anything —
                 a row above the decision rather than beside it. Both are
                 outlined now: the filled pill is spoken for below, and two
                 filled buttons on one dialog is two things claiming to be the
                 thing you came for. */}
-            {(onStopSeeding || onRetry) && (
+            {(onStopSeeding || onResume || onRetry) && (
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {onStopSeeding && (
                   <button
@@ -1198,6 +1253,21 @@ function DownloadDetails({
                     className={BUTTON.secondary}
                   >
                     Stop seeding
+                  </button>
+                )}
+                {/* Beside Download again rather than instead of it, which is
+                    the one place both are worth offering: this dialog is where
+                    you have read what went wrong, and the choice between
+                    carrying on and starting over is a real one once you have.
+                    The rows and the tiles offer the first alone — a mark cannot
+                    say which of the two it is. */}
+                {onResume && (
+                  <button
+                    type="button"
+                    onClick={onResume}
+                    className={BUTTON.secondary}
+                  >
+                    Resume
                   </button>
                 )}
                 {onRetry && (
@@ -1360,6 +1430,21 @@ export function DownloadsView({
     Boolean(entry.live && SEEDING_STATES.has(entry.live.state));
 
   /**
+   * Putting a broken fetch back on its way, which asks nothing first.
+   *
+   * The page's rule for its controls is that it asks before it interrupts
+   * something and does not ask before it starts something — a pause is not a
+   * stop, and neither is a resume. Nothing is thrown away here and the same
+   * mark stops it again, so a dialog would be a question in front of a toggle.
+   *
+   * Whether it takes is qBittorrent's business rather than this app's: a
+   * torrent stopped because the disk filled will error again in seconds if the
+   * disk is still full, and the row says so on the next poll instead of this
+   * button pretending to have fixed anything.
+   */
+  const resume = (entry: DownloadEntry) => control(() => qbResume(entry.hash));
+
+  /**
    * The two halves, each ranked by whatever its own menu is set to.
    *
    * Sorted on a copy — `filter` already made one, but saying so is what stops
@@ -1460,155 +1545,152 @@ export function DownloadsView({
           </div>
         )}
 
-        {/* Each half says its own nothing, and says it in that half's terms.
-            The page-wide empty state above answers "you have never fetched
-            anything"; these two answer "nothing is moving" and "nothing has
-            finished", which are different facts and point different ways.
+        {/* Nothing moving, no heading. It said "Everything sent to qBittorrent
+            has arrived" under a heading of its own, which is a heading and a
+            sentence spent on the absence of news — and it was not always true
+            either, since a fetch that broke has not arrived and had left this
+            half without saying so. What is downloading is a thing that is
+            happening, and a page says nothing about a thing that is not.
 
-            Under their own headings rather than instead of the page, now that
-            both halves are on it: an empty half of a page with a full half
-            below it has to say which half is empty, and the heading is what
-            says it. */}
-        <section className="flex flex-col gap-5">
-          <SectionHead
-            label="Downloading"
-            note={active.length > 0 ? `${active.length}` : undefined}
-          />
+            The record below keeps its own nothing, because that one is a fact
+            about your library rather than about this minute. */}
+        {active.length > 0 && (
+          <section className="flex flex-col gap-5">
+            <SectionHead label="Downloading" note={`${active.length}`} />
 
-          {active.length === 0 ? (
-            <p className="text-sm opacity-45">
-              Everything sent to qBittorrent has arrived.
-            </p>
-          ) : layout === "grid" ? (
-            <div className={TILE_GRID_RULED}>
-              {active.map((entry, i) => (
-                <DownloadTile
-                  key={entry.hash}
-                  entry={entry}
-                  name={named.get(entry.hash)}
-                  index={i}
-                  busy={pending}
-                  onPause={() =>
-                    control(() =>
-                      PAUSED_STATES.has(entry.live!.state)
-                        ? qbResume(entry.hash)
-                        : qbPause(entry.hash),
-                    )
-                  }
-                  onCancel={() => setConfirming({ kind: "cancel", entry })}
-                />
-              ))}
-            </div>
-          ) : (
-            <ul className="ruled flex flex-col">
-              {active.map((entry, i) => {
-                const d = entry.live!;
-                const paused = PAUSED_STATES.has(d.state);
-                // Floored to the hundredth, not rounded: a download at 99.999%
-                // is not finished, and the one number the row shows should never
-                // say it is before the file is.
-                const percent = Math.floor(d.progress * 10000) / 100;
-                return (
-                  <li
+            {layout === "grid" ? (
+              <div className={TILE_GRID_RULED}>
+                {active.map((entry, i) => (
+                  <DownloadTile
                     key={entry.hash}
-                    style={stagger(i)}
-                    className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-4"
-                  >
-                    <Poster entry={entry} name={named.get(entry.hash)} />
+                    entry={entry}
+                    name={named.get(entry.hash)}
+                    index={i}
+                    busy={pending}
+                    onPause={() =>
+                      control(() =>
+                        PAUSED_STATES.has(entry.live!.state)
+                          ? qbResume(entry.hash)
+                          : qbPause(entry.hash),
+                      )
+                    }
+                    onCancel={() => setConfirming({ kind: "cancel", entry })}
+                  />
+                ))}
+              </div>
+            ) : (
+              <ul className="ruled flex flex-col">
+                {active.map((entry, i) => {
+                  const d = entry.live!;
+                  const paused = PAUSED_STATES.has(d.state);
+                  // Floored to the hundredth, not rounded: a download at 99.999%
+                  // is not finished, and the one number the row shows should never
+                  // say it is before the file is.
+                  const percent = Math.floor(d.progress * 10000) / 100;
+                  return (
+                    <li
+                      key={entry.hash}
+                      style={stagger(i)}
+                      className="row-enter -mx-4 flex items-center gap-5 rounded-card px-4 py-4"
+                    >
+                      <Poster entry={entry} name={named.get(entry.hash)} />
 
-                    <div className="min-w-0 flex-1">
-                      {entry.filmTitle && (
-                        <p className="truncate text-base font-medium">
-                          {entry.filmTitle}
-                        </p>
-                      )}
-                      <p
-                        className={`truncate font-mono text-xs opacity-55 ${
-                          entry.filmTitle ? "mt-1.5" : ""
-                        }`}
-                        title={d.name}
-                      >
-                        {d.name}
-                      </p>
-                      {/* The bar: progress that reads at a glance across the
-                          row's whole width, which a dial never quite did. Lit
-                          only while it is moving — a paused download keeps the
-                          channel but throws no light, so the row that has
-                          stopped is the dull one. */}
-                      {/* Held back from the right edge of its column, which the
-                          title and the file name run to but the bar should not:
-                          those stop when the words stop, and a bar stops where
-                          it is told, so at full width it was the one thing in
-                          the row reaching for the ellipsis. */}
-                      <div className="bar-track mt-2.5 mr-10">
-                        <div
-                          className={`bar-fill motion-safe:transition-[width] motion-safe:duration-500 ${
-                            paused ? "bar-fill-idle" : ""
+                      <div className="min-w-0 flex-1">
+                        {entry.filmTitle && (
+                          <p className="truncate text-base font-medium">
+                            {entry.filmTitle}
+                          </p>
+                        )}
+                        <p
+                          className={`truncate font-mono text-xs opacity-55 ${
+                            entry.filmTitle ? "mt-1.5" : ""
                           }`}
-                          style={{ width: `${Math.min(100, percent)}%` }}
-                        />
+                          title={d.name}
+                        >
+                          {d.name}
+                        </p>
+                        {/* The bar: progress that reads at a glance across the
+                            row's whole width, which a dial never quite did. Lit
+                            only while it is moving — a paused download keeps the
+                            channel but throws no light, so the row that has
+                            stopped is the dull one. */}
+                        {/* Held back from the right edge of its column, which the
+                            title and the file name run to but the bar should not:
+                            those stop when the words stop, and a bar stops where
+                            it is told, so at full width it was the one thing in
+                            the row reaching for the ellipsis. */}
+                        <div className="bar-track mt-2.5 mr-10">
+                          <div
+                            className={`bar-fill motion-safe:transition-[width] motion-safe:duration-500 ${
+                              paused ? "bar-fill-idle" : ""
+                            }`}
+                            style={{ width: `${Math.min(100, percent)}%` }}
+                          />
+                        </div>
+
+                        <p className="mt-2 text-xs tabular-nums opacity-45">
+                          {[
+                            `${percent.toFixed(2)}% of ${gigabytes(d.sizeBytes)}`,
+                            !paused && d.speedBps > 0
+                              ? speed(d.speedBps)
+                              : undefined,
+                            paused
+                              ? "paused"
+                              : (eta(d.etaSec) ?? STATE_LABEL[d.state]),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
                       </div>
 
-                      <p className="mt-2 text-xs tabular-nums opacity-45">
-                        {[
-                          `${percent.toFixed(2)}% of ${gigabytes(d.sizeBytes)}`,
-                          !paused && d.speedBps > 0
-                            ? speed(d.speedBps)
-                            : undefined,
-                          paused
-                            ? "paused"
-                            : (eta(d.etaSec) ?? STATE_LABEL[d.state]),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                    </div>
+                      {/* The reading, where the history rows keep theirs: a row
+                          is read left to right and the score is the last word on
+                          it before the controls. The same badge the tiles wear in
+                          their top corner, off the same name. */}
+                      {entry.score !== undefined && (
+                        <ScoreBadge
+                          score={entry.score}
+                          theme={
+                            entry.status
+                              ? STATUS_THEME[entry.status]
+                              : undefined
+                          }
+                          title={
+                            entry.status
+                              ? `${entry.status} · ${entry.score} of 100`
+                              : `${entry.score} of 100`
+                          }
+                        />
+                      )}
 
-                    {/* The reading, where the history rows keep theirs: a row
-                        is read left to right and the score is the last word on
-                        it before the controls. The same badge the tiles wear in
-                        their top corner, off the same name. */}
-                    {entry.score !== undefined && (
-                      <ScoreBadge
-                        score={entry.score}
-                        theme={
-                          entry.status ? STATUS_THEME[entry.status] : undefined
-                        }
-                        title={
-                          entry.status
-                            ? `${entry.status} · ${entry.score} of 100`
-                            : `${entry.score} of 100`
-                        }
+                      {/* The same ellipsis the history rows carry, so one column
+                          of marks runs down the page whatever state a row is in. */}
+                      <RowMenu
+                        busy={pending}
+                        items={[
+                          {
+                            label: paused ? "Resume" : "Pause",
+                            onSelect: () =>
+                              control(() =>
+                                paused
+                                  ? qbResume(entry.hash)
+                                  : qbPause(entry.hash),
+                              ),
+                          },
+                          {
+                            label: "Cancel this download",
+                            onSelect: () =>
+                              setConfirming({ kind: "cancel", entry }),
+                          },
+                        ]}
                       />
-                    )}
-
-                    {/* The same ellipsis the history rows carry, so one column
-                        of marks runs down the page whatever state a row is in. */}
-                    <RowMenu
-                      busy={pending}
-                      items={[
-                        {
-                          label: paused ? "Resume" : "Pause",
-                          onSelect: () =>
-                            control(() =>
-                              paused
-                                ? qbResume(entry.hash)
-                                : qbPause(entry.hash),
-                            ),
-                        },
-                        {
-                          label: "Cancel this download",
-                          onSelect: () =>
-                            setConfirming({ kind: "cancel", entry }),
-                        },
-                      ]}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        )}
 
         {/* The record, under the half that is still happening.
 
@@ -1661,6 +1743,9 @@ export function DownloadsView({
                             ? () => setConfirming({ kind: "seed", entry })
                             : undefined
                         }
+                        onResume={
+                          errored(entry) ? () => resume(entry) : undefined
+                        }
                         onRetry={
                           retryable(entry)
                             ? () => setConfirming({ kind: "retry", entry })
@@ -1674,6 +1759,10 @@ export function DownloadsView({
                   <ul className="ruled flex flex-col">
                     {rows.map((entry, i) => {
                       const d = entry.live;
+                      // The client's word for a fetch that broke, where this is
+                      // one — narrowed here so the row can print it without
+                      // asking twice whether there is a client left to ask.
+                      const fault = d && errored(entry) ? d : undefined;
 
                       /*
                        * There were two shouted chips here — REMOVED on a fetch that
@@ -1731,6 +1820,24 @@ export function DownloadsView({
                               {d && SEEDING_STATES.has(d.state) && (
                                 <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
                                   seeding
+                                </span>
+                              )}
+                              {/* And its opposite, in the same place and the
+                            same weight: the one thing on a record row that is
+                            neither history nor housekeeping. qBittorrent's own
+                            word for what went wrong, with how far the fetch got
+                            before it did — which is what decides whether you
+                            resume it or throw it away. */}
+                              {fault && (
+                                <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                                  {[
+                                    STATE_LABEL[fault.state] ?? fault.state,
+                                    fault.progress > 0
+                                      ? `stopped at ${Math.floor(fault.progress * 100)}%`
+                                      : undefined,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
                                 </span>
                               )}
                               {/* Which list sent it, as a chip rather than a word
@@ -1807,6 +1914,30 @@ export function DownloadsView({
                               >
                                 <TransportIcon paused={false} />
                               </button>
+                            ) : fault ? (
+                              /* The torrent is still in the client with most of
+                                 the file already on the drive, so the answer is
+                                 to start it again rather than to fetch it from
+                                 the beginning — which is what Retry would do,
+                                 and why this takes that slot wherever both
+                                 could be offered. */
+                              <button
+                                type="button"
+                                disabled={pending}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  resume(entry);
+                                }}
+                                aria-label={`Resume ${entry.filmTitle ?? entry.title}`}
+                                title="Resume"
+                                className={`${ROW_ACTION} opacity-50 hover:opacity-100`}
+                              >
+                                {pending ? (
+                                  <Spinner className="h-3.5 w-3.5" />
+                                ) : (
+                                  <TransportIcon paused />
+                                )}
+                              </button>
                             ) : (
                               retryable(entry) && (
                                 <button
@@ -1871,6 +2002,7 @@ export function DownloadsView({
               ? () => setConfirming({ kind: "seed", entry: readShown })
               : undefined
           }
+          onResume={errored(readShown) ? () => resume(readShown) : undefined}
           onRetry={
             retryable(readShown)
               ? () => setConfirming({ kind: "retry", entry: readShown })

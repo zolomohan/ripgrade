@@ -466,6 +466,17 @@ export type Download = {
   etaSec?: number;
   done: boolean;
   addedOn: number;
+  /**
+   * When qBittorrent says the payload finished, in ms — absent where it never
+   * has. The client's own record, kept in its resume data, and it outlives the
+   * files: a torrent whose folder has since been moved into the library still
+   * reports the moment it completed. That is what makes it worth reading. This
+   * app stamps a finish when it sees one, and it only sees the finishes it was
+   * running for; a download that landed overnight with the app stopped, and
+   * whose files were moved before it next looked, has no stamp of its own. The
+   * client has one. See `listDownloadLog`.
+   */
+  completedOn?: number;
 };
 
 /** qBittorrent's "no ETA" sentinel: 100 days, exactly. */
@@ -491,6 +502,7 @@ type QbTorrent = {
   dlspeed: number;
   eta: number;
   added_on: number;
+  completion_on: number;
 };
 
 /** Everything this app has handed over, newest first. */
@@ -510,6 +522,9 @@ export async function getDownloads(): Promise<Download[]> {
     etaSec: t.eta > 0 && t.eta < NO_ETA ? t.eta : undefined,
     done: t.progress >= 1 || DONE_STATES.has(t.state),
     addedOn: t.added_on * 1000,
+    // Zero for a torrent that has not finished, and older builds hand back
+    // their own sentinels for it — anything at or below zero is "never".
+    completedOn: t.completion_on > 0 ? t.completion_on * 1000 : undefined,
   }));
 }
 
@@ -929,7 +944,27 @@ export async function getDownloadLog(): Promise<DownloadEntry[]> {
       // not a write per row per three seconds.
       measure.run(current.sizeBytes, row.hash, current.sizeBytes);
 
-      if (current.done && !completedAt) {
+      if (!completedAt && !current.done && current.completedOn) {
+        /*
+         * Finished while nobody here was watching.
+         *
+         * The stamp below is written the first read that catches the client
+         * saying done, which means it is only ever written for a finish this
+         * app was running for. A download that landed overnight and had its
+         * files moved into the library before the next read says `missingFiles`
+         * at zero progress and has no stamp — and unstamped, that is a fetch
+         * that broke on the way in, so the log filed a finished download under
+         * Errored and left it there waiting on somebody.
+         *
+         * qBittorrent remembers the finish even after the payload is gone, so
+         * the answer is to take its word for the date. Written the same way and
+         * to the same column, so it is the same fact arriving late rather than
+         * a second kind of completion the rest of the app would have to know
+         * about. See `Download.completedOn`.
+         */
+        completedAt = current.completedOn;
+        stamp.run(completedAt, current.state, row.hash);
+      } else if (current.done && !completedAt) {
         completedAt = Date.now();
         stamp.run(completedAt, current.state, row.hash);
 

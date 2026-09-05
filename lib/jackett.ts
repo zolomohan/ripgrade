@@ -286,6 +286,14 @@ async function resolveMagnet(
 /**
  * Every result that arrived without a magnet, given one where Jackett can.
  *
+ * Called on what a search decided to keep, never on everything it found. That
+ * distinction is the whole cost model: a sweep asks about one film after
+ * another and stores a single release from each, so resolving every result of
+ * every search meant about forty magnets fetched per film to keep one — and a
+ * public tracker answers a burst of a thousand-odd of those by refusing them,
+ * 404 by 404, until the sweep is storing releases it could no longer fetch. See
+ * `bestUpgrade`, which resolves exactly the release it returns.
+ *
  * A few at a time. Forty results resolve in about three seconds this way, and
  * Jackett caches its own answers, so asking the same search again costs almost
  * nothing; one at a time would be half a minute, and all at once would be
@@ -299,11 +307,11 @@ async function resolveMagnet(
  * `IndexerResult`s, so the URL carrying the API key has no way to reach a
  * caller, and callers cannot forget to drop it. See `ParsedResult`.
  */
-async function resolveMagnets(
-  results: ParsedResult[],
-): Promise<IndexerResult[]> {
+export async function resolveMagnets<
+  T extends IndexerResult & { downloadUrl?: string },
+>(results: T[]): Promise<T[]> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const out: IndexerResult[] = results.map(({ downloadUrl, ...rest }) => rest);
+  const out: T[] = results.map(({ downloadUrl, ...rest }) => rest as T);
 
   const pending = results
     .map((result, index) => ({ result, index }))
@@ -376,7 +384,7 @@ function withEpisodeInTerm(query: SearchQuery): string | undefined {
  */
 export async function searchIndexers(
   query: SearchQuery,
-): Promise<IndexerResult[]> {
+): Promise<ParsedResult[]> {
   const caps = await fetchCaps();
 
   /*
@@ -390,9 +398,7 @@ export async function searchIndexers(
         "None of the indexers configured in Jackett offer a keyword search.",
       );
     }
-    return resolveMagnets(
-      parseTorznab(await torznab({ t: "search", q: query.term })),
-    );
+    return parseTorznab(await torznab({ t: "search", q: query.term }));
   }
 
   const wanted = query.kind === "tv" ? caps.tv : caps.movie;
@@ -431,5 +437,5 @@ export async function searchIndexers(
     );
   }
 
-  return resolveMagnets(parseTorznab(await torznab(params)));
+  return parseTorznab(await torznab(params));
 }

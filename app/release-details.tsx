@@ -418,6 +418,10 @@ export function ReleaseDetails({
               source={source}
               pill
               full
+              /* Handed over, so the question this dialog was opened to ask has
+                 been answered. Staying up with a spent button in it reads as a
+                 send that has not finished. */
+              onSent={onClose}
             />
           ) : hit.detailsUrl ? (
             /* No magnet, so the indexer's own page *is* the way to fetch it —

@@ -8,7 +8,7 @@ import {
   type ScorableFacts,
 } from "./derive";
 import type { DiscLookup } from "./disc";
-import { searchIndexers, type IndexerResult } from "./jackett";
+import { resolveMagnets, searchIndexers, type IndexerResult } from "./jackett";
 import { guessFromTitle, type ReleaseGuess } from "./release-title";
 import { shareTrackers } from "./torznab";
 
@@ -263,7 +263,20 @@ function dedupe(results: ScoredRelease[]): ScoredRelease[] {
   return [...best.values()];
 }
 
-export async function findUpgrades(
+/**
+ * Everything `findUpgrades` does except fetch the magnets.
+ *
+ * Split out because the two callers want wildly different amounts of it. A
+ * person looking at the list wants every row fetchable, so the whole list is
+ * resolved; a sweep wants the top one and throws the rest away, and resolving
+ * forty to keep one is how a tracker comes to refuse the next four hundred —
+ * see `resolveMagnets`.
+ *
+ * The releases this returns still carry Jackett's own download URL, which
+ * embeds the API key. `resolveMagnets` is what removes it, so nothing here may
+ * be handed to a caller outside this file without going through it first.
+ */
+async function searchUpgrades(
   target: UpgradeTarget,
   options: { term?: string } = {},
 ): Promise<UpgradeSearch> {
@@ -437,7 +450,7 @@ export async function searchAnything(term: string): Promise<UpgradeSearch> {
 
   return {
     query: term,
-    results,
+    results: await resolveMagnets(results),
     discarded: 0,
     indexers,
     reference: undefined,
@@ -453,9 +466,24 @@ export async function searchAnything(term: string): Promise<UpgradeSearch> {
  * know whether an improvement exists, so returning one row keeps what crosses
  * back to the browser proportional to the question.
  */
+export async function findUpgrades(
+  target: UpgradeTarget,
+  options: { term?: string } = {},
+): Promise<UpgradeSearch> {
+  const search = await searchUpgrades(target, options);
+  return { ...search, results: await resolveMagnets(search.results) };
+}
+
+/**
+ * The one release a sweep keeps — and the only one it asks for a magnet for.
+ */
 export async function bestUpgrade(
   target: UpgradeTarget,
 ): Promise<ScoredRelease | undefined> {
-  const { results } = await findUpgrades(target);
-  return results[0];
+  const { results } = await searchUpgrades(target);
+  const [best] = results;
+  if (!best) return undefined;
+
+  const [resolved] = await resolveMagnets([best]);
+  return resolved;
 }

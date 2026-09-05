@@ -204,6 +204,7 @@ export function MagnetAction({
   pill = false,
   full = false,
   art = false,
+  onSent,
 }: {
   magnet: string;
   /** Which film this release is for, for the download log's poster. */
@@ -231,6 +232,19 @@ export function MagnetAction({
   full?: boolean;
   /** And no ring at all, where it is worn over a poster — see `OVER_ART`. */
   art?: boolean;
+  /**
+   * That the send happened, for whatever opened this to act on.
+   *
+   * The destination dialog closes itself on success, which is right where this
+   * control sits in a row: the row stays, and the mark on it turns into a tick.
+   * A dialog *around* it is a different matter — it was opened to ask one
+   * question, the question has been answered, and leaving it up with a spent
+   * button in it makes the answer look like it is still pending. So the dialog
+   * is told, and closes itself; see `ReleaseDetails`.
+   *
+   * Optional, because the rows and the poster marks have nothing to close.
+   */
+  onSent?: () => void;
 }) {
   const { qb } = useCapabilities();
   const [open, setOpen] = useState(false);
@@ -362,6 +376,7 @@ export function MagnetAction({
           if (result.ok) {
             setSent(true);
             setOpen(false);
+            onSent?.();
           } else {
             setError(result.error);
           }
